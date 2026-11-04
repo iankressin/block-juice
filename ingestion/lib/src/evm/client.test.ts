@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { createChain, resolveBlock } from "#src/evm/contract-state/index.ts";
+import { createChain, resolveBlock } from "#src/evm/client.ts";
 
 type Request = { id: number; method: string; params: unknown[] };
 

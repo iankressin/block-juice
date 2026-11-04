@@ -1,6 +1,6 @@
 import { createPublicClient, http } from "viem";
 import { createLimiter } from "#src/concurrency.ts";
-import type { BlockNumber } from "#src/env.ts";
+import type { BlockNumber } from "#src/evm/env.ts";
 
 export type Chain = ReturnType<typeof createChain>;
 

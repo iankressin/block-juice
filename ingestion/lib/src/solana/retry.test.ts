@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, address, isSolanaError } from "@solana/kit";
-import { createSolanaClient } from "#src/solana/account-state/index.ts";
+import { createSolanaClient } from "#src/solana/client.ts";
 
 /** An endpoint that hands the nth request (from 1) to `answer`. Returns its URL and a request count. */
 async function fakeEndpoint(
