@@ -141,39 +141,44 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
           return { calls, parked: unparsed.length };
         },
 
-        /**
-         * Writes the records, clears the dead letters they answer, then queues the new failures.
-         * A crash between the first two steps leaves a dead letter whose retry writes its record again.
-         */
+        /** In one transaction: writes the records, clears the dead letters they answer, and queues the new failures. */
         async load({ records, failed }: Batch) {
-          // Postgres rejects an upsert that touches the same id twice, so keep the last one.
-          for (const part of chunk(uniqueBy(records, (r) => r.id), CHUNK_SIZE)) {
-            await db.query(
-              `insert into ${table} (id, data)
-               select r->>'id', r->'data' from jsonb_array_elements($1::jsonb) r
-               on conflict (id) do update set data = excluded.data, _loaded_at = now()`,
-              [toJson(part)],
-            );
-          }
-          if (records.length > 0) {
-            await db.query(`delete from ${deadLetters} where source_table = $1 and id = any($2::text[])`, [
-              sourceTable,
-              records.map((r) => r.callId),
-            ]);
-          }
-          for (const part of chunk(uniqueBy(failed, (f) => f.id), CHUNK_SIZE)) {
-            await db.query(
-              `insert into ${deadLetters} as t (source_table, id, call, error, parked)
-               select $1, f->>'id', f->'call', f->>'error', $2::integer <= 1
-               from jsonb_array_elements($3::jsonb) f
-               on conflict (source_table, id) do update set
-                 call = excluded.call,
-                 error = excluded.error,
-                 attempts = t.attempts + 1,
-                 parked = t.attempts + 1 >= $2::integer,
-                 last_failed_at = now()`,
-              [sourceTable, MAX_ATTEMPTS, toJson(part)],
-            );
+          await db.query("begin");
+          try {
+            // Postgres rejects an upsert that touches the same id twice, so keep the last one.
+            for (const part of chunk(uniqueBy(records, (r) => r.id), CHUNK_SIZE)) {
+              await db.query(
+                `insert into ${table} (id, data)
+                 select r->>'id', r->'data' from jsonb_array_elements($1::jsonb) r
+                 on conflict (id) do update set data = excluded.data, _loaded_at = now()`,
+                [toJson(part)],
+              );
+            }
+            if (records.length > 0) {
+              await db.query(`delete from ${deadLetters} where source_table = $1 and id = any($2::text[])`, [
+                sourceTable,
+                records.map((r) => r.callId),
+              ]);
+            }
+            for (const part of chunk(uniqueBy(failed, (f) => f.id), CHUNK_SIZE)) {
+              await db.query(
+                `insert into ${deadLetters} as t (source_table, id, call, error, parked)
+                 select $1, f->>'id', f->'call', f->>'error', $2::integer <= 1
+                 from jsonb_array_elements($3::jsonb) f
+                 on conflict (source_table, id) do update set
+                   call = excluded.call,
+                   error = excluded.error,
+                   attempts = t.attempts + 1,
+                   parked = t.attempts + 1 >= $2::integer,
+                   last_failed_at = now()`,
+                [sourceTable, MAX_ATTEMPTS, toJson(part)],
+              );
+            }
+            await db.query("commit");
+          } catch (error) {
+            // A connection that broke cannot roll back. Report the error that broke it instead.
+            await db.query("rollback").catch(() => {});
+            throw error;
           }
         },
 

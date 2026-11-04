@@ -39,6 +39,18 @@ test("a rerun replaces a record, and a batch that repeats an id keeps the last",
   ]);
 });
 
+test("a batch that fails to load leaves no record and clears no dead letter", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [], failed: [failure("a")] });
+
+  // A failed call with no call breaks the not-null constraint, so the batch's last step fails.
+  await assert.rejects(table.load({ records: [record("a")], failed: [{ id: "x", call: undefined, error: "e" }] }));
+
+  assert.deepEqual((await db.query("select id from raw.test_wallets")).rows, []);
+  assert.deepEqual(await table.backlog(), { pending: 1, parked: 0 });
+});
+
 test("a failed call is retried by each run until its fifth failure parks it", async (t) => {
   const { warehouse } = await pgliteWarehouse(t);
   const table = await warehouse.open("test_wallets");
