@@ -1,6 +1,7 @@
 import csv
 import json
 from dataclasses import replace
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -217,7 +218,13 @@ def offline(monkeypatch):
     for name in REQUIRED_ENV:
         monkeypatch.setenv(name, "x")
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
-    monkeypatch.setattr(answer, "run_dbt_tests", lambda project, names: Check("dbt_tests", True, "3 passed"))
+    dbt_coverages = []
+
+    def run_dbt_tests(project, names, coverages):
+        dbt_coverages.append(coverages)
+        return Check("dbt_tests", True, "3 passed")
+
+    monkeypatch.setattr(answer, "run_dbt_tests", run_dbt_tests)
     monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
     monkeypatch.setattr(answer.coverage, "stream_sources", lambda root: [TRANSFERS])
     monkeypatch.setattr(answer.coverage, "read", lambda root, name: {TRANSFERS: LOADED}[name])
@@ -233,6 +240,7 @@ def offline(monkeypatch):
     def use(parked):
         monkeypatch.setattr(answer, "read_warehouse", lambda *args: read_warehouse(*args, parked=parked))
 
+    use.dbt_coverages = dbt_coverages
     return use
 
 
@@ -302,6 +310,30 @@ def test_a_new_answer_drops_the_checks_the_agent_added(tmp_path, history):
     assert check.run(tmp_path, "usdc-flows", "cross_check", "passed", "Portal agrees") == 0
     _, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
     assert "cross_check" not in checks
+
+
+def test_dbt_tests_get_what_the_stream_inputs_loaded_and_state_answers_get_nothing(tmp_path, history, offline, monkeypatch):
+    history("{blocks: [100, 180]}", USDC_FLOWS)
+    write_question(tmp_path)
+    monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
+    answer.run(tmp_path, "eth-total")
+    assert offline.dbt_coverages == [{TRANSFERS: LOADED}, {}]
+
+
+def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch):
+    calls = []
+
+    def dbt(project, *args):
+        calls.append(args)
+        return SimpleNamespace(exception=None, result=SimpleNamespace(results=[]))
+
+    monkeypatch.setattr(answer, "dbt", dbt)
+    answer.run_dbt_tests(Path("transformation"), ["usdc_flows"], {TRANSFERS: LOADED})
+    answer.run_dbt_tests(Path("transformation"), ["eth_total"], {})
+    flows, eth = calls
+    assert flows[: flows.index("--vars")] == ("test", "--select", "+usdc_flows")
+    assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
+    assert eth == ("test", "--select", "+eth_total")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):

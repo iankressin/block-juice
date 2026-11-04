@@ -253,8 +253,12 @@ def compile_analyses(project: Path, names: Sequence[str]) -> tuple[dict, list[st
     return manifest, [analyses[name] for name in names]
 
 
-def run_dbt_tests(project: Path, names: Sequence[str]) -> Check:
-    result = dbt(project, "test", "--select", *(f"+{name}" for name in names))
+def run_dbt_tests(project: Path, names: Sequence[str], coverages: dict[str, Coverage]) -> Check:
+    """The dbt tests upstream of the analyses. Tests that reconcile history with state, such as
+    tests/erc20_transfers_match_balances.sql, read what each stream source loaded from var('coverage')."""
+    loaded = {name: c.to_json() for name, c in coverages.items()}
+    variables = ("--vars", json.dumps({"coverage": loaded})) if loaded else ()
+    result = dbt(project, "test", "--select", *(f"+{name}" for name in names), *variables)
     if result.exception is not None:
         raise BadInput(f"dbt test could not run: {dbt_error(result)}")
     return dbt_tests_check((r.node.name, str(r.status)) for r in result.result.results)
@@ -335,7 +339,7 @@ def run(repo_root: Path, slug: str) -> int:
     inputs = upstream_inputs(manifest, analysis_ids)
     streams = stream_inputs(question, inputs, coverage.stream_sources(repo_root))
     coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
-    tests = run_dbt_tests(project, question.analyses)
+    tests = run_dbt_tests(project, question.analyses, coverages)
     results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)
     checks = [tests, dead_letters_check(dead_letters), freshness_check(last_runs)]
     if streams:
