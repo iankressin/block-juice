@@ -10,7 +10,7 @@ A state source reads values that a view function or RPC method returns at one bl
 
    It copies the package, renames it, adds the dbt source with a staging stub, and adds the pair to `SOURCES`. Then run `pnpm install` in `ingestion/`.
 
-2. Edit the copied `src/`:
+2. Edit the copied `src/`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is a call's result as the chain returned it, and units, joins and rules go in dbt.
    - Give each call its block number in the `call` zod schema, so a call retried in a later run reads the same block. On EVM, `connect(env)` from `@ingestion/lib/evm` returns the client and `BLOCK_NUMBER` turned into one number for the run.
    - Make calls through `settleCalls` from `@ingestion/lib`. The EVM client merges reads at one block into one Multicall3 call. On Solana, use `createSolanaClient` from `@ingestion/lib/solana`.
    - Code that more than one source of a chain needs goes in `ingestion/lib/src/<chain>/`, exported from its `index.ts`.

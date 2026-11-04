@@ -8,6 +8,8 @@ argument-hint: "<question> | report <slug> | source <chain> <table> | pipeline <
 
 Every answer comes from the warehouse, through files in this repo that anyone can rerun. Never answer from memory, a block explorer or an MCP tool alone.
 
+Before you build a source, a model or a pipeline, read [references/layers.md](references/layers.md). It says what each layer does: sources load raw data, and dbt does every transformation.
+
 Pick the workflow for the request and read it:
 
 | Request | Workflow |
