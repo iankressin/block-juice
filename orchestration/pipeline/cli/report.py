@@ -7,6 +7,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from datetime import datetime
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -18,7 +19,6 @@ from docx.document import Document
 from docx.text.paragraph import Paragraph
 from fpdf import FPDF
 from openpyxl import Workbook
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -48,6 +48,10 @@ ASCII = str.maketrans(
     }
 )
 REPLACEMENT = chr(0xFFFD)
+# The characters XML 1.0 cannot hold, which the DOCX and XLSX writers replace with REPLACEMENT: control characters
+# other than tab, LF and CR, lone surrogates (json.loads makes them from escapes), U+FFFE and U+FFFF.
+# openpyxl's ILLEGAL_CHARACTERS_RE matches only the control characters.
+ILLEGAL_CHARACTERS_RE = re.compile(r"[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
 
 
 @dataclass(frozen=True)
@@ -204,8 +208,9 @@ def latin1(text: str) -> str:
 
 
 def markdown_html(text: str) -> str:
-    """answer.md as HTML, with no raw HTML and no images: fpdf2 opens the file or URL of any <img>."""
-    converter = markdown.Markdown(extensions=["tables"])
+    """answer.md as HTML, with no raw HTML and no images: fpdf2 opens the file or URL of any <img>. fenced_code
+    escapes the code it puts in <pre>, as an indented code block does."""
+    converter = markdown.Markdown(extensions=["tables", "fenced_code"])
     converter.preprocessors.deregister("html_block")
     for pattern in ("html", "image_link", "image_reference", "short_image_ref"):
         converter.inlinePatterns.deregister(pattern)
@@ -400,7 +405,13 @@ class DocxMarkdown(HTMLParser):
 def write_docx(report: Report, target: Path | IO[bytes]) -> None:
     answer = report.answer
     document = docx.Document()
-    document.core_properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])
+    properties = document.core_properties
+    # python-docx refuses a property longer than 255 characters. The Title paragraph keeps the whole question.
+    properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])[:255]
+    # In place of the author, description and 2013 dates of python-docx's template.
+    properties.author = "blockjuice"
+    properties.comments = ""
+    properties.created = properties.modified = datetime.fromisoformat(answer["answered_at"])
 
     def paragraph(*runs: Run, style: str | None = None) -> None:
         add_runs(document.add_paragraph(style=style), runs)

@@ -12,12 +12,16 @@ import docx
 import httplib2
 import openpyxl
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from docx.table import Table
+from google.auth.exceptions import RefreshError, TransportError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
+from httplib2 import ServerNotFoundError
 
-from pipeline.cli import BadInput, check, main
+from pipeline.cli import BadInput, check, gdoc, main
 from pipeline.cli.report import cell_value, run
 
 BALANCE = "1234567890123456789012345"
@@ -187,6 +191,31 @@ def test_pdf_never_loads_images_or_raw_html_from_answer_md(answered, monkeypatch
     assert (folder / "reports" / "top-wallets.pdf").read_bytes().startswith(b"%PDF")
 
 
+def pdf_lines(path):
+    """The text of each text-showing operation in the PDF at path, in the order of its compressed content streams."""
+    lines = []
+    for stream in re.findall(rb"stream\r?\n(.*?)\r?\nendstream", path.read_bytes(), re.S):
+        lines += re.findall(rb"\((.*?)\) ?Tj", zlib.decompress(stream))
+    return [line.decode("latin-1") for line in lines]
+
+
+def test_fenced_code_keeps_its_lines_in_pdf_and_docx_as_literal_text(answered, monkeypatch):
+    root, folder = answered
+    code = ["select 1", "  from t", '<img src="/etc/passwd">']
+    (folder / "answer.md").write_text("Run this:\n\n```sql\n" + "\n".join(code) + "\n```\n")
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"fpdf2 tried to load an image: {args}")
+
+    monkeypatch.setattr("fpdf.FPDF.image", refuse)
+    monkeypatch.setattr("fpdf.image_parsing.load_image", refuse)
+    assert run(root, "top-wallets", "pdf,docx") == 0
+    assert "\n".join(code) in "\n".join(pdf_lines(folder / "reports" / "top-wallets.pdf"))
+    path = folder / "reports" / "top-wallets.docx"
+    assert outline(path)[3:5] == [("Normal", "Run this:"), ("Normal", "\n".join(code))]
+    assert {run.font.name for run in docx.Document(path).paragraphs[4].runs} == {"Courier New"}
+
+
 def outline(path):
     """The body of a DOCX in order: (style, text) for a paragraph, ("table", rows of cell texts) for a table."""
     document = docx.Document(path)
@@ -300,6 +329,50 @@ def test_docx_writes_answer_md_and_chain_data_as_literal_text(answered, monkeypa
     assert not [tag for tag in ("w:fldSimple", "w:instrText", "w:hyperlink", "w:drawing", "w:pict") if tag in xml]
 
 
+def test_docx_properties_name_blockjuice_and_the_answer_time(answered):
+    root, folder = answered
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    properties = docx.Document(path).core_properties
+    answered_at = datetime(2026, 11, 4, 19, tzinfo=timezone.utc)
+    assert (properties.title, properties.author, properties.comments) == (ANSWER["question"], "blockjuice", "")
+    assert (properties.created, properties.modified) == (answered_at, answered_at)
+    with zipfile.ZipFile(path) as package:
+        assert "python-docx" not in package.read("docProps/core.xml").decode()
+
+
+def test_characters_xml_cannot_hold_become_replacement_characters_in_docx_and_xlsx(answered):
+    root, folder = answered
+    (folder / "answer.md").write_text("token \ufffe name\n")
+    (folder / "results" / "top_wallets.csv").write_text("wallet,balance,share\nbad\uffff,1,2\n")
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["definitions"] = {"lone": "a\ud800b"}
+    # json.dumps writes the lone surrogate as the escape \ud800, which json.loads reads back as a lone surrogate.
+    (folder / "answer.json").write_text(json.dumps(answer))
+
+    assert run(root, "top-wallets", "xlsx,pdf,docx") == 0
+    body = outline(folder / "reports" / "top-wallets.docx")
+    assert ("Normal", "token \ufffd name") in body
+    assert ("Normal", "lone: a\ufffdb") in body
+    assert ("table", [["wallet", "balance", "share"], ["bad\ufffd", "1", "2"]]) in body
+    book = openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx")
+    assert {"token \ufffd name", "a\ufffdb"} <= {cell.value for row in book["Answer"].iter_rows() for cell in row}
+    assert book["top_wallets"]["A2"].value == "bad\ufffd"
+
+
+def test_docx_title_property_stops_at_255_characters_and_the_body_keeps_the_question(answered):
+    root, folder = answered
+    question = "How much ETH do the tracked wallets hold right now, " * 6 + "in wei?"
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["question"] = question
+    (folder / "answer.json").write_text(json.dumps(answer))
+
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    assert docx.Document(path).core_properties.title == question[:255]
+    assert outline(path)[0] == ("Title", question)
+
+
 def test_missing_answer_md_is_bad_input_and_writes_nothing(answered):
     root, folder = answered
     (folder / "answer.md").unlink()
@@ -336,26 +409,29 @@ def test_cells_become_numbers_only_when_a_float_holds_them_exactly(text, value):
     assert type(cell_value(text)) is type(value)
 
 
-def drive_error(status):
-    return HttpError(httplib2.Response({"status": str(status)}), b'{"error": {"message": "refused"}}')
+def drive_error(status, message="refused"):
+    return HttpError(httplib2.Response({"status": str(status)}), json.dumps({"error": {"message": message}}).encode())
 
 
 class FakeDrive:
-    """The files() part of a Drive v3 client, keeping each Doc in memory with the DOCX uploaded to it."""
+    """The files() part of a Drive v3 client, keeping each Doc in memory with the DOCX uploaded to it. It records
+    each request as (method, options), and the execute of a request whose method is in fail raises that error."""
 
     def __init__(self):
         self.docs = {}
-        self.refuse = None
+        self.fail = {}
+        self.calls = []
 
     def files(self):
         return self
 
-    @staticmethod
-    def respond(result):
+    def request(self, method, options, result):
+        self.calls.append((method, options))
+
         def execute():
-            if isinstance(result, Exception):
-                raise result
-            return result
+            if method in self.fail:
+                raise self.fail[method]
+            return result()
 
         return SimpleNamespace(execute=execute)
 
@@ -363,20 +439,27 @@ class FakeDrive:
         return {"id": doc_id, "webViewLink": f"https://docs.google.com/document/d/{doc_id}/edit"}
 
     def get(self, fileId, fields, **options):
-        if fileId not in self.docs:
-            return self.respond(drive_error(404))
-        return self.respond({"trashed": self.docs[fileId]["trashed"]})
+        def trashed():
+            if fileId not in self.docs:
+                raise drive_error(404)
+            return {"trashed": self.docs[fileId]["trashed"]}
+
+        return self.request("get", options, trashed)
 
     def create(self, body, media_body, **options):
-        if self.refuse:
-            return self.respond(drive_error(self.refuse))
-        doc_id = f"doc-{len(self.docs) + 1}"
-        self.docs[doc_id] = {**body, "trashed": False, "upload": media_body}
-        return self.respond(self.link(doc_id))
+        def add():
+            doc_id = f"doc-{len(self.docs) + 1}"
+            self.docs[doc_id] = {**body, "trashed": False, "upload": media_body}
+            return self.link(doc_id)
+
+        return self.request("create", options, add)
 
     def update(self, fileId, media_body, **options):
-        self.docs[fileId]["upload"] = media_body
-        return self.respond(self.link(fileId))
+        def upload():
+            self.docs[fileId]["upload"] = media_body
+            return self.link(fileId)
+
+        return self.request("update", options, upload)
 
 
 def uploaded_text(doc):
@@ -414,6 +497,30 @@ def test_gdoc_creates_a_doc_then_updates_the_same_doc(answered, drive, monkeypat
     assert "A second answer." in uploaded_text(drive.docs["doc-1"])
     assert json.loads(record.read_text()) == {"id": "doc-1", "url": url}
     assert capsys.readouterr().out == f"updated {url}\n"
+    assert [(method, options.get("supportsAllDrives")) for method, options in drive.calls] == [
+        ("create", True),
+        ("get", True),
+        ("update", True),
+    ]
+
+
+@pytest.mark.parametrize(
+    "error", [pytest.param(drive_error(500), id="500"), pytest.param(drive_error(403, "Rate Limit Exceeded"), id="rate-limit")]
+)
+def test_gdoc_exits_2_without_a_new_doc_when_drive_cannot_say_whether_it_has_the_doc(answered, drive, monkeypatch, capsys, error):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    (folder / "reports").mkdir()
+    record = folder / "reports" / "top-wallets.gdoc.json"
+    record.write_text(json.dumps({"id": "doc-1", "url": "https://docs.google.com/document/d/doc-1/edit"}))
+    drive.docs["doc-1"] = {"trashed": False}
+    drive.fail = {"get": error}
+
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    assert f"Google Drive refused the upload: {error.status_code} {error.reason}" in capsys.readouterr().err
+    assert [method for method, _ in drive.calls] == ["get"]
+    assert list(drive.docs) == ["doc-1"]
+    assert json.loads(record.read_text())["id"] == "doc-1"
 
 
 @pytest.mark.parametrize("gone", ["deleted", "trashed"])
@@ -440,7 +547,7 @@ def test_gdoc_creates_a_new_doc_when_the_recorded_one_is_gone(answered, drive, c
     [
         ({}, "In a Google Cloud project, enable the Google Drive API, create an OAuth client ID of type Desktop app"),
         ({"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json"}, "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json, which does not exist"),
-        ({"GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"}, "GOOGLE_APPLICATION_CREDENTIALS: File /missing/key.json was not found"),
+        ({"GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"}, "GOOGLE_APPLICATION_CREDENTIALS is /missing/key.json, which does not exist"),
         (
             {"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json", "GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"},
             "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json",
@@ -459,9 +566,55 @@ def test_gdoc_without_usable_credentials_exits_2_and_writes_nothing(answered, mo
     assert not (folder / "reports").exists()
 
 
-def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
-    from pipeline.cli import gdoc
+def test_gdoc_takes_only_a_service_account_key_from_google_application_credentials(tmp_path, monkeypatch):
+    pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    )
+    key = tmp_path / "key.json"
+    key.write_text(
+        json.dumps(
+            {
+                "type": "service_account",
+                "project_id": "project-1",
+                "private_key_id": "key-1",
+                "private_key": pem.decode(),
+                "client_email": "bj@project-1.iam.gserviceaccount.com",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        )
+    )
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
+    built = []
+    monkeypatch.setattr(gdoc, "build", lambda *args, credentials, **kwargs: built.append(credentials))
+    gdoc.connect()
+    assert [(c.service_account_email, c.scopes) for c in built] == [("bj@project-1.iam.gserviceaccount.com", gdoc.SCOPES)]
 
+    # What `gcloud auth application-default login` writes: a user's credentials, not a service account key.
+    key.write_text(
+        json.dumps({"type": "authorized_user", "client_id": "client-1", "client_secret": "secret", "refresh_token": "refresh-1"})
+    )
+    with pytest.raises(BadInput, match="GOOGLE_APPLICATION_CREDENTIALS is not a service account key"):
+        gdoc.connect()
+
+
+def google_token(token, expires_in):
+    """User credentials holding token, which expires expires_in from now."""
+    return Credentials(
+        token=token,
+        refresh_token="refresh-1",
+        client_id="client-1",
+        client_secret="secret",
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=gdoc.SCOPES,
+        expiry=datetime.now(timezone.utc).replace(tzinfo=None) + expires_in,
+    )
+
+
+@pytest.fixture
+def consents(tmp_path, monkeypatch):
+    """A Desktop app client in GOOGLE_OAUTH_CLIENT_SECRET and a token cache under tmp_path. The consent step
+    grants token-1 for an hour, and the list it returns gets the client id of each consent."""
     client = tmp_path / "client.json"
     client.write_text(
         json.dumps(
@@ -478,21 +631,22 @@ def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", str(client))
     monkeypatch.setattr(gdoc, "TOKEN", tmp_path / "blockjuice" / "google-token.json")
-    consents = []
+    granted = []
 
     def consent(flow, port):
-        consents.append(flow.client_config["client_id"])
-        return Credentials(
-            token="token-1",
-            refresh_token="refresh-1",
-            client_id="client-1",
-            client_secret="secret",
-            token_uri="https://oauth2.googleapis.com/token",
-            scopes=gdoc.SCOPES,
-            expiry=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1),
-        )
+        granted.append(flow.client_config["client_id"])
+        return google_token("token-1", timedelta(hours=1))
 
     monkeypatch.setattr(InstalledAppFlow, "run_local_server", consent)
+    return granted
+
+
+def cache_token(token, expires_in):
+    gdoc.TOKEN.parent.mkdir(parents=True, exist_ok=True)
+    gdoc.TOKEN.write_text(google_token(token, expires_in).to_json())
+
+
+def test_gdoc_asks_for_consent_once_and_caches_the_token(consents):
     gdoc.connect()
     gdoc.connect()
     assert consents == ["client-1"]
@@ -500,10 +654,135 @@ def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
     assert gdoc.TOKEN.stat().st_mode & 0o777 == 0o600
 
 
+def test_gdoc_rewrites_a_token_that_others_can_read_with_mode_600(consents):
+    cache_token("token-0", timedelta(hours=1))
+    gdoc.TOKEN.chmod(0o644)
+    gdoc.connect()
+    assert gdoc.TOKEN.stat().st_mode & 0o777 == 0o600
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-0"
+
+
+def test_gdoc_keeps_the_cached_token_whole_when_writing_the_new_one_fails(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=1))
+    cached = gdoc.TOKEN.read_text()
+    # UTF-8 cannot encode a lone surrogate, so the write fails after the file is open, as on a full disk.
+    monkeypatch.setattr(Credentials, "to_json", lambda credentials: '{"token": "\ud800"}')
+    with pytest.raises(UnicodeEncodeError):
+        gdoc.connect()
+    assert gdoc.TOKEN.read_text() == cached
+    assert [path.name for path in gdoc.TOKEN.parent.iterdir()] == [gdoc.TOKEN.name]
+
+
+def test_gdoc_refreshes_an_expired_token_without_asking_again(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=-1))
+
+    def refresh(credentials, request):
+        credentials.token = "token-2"
+        credentials.expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
+
+    monkeypatch.setattr(Credentials, "refresh", refresh)
+    gdoc.connect()
+    assert consents == []
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-2"
+
+
+def test_gdoc_asks_for_consent_again_when_google_refuses_the_refresh(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=-1))
+
+    def refuse(credentials, request):
+        raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+    monkeypatch.setattr(Credentials, "refresh", refuse)
+    gdoc.connect()
+    assert consents == ["client-1"]
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-1"
+
+
+def test_gdoc_exits_2_when_google_cannot_be_reached_for_the_refresh(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=-1))
+
+    def unreachable(credentials, request):
+        raise TransportError("Unable to find the server at oauth2.googleapis.com")
+
+    monkeypatch.setattr(Credentials, "refresh", unreachable)
+    with pytest.raises(BadInput, match="Could not reach Google: Unable to find the server at oauth2.googleapis.com"):
+        gdoc.connect()
+    assert consents == []
+
+
+@pytest.mark.parametrize("cached", ["", "not json\n", "{}"])
+def test_gdoc_exits_2_when_the_cached_token_is_not_a_token(consents, cached):
+    gdoc.TOKEN.parent.mkdir(parents=True)
+    gdoc.TOKEN.write_text(cached)
+    with pytest.raises(BadInput, match=f"{re.escape(str(gdoc.TOKEN))} is not a Google token .*: delete it to sign in again"):
+        gdoc.connect()
+    assert consents == []
+    assert gdoc.TOKEN.read_text() == cached
+
+
+@pytest.mark.parametrize("recorded", ["<<<<<<< HEAD\n", '{"url": "https://docs.google.com/document/d/doc-1/edit"}', "[]"])
+def test_gdoc_exits_2_when_the_record_holds_no_doc_id(answered, drive, monkeypatch, capsys, recorded):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    (folder / "reports").mkdir()
+    record = folder / "reports" / "top-wallets.gdoc.json"
+    record.write_text(recorded)
+
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert f"{record} does not hold a Doc id: fix it, or delete it to create a new Doc" in err
+    assert drive.calls == []
+    assert record.read_text() == recorded
+
+
+@pytest.mark.parametrize(
+    "error, message",
+    [
+        pytest.param(
+            RefreshError("invalid_grant: Token has been expired or revoked.", {"error": "invalid_grant"}),
+            "Google refused the credentials (invalid_grant: Token has been expired or revoked.)",
+            id="revoked",
+        ),
+        pytest.param(
+            RefreshError("<html>\n<body>Bad gateway</body>\n</html>"),
+            "Google refused the credentials (<html> <body>Bad gateway</body> </html>)",
+            id="refused-with-a-page",
+        ),
+        pytest.param(
+            TransportError("Unable to find the server at oauth2.googleapis.com"),
+            "Could not reach Google: Unable to find the server at oauth2",
+            id="no-token-endpoint",
+        ),
+        pytest.param(
+            ServerNotFoundError("Unable to find the server at www.googleapis.com"),
+            "Could not reach Google: Unable to find the server at www",
+            id="no-drive",
+        ),
+        pytest.param(
+            ConnectionResetError(54, "Connection reset by peer"),
+            "Could not reach Google: [Errno 54] Connection reset by peer",
+            id="reset",
+        ),
+    ],
+)
+def test_gdoc_exits_2_with_one_line_when_a_request_fails_on_the_credentials_or_the_network(
+    answered, drive, monkeypatch, capsys, error, message
+):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    drive.fail = {"create": error}
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert message in err
+    assert not (folder / "reports" / "top-wallets.gdoc.json").exists()
+
+
 def test_gdoc_exits_2_when_drive_refuses_the_upload(answered, drive, monkeypatch, capsys):
     root, folder = answered
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
-    drive.refuse = 403
+    drive.fail = {"create": drive_error(403)}
     assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
     assert "Google Drive refused the upload: 403 refused" in capsys.readouterr().err
     assert not (folder / "reports" / "top-wallets.gdoc.json").exists()
