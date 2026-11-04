@@ -7,7 +7,8 @@ from pipeline.project import dbt_project
 from pipeline.run_log import record_dbt_build
 
 
-@dbt_assets(manifest=dbt_project.manifest_path)
+# Without `project`, a dbt `path:` selector resolves against the working directory, not the dbt project.
+@dbt_assets(manifest=dbt_project.manifest_path, project=dbt_project)
 def transformation_assets(context: dg.AssetExecutionContext, dbt: DbtCliResource):
     started_at = datetime.now(timezone.utc)
     invocation = dbt.cli(["build"], context=context, raise_on_error=False)

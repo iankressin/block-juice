@@ -36,8 +36,8 @@ Four sources read wallet balances: ETH, ERC-20 tokens, SOL and SPL tokens. The E
 ├── transformation/             # dbt project (profiles.yml lives here)
 │   └── models/
 │       ├── staging/<source>/   # sources yml + stg_ models, one folder per source
-│       ├── intermediate/
-│       └── marts/
+│       ├── intermediate/<pipeline>/
+│       └── marts/<pipeline>/   # a pipeline's output tables, one folder per pipeline
 ├── infra/                      # the Postgres warehouse, eRPC, Dshackle and monitoring
 │   ├── postgres/init.sql       # eRPC database, monitor role, ops run log
 │   ├── prometheus/
@@ -51,7 +51,7 @@ Four sources read wallet balances: ETH, ERC-20 tokens, SOL and SPL tokens. The E
     │   ├── run_log.py          # adds each dbt build to ops.dbt_invocations and ops.dbt_node_runs
     │   ├── assets/ingestion.py # one asset per TypeScript source
     │   ├── assets/dbt.py       # every dbt model as an asset
-    │   └── schedules.py        # daily run of the whole graph
+    │   └── schedules.py        # one job and schedule per pipeline
     └── tests/
 ```
 
@@ -117,6 +117,15 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 3. Add `(source, table)` to `SOURCES` in `orchestration/pipeline/assets/ingestion.py`.
 
 The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
+
+## Add a pipeline
+
+A pipeline is the models in `transformation/models/marts/<pipeline>/` and every asset they read from, ingestion included. Each pipeline runs as its own Dagster job, on its own schedule.
+
+1. Add the pipeline's output models to `transformation/models/marts/<pipeline>/`, and any models that only it reads to `transformation/models/intermediate/<pipeline>/`. Staging models stay in `staging/<source>/`, because any pipeline can read them.
+2. Add the pipeline's name and cron schedule to `PIPELINES` in `orchestration/pipeline/schedules.py`.
+
+If the pipeline reads a new source, also follow Add a source. Two pipelines that read the same source each run it. The orchestration tests fail when an asset belongs to no scheduled pipeline.
 
 ## Use another warehouse
 

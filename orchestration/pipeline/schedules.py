@@ -1,5 +1,20 @@
 import dagster as dg
+from dagster_dbt import build_dbt_asset_selection
 
-elt_job = dg.define_asset_job("elt", selection=dg.AssetSelection.all())
+from pipeline.assets.dbt import transformation_assets
 
-daily_elt = dg.ScheduleDefinition(job=elt_job, cron_schedule="0 6 * * *")
+PIPELINES = {
+    "balances": "0 6 * * *",
+}
+
+jobs = [
+    dg.define_asset_job(
+        name,
+        selection=build_dbt_asset_selection(
+            [transformation_assets], dbt_select=f"path:models/marts/{name}"
+        ).upstream(),
+    )
+    for name in PIPELINES
+]
+
+schedules = [dg.ScheduleDefinition(job=job, cron_schedule=PIPELINES[job.name]) for job in jobs]
