@@ -105,7 +105,7 @@ Open the repo in Claude Code and ask a question about chain data, or type `/bj <
 - `answer.json` holds the value, the checks and where the data came from. `bj answer` writes it.
 - `answer.md` is the answer in words.
 - `results/` holds one CSV per analysis.
-- `reports/` holds the PDF and XLSX that `bj report` builds. Git ignores it.
+- `reports/` holds what `bj report` builds: XLSX, PDF and Word files, and the id of the answer's Google Doc. Git ignores it.
 
 `answers/tracked-wallets-eth/` is an example. The skill reads state through the sources above. It can't yet backfill history (events, transfers or traces over a block range) or explore a protocol it doesn't know.
 
@@ -121,7 +121,7 @@ uv run --project orchestration bj --help
 | `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
 | `bj blocks <chain> <from> [<to>]` | Turns UTC times into the first and last block of the window, on EVM chains. |
 | `bj new-source <source> <table> --like <package>` | Does the three steps of Add a source, starting from a copy of an existing source. |
-| `bj report <slug> [--format xlsx,pdf]` | Builds the answer's reports from `answer.json`, `answer.md` and `results/`. |
+| `bj report <slug> [--format xlsx,pdf,docx,gdoc]` | Builds the answer's reports from `answer.json`, `answer.md` and `results/`. `gdoc` uploads a Google Doc and needs the Google settings in `.env.example`. |
 
 ## Monitoring
 
