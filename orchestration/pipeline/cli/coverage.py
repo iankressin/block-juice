@@ -73,14 +73,19 @@ def package(repo_root: Path, source: str, table: str) -> Path:
     return repo_root / "ingestion" / "sources" / package_name(source, table)
 
 
+def sources(repo_root: Path) -> list[str]:
+    """Every SOURCES entry, as <source>.<table>."""
+    entries, _ = read_sources((repo_root / SOURCES_FILE).read_text())
+    return [f"{source}.{table}" for source, table in entries]
+
+
 def stream_sources(repo_root: Path) -> list[str]:
     """The SOURCES entries that are stream sources: those whose package's .env.example sets START_BLOCK.
     A stream source needs a first block; a call source reads at one block, or at the tip."""
-    sources, _ = read_sources((repo_root / SOURCES_FILE).read_text())
     return [
-        f"{source}.{table}"
-        for source, table in sources
-        if dotenv_values(package(repo_root, source, table) / ".env.example").get("START_BLOCK")
+        name
+        for name in sources(repo_root)
+        if dotenv_values(package(repo_root, *name.split(".")) / ".env.example").get("START_BLOCK")
     ]
 
 

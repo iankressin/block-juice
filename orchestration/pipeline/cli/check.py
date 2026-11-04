@@ -29,9 +29,11 @@ def run(repo_root: Path, slug: str, name: str, status: str, detail: str) -> int:
         answer = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise BadInput(f"answers/{slug}/answer.json is not valid JSON ({error}): run `bj answer {slug}` again") from None
+    checks = answer.get("checks") if isinstance(answer, dict) else None
+    if not isinstance(checks, list) or not all(isinstance(c, dict) and isinstance(c.get("name"), str) for c in checks):
+        raise BadInput(f"answers/{slug}/answer.json has no checks list as bj answer writes it: run `bj answer {slug}` again")
 
     check = {"name": name, "status": status, "detail": detail.strip()}
-    checks = answer["checks"]
     names = [c["name"] for c in checks]
     if name in names:
         checks[names.index(name)] = check

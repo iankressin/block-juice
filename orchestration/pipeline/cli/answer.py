@@ -127,12 +127,16 @@ def headline(results: Sequence[Result]) -> Any:
 
 
 def dbt_tests_check(statuses: Iterable[tuple[str, str]]) -> Check:
-    """From each test's (name, status): passed when no test failed or errored."""
+    """From each test's (name, status): passed when no test failed or errored. Names the tests that warned or failed."""
     statuses = list(statuses)
     failed = sorted(name for name, status in statuses if status in ("fail", "error"))
+    warned = sorted(name for name, status in statuses if status == "warn")
     counts = Counter(status for _, status in statuses)
     parts = [f"{counts['pass']} passed"]
-    parts += [f"{counts[status]} {label}" for status, label in (("warn", "warned"), ("skipped", "skipped")) if counts[status]]
+    if warned:
+        parts.append(f"{len(warned)} warned: {', '.join(warned)}")
+    if counts["skipped"]:
+        parts.append(f"{counts['skipped']} skipped")
     if failed:
         parts.append(f"{len(failed)} failed: {', '.join(failed)}")
     return Check("dbt_tests", not failed, ", ".join(parts))
@@ -151,10 +155,17 @@ def freshness_check(last_runs: dict[Input, LastRun | None]) -> Check:
     return Check("freshness", all(last_runs.values()), detail or "no inputs")
 
 
-def stream_inputs(question: Question, inputs: Iterable[Input], streams: Collection[str]) -> list[SourceInput]:
+def stream_inputs(
+    question: Question, inputs: Iterable[Input], sources: Collection[str], streams: Collection[str]
+) -> list[SourceInput]:
     """The question's inputs that read a stream source. Every stream source the analyses read needs one,
-    so its filter is on record, and the question then needs window.blocks."""
+    so its filter is on record, and the question then needs window.blocks. An input's source must be in SOURCES."""
     label = f"answers/{question.slug}/question.yaml"
+    for i in question.sources:
+        if i.source not in sources:
+            raise BadInput(
+                f"{label}: an input names {i.source}, which is not in SOURCES; stream sources: {', '.join(streams) or 'none'}"
+            )
     declared = [i for i in question.sources if i.source in streams]
     named = {i.source for i in declared}
     for read in inputs:
@@ -337,7 +348,7 @@ def run(repo_root: Path, slug: str) -> int:
     project = repo_root / "transformation"
     manifest, analysis_ids = compile_analyses(project, question.analyses)
     inputs = upstream_inputs(manifest, analysis_ids)
-    streams = stream_inputs(question, inputs, coverage.stream_sources(repo_root))
+    streams = stream_inputs(question, inputs, coverage.sources(repo_root), coverage.stream_sources(repo_root))
     coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
     tests = run_dbt_tests(project, question.analyses, coverages)
     results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)

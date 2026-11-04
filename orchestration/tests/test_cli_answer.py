@@ -109,7 +109,9 @@ def test_headline_is_the_first_analysis_single_cell():
 
 
 def test_dbt_tests_pass_unless_a_test_fails_or_errors():
-    assert dbt_tests_check([("a", "pass"), ("b", "warn")]) == Check("dbt_tests", True, "1 passed, 1 warned")
+    assert dbt_tests_check([("a", "pass"), ("c", "warn"), ("b", "warn")]) == Check(
+        "dbt_tests", True, "1 passed, 2 warned: b, c"
+    )
     assert dbt_tests_check([("z", "fail"), ("a", "pass"), ("m", "error")]) == Check(
         "dbt_tests", False, "1 passed, 2 failed: m, z"
     )
@@ -226,6 +228,7 @@ def offline(monkeypatch):
 
     monkeypatch.setattr(answer, "run_dbt_tests", run_dbt_tests)
     monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
+    monkeypatch.setattr(answer.coverage, "sources", lambda root: [TRANSFERS, "ethereum.eth_balances"])
     monkeypatch.setattr(answer.coverage, "stream_sources", lambda root: [TRANSFERS])
     monkeypatch.setattr(answer.coverage, "read", lambda root, name: {TRANSFERS: LOADED}[name])
     finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
@@ -364,6 +367,14 @@ def test_an_input_naming_a_source_that_is_not_a_stream_source_gets_no_coverage_c
     offline(parked=0)
     assert answer.run(tmp_path, "eth-total") == 0
     assert "coverage" not in [c["name"] for c in json.loads((folder / "answer.json").read_text())["checks"]]
+
+
+def test_an_input_naming_no_sources_entry_is_bad_input_before_any_write(tmp_path, offline):
+    folder = write_question(tmp_path, extra="inputs: [{source: ethereum.erc20_transfer}]\n")
+    offline(parked=0)
+    with pytest.raises(BadInput, match=r"names ethereum\.erc20_transfer, which is not in SOURCES; stream sources: ethereum\.erc20_transfers$"):
+        answer.run(tmp_path, "eth-total")
+    assert sorted(p.name for p in folder.iterdir()) == ["question.yaml"]
 
 
 def test_a_stream_input_needs_window_blocks(history):

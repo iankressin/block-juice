@@ -26,6 +26,7 @@ bj = "pipeline.cli:main"
 [dependency-groups]
 dev = [
     "dagster-webserver",
+    "duckdb>=1.5.6",
     "pytest",
 ]
 
