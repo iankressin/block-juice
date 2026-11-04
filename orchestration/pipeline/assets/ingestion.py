@@ -2,13 +2,11 @@ import json
 import logging
 import os
 import subprocess
-from contextlib import closing
 
 import dagster as dg
-from psycopg2 import sql
 
 from pipeline.project import INGESTION_DIR
-from pipeline.warehouse import connect
+from pipeline.warehouse import count_dead_letters
 
 # (source name, table name) pairs. Each must match a package at ingestion/sources/<source>-<table>,
 # with underscores in the table name written as hyphens, and a source table in the dbt project;
@@ -92,24 +90,6 @@ def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
         return dg.MaterializeResult()
 
     return _ingest
-
-
-def count_dead_letters(source_table: str) -> tuple[int, int]:
-    """(pending, parked) dead letters for one raw table. Ingestion creates the table on first run."""
-    schema = os.environ["RAW_SCHEMA"]
-    with closing(connect()) as connection, connection.cursor() as cursor:
-        cursor.execute("select to_regclass(%s)", (f'"{schema}"._dead_letters',))
-        if cursor.fetchone()[0] is None:
-            return 0, 0
-        cursor.execute(
-            sql.SQL(
-                "select count(*) filter (where not parked), count(*) filter (where parked)"
-                " from {}._dead_letters where source_table = %s"
-            ).format(sql.Identifier(schema)),
-            (source_table,),
-        )
-        pending, parked = cursor.fetchone()
-        return pending, parked
 
 
 def build_dead_letter_check(source: str, table: str) -> dg.AssetChecksDefinition:
