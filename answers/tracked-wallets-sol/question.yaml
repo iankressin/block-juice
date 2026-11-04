@@ -1,0 +1,15 @@
+question: How much SOL do the tracked Solana wallets hold in total right now?
+asked: 2026-11-04
+definitions:
+  tracked wallets: The wallets in ingestion/sources/solana-sol-balances/addresses.json
+  SOL: Native SOL only, not SPL tokens or wrapped SOL
+  right now: Each wallet's latest SOL balance reading
+window:
+  chain: solana
+  at: latest
+inputs:
+  - name: sol_balances
+    strategy: state
+    mart: latest_balances
+marts: [latest_balances]
+analyses: [tracked_wallets_sol, tracked_wallets_sol_by_wallet]
