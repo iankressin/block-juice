@@ -59,7 +59,8 @@ def test_adds_a_table_to_an_existing_source(repo, capsys):
     yml = yml_path.read_text()
     assert yml.startswith(yml_before)
     (ethereum,) = yaml.safe_load(yml)["sources"]
-    assert [t["name"] for t in ethereum["tables"]] == ["eth_balances", "erc20_balances", "erc721_holdings"]
+    tables_before = [t["name"] for t in yaml.safe_load(yml_before)["sources"][0]["tables"]]
+    assert [t["name"] for t in ethereum["tables"]] == [*tables_before, "erc721_holdings"]
     assert ethereum["tables"][-1] == {
         "name": "erc721_holdings",
         "identifier": "ethereum_erc721_holdings",

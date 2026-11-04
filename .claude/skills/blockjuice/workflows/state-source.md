@@ -11,8 +11,9 @@ A state source reads values that a view function or RPC method returns at one bl
    It copies the package, renames it, adds the dbt source with a staging stub, and adds the pair to `SOURCES`. Then run `pnpm install` in `ingestion/`.
 
 2. Edit the copied `src/`:
-   - Give each call its block number in the `call` zod schema, so a call retried in a later run reads the same block. Turn a tag such as `finalized` into a number once per run with `resolveBlock`.
-   - Make calls through `settleCalls`. On EVM, `createChain` merges reads at one block into one Multicall3 call. On Solana, use `createSolanaClient`.
+   - Give each call its block number in the `call` zod schema, so a call retried in a later run reads the same block. On EVM, `connect(env)` from `@ingestion/lib/evm` returns the client and `BLOCK_NUMBER` turned into one number for the run.
+   - Make calls through `settleCalls` from `@ingestion/lib`. The EVM client merges reads at one block into one Multicall3 call. On Solana, use `createSolanaClient` from `@ingestion/lib/solana`.
+   - Code that more than one source of a chain needs goes in `ingestion/lib/src/<chain>/`, exported from its `index.ts`.
    - A revert at a pinned block is a fact to record as null, not a failure to retry. Copy `balanceAt` in `ethereum-erc20-balances/src/balances.ts`.
    - Reads at past blocks need an archive RPC. Solana serves current state only, so a Solana call has no block, and the record's id takes the slot from the reply.
 3. Put the addresses to read in `addresses.json`. Copy `.env.example` to `.env`.
