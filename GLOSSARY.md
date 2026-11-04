@@ -50,3 +50,38 @@ _Avoid_: dropped, abandoned
 **Run log**:
 The warehouse's record of every run and its outcome.
 _Avoid_: run history, audit log
+
+### Transformation
+
+**Mart**:
+A dbt model that holds one kind of fact for every chain and asset it covers, built for many questions, not one.
+_Avoid_: report table, output
+
+**Pipeline**:
+The marts in one `models/marts/<pipeline>/` folder and everything upstream of them, run as one Dagster job on one schedule.
+_Avoid_: DAG, workflow
+
+### Answers
+
+**Answer**:
+A folder in `answers/` that holds one question, how it was counted, the result and its reports.
+_Avoid_: study, question folder
+
+**Input**:
+One kind of data an answer needs, read either as state or as history.
+
+**State**:
+Values that a view function or RPC method returns at one block.
+_Avoid_: snapshot
+
+**History**:
+Events, transfers or traces over a range of blocks, rebuilt into values in dbt.
+_Avoid_: backfill (that is the run that loads history)
+
+**Analysis**:
+A dbt analysis that selects one result from marts for one answer. Its first row and column can be the answer's value.
+_Avoid_: query, report
+
+**Check**:
+A test that `bj answer` runs on an answer's inputs before the answer ships. It passes or fails.
+_Avoid_: validation

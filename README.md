@@ -14,6 +14,8 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 
 ```
 .
+├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
+├── answers/<slug>/             # one answer per question: question.yaml, answer.json, answer.md, results/
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
 ├── .env.example                # settings shared by all three tools
 ├── ingestion/                  # pnpm workspace
@@ -34,6 +36,7 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 │               ├── source.ts   # the Source definition
 │               └── index.ts    # entry point: runSource(source)
 ├── transformation/             # dbt project (profiles.yml lives here)
+│   ├── analyses/               # one or more dbt analyses per answer
 │   └── models/
 │       ├── staging/<source>/   # sources yml + stg_ models, one folder per source
 │       ├── intermediate/<pipeline>/
@@ -50,6 +53,7 @@ Each chain reaches `latest_balances` through one model in `transformation/models
     │   ├── definitions.py      # Dagster entry point
     │   ├── project.py          # paths + DbtProject
     │   ├── run_log.py          # adds each dbt build to ops.dbt_invocations and ops.dbt_node_runs
+    │   ├── cli/                # the bj CLI
     │   ├── assets/ingestion.py # one asset per TypeScript source
     │   ├── assets/dbt.py       # every dbt model as an asset
     │   └── schedules.py        # one job and schedule per pipeline
@@ -86,6 +90,32 @@ Each layer also runs alone, with the env vars loaded:
 (cd orchestration && uv run pytest)
 ```
 
+## Ask a question
+
+Open the repo in Claude Code and ask a question about chain data, or type `/bj <question>` (`/blockjuice` also works). The blockjuice skill in `.claude/skills/blockjuice/` scopes the question, finds the marts that hold the data or builds them, writes a dbt analysis, checks the result and writes the answer to `answers/<slug>/`:
+
+- `question.yaml` says what the answer counts and over which data.
+- `answer.json` holds the value, the checks and where the data came from. `bj answer` writes it.
+- `answer.md` is the answer in words.
+- `results/` holds one CSV per analysis.
+- `reports/` holds the PDF and XLSX that `bj report` builds. Git ignores it.
+
+`answers/tracked-wallets-eth/` is an example. The skill reads state through the sources above. It can't yet backfill history (events, transfers or traces over a block range) or explore a protocol it doesn't know.
+
+The skill runs every mechanical step through the `bj` CLI, whose long name is `blockjuice`. It lives in `orchestration/pipeline/cli/` and reads `.env` itself. Run it from the repo root:
+
+```sh
+uv run --project orchestration bj --help
+```
+
+| Command | What it does |
+|---|---|
+| `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters and the last successful run. Exits 1 when a check fails. |
+| `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
+| `bj blocks <chain> <from> [<to>]` | Turns UTC times into the first and last block of the window, on EVM chains. |
+| `bj new-source <source> <table> --like <package>` | Does the three steps of Add a source, starting from a copy of an existing source. |
+| `bj report <slug> [--format xlsx,pdf]` | Builds the answer's reports from `answer.json`, `answer.md` and `results/`. |
+
 ## Monitoring
 
 `docker compose up -d` also starts Prometheus, a Pushgateway, postgres-exporter and Grafana. You can view Grafana without logging in. Sign in as `admin`/`admin` to edit or use Explore.
@@ -113,6 +143,8 @@ To change a dashboard, edit `infra/grafana/build_dashboards.py`, run it, then ch
 Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `console`. It writes JSON lines, and Dagster shows each line as a log event at its own level. In a terminal the lines are pretty-printed. `LOG_LEVEL` sets the level, `info` by default. An unknown level logs a warning and falls back to `info`. `runSource` logs any error as fatal and sets the exit code, so a failed run leaves one log line with the stack, not Node's crash output.
 
 ## Add a source
+
+`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. Then edit the copied `src/`, `addresses.json` and the staging stub. By hand:
 
 1. Copy `ingestion/sources/ethereum-eth-balances/` to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`.
 2. Add `transformation/models/staging/<source>/` with a sources yml and the `stg_` models.
