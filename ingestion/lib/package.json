@@ -14,6 +14,8 @@
   "dependencies": {
     "@prometheus-io/client": "^0.16.1",
     "@solana/kit": "^8.6.0",
+    "@subsquid/pipes": "1.0.0-beta.11",
+    "drizzle-orm": "0.44.7",
     "dotenv": "^18.0.9",
     "pg": "^8.13.0",
     "pino": "^10.4.0",

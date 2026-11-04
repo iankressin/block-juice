@@ -10,6 +10,10 @@ Sources extract wallet balances and other chain data into the warehouse, dbt bui
 A package that reads one kind of data from one origin and fills one raw table.
 _Avoid_: connector, extractor, job
 
+**Stream source**:
+A source that reads blocks in order through a Pipes stream instead of making calls. Each run resumes after its cursor.
+_Avoid_: indexer, pipe
+
 **Call**:
 One request a source makes for data, described well enough to make again in a later run.
 _Avoid_: request, query
@@ -31,6 +35,10 @@ _Avoid_: job, execution
 **Warehouse**:
 The database that holds the raw tables, the dead letters and the run log, and in which dbt builds its models.
 _Avoid_: target, database, DB
+
+**Cursor**:
+The last block a stream source loaded. Pipes keeps it in the warehouse's `_sync` table, saved with the batch it ends.
+_Avoid_: offset, checkpoint
 
 **Raw table**:
 The warehouse table one source fills, which dbt reads as a source.

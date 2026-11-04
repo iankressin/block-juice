@@ -22,8 +22,9 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 │   ├── lib/                    # @ingestion/lib: shared by all sources
 │   │   └── src/
 │   │       ├── index.ts        # public API
-│   │       ├── types.ts        # Source interface
-│   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, the run log
+│   │       ├── types.ts        # Source and StreamSource interfaces
+│   │       ├── portal.ts       # Portal client and finalized head, for stream sources
+│   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, cursors, the run log
 │   │       ├── logger.ts       # the pino logger
 │   │       ├── metrics.ts      # pushes each run's result to the Pushgateway
 │   │       └── run.ts          # runSource(): extract + load, logs, metrics and the run log
@@ -119,6 +120,8 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 3. Add `(source, table)` to `SOURCES` in `orchestration/pipeline/assets/ingestion.py`.
 
 The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
+
+A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. To read a stream source again from its start, delete its rows from `raw._sync`, whose `id` is `<source>_<table>`.
 
 ## Add a pipeline
 
