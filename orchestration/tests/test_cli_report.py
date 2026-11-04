@@ -12,6 +12,8 @@ import docx
 import httplib2
 import openpyxl
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from docx.table import Table
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
@@ -525,7 +527,7 @@ def test_gdoc_creates_a_new_doc_when_the_recorded_one_is_gone(answered, drive, c
     [
         ({}, "In a Google Cloud project, enable the Google Drive API, create an OAuth client ID of type Desktop app"),
         ({"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json"}, "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json, which does not exist"),
-        ({"GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"}, "GOOGLE_APPLICATION_CREDENTIALS: File /missing/key.json was not found"),
+        ({"GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"}, "GOOGLE_APPLICATION_CREDENTIALS is /missing/key.json, which does not exist"),
         (
             {"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json", "GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"},
             "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json",
@@ -542,6 +544,38 @@ def test_gdoc_without_usable_credentials_exits_2_and_writes_nothing(answered, mo
     assert main(["report", "top-wallets", "--format", "docx,gdoc"]) == 2
     assert message in capsys.readouterr().err
     assert not (folder / "reports").exists()
+
+
+def test_gdoc_takes_only_a_service_account_key_from_google_application_credentials(tmp_path, monkeypatch):
+    pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    )
+    key = tmp_path / "key.json"
+    key.write_text(
+        json.dumps(
+            {
+                "type": "service_account",
+                "project_id": "project-1",
+                "private_key_id": "key-1",
+                "private_key": pem.decode(),
+                "client_email": "bj@project-1.iam.gserviceaccount.com",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        )
+    )
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
+    built = []
+    monkeypatch.setattr(gdoc, "build", lambda *args, credentials, **kwargs: built.append(credentials))
+    gdoc.connect()
+    assert [(c.service_account_email, c.scopes) for c in built] == [("bj@project-1.iam.gserviceaccount.com", gdoc.SCOPES)]
+
+    # What `gcloud auth application-default login` writes: a user's credentials, not a service account key.
+    key.write_text(
+        json.dumps({"type": "authorized_user", "client_id": "client-1", "client_secret": "secret", "refresh_token": "refresh-1"})
+    )
+    with pytest.raises(BadInput, match="GOOGLE_APPLICATION_CREDENTIALS is not a service account key"):
+        gdoc.connect()
 
 
 def google_token(token, expires_in):

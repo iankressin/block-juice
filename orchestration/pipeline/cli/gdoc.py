@@ -6,9 +6,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from google.auth import load_credentials_from_file
-from google.auth.exceptions import DefaultCredentialsError, RefreshError
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -59,10 +59,12 @@ def connect() -> Any:
     if client_secret := os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"):
         credentials = user_credentials(Path(client_secret).expanduser())
     elif key := os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        if not Path(key).is_file():
+            raise BadInput(f"GOOGLE_APPLICATION_CREDENTIALS is {key}, which does not exist")
         try:
-            credentials, _ = load_credentials_from_file(key, scopes=SCOPES)
-        except DefaultCredentialsError as error:
-            raise BadInput(f"GOOGLE_APPLICATION_CREDENTIALS: {error}") from None
+            credentials = service_account.Credentials.from_service_account_file(key, scopes=SCOPES)
+        except ValueError as error:
+            raise BadInput(f"GOOGLE_APPLICATION_CREDENTIALS is not a service account key: {error}") from None
     else:
         raise BadInput(SETUP)
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
