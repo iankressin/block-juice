@@ -10,6 +10,8 @@ Data flow: a TypeScript source writes raw JSON rows into `raw.<source>_<table>`.
 
 Five sources read wallet balances: ETH, ERC-20 tokens, SOL, SPL tokens and BTC. The Ethereum sources read at `BLOCK_NUMBER`: a block number, or `latest`, `safe` or `finalized`, which each run turns into a number once at the start. A Solana RPC serves only current state, so the Solana sources read at the latest finalized slot, and each run adds a new reading, keyed by the slot it read. The Bitcoin source reads every wallet with one `scantxoutset` call through Dshackle, which scans the UTXO set at the chain tip in about a minute. Only the OnFinality upstream serves that call. Each run adds a new reading, keyed by the height it read. `analytics.latest_balances` holds each wallet's latest balance of each asset on all three chains, in the asset's base units (satoshis for BTC). On Solana its `block_number` is the slot.
 
+Each chain reaches `latest_balances` through one model in `transformation/models/intermediate/balances/`, `int_<chain>_balances`, which puts the chain's rows in the shape the mart reads: `chain`, `wallet`, `asset_type`, `asset`, `block_number` and `balance`, with no null balance. The mart only stacks these models and keeps each wallet's latest reading of each asset. To add a chain, add its model, one `union all` branch in `latest_balances.sql`, and the chain to the mart's `accepted_values`.
+
 ```
 .
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here

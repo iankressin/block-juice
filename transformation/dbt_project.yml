@@ -17,5 +17,8 @@ models:
       +materialized: view
     intermediate:
       +materialized: ephemeral
+      # Views, not ephemeral, so each chain's rows show up as their own step in Dagster.
+      balances:
+        +materialized: view
     marts:
       +materialized: table

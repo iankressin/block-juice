@@ -25,20 +25,23 @@ def test_ingestion_assets_have_dead_letter_check(source, table):
     assert check in defs.resolve_asset_graph().asset_check_keys
 
 
-def test_mart_reads_every_chain():
+def test_mart_reads_each_chain_through_its_intermediate_model():
     graph = defs.resolve_asset_graph()
     assert graph.get(dg.AssetKey("latest_balances")).parent_keys == {
-        dg.AssetKey("int_ethereum_balances_unioned"),
-        dg.AssetKey("int_solana_balances_unioned"),
-        dg.AssetKey("stg_bitcoin__btc_balances"),
+        dg.AssetKey("int_ethereum_balances"),
+        dg.AssetKey("int_solana_balances"),
+        dg.AssetKey("int_bitcoin_balances"),
     }
-    assert graph.get(dg.AssetKey("int_ethereum_balances_unioned")).parent_keys == {
+    assert graph.get(dg.AssetKey("int_ethereum_balances")).parent_keys == {
         dg.AssetKey("stg_ethereum__eth_balances"),
         dg.AssetKey("stg_ethereum__erc20_balances"),
     }
-    assert graph.get(dg.AssetKey("int_solana_balances_unioned")).parent_keys == {
+    assert graph.get(dg.AssetKey("int_solana_balances")).parent_keys == {
         dg.AssetKey("stg_solana__sol_balances"),
         dg.AssetKey("stg_solana__spl_balances"),
+    }
+    assert graph.get(dg.AssetKey("int_bitcoin_balances")).parent_keys == {
+        dg.AssetKey("stg_bitcoin__btc_balances"),
     }
 
 

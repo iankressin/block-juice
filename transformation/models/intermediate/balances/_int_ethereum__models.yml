@@ -1,8 +1,8 @@
 version: 2
 
 models:
-  - name: int_ethereum_balances_unioned
-    description: ETH and ERC-20 balances in one shape. `asset` is 'eth' or the token address.
+  - name: int_ethereum_balances
+    description: ETH and ERC-20 balances in the shape latest_balances reads. `asset` is 'eth' or the token address.
     columns:
       - name: id
         data_tests: [unique, not_null]
@@ -12,4 +12,6 @@ models:
               arguments:
                 values: [native, erc20]
       - name: asset
+        data_tests: [not_null]
+      - name: balance
         data_tests: [not_null]
