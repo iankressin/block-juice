@@ -109,7 +109,9 @@ def test_headline_is_the_first_analysis_single_cell():
 
 
 def test_dbt_tests_pass_unless_a_test_fails_or_errors():
-    assert dbt_tests_check([("a", "pass"), ("b", "warn")]) == Check("dbt_tests", True, "1 passed, 1 warned")
+    assert dbt_tests_check([("a", "pass"), ("c", "warn"), ("b", "warn")]) == Check(
+        "dbt_tests", True, "1 passed, 2 warned: b, c"
+    )
     assert dbt_tests_check([("z", "fail"), ("a", "pass"), ("m", "error")]) == Check(
         "dbt_tests", False, "1 passed, 2 failed: m, z"
     )
