@@ -12,11 +12,12 @@ import httplib2
 import openpyxl
 import pytest
 from docx.table import Table
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 
-from pipeline.cli import BadInput, main
+from pipeline.cli import BadInput, gdoc, main
 from pipeline.cli.report import cell_value, run
 
 BALANCE = "1234567890123456789012345"
@@ -316,26 +317,29 @@ def test_cells_become_numbers_only_when_a_float_holds_them_exactly(text, value):
     assert type(cell_value(text)) is type(value)
 
 
-def drive_error(status):
-    return HttpError(httplib2.Response({"status": str(status)}), b'{"error": {"message": "refused"}}')
+def drive_error(status, message="refused"):
+    return HttpError(httplib2.Response({"status": str(status)}), json.dumps({"error": {"message": message}}).encode())
 
 
 class FakeDrive:
-    """The files() part of a Drive v3 client, keeping each Doc in memory with the DOCX uploaded to it."""
+    """The files() part of a Drive v3 client, keeping each Doc in memory with the DOCX uploaded to it. It records
+    each request as (method, options), and the execute of a request whose method is in fail raises that error."""
 
     def __init__(self):
         self.docs = {}
-        self.refuse = None
+        self.fail = {}
+        self.calls = []
 
     def files(self):
         return self
 
-    @staticmethod
-    def respond(result):
+    def request(self, method, options, result):
+        self.calls.append((method, options))
+
         def execute():
-            if isinstance(result, Exception):
-                raise result
-            return result
+            if method in self.fail:
+                raise self.fail[method]
+            return result()
 
         return SimpleNamespace(execute=execute)
 
@@ -343,20 +347,27 @@ class FakeDrive:
         return {"id": doc_id, "webViewLink": f"https://docs.google.com/document/d/{doc_id}/edit"}
 
     def get(self, fileId, fields, **options):
-        if fileId not in self.docs:
-            return self.respond(drive_error(404))
-        return self.respond({"trashed": self.docs[fileId]["trashed"]})
+        def trashed():
+            if fileId not in self.docs:
+                raise drive_error(404)
+            return {"trashed": self.docs[fileId]["trashed"]}
+
+        return self.request("get", options, trashed)
 
     def create(self, body, media_body, **options):
-        if self.refuse:
-            return self.respond(drive_error(self.refuse))
-        doc_id = f"doc-{len(self.docs) + 1}"
-        self.docs[doc_id] = {**body, "trashed": False, "upload": media_body}
-        return self.respond(self.link(doc_id))
+        def add():
+            doc_id = f"doc-{len(self.docs) + 1}"
+            self.docs[doc_id] = {**body, "trashed": False, "upload": media_body}
+            return self.link(doc_id)
+
+        return self.request("create", options, add)
 
     def update(self, fileId, media_body, **options):
-        self.docs[fileId]["upload"] = media_body
-        return self.respond(self.link(fileId))
+        def upload():
+            self.docs[fileId]["upload"] = media_body
+            return self.link(fileId)
+
+        return self.request("update", options, upload)
 
 
 def uploaded_text(doc):
@@ -394,6 +405,30 @@ def test_gdoc_creates_a_doc_then_updates_the_same_doc(answered, drive, monkeypat
     assert "A second answer." in uploaded_text(drive.docs["doc-1"])
     assert json.loads(record.read_text()) == {"id": "doc-1", "url": url}
     assert capsys.readouterr().out == f"updated {url}\n"
+    assert [(method, options.get("supportsAllDrives")) for method, options in drive.calls] == [
+        ("create", True),
+        ("get", True),
+        ("update", True),
+    ]
+
+
+@pytest.mark.parametrize(
+    "error", [pytest.param(drive_error(500), id="500"), pytest.param(drive_error(403, "Rate Limit Exceeded"), id="rate-limit")]
+)
+def test_gdoc_exits_2_without_a_new_doc_when_drive_cannot_say_whether_it_has_the_doc(answered, drive, monkeypatch, capsys, error):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    (folder / "reports").mkdir()
+    record = folder / "reports" / "top-wallets.gdoc.json"
+    record.write_text(json.dumps({"id": "doc-1", "url": "https://docs.google.com/document/d/doc-1/edit"}))
+    drive.docs["doc-1"] = {"trashed": False}
+    drive.fail = {"get": error}
+
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    assert f"Google Drive refused the upload: {error.status_code} {error.reason}" in capsys.readouterr().err
+    assert [method for method, _ in drive.calls] == ["get"]
+    assert list(drive.docs) == ["doc-1"]
+    assert json.loads(record.read_text())["id"] == "doc-1"
 
 
 @pytest.mark.parametrize("gone", ["deleted", "trashed"])
@@ -439,9 +474,23 @@ def test_gdoc_without_usable_credentials_exits_2_and_writes_nothing(answered, mo
     assert not (folder / "reports").exists()
 
 
-def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
-    from pipeline.cli import gdoc
+def google_token(token, expires_in):
+    """User credentials holding token, which expires expires_in from now."""
+    return Credentials(
+        token=token,
+        refresh_token="refresh-1",
+        client_id="client-1",
+        client_secret="secret",
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=gdoc.SCOPES,
+        expiry=datetime.now(timezone.utc).replace(tzinfo=None) + expires_in,
+    )
 
+
+@pytest.fixture
+def consents(tmp_path, monkeypatch):
+    """A Desktop app client in GOOGLE_OAUTH_CLIENT_SECRET and a token cache under tmp_path. The consent step
+    grants token-1 for an hour, and the list it returns gets the client id of each consent."""
     client = tmp_path / "client.json"
     client.write_text(
         json.dumps(
@@ -458,21 +507,22 @@ def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", str(client))
     monkeypatch.setattr(gdoc, "TOKEN", tmp_path / "blockjuice" / "google-token.json")
-    consents = []
+    granted = []
 
     def consent(flow, port):
-        consents.append(flow.client_config["client_id"])
-        return Credentials(
-            token="token-1",
-            refresh_token="refresh-1",
-            client_id="client-1",
-            client_secret="secret",
-            token_uri="https://oauth2.googleapis.com/token",
-            scopes=gdoc.SCOPES,
-            expiry=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1),
-        )
+        granted.append(flow.client_config["client_id"])
+        return google_token("token-1", timedelta(hours=1))
 
     monkeypatch.setattr(InstalledAppFlow, "run_local_server", consent)
+    return granted
+
+
+def cache_token(token, expires_in):
+    gdoc.TOKEN.parent.mkdir(parents=True, exist_ok=True)
+    gdoc.TOKEN.write_text(google_token(token, expires_in).to_json())
+
+
+def test_gdoc_asks_for_consent_once_and_caches_the_token(consents):
     gdoc.connect()
     gdoc.connect()
     assert consents == ["client-1"]
@@ -480,10 +530,35 @@ def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
     assert gdoc.TOKEN.stat().st_mode & 0o777 == 0o600
 
 
+def test_gdoc_refreshes_an_expired_token_without_asking_again(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=-1))
+
+    def refresh(credentials, request):
+        credentials.token = "token-2"
+        credentials.expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
+
+    monkeypatch.setattr(Credentials, "refresh", refresh)
+    gdoc.connect()
+    assert consents == []
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-2"
+
+
+def test_gdoc_asks_for_consent_again_when_google_refuses_the_refresh(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=-1))
+
+    def refuse(credentials, request):
+        raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+    monkeypatch.setattr(Credentials, "refresh", refuse)
+    gdoc.connect()
+    assert consents == ["client-1"]
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-1"
+
+
 def test_gdoc_exits_2_when_drive_refuses_the_upload(answered, drive, monkeypatch, capsys):
     root, folder = answered
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
-    drive.refuse = 403
+    drive.fail = {"create": drive_error(403)}
     assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
     assert "Google Drive refused the upload: 403 refused" in capsys.readouterr().err
     assert not (folder / "reports" / "top-wallets.gdoc.json").exists()
