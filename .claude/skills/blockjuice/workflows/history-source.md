@@ -27,11 +27,13 @@ When a source already reads the right events:
 
 1. Find the events in the protocol's catalog entry, `catalog/protocols/<name>/`. With no entry, follow [explore-protocol.md](explore-protocol.md) first.
 2. Estimate the load before you build: count the matching logs over a short stretch of the window with the Portal MCP (`portal_evm_query_logs`), scale it, and call it an estimate, since a thin sample can be far off. Put it in front of the user with the definitions, per [answer.md](answer.md).
-3. Scaffold from the transfers source:
+3. Build one source per protocol version, each with its own raw table, per [../references/layers.md](../references/layers.md). A question over Uniswap v2, v3 and v4 needs three sources: `ethereum-uniswap-v2`, `ethereum-uniswap-v3` and `ethereum-uniswap-v4`. Scaffold each from the transfers source:
 
    ```sh
-   uv run --project orchestration bj new-source <chain> <table> --like ethereum-erc20-transfers
+   uv run --project orchestration bj new-source ethereum uniswap_v3 --like ethereum-erc20-transfers
    ```
+
+   That makes the package `ethereum-uniswap-v3` and the raw table `raw.ethereum_uniswap_v3`, which holds every event of that version the question needs, such as its pool creations and its swaps.
 
 4. Edit the copied `src/source.ts`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is one log as emitted, with its ABI-decoded arguments and the transaction fields the models need, such as `tx.from`.
    - Read `[START_BLOCK, finalizedHead(portal)]` through `portalClient`, so each run ends at Portal's finalized head and no fork reaches the warehouse.
@@ -40,7 +42,7 @@ When a source already reads the right events:
    - For contracts a factory creates, such as Uniswap pools, follow the children with Pipes' factory pattern inside the stream. Never read another source's raw table to find them.
    - Put addresses in `addresses.json`, and set `START_BLOCK` in `.env.example` to the window's first block or the contract's deployment block.
    - Leave out sign rules, joins, buy or sell, units and prices. They go in dbt.
-5. Cast the fields in the staging model. Put every rule from the catalog's `NOTES.md` in an intermediate model, with a dbt unit test per rule built from a proof log. Add the mart in a pipeline ([new-pipeline.md](new-pipeline.md)), with `unique` and `not_null` tests on the id.
+5. Cast the fields in one staging model per source. Put each version's rules from the catalog's `NOTES.md` in that version's intermediate model, with a dbt unit test per rule built from a proof log. A mart that needs every version unions those models. Add the mart in a pipeline ([new-pipeline.md](new-pipeline.md)), with `unique` and `not_null` tests on the id.
 6. When a view function returns the value the events rebuild, add a reconciliation test like `transformation/tests/erc20_transfers_match_balances.sql`. It reads what the source has loaded from `var('coverage')`, which `bj answer` passes, and compares the rebuilt value with state readings inside the loaded blocks.
 7. Check it on a short window first: set `START_BLOCK` in the package's `.env` a few thousand blocks before a recent block, run it, and compare its rows with an independent Portal count of the same blocks and filter. Then set the real `START_BLOCK`, load with `bj run <pipeline>`, and check `bj coverage`.
 

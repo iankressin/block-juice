@@ -4,7 +4,7 @@ Write the protocol's catalog entry before any source reads it. `catalog/protocol
 
 ## The entry
 
-- `protocol.yaml`: the docs you read, each contract per chain with its address, deploy block and how you confirmed it, and each event with what emits it, its full signature, its topic0 and its ABI file.
+- `protocol.yaml`: the docs you read, each contract per chain with its address, deploy block and how you confirmed it, and each event with what emits it, its full signature, its topic0 and its ABI file. Key events by version, as `v3.Swap`: each version becomes its own source and raw table later, per [../references/layers.md](../references/layers.md).
 - `abis/`: event ABIs only.
 - `NOTES.md`: what each field means, sign conventions, how the actors (`sender`, `recipient`, `tx.from`) relate, how to find every contract or pool that involves a given token, the readings of the question's words that the data can and cannot tell apart, and a proof table with one real log per event.
 

@@ -6,6 +6,7 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 
 `ingestion/sources/<package>/`, in TypeScript.
 
+- One source and one raw table per contract system: one version of one protocol on one chain, such as Uniswap v3 on Ethereum. Never load two versions or two protocols into one table, even when their events look alike, since each version's schema and rules change on their own. Name the package `<chain>-<protocol>-<version>`, such as `ethereum-uniswap-v3`.
 - Fetch data as the chain returns it: logs with their ABI-decoded arguments, the transaction fields a log needs (such as `tx.from`), and state call results at a pinned block.
 - Decide what to fetch, and only that: the block range, the contracts, the events, filters on indexed parameters, and the children a factory creates through Pipes' factory pattern.
 - Key each record by its place in the chain, such as `<block>:<logIndex>`, so a rerun writes the same row.
@@ -23,11 +24,11 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 
 ## Intermediate
 
-`transformation/models/intermediate/<pipeline>/`. Joins and rules live here: swaps joined to their pools, sign conventions, buy or sell, token in and out, deduplication, units. Test each rule with a dbt unit test built from a real log in the protocol's catalog `NOTES.md`.
+`transformation/models/intermediate/<pipeline>/`. Joins and rules live here: swaps joined to their pools, sign conventions, buy or sell, token in and out, deduplication, units. Each version gets its own model with its own rules, such as `int_uniswap_v3_trades`, which brings its rows into the mart's shape. Test each rule with a dbt unit test built from a real log in the protocol's catalog `NOTES.md`.
 
 ## Marts
 
-`transformation/models/marts/<pipeline>/`. Facts that many questions reuse, such as one row per trade or per balance reading, with tests on the grain. Reconciliation tests, which compare rebuilt values with state reads, go in `transformation/tests/`.
+`transformation/models/marts/<pipeline>/`. Facts that many questions reuse, such as one row per trade or per balance reading, with tests on the grain. A mart that covers several versions or protocols unions their intermediate models, with a column naming each row's version. Reconciliation tests, which compare rebuilt values with state reads, go in `transformation/tests/`.
 
 ## Analyses and answers
 
@@ -37,11 +38,12 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 
 | Work | Layer |
 |---|---|
-| Which contracts, blocks and events to fetch | ingestion |
+| Which contracts, blocks and events to fetch | ingestion, one source per protocol version |
 | Decoding a log with its ABI | ingestion |
 | A log's transaction sender | ingestion |
 | Casting a field, lowercasing an address | staging |
 | Joining swaps to pools, finding a pool's tokens | intermediate |
-| Sign rules, buy or sell, token in and out | intermediate |
+| Sign rules, buy or sell, token in and out | intermediate, one model per version |
+| Putting v2, v3 and v4 trades side by side | mart, as a union of the version models |
 | Decimals, USD values | intermediate or mart |
 | One question's filter, window and count | analysis |
