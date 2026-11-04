@@ -31,8 +31,7 @@ A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it
 │   │       ├── solana/         # @ingestion/lib/solana: env, addresses, client
 │   │       ├── bitcoin/        # @ingestion/lib/bitcoin: env, addresses, client
 │   │       ├── logger.ts       # the pino logger
-│   │       ├── metrics.ts      # pushes each run's result to the Pushgateway
-│   │       └── run.ts          # runSource(): extract + load, logs, metrics and the run log
+│   │       └── run/            # runSource(): extract + load, logs, the run report and its metrics
 │   └── sources/
 │       └── <source>/           # @ingestion/<source>: one package per source
 │           ├── package.json    # `ingest` script, depends on @ingestion/lib

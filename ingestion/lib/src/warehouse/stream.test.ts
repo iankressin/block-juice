@@ -7,7 +7,7 @@ import { mockPortal } from "@subsquid/pipes/testing";
 import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import { erc20Abi } from "viem";
 import * as z from "zod";
-import { runSource } from "#src/run.ts";
+import { runSource } from "#src/run/index.ts";
 import type { StreamSource } from "#src/types.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 

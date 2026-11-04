@@ -2,7 +2,7 @@ import { Gauge, Pushgateway, Registry } from "@prometheus-io/client";
 import * as z from "zod";
 import { loadEnv } from "#src/env.ts";
 import type { Logger } from "#src/logger.ts";
-import type { RunReport } from "#src/types.ts";
+import type { RunReport } from "#src/run/index.ts";
 
 /**
  * A source runs as a short job, so Prometheus cannot scrape it. Each run pushes these

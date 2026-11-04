@@ -4,8 +4,18 @@ import * as z from "zod";
 import { chunk, uniqueBy } from "#src/calls.ts";
 import { loadEnv } from "#src/env.ts";
 import type { Logger } from "#src/logger.ts";
-import type { Batch, DeadLetterBacklog, RunReport } from "#src/types.ts";
+import type { RunReport } from "#src/run/index.ts";
+import type { Batch } from "#src/types.ts";
 import { pipesTarget, type PipesTargetOptions } from "#src/warehouse/stream.ts";
+
+/**
+ * Pending dead letters are retried next run. Parked ones failed too often, or no longer match
+ * the source's call schema, and wait for a person.
+ */
+export type DeadLetterBacklog = {
+  pending: number;
+  parked: number;
+};
 
 /** What the warehouse needs from a connection: a pg client in production, PGlite in tests. */
 export type Connection = {

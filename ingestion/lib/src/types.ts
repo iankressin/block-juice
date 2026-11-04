@@ -58,32 +58,3 @@ export interface StreamSource<E> extends SourceBase<E> {
   maxBlocksPerRun?: number;
   stream(env: E): Promise<PortalStream<any, StreamRecords>>;
 }
-
-/**
- * Pending dead letters are retried next run. Parked ones failed too often, or no longer match
- * the source's call schema, and wait for a person.
- */
-export type DeadLetterBacklog = {
-  pending: number;
-  parked: number;
-};
-
-/** What runSource reports when a run ends, to the Pushgateway and to ops.ingestion_runs. */
-export type RunReport = {
-  runId: string;
-  /** Set when Dagster started the run. */
-  dagsterRunId: string | undefined;
-  source: string;
-  table: string;
-  startedAt: Date;
-  finishedAt: Date;
-  /** Undefined when the run succeeded. */
-  error: string | undefined;
-  retriedCalls: number;
-  recordsWritten: number;
-  failedCalls: number;
-  /** Time spent writing records and dead letters to the warehouse. The rest went to extraction. */
-  loadSeconds: number;
-  /** Undefined when the run failed before it counted its dead letters. */
-  backlog: DeadLetterBacklog | undefined;
-};
