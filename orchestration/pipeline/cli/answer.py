@@ -6,7 +6,7 @@ import math
 import shutil
 import subprocess
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
@@ -18,8 +18,9 @@ import psycopg2
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
-from pipeline.cli import BadInput, require_env, utc_iso
-from pipeline.cli.question import Question, load_question
+from pipeline.cli import BadInput, coverage, require_env, utc_iso
+from pipeline.cli.coverage import Coverage
+from pipeline.cli.question import Question, SourceInput, load_question
 from pipeline.warehouse import connect, count_dead_letters
 
 # dbt's own logs and usage stats are off: the summary reports what matters, and the stats call the network.
@@ -148,6 +149,39 @@ def freshness_check(last_runs: dict[Input, LastRun | None]) -> Check:
         for i, run in last_runs.items()
     )
     return Check("freshness", all(last_runs.values()), detail or "no inputs")
+
+
+def stream_inputs(question: Question, inputs: Iterable[Input], streams: Collection[str]) -> list[SourceInput]:
+    """The question's inputs that read a stream source. Every stream source the analyses read needs one,
+    so its filter is on record, and the question then needs window.blocks."""
+    label = f"answers/{question.slug}/question.yaml"
+    declared = [i for i in question.sources if i.source in streams]
+    named = {i.source for i in declared}
+    for read in inputs:
+        if read.name in streams and read.name not in named:
+            raise BadInput(
+                f"{label}: the analyses read the stream source {read.name}; "
+                f"add an input with source: {read.name} and the filter it needs"
+            )
+    if declared and question.blocks is None:
+        raise BadInput(f"{label}: inputs read the stream source {', '.join(sorted(named))}, so set window.blocks: [from, to]")
+    return declared
+
+
+def coverage_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage], blocks: tuple[int, int]) -> Check:
+    """Passed when each stream input's source has loaded every block of the window, for the addresses its filter names."""
+    details, passed = [], True
+    for i in inputs:
+        loaded = coverages[i.source]
+        span = f"loaded {loaded.start_block}-{loaded.cursor}" if loaded.cursor is not None else "nothing loaded"
+        gaps = loaded.gaps(blocks, i.filter)
+        passed = passed and not gaps
+        details.append(
+            f"{i.source} ({span}): {', '.join(gaps)}"
+            if gaps
+            else f"{i.source} ({span}) covers blocks {blocks[0]}-{blocks[1]} and the filter"
+        )
+    return Check("coverage", passed, "; ".join(details))
 
 
 def answer_document(
@@ -299,9 +333,13 @@ def run(repo_root: Path, slug: str) -> int:
     project = repo_root / "transformation"
     manifest, analysis_ids = compile_analyses(project, question.analyses)
     inputs = upstream_inputs(manifest, analysis_ids)
+    streams = stream_inputs(question, inputs, coverage.stream_sources(repo_root))
+    coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
     tests = run_dbt_tests(project, question.analyses)
     results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)
     checks = [tests, dead_letters_check(dead_letters), freshness_check(last_runs)]
+    if streams:
+        checks.append(coverage_check(streams, coverages, question.blocks))
     document = answer_document(
         question, datetime.now(timezone.utc), results, dead_letters, last_runs, checks, provenance(repo_root)
     )

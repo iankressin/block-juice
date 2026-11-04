@@ -1,5 +1,6 @@
 import csv
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -22,11 +23,16 @@ from pipeline.cli.answer import (
     upstream_inputs,
     write_answer,
 )
-from pipeline.cli.question import load_question
+from pipeline.cli.coverage import Coverage
+from pipeline.cli.question import SourceInput, load_question
 
 WEI = Decimal(131322925334691899062636)
 ETH = Input("ethereum", "eth_balances", "raw.ethereum_eth_balances")
 SOL = Input("solana", "sol_balances", "raw.solana_sol_balances")
+TRANSFERS = "ethereum.erc20_transfers"
+WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
+USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+LOADED = Coverage("ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", 180, {"wallets": [WALLET], "tokens": [USDC]})
 
 
 def source(name, table):
@@ -38,6 +44,7 @@ MANIFEST = {
         "source.t.ethereum.eth_balances": source("ethereum", "eth_balances"),
         "source.t.solana.sol_balances": source("solana", "sol_balances"),
         "source.t.bitcoin.btc_balances": source("bitcoin", "btc_balances"),
+        "source.t.ethereum.erc20_transfers": source("ethereum", "erc20_transfers"),
     },
     "nodes": {
         "analysis.t.holders": {"depends_on": {"nodes": ["model.t.latest", "model.t.stg_eth"]}},
@@ -48,6 +55,7 @@ MANIFEST = {
         "model.t.stg_sol": {"depends_on": {"nodes": ["source.t.solana.sol_balances"]}},
         "seed.t.labels": {"depends_on": {"nodes": []}},
         "model.t.stg_btc": {"depends_on": {"nodes": ["source.t.bitcoin.btc_balances"]}},
+        "analysis.t.flows": {"depends_on": {"nodes": ["source.t.ethereum.erc20_transfers"]}},
     },
 }
 
@@ -211,6 +219,8 @@ def offline(monkeypatch):
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
     monkeypatch.setattr(answer, "run_dbt_tests", lambda project, names: Check("dbt_tests", True, "3 passed"))
     monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
+    monkeypatch.setattr(answer.coverage, "stream_sources", lambda root: [TRANSFERS])
+    monkeypatch.setattr(answer.coverage, "read", lambda root, name: {TRANSFERS: LOADED}[name])
     finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
 
     def read_warehouse(manifest, analysis_ids, inputs, parked=0):
@@ -254,3 +264,64 @@ def test_missing_settings_are_bad_input_before_any_write(tmp_path, offline, monk
     with pytest.raises(BadInput, match="set RAW_SCHEMA in .env"):
         answer.run(tmp_path, "eth-total")
     assert sorted(p.name for p in folder.iterdir()) == ["question.yaml"]
+
+
+@pytest.fixture
+def history(tmp_path, offline, monkeypatch):
+    """Answers a question whose analysis reads the stream source, which loaded blocks 100 to 180."""
+    offline(parked=0)
+    monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.flows"]))
+
+    def ask(window, inputs):
+        folder = tmp_path / "answers" / "usdc-flows"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "question.yaml").write_text(f"question: How much USDC moved?\nwindow: {window}\ninputs: {inputs}\n")
+        code = answer.run(tmp_path, "usdc-flows")
+        checks = json.loads((folder / "answer.json").read_text())["checks"]
+        return code, {c["name"]: (c["status"], c["detail"]) for c in checks}
+
+    return ask
+
+
+USDC_FLOWS = f'[{{source: {TRANSFERS}, filter: {{tokens: ["{USDC.lower()}"]}}}}]'
+
+
+def test_coverage_passes_when_the_source_loaded_the_blocks_and_the_filter(history):
+    code, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
+    assert code == 0
+    assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
+
+
+def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):
+    code, checks = history("{blocks: [100, 181]}", USDC_FLOWS)
+    assert code == 1
+    assert checks["coverage"] == ("failed", "ethereum.erc20_transfers (loaded 100-180): cursor 180 is before 181")
+    assert "coverage: FAILED" in capsys.readouterr().out
+
+
+def test_coverage_fails_naming_a_filter_address_the_source_did_not_load(history):
+    code, checks = history("{blocks: [120, 150]}", f'[{{source: {TRANSFERS}, filter: {{wallets: ["0xdead"]}}}}]')
+    assert code == 1
+    assert checks["coverage"] == ("failed", "ethereum.erc20_transfers (loaded 100-180): wallets not in addresses.json: 0xdead")
+
+
+def test_coverage_reports_a_source_that_has_loaded_nothing():
+    check = answer.coverage_check([SourceInput(TRANSFERS, {})], {TRANSFERS: replace(LOADED, cursor=None)}, (100, 100))
+    assert check == Check("coverage", False, "ethereum.erc20_transfers (nothing loaded): no run has saved a cursor")
+
+
+def test_a_stream_source_the_question_does_not_name_is_bad_input(history):
+    with pytest.raises(BadInput, match="read the stream source ethereum.erc20_transfers; add an input with source: ethereum"):
+        history("{blocks: [100, 180]}", "[{name: transfers, mart: erc20_transfers}]")
+
+
+def test_an_input_naming_a_source_that_is_not_a_stream_source_gets_no_coverage_check(tmp_path, offline):
+    folder = write_question(tmp_path, extra='inputs: [{source: ethereum.eth_balances, filter: {wallets: ["0xdead"]}}]\n')
+    offline(parked=0)
+    assert answer.run(tmp_path, "eth-total") == 0
+    assert "coverage" not in [c["name"] for c in json.loads((folder / "answer.json").read_text())["checks"]]
+
+
+def test_a_stream_input_needs_window_blocks(history):
+    with pytest.raises(BadInput, match="inputs read the stream source ethereum.erc20_transfers, so set window.blocks"):
+        history("{chain: ethereum}", USDC_FLOWS)
