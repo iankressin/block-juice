@@ -35,7 +35,7 @@ When a source already reads the right events:
 
    That makes the package `ethereum-uniswap-v3` and the raw table `raw.ethereum_uniswap_v3`, which holds every event of that version the question needs, such as its pool creations and its swaps.
 
-4. Edit the copied `src/source.ts`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is one log as emitted, with its ABI-decoded arguments and the transaction fields the models need, such as `tx.from`.
+4. Edit the copied `src/source.ts`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is one item as Portal returns it, a log with its ABI-decoded arguments, or a transaction the logs came from, keyed by its hash. Give each record a `kind`, `log` or `transaction`, and never copy a transaction's fields into a log.
    - Read `[START_BLOCK, finalizedHead(portal)]` through `portalClient`, so each run ends at Portal's finalized head and no fork reaches the warehouse.
    - Key each record by its place in the chain, `<block>:<logIndex>`, so a rerun or an overlap writes the same row.
    - One `evmEventDecoder` per filter, since Pipes refuses two filters on the same event in one decoder.

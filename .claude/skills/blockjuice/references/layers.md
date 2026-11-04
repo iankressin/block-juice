@@ -7,7 +7,8 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 `ingestion/sources/<package>/`, in TypeScript.
 
 - One source and one raw table per contract system: one version of one protocol on one chain, such as Uniswap v3 on Ethereum. Never load two versions or two protocols into one table, even when their events look alike, since each version's schema and rules change on their own. Name the package `<chain>-<protocol>-<version>`, such as `ethereum-uniswap-v3`.
-- Fetch data as the chain returns it: logs with their ABI-decoded arguments, the transaction fields a log needs (such as `tx.from`), and state call results at a pinned block.
+- Fetch data as the chain returns it. Each record is one item Portal or the RPC returns: a log with its ABI-decoded arguments, a transaction, a trace, or a state call's result at a pinned block.
+- Never combine items in a source. When the models need a log's transaction, such as its `tx.from`, write the transactions as records of their own, keyed by hash, and join them in dbt.
 - Decide what to fetch, and only that: the block range, the contracts, the events, filters on indexed parameters, and the children a factory creates through Pipes' factory pattern.
 - Key each record by its place in the chain, such as `<block>:<logIndex>`, so a rerun writes the same row.
 - Read only the source's own inputs (its `.env`, its `addresses.json`) and the chain. Never read another source's raw table or a dbt model.
@@ -40,7 +41,8 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 |---|---|
 | Which contracts, blocks and events to fetch | ingestion, one source per protocol version |
 | Decoding a log with its ABI | ingestion |
-| A log's transaction sender | ingestion |
+| Loading the transactions that logs came from | ingestion, as their own records |
+| Joining a log to its transaction, such as for `tx.from` | staging or intermediate |
 | Casting a field, lowercasing an address | staging |
 | Joining swaps to pools, finding a pool's tokens | intermediate |
 | Sign rules, buy or sell, token in and out | intermediate, one model per version |
