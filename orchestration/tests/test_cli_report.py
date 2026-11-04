@@ -144,7 +144,7 @@ def test_cells_that_look_like_formulas_stay_text_on_every_sheet(answered):
 def test_pdf_never_loads_images_or_raw_html_from_answer_md(answered, monkeypatch):
     root, folder = answered
     (folder / "answer.md").write_text(
-        '# Answer\n\n<img src="/etc/passwd">\n\nInline <img src="/etc/hosts"> too.\n\n'
+        '# Answer\n\n<div><img src="/etc/shadow"></div>\n\n<img src="/etc/passwd">\n\nInline <img src="/etc/hosts"> too.\n\n'
         "![x](http://example.com/a.png)\n\n![y][ref]\n\n[ref]: http://example.com/b.png\n\n"
         "- **bold** item\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
     )
