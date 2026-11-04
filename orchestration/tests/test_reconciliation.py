@@ -42,6 +42,9 @@ TRANSFERS = [
     ("e", T, W, W, 170, 50),
     ("f", T, OTHER, W, 181, 93),
 ]
+# A fresh setup reads balances at the tip while transfers stop at the finalized head: no two readings
+# fall inside the loaded blocks, so the reconciliation has no pair to compare.
+ONE_READING = [(W, T, 50, 999), (W, T, 150, 15), (W, T, 200, 500)]
 
 
 def compile_tests(target: Path, variables: dict | None) -> dict[str, tuple[str, str]]:
@@ -105,6 +108,14 @@ def test_a_missing_transfer_fails_the_pair_of_readings_around_it(compiled, missi
     assert found["erc20_transfers_match_balances"] == ("error", [pair])
 
 
-def test_without_the_coverage_var_no_test_returns_rows(compiled):
-    found = run(compiled["no var"], BALANCES, [t for t in TRANSFERS if t[0] != "b"])
+def test_no_pair_of_readings_inside_the_loaded_blocks_warns(compiled):
+    found = run(compiled["loaded"], ONE_READING, TRANSFERS)
+    assert {name: (severity, len(rows)) for name, (severity, rows) in found.items() if rows} == {
+        "erc20_transfers_match_balances_has_pairs": ("warn", 1)
+    }
+
+
+@pytest.mark.parametrize("balances", [BALANCES, ONE_READING])
+def test_without_the_coverage_var_no_test_returns_rows(compiled, balances):
+    found = run(compiled["no var"], balances, [t for t in TRANSFERS if t[0] != "b"])
     assert {name: rows for name, (_, rows) in found.items() if rows} == {}
