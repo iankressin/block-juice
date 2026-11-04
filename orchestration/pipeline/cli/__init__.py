@@ -29,6 +29,12 @@ def _blocks(args: argparse.Namespace) -> int:
     return blocks.run(args.chain, args.start, args.end, rpc=args.rpc)
 
 
+def _new_source(args: argparse.Namespace) -> int:
+    from pipeline.cli import new_source
+
+    return new_source.run(REPO_ROOT, args.source, args.table, args.like)
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="The mechanical steps of answering a question about chain data.")
     commands = root.add_subparsers(dest="command", required=True, metavar="<command>")
@@ -44,6 +50,17 @@ def parser() -> argparse.ArgumentParser:
     blocks.add_argument("end", metavar="to", nargs="?")
     blocks.add_argument("--rpc", metavar="URL", help="JSON-RPC endpoint (default: eRPC at localhost:$ERPC_PORT)")
     blocks.set_defaults(run=_blocks)
+
+    new_source = commands.add_parser(
+        "new-source",
+        help="add a source: copy a source package, add its dbt source and its Dagster asset",
+        description="Copies ingestion/sources/<package> to a new package for <source>.<table>, adds the table "
+        "to the dbt sources of <source> with a staging model, and adds the pair to SOURCES.",
+    )
+    new_source.add_argument("source")
+    new_source.add_argument("table")
+    new_source.add_argument("--like", metavar="<package>", required=True, help="the package under ingestion/sources/ to copy")
+    new_source.set_defaults(run=_new_source)
 
     return root
 
