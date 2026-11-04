@@ -58,7 +58,7 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 
 ## Run it locally
 
-Needs Node 20+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/) and Docker.
+Needs Node 24 and [pnpm](https://pnpm.io), which `mise.toml` pins (`mise install` sets up both), [uv](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 cp .env.example .env
