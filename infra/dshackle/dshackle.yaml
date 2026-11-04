@@ -74,10 +74,21 @@ cluster:
             url: https://api.zan.top/btc-mainnet
     # About 1 call every 3s before 429s. Last resort; the peer check is off so
     # it doesn't spend that budget.
+    #
+    # The only keyless upstream found that serves scantxoutset, so Dshackle
+    # sends that method here alone (checked 2026-11-04: ZAN answers -32601
+    # invalid method, publicnode "broker: node error", nownodes an empty reply).
+    # A scan took 43s to 96s, and bitcoin-btc-balances makes one per run, well
+    # within the budget above. The default 60s timeout cut scans short, so this
+    # one waits 240s, under the source's own 5 minutes.
     - id: btc-onfinality
       blockchain: bitcoin
       role: fallback
       validate-peers: false
+      timeout: 240
+      methods:
+        enabled:
+          - name: scantxoutset
       connection:
         bitcoin:
           rpc:

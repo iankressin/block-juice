@@ -7,7 +7,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: [ethereum, solana]
+                values: [ethereum, solana, bitcoin]
       - name: wallet
         data_tests: [not_null]
       - name: asset

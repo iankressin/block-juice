@@ -8,7 +8,7 @@
 
 Data flow: a TypeScript source writes raw JSON rows into `raw.<source>_<table>`. dbt reads them through `source()`, then builds staging views and mart tables in the `analytics` schema. Dagster runs both as one asset graph.
 
-Four sources read wallet balances: ETH, ERC-20 tokens, SOL and SPL tokens. The Ethereum sources read at `BLOCK_NUMBER`: a block number, or `latest`, `safe` or `finalized`, which each run turns into a number once at the start. A Solana RPC serves only current state, so the Solana sources read at the latest finalized slot, and each run adds a new reading, keyed by the slot it read. `analytics.latest_balances` holds each wallet's latest balance of each asset on both chains, in the asset's base units. On Solana its `block_number` is the slot.
+Five sources read wallet balances: ETH, ERC-20 tokens, SOL, SPL tokens and BTC. The Ethereum sources read at `BLOCK_NUMBER`: a block number, or `latest`, `safe` or `finalized`, which each run turns into a number once at the start. A Solana RPC serves only current state, so the Solana sources read at the latest finalized slot, and each run adds a new reading, keyed by the slot it read. The Bitcoin source reads every wallet with one `scantxoutset` call through Dshackle, which scans the UTXO set at the chain tip in about a minute. Only the OnFinality upstream serves that call. Each run adds a new reading, keyed by the height it read. `analytics.latest_balances` holds each wallet's latest balance of each asset on all three chains, in the asset's base units (satoshis for BTC). On Solana its `block_number` is the slot.
 
 ```
 .
@@ -80,6 +80,7 @@ Each layer also runs alone, with the env vars loaded:
 (cd ingestion/sources/ethereum-erc20-balances && pnpm ingest)
 (cd ingestion/sources/solana-sol-balances && pnpm ingest)
 (cd ingestion/sources/solana-spl-balances && pnpm ingest)
+(cd ingestion/sources/bitcoin-btc-balances && pnpm ingest)
 (cd transformation && ../orchestration/.venv/bin/dbt build)
 (cd orchestration && uv run pytest)
 ```

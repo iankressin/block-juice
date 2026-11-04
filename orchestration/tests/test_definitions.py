@@ -25,11 +25,12 @@ def test_ingestion_assets_have_dead_letter_check(source, table):
     assert check in defs.resolve_asset_graph().asset_check_keys
 
 
-def test_mart_reads_each_chain_through_its_union():
+def test_mart_reads_every_chain():
     graph = defs.resolve_asset_graph()
     assert graph.get(dg.AssetKey("latest_balances")).parent_keys == {
         dg.AssetKey("int_ethereum_balances_unioned"),
         dg.AssetKey("int_solana_balances_unioned"),
+        dg.AssetKey("stg_bitcoin__btc_balances"),
     }
     assert graph.get(dg.AssetKey("int_ethereum_balances_unioned")).parent_keys == {
         dg.AssetKey("stg_ethereum__eth_balances"),

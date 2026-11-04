@@ -18,6 +18,7 @@ SOURCES = [
     ("ethereum", "erc20_balances"),
     ("solana", "sol_balances"),
     ("solana", "spl_balances"),
+    ("bitcoin", "btc_balances"),
 ]
 
 
