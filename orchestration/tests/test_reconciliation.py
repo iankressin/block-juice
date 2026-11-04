@@ -17,11 +17,13 @@ WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
 TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 W, T = WALLET.lower(), TOKEN.lower()
 OTHER = "0x00000000000000000000000000000000000000aa"
+# A quote in addresses.json must not break the SQL.
 LOADED = Coverage(
     "ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", 180, {"wallets": [WALLET, "0xab'c"], "tokens": [TOKEN]}
 )
 
-# Readings at blocks 99 to 180 agree with the transfers; the others disagree, so a test that compares them fails.
+# The readings of the tracked wallet and token at blocks 99 to 180 agree with the transfers. Every other
+# reading disagrees, so a test that compares one fails.
 BALANCES = [
     (W, T, 50, 999),
     (W, T, 99, 0),
@@ -34,6 +36,7 @@ BALANCES = [
     (W, OTHER, 99, 0),
     (W, OTHER, 150, 77),
 ]
+# a and c land in the block of a reading, which already counts them.
 TRANSFERS = [
     ("a", T, OTHER, W, 99, 1000),
     ("b", T, OTHER, W, 100, 10),
