@@ -24,17 +24,25 @@ FORMATS = ("xlsx", "pdf")
 PDF_ROWS = 50
 # A plain decimal number. Leading zeros make it an identifier, which stays text.
 NUMBER = re.compile(r"^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$")
-# The PDF core fonts hold Latin-1 only; these read the same in ASCII. Anything else becomes "?".
+# The PDF core fonts hold Latin-1 only. These code points read the same in ASCII; anything else becomes "?".
 ASCII = str.maketrans(
     {
-        "‘": "'", "’": "'", "‚": "'", "′": "'",
-        "“": '"', "”": '"', "„": '"', "″": '"',
-        "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "−": "-",
-        "…": "...", "•": "*", "→": "->", "←": "<-",
-        "≤": "<=", "≥": ">=", "≠": "!=", "≈": "~",
-        " ": " ", " ": " ", " ": " ", " ": " ", "​": "",
+        **dict.fromkeys((0x2018, 0x2019, 0x201A, 0x2032), "'"),  # single quotes, prime
+        **dict.fromkeys((0x201C, 0x201D, 0x201E, 0x2033), '"'),  # double quotes, double prime
+        **dict.fromkeys((0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2212), "-"),  # hyphens, dashes, minus
+        **dict.fromkeys((0x2007, 0x2009, 0x200A, 0x202F), " "),  # figure, thin and narrow spaces
+        0x200B: "",  # zero-width space
+        0x2026: "...",
+        0x2022: "*",
+        0x2190: "<-",
+        0x2192: "->",
+        0x2248: "~",
+        0x2260: "!=",
+        0x2264: "<=",
+        0x2265: ">=",
     }
 )
+REPLACEMENT = chr(0xFFFD)
 
 
 @dataclass(frozen=True)
@@ -131,7 +139,7 @@ WRAP = Alignment(wrap_text=True, vertical="top")
 def append_row(sheet: Worksheet, values: Iterable[Any], *, bold: bool = False, wrap: bool = False) -> None:
     """Appends values as cells, every string as text. openpyxl writes a string starting with = as a
     formula, and result cells and answer.md can hold chain data that anyone sets, such as token names."""
-    sheet.append([ILLEGAL_CHARACTERS_RE.sub("�", v) if isinstance(v, str) else v for v in values])
+    sheet.append([ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, v) if isinstance(v, str) else v for v in values])
     for cell in sheet[sheet.max_row]:
         if isinstance(cell.value, str):
             cell.data_type = "s"
