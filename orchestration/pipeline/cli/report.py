@@ -208,8 +208,9 @@ def latin1(text: str) -> str:
 
 
 def markdown_html(text: str) -> str:
-    """answer.md as HTML, with no raw HTML and no images: fpdf2 opens the file or URL of any <img>."""
-    converter = markdown.Markdown(extensions=["tables"])
+    """answer.md as HTML, with no raw HTML and no images: fpdf2 opens the file or URL of any <img>. fenced_code
+    escapes the code it puts in <pre>, as an indented code block does."""
+    converter = markdown.Markdown(extensions=["tables", "fenced_code"])
     converter.preprocessors.deregister("html_block")
     for pattern in ("html", "image_link", "image_reference", "short_image_ref"):
         converter.inlinePatterns.deregister(pattern)

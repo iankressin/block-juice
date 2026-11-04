@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import zipfile
+import zlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -166,6 +167,31 @@ def test_pdf_never_loads_images_or_raw_html_from_answer_md(answered, monkeypatch
     monkeypatch.setattr("fpdf.image_parsing.load_image", refuse)
     assert run(root, "top-wallets", "pdf") == 0
     assert (folder / "reports" / "top-wallets.pdf").read_bytes().startswith(b"%PDF")
+
+
+def pdf_lines(path):
+    """The text of each text-showing operation in the PDF at path, in the order of its compressed content streams."""
+    lines = []
+    for stream in re.findall(rb"stream\r?\n(.*?)\r?\nendstream", path.read_bytes(), re.S):
+        lines += re.findall(rb"\((.*?)\) ?Tj", zlib.decompress(stream))
+    return [line.decode("latin-1") for line in lines]
+
+
+def test_fenced_code_keeps_its_lines_in_pdf_and_docx_as_literal_text(answered, monkeypatch):
+    root, folder = answered
+    code = ["select 1", "  from t", '<img src="/etc/passwd">']
+    (folder / "answer.md").write_text("Run this:\n\n```sql\n" + "\n".join(code) + "\n```\n")
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"fpdf2 tried to load an image: {args}")
+
+    monkeypatch.setattr("fpdf.FPDF.image", refuse)
+    monkeypatch.setattr("fpdf.image_parsing.load_image", refuse)
+    assert run(root, "top-wallets", "pdf,docx") == 0
+    assert "\n".join(code) in "\n".join(pdf_lines(folder / "reports" / "top-wallets.pdf"))
+    path = folder / "reports" / "top-wallets.docx"
+    assert outline(path)[3:5] == [("Normal", "Run this:"), ("Normal", "\n".join(code))]
+    assert {run.font.name for run in docx.Document(path).paragraphs[4].runs} == {"Courier New"}
 
 
 def outline(path):
