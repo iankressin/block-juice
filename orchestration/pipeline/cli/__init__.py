@@ -1,7 +1,7 @@
 """blockjuice, or bj: the mechanical steps of answering a question from the warehouse.
 
-Exit codes: 0 success, 1 the command ran but a check failed (only `answer`), 2 bad input or
-config, reported as one line on stderr, with nothing written.
+Exit codes: 0 success, 1 the command ran but a check failed (`answer`, or `check` recording a failed
+one), 2 bad input or config, reported as one line on stderr, with nothing written.
 """
 
 import argparse
@@ -45,6 +45,12 @@ def _blocks(args: argparse.Namespace) -> int:
     from pipeline.cli import blocks
 
     return blocks.run(args.chain, args.start, args.end, rpc=args.rpc)
+
+
+def _check(args: argparse.Namespace) -> int:
+    from pipeline.cli import check
+
+    return check.run(REPO_ROOT, args.slug, args.name, args.status, " ".join(args.detail))
 
 
 def _coverage(args: argparse.Namespace) -> int:
@@ -96,6 +102,19 @@ def parser() -> argparse.ArgumentParser:
     blocks.add_argument("end", metavar="to", nargs="?")
     blocks.add_argument("--rpc", metavar="URL", help="JSON-RPC endpoint (default: eRPC at localhost:$ERPC_PORT)")
     blocks.set_defaults(run=_blocks)
+
+    check = commands.add_parser(
+        "check",
+        help="add a check you ran yourself, such as cross_check, to answer.json",
+        description="Adds the check to answers/<slug>/answer.json, or replaces the one with the same name. "
+        "Exits 0 when it passed and 1 when it failed. bj answer drops these checks when it runs again, "
+        "since new results void them.",
+    )
+    check.add_argument("slug")
+    check.add_argument("name", help="such as cross_check; not one of the checks bj answer runs")
+    check.add_argument("status", choices=("passed", "failed"))
+    check.add_argument("detail", nargs="+", help="what the check compared, and what it found")
+    check.set_defaults(run=_check)
 
     coverage = commands.add_parser(
         "coverage",

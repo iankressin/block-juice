@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pipeline.cli import REQUIRED_ENV, BadInput, answer
+from pipeline.cli import REQUIRED_ENV, BadInput, answer, check
 from pipeline.cli.answer import (
     Check,
     Input,
@@ -290,6 +290,18 @@ def test_coverage_passes_when_the_source_loaded_the_blocks_and_the_filter(histor
     code, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
     assert code == 0
     assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
+
+
+def test_bj_check_refuses_the_name_of_every_check_bj_answer_runs(history):
+    _, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
+    assert sorted(checks) == sorted(check.ANSWER_CHECKS)
+
+
+def test_a_new_answer_drops_the_checks_the_agent_added(tmp_path, history):
+    history("{blocks: [100, 180]}", USDC_FLOWS)
+    assert check.run(tmp_path, "usdc-flows", "cross_check", "passed", "Portal agrees") == 0
+    _, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
+    assert "cross_check" not in checks
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):
