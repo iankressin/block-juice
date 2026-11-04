@@ -1,6 +1,6 @@
 import { createPublicClient, http } from "viem";
 import { createLimiter } from "#src/concurrency.ts";
-import type { BlockNumber } from "#src/evm/env.ts";
+import type { BlockNumber, EvmEnv } from "#src/evm/env.ts";
 
 export type EvmClient = ReturnType<typeof createEvmClient>;
 
@@ -43,4 +43,10 @@ export async function resolveBlock(client: EvmClient, block: BlockNumber): Promi
   if (typeof block === "number") return block;
   const { number } = await client.getBlock({ blockTag: block });
   return Number(number);
+}
+
+/** The client for ERPC_URL, sending up to RPC_BATCH_SIZE calls per request, and the block BLOCK_NUMBER resolves to. */
+export async function connect(env: EvmEnv): Promise<{ client: EvmClient; block: number }> {
+  const client = createEvmClient(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE });
+  return { client, block: await resolveBlock(client, env.BLOCK_NUMBER) };
 }

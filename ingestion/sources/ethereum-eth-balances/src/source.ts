@@ -1,7 +1,6 @@
 import {
-  createEvmClient,
+  connect,
   evmEnv,
-  resolveBlock,
   validateEthAddressList,
   type EvmEnv,
   type Source,
@@ -24,8 +23,7 @@ export const ethereumEthBalances: Source<EvmEnv, BalanceCall> = {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const wallets = validateEthAddressList(addresses.wallets);
-    const client = createEvmClient(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE });
-    const block = await resolveBlock(client, env.BLOCK_NUMBER);
+    const { client, block } = await connect(env);
     yield await fetchBalances(client, [...balanceCallsAt(block, wallets), ...retry]);
   },
 };

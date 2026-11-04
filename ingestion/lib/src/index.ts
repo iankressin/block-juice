@@ -9,6 +9,7 @@ export {
 } from "#src/evm/address.ts";
 export { blockNumber, evmEnv, type BlockNumber, type EvmEnv } from "#src/evm/env.ts";
 export {
+  connect,
   createEvmClient,
   resolveBlock,
   type EvmClient,
