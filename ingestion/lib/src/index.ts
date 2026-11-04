@@ -1,15 +1,4 @@
-export type {
-  Batch,
-  DeadLetter,
-  DeadLetterBacklog,
-  DeadLetterQueue,
-  DeadLetterTable,
-  Failed,
-  RawRecord,
-  Source,
-  Target,
-  TargetTable,
-} from "#src/types.ts";
+export type { Batch, Failed, RawRecord, Source } from "#src/types.ts";
 export { blockNumber, loadEnv, type BlockNumber } from "#src/env.ts";
 export { chunk, describeError, settleCalls, uniqueBy } from "#src/calls.ts";
 export {
@@ -34,10 +23,5 @@ export {
   type SolanaClient,
   type SolanaClientOptions,
 } from "#src/solana/account-state/index.ts";
-export {
-  postgresDeadLetterQueue,
-  type DeadLetterQueueOptions,
-} from "#src/dead-letters/postgres.ts";
-export { postgresTarget } from "#src/targets/postgres.ts";
 export { logger, type Logger } from "#src/logger.ts";
 export { runSource } from "#src/run.ts";
