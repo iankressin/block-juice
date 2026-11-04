@@ -15,9 +15,10 @@ Pick the workflow for the request and read it:
 | A question about chain data | [workflows/answer.md](workflows/answer.md) |
 | `report <slug>`, or the user wants an answer as a PDF or spreadsheet | [workflows/report.md](workflows/report.md) |
 | Data that a view function or RPC method returns, which no source reads yet | [workflows/state-source.md](workflows/state-source.md) |
+| Events, transfers or traces over a range of blocks that no source reads yet, or not far enough | [workflows/history-source.md](workflows/history-source.md) |
 | A reusable mart that no pipeline builds yet | [workflows/new-pipeline.md](workflows/new-pipeline.md) |
 
-History backfills (events, transfers or traces over a block range) and protocol exploration are not built yet. When an input needs them ([references/choosing-the-data.md](references/choosing-the-data.md)), finish scoping, then tell the user which input needs history and stop. Never stand in state reads for history.
+Never stand in state reads for history ([references/choosing-the-data.md](references/choosing-the-data.md)). Exploring a protocol the catalog lacks is not built yet: when a question needs one, finish scoping, tell the user which protocol, and stop.
 
 ## Commands
 

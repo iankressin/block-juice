@@ -16,7 +16,7 @@ Write `answers/<slug>/question.yaml` in the format of [../references/question-sp
 Look for marts that already hold each input, in `transformation/models/marts/*/`. Read a mart's SQL and its `_<pipeline>__models.yml` before trusting its name.
 
 - Every input is in a mart: go to step 3.
-- An input needs history: stop and tell the user which input needs it. History backfills are not built yet.
+- An input needs history: follow [history-source.md](history-source.md). `bj coverage` says whether a source has already loaded the window.
 - An input needs state that no source reads: follow [state-source.md](state-source.md), then [new-pipeline.md](new-pipeline.md).
 - The sources hold the data but no mart shapes it the way the question needs: follow [new-pipeline.md](new-pipeline.md).
 
@@ -38,6 +38,8 @@ uv run --project orchestration bj answer <slug>
 ```
 
 It answers from the data already in the warehouse. It writes `results/<analysis>.csv` and `answer.json`, and exits 1 when a check fails. The `freshness` detail says when each input last loaded. [../references/checks.md](../references/checks.md) says what each failure means and what to do. Ship an answer with a failed check only when the user agrees, and say so in the answer.
+
+When an input is history, cross-check one number once the checks pass. Count the same thing over the same blocks and filter with the Portal MCP, which reads Portal directly, without Pipes or the warehouse. Record it with `bj check <slug> cross_check passed "<what you compared, and both numbers>"`, or `failed` when they differ, and find out why before you write the answer.
 
 ## 5. Load newer data, only when needed
 

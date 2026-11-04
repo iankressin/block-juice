@@ -86,6 +86,10 @@ _Avoid_: snapshot
 Events, transfers or traces over a range of blocks, rebuilt into values in dbt.
 _Avoid_: backfill (that is the run that loads history)
 
+**Coverage**:
+The blocks a history source has loaded, from its START_BLOCK to the cursor Pipes keeps, for the addresses in its addresses.json.
+_Avoid_: backfill range, sync range
+
 **Analysis**:
 A dbt analysis that selects one result from marts for one answer. Its first row and column can be the answer's value.
 _Avoid_: query, report

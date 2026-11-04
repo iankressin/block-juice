@@ -107,7 +107,7 @@ Open the repo in Claude Code and ask a question about chain data, or type `/bj <
 - `results/` holds one CSV per analysis.
 - `reports/` holds what `bj report` builds: XLSX, PDF and Word files, and the id of the answer's Google Doc. Git ignores it.
 
-`answers/tracked-wallets-eth/` is an example. The skill reads state through the sources above. It can't yet backfill history (events, transfers or traces over a block range) or explore a protocol it doesn't know.
+`answers/tracked-wallets-eth/` is an example. The skill reads state through the balance sources and history through stream sources, which load events over a range of blocks. It can't yet explore a protocol it doesn't know. `.mcp.json` registers the SQD Portal MCP, which the skill uses to estimate a load and to cross-check a history answer.
 
 The skill runs every mechanical step through the `bj` CLI, whose long name is `blockjuice`. It lives in `orchestration/pipeline/cli/` and reads `.env` itself. Run it from the repo root:
 
@@ -117,8 +117,10 @@ uv run --project orchestration bj --help
 
 | Command | What it does |
 |---|---|
-| `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters and the last successful run. Exits 1 when a check fails. |
+| `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
 | `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
+| `bj coverage [<source>.<table>]` | Prints the blocks each history source has loaded: `START_BLOCK` to the cursor Pipes keeps in `raw._sync`, and the addresses it read. |
+| `bj check <slug> <name> <passed\|failed> <detail>` | Records a check the agent ran itself, such as a cross-check against Portal, in `answer.json`. Exits 1 when it failed. |
 | `bj blocks <chain> <from> [<to>]` | Turns UTC times into the first and last block of the window, on EVM chains. |
 | `bj new-source <source> <table> --like <package>` | Does the three steps of Add a source, starting from a copy of an existing source. |
 | `bj report <slug> [--format xlsx,pdf,docx,gdoc]` | Builds the answer's reports from `answer.json`, `answer.md` and `results/`. `gdoc` uploads a Google Doc and needs the Google settings in `.env.example`. |
