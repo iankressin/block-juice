@@ -13,7 +13,9 @@ from typing import Any
 import markdown
 from fpdf import FPDF
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font
+from openpyxl.worksheet.worksheet import Worksheet
 
 from pipeline.cli import BadInput
 from pipeline.cli.question import answer_dir
@@ -122,36 +124,44 @@ def input_rows(answer: dict[str, Any]) -> list[list[Any]]:
 INPUT_COLUMNS = ["Source", "Raw table", "Last successful run", "Records", "Dagster run", "Pending", "Parked"]
 
 
+BOLD = Font(bold=True)
+WRAP = Alignment(wrap_text=True, vertical="top")
+
+
+def append_row(sheet: Worksheet, values: Iterable[Any], *, bold: bool = False, wrap: bool = False) -> None:
+    """Appends values as cells, every string as text. openpyxl writes a string starting with = as a
+    formula, and result cells and answer.md can hold chain data that anyone sets, such as token names."""
+    sheet.append([ILLEGAL_CHARACTERS_RE.sub("�", v) if isinstance(v, str) else v for v in values])
+    for cell in sheet[sheet.max_row]:
+        if isinstance(cell.value, str):
+            cell.data_type = "s"
+        if bold:
+            cell.font = BOLD
+        if wrap:
+            cell.alignment = WRAP
+
+
 def write_xlsx(report: Report, path: Path) -> None:
     answer = report.answer
     book = Workbook()
     sheet = book.active
     sheet.title = "Answer"
-    bold = Font(bold=True)
-    wrap = Alignment(wrap_text=True, vertical="top")
-
-    def append(cells: Iterable[Any], *, header: bool = False) -> None:
-        sheet.append(list(cells))
-        for cell in sheet[sheet.max_row]:
-            cell.alignment = wrap
-            if header:
-                cell.font = bold
 
     def section(title: str, columns: list[str] | None, rows: Iterable[Iterable[Any]]) -> None:
         sheet.append([])
-        append([title], header=True)
+        append_row(sheet, [title], bold=True)
         if columns:
-            append(columns, header=True)
+            append_row(sheet, columns, bold=True)
         for row in rows:
-            append(row)
+            append_row(sheet, row, wrap=True)
 
     for label, value in (
         ("Question", answer["question"]),
         ("Value", value_cell(answer)),
         ("Answered at", answer["answered_at"]),
     ):
-        append([label, value])
-        sheet.cell(sheet.max_row, 1).font = bold
+        append_row(sheet, [label, value], wrap=True)
+        sheet.cell(sheet.max_row, 1).font = BOLD
     section("Answer", None, ([paragraph] for paragraph in paragraphs(report.text)))
     section("Definitions", ["Term", "Definition"], answer["definitions"].items())
     section("Checks", ["Check", "Status", "Detail"], ([c["name"], c["status"], c["detail"]] for c in answer["checks"]))
@@ -163,17 +173,24 @@ def write_xlsx(report: Report, path: Path) -> None:
 
     for table in report.tables:
         result = book.create_sheet(table.name[:31])
-        result.append(table.columns)
-        for cell in result[1]:
-            cell.font = bold
+        append_row(result, table.columns, bold=True)
         for row in table.rows:
-            result.append([cell_value(text) for text in row])
+            append_row(result, [cell_value(text) for text in row])
         result.freeze_panes = "A2"
     book.save(path)
 
 
 def latin1(text: str) -> str:
     return str(text).translate(ASCII).encode("latin-1", "replace").decode("latin-1")
+
+
+def markdown_html(text: str) -> str:
+    """answer.md as HTML, with no raw HTML and no images: fpdf2 opens the file or URL of any <img>."""
+    converter = markdown.Markdown(extensions=["tables"])
+    converter.preprocessors.deregister("html_block")
+    for pattern in ("html", "image_link", "image_reference", "short_image_ref"):
+        converter.inlinePatterns.deregister(pattern)
+    return converter.convert(text)
 
 
 def write_pdf(report: Report, path: Path) -> None:
@@ -205,7 +222,7 @@ def write_pdf(report: Report, path: Path) -> None:
     line(f"Value: {'none' if value is None else value}")
     line(f"Answered at {answer['answered_at']}")
     pdf.ln(2)
-    pdf.write_html(latin1(markdown.markdown(report.text, extensions=["tables"])))
+    pdf.write_html(latin1(markdown_html(report.text)))
 
     if answer["definitions"]:
         heading("Definitions")

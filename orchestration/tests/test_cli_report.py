@@ -112,6 +112,49 @@ def test_both_formats_by_default_overwriting_old_reports(answered, monkeypatch):
     assert openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx").sheetnames[0] == "Answer"
 
 
+FORMULA = '=HYPERLINK("http://x","y")'
+
+
+def test_cells_that_look_like_formulas_stay_text_on_every_sheet(answered):
+    root, folder = answered
+    (folder / "results" / "top_wallets.csv").write_text(
+        f'wallet,balance,share\n"{FORMULA.replace(chr(34), chr(34) * 2)}",+1+1,@SUM(A1)\n-x,\tcmd,"\rcmd"\n'
+    )
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["definitions"] = {"=term": "=1+1"}
+    answer["checks"][0]["detail"] = "-2+3"
+    (folder / "answer.json").write_text(json.dumps(answer))
+    (folder / "answer.md").write_text("=cmd|' /C calc'!A0\n")
+
+    assert run(root, "top-wallets", "xlsx") == 0
+    book = openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx")
+    top = book["top_wallets"]
+    assert [(c.value, c.data_type) for c in top[2]] == [(FORMULA, "s"), ("+1+1", "s"), ("@SUM(A1)", "s")]
+    assert [(c.value, c.data_type) for c in top[3][:2]] == [("-x", "s"), ("\tcmd", "s")]
+    # XML parsing turns the CR into LF; what matters is that the cell is text.
+    assert (top["C3"].value[1:], top["C3"].data_type) == ("cmd", "s")
+    summary = [cell for row in book["Answer"].iter_rows() for cell in row if cell.value is not None]
+    assert not [cell.value for cell in summary if cell.data_type == "f"]
+    assert {"=term", "=1+1", "-2+3", "=cmd|' /C calc'!A0"} <= {cell.value for cell in summary}
+
+
+def test_pdf_never_loads_images_or_raw_html_from_answer_md(answered, monkeypatch):
+    root, folder = answered
+    (folder / "answer.md").write_text(
+        '# Answer\n\n<img src="/etc/passwd">\n\nInline <img src="/etc/hosts"> too.\n\n'
+        "![x](http://example.com/a.png)\n\n![y][ref]\n\n[ref]: http://example.com/b.png\n\n"
+        "- **bold** item\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+    )
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"fpdf2 tried to load an image: {args}")
+
+    monkeypatch.setattr("fpdf.FPDF.image", refuse)
+    monkeypatch.setattr("fpdf.image_parsing.load_image", refuse)
+    assert run(root, "top-wallets", "pdf") == 0
+    assert (folder / "reports" / "top-wallets.pdf").read_bytes().startswith(b"%PDF")
+
+
 def test_missing_answer_md_is_bad_input_and_writes_nothing(answered):
     root, folder = answered
     (folder / "answer.md").unlink()
