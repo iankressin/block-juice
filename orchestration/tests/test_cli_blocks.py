@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from fake_portal import FakePortal
 
 from pipeline.cli import BadInput, main
 from pipeline.cli.blocks import BlockRange, block_range, first_block_at_or_after, parse_time, unix_seconds
@@ -108,3 +109,61 @@ def test_prints_the_range_as_json(monkeypatch, capsys):
         "from": {"time": "1970-01-01T00:01:45Z", "block": 1},
         "to": {"time": "1970-01-01T02:46:40Z", "block": 4, "head": True},
     }
+
+
+@pytest.fixture
+def portal(monkeypatch):
+    """Installs a FakePortal of the chain in TIMESTAMPS as the Portal bj blocks reads."""
+
+    def install(**options):
+        fake = FakePortal(TIMESTAMPS, **options)
+        monkeypatch.setattr("pipeline.cli.blocks.requests.Session", lambda: fake)
+        return fake
+
+    return install
+
+
+def blocks_json(capsys, *args):
+    assert main(["blocks", *args]) == 0
+    return json.loads(capsys.readouterr().out)
+
+
+def test_reads_the_range_from_the_portal_dataset_of_the_chain(portal, capsys):
+    fake = portal()
+    assert blocks_json(capsys, "base", "1970-01-01T00:01:45Z", "1970-01-01T00:02:16Z") == {
+        "chain": "base",
+        "from": {"time": "1970-01-01T00:01:45Z", "block": 1},
+        "to": {"time": "1970-01-01T00:02:16Z", "block": 3, "head": False},
+    }
+    assert {dataset for _, dataset, _, _ in fake.requests} == {"base-mainnet"}
+    # Portal often answers a stream request 529 and asks for 10 seconds' wait, so each edge takes one.
+    assert len([route for _, _, route, _ in fake.requests if route == "stream"]) == 2
+
+
+@pytest.mark.parametrize("offset", [-2, 1, 3])
+def test_a_rough_portal_guess_still_gives_the_exact_blocks(portal, capsys, offset):
+    portal(guess_offset=offset)
+    printed = blocks_json(capsys, "arbitrum", "1970-01-01T00:02:04Z", "1970-01-01T00:02:16Z")
+    assert (printed["from"]["block"], printed["to"]["block"]) == (2, 3)
+
+
+def test_to_past_the_portal_head_ends_at_the_head(portal, capsys):
+    portal()
+    assert blocks_json(capsys, "ethereum", "1970-01-01T00:02:10Z", "1970-01-01T02:46:40Z")["to"] == {
+        "time": "1970-01-01T02:46:40Z",
+        "block": 4,
+        "head": True,
+    }
+
+
+def test_waits_out_a_busy_portal(portal, capsys):
+    portal(overloaded=3)
+    assert blocks_json(capsys, "ethereum", "1970-01-01T00:01:45Z", "1970-01-01T00:02:16Z")["from"]["block"] == 1
+
+
+def test_a_portal_that_stays_busy_exits_2_with_one_line(portal, capsys):
+    portal(overloaded=100)
+    assert main(["blocks", "ethereum", "1970-01-01T00:01:45Z"]) == 2
+    err = capsys.readouterr().err
+    assert "Portal ethereum-mainnet answered 529" in err
+    assert err.count("\n") == 1
