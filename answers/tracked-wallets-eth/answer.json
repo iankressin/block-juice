@@ -1,0 +1,127 @@
+{
+  "question": "How much ETH do the tracked wallets hold right now?",
+  "slug": "tracked-wallets-eth",
+  "answered_at": "2026-11-04T19:31:18Z",
+  "value": "3055.159790",
+  "definitions": {
+    "tracked wallets": "The wallets in ingestion/sources/ethereum-eth-balances/addresses.json",
+    "right now": "Each wallet's latest ETH balance reading"
+  },
+  "alternatives": [],
+  "window": {
+    "chain": "ethereum",
+    "at": "latest"
+  },
+  "results": [
+    {
+      "analysis": "tracked_wallets_eth",
+      "path": "results/tracked_wallets_eth.csv",
+      "columns": [
+        "eth"
+      ],
+      "rows": 1,
+      "sql": "select round(sum(balance) / 1e18, 6) as eth\nfrom \"warehouse\".\"analytics\".\"latest_balances\"\nwhere chain = 'ethereum' and asset_type = 'native'"
+    },
+    {
+      "analysis": "tracked_wallets_eth_by_wallet",
+      "path": "results/tracked_wallets_eth_by_wallet.csv",
+      "columns": [
+        "wallet",
+        "block_number",
+        "eth",
+        "wei"
+      ],
+      "rows": 3,
+      "sql": "select\n    wallet,\n    block_number,\n    round(balance / 1e18, 6) as eth,\n    balance as wei\nfrom \"warehouse\".\"analytics\".\"latest_balances\"\nwhere chain = 'ethereum' and asset_type = 'native'\norder by balance desc"
+    }
+  ],
+  "inputs": [
+    {
+      "source": "bitcoin.btc_balances",
+      "raw_table": "raw.bitcoin_btc_balances",
+      "last_run": {
+        "finished_at": "2026-11-04T19:18:37.265000Z",
+        "records_written": 4,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "ethereum.erc20_balances",
+      "raw_table": "raw.ethereum_erc20_balances",
+      "last_run": {
+        "finished_at": "2026-11-04T19:18:39.139000Z",
+        "records_written": 9,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "ethereum.eth_balances",
+      "raw_table": "raw.ethereum_eth_balances",
+      "last_run": {
+        "finished_at": "2026-11-04T19:18:40.286000Z",
+        "records_written": 3,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "solana.sol_balances",
+      "raw_table": "raw.solana_sol_balances",
+      "last_run": {
+        "finished_at": "2026-11-04T19:18:41.417000Z",
+        "records_written": 3,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "solana.spl_balances",
+      "raw_table": "raw.solana_spl_balances",
+      "last_run": {
+        "finished_at": "2026-11-04T19:18:43.386000Z",
+        "records_written": 9,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "dbt_tests",
+      "status": "passed",
+      "detail": "54 passed"
+    },
+    {
+      "name": "dead_letters",
+      "status": "passed",
+      "detail": "bitcoin.btc_balances 0 pending, 0 parked; ethereum.erc20_balances 0 pending, 0 parked; ethereum.eth_balances 0 pending, 0 parked; solana.sol_balances 0 pending, 0 parked; solana.spl_balances 0 pending, 0 parked"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "detail": "bitcoin.btc_balances finished 2026-11-04T19:18:37.265000Z; ethereum.erc20_balances finished 2026-11-04T19:18:39.139000Z; ethereum.eth_balances finished 2026-11-04T19:18:40.286000Z; solana.sol_balances finished 2026-11-04T19:18:41.417000Z; solana.spl_balances finished 2026-11-04T19:18:43.386000Z"
+    }
+  ],
+  "provenance": {
+    "git_sha": "c48711c32fa0ca014964f5cdd0a129c0c1acb9b0",
+    "git_dirty": false,
+    "dbt_version": "1.12.6"
+  }
+}
