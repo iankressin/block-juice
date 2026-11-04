@@ -7,6 +7,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from datetime import datetime
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -403,8 +404,13 @@ class DocxMarkdown(HTMLParser):
 def write_docx(report: Report, target: Path | IO[bytes]) -> None:
     answer = report.answer
     document = docx.Document()
+    properties = document.core_properties
     # python-docx refuses a property longer than 255 characters. The Title paragraph keeps the whole question.
-    document.core_properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])[:255]
+    properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])[:255]
+    # In place of the author, description and 2013 dates of python-docx's template.
+    properties.author = "blockjuice"
+    properties.comments = ""
+    properties.created = properties.modified = datetime.fromisoformat(answer["answered_at"])
 
     def paragraph(*runs: Run, style: str | None = None) -> None:
         add_runs(document.add_paragraph(style=style), runs)

@@ -281,6 +281,18 @@ def test_docx_writes_answer_md_and_chain_data_as_literal_text(answered, monkeypa
     assert not [tag for tag in ("w:fldSimple", "w:instrText", "w:hyperlink", "w:drawing", "w:pict") if tag in xml]
 
 
+def test_docx_properties_name_blockjuice_and_the_answer_time(answered):
+    root, folder = answered
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    properties = docx.Document(path).core_properties
+    answered_at = datetime(2026, 11, 4, 19, tzinfo=timezone.utc)
+    assert (properties.title, properties.author, properties.comments) == (ANSWER["question"], "blockjuice", "")
+    assert (properties.created, properties.modified) == (answered_at, answered_at)
+    with zipfile.ZipFile(path) as package:
+        assert "python-docx" not in package.read("docProps/core.xml").decode()
+
+
 def test_characters_xml_cannot_hold_become_replacement_characters_in_docx_and_xlsx(answered):
     root, folder = answered
     (folder / "answer.md").write_text("token \ufffe name\n")
