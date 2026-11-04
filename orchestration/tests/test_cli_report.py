@@ -1,8 +1,11 @@
 import json
 import re
+import zipfile
 
+import docx
 import openpyxl
 import pytest
+from docx.table import Table
 
 from pipeline.cli import BadInput, main
 from pipeline.cli.report import cell_value, run
@@ -155,6 +158,119 @@ def test_pdf_never_loads_images_or_raw_html_from_answer_md(answered, monkeypatch
     assert (folder / "reports" / "top-wallets.pdf").read_bytes().startswith(b"%PDF")
 
 
+def outline(path):
+    """The body of a DOCX in order: (style, text) for a paragraph, ("table", rows of cell texts) for a table."""
+    document = docx.Document(path)
+    return [
+        ("table", [[cell.text for cell in row.cells] for row in block.rows])
+        if isinstance(block, Table)
+        else (block.style.name, block.text)
+        for block in document.iter_inner_content()
+    ]
+
+
+def test_docx_has_the_pdf_content_in_the_pdf_order(answered):
+    root, folder = answered
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    checks = [["Check", "Status", "Detail"], *([c["name"], c["status"], c["detail"]] for c in ANSWER["checks"])]
+    assert outline(path) == [
+        ("Title", ANSWER["question"]),
+        ("Normal", "Value: none"),
+        ("Normal", "Answered at 2026-11-04T19:00:00Z"),
+        ("Heading 1", "Top wallets"),
+        ("Normal", "The largest wallet holds 1.23 million ETH — “the deposit contract”."),
+        ("List Bullet", "It leads by a wide margin…"),
+        ("List Bullet", "Values are in wei ≈ 10⁻¹⁸ ETH."),
+        ("table", [["wallet", "note"], ["deposit", "✓ checked"]]),
+        ("Heading 2", "Definitions"),
+        ("Normal", "wallet: An address in addresses.json → one row per asset."),
+        ("Heading 2", "Checks"),
+        ("table", checks),
+        ("Heading 2", "top_wallets"),
+        ("table", [["wallet", "balance", "share"], [ADDRESS, BALANCE, "0.25"], ["x", "", "007"]]),
+        ("Normal", "results/top_wallets.csv has 2 rows."),
+        ("Heading 2", LONG_NAME),
+        ("table", [["n"], *([str(i)] for i in range(50))]),
+        ("Normal", f"results/{LONG_NAME}.csv has 60 rows, the first 50 shown above."),
+        ("Heading 2", "Provenance"),
+        ("Normal", "git_sha: abc123"),
+        ("Normal", "git_dirty: False"),
+        ("Normal", "dbt_version: 1.12.6"),
+    ]
+    document = docx.Document(path)
+    bold = {run.text for paragraph in document.paragraphs for run in paragraph.runs if run.bold}
+    assert {"1.23 million ETH", "wallet"} <= bold
+    assert all(cell.paragraphs[0].runs[0].bold for table in document.tables for cell in table.rows[0].cells)
+    assert not (folder / "reports" / "top-wallets.pdf").exists()
+
+
+def test_docx_renders_marks_lists_and_links_from_answer_md(answered):
+    root, folder = answered
+    (folder / "answer.md").write_text(
+        "Plain *italic* and `code` and **bold**, see [the explorer](https://etherscan.io/address/x).\n\n"
+        "    select 1\n      from t\n\n"
+        "1. first\n2. second\n    - nested\n\n> quoted\n\n"
+        "Between the lists.\n\n1. again\n"
+    )
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    assert outline(path)[3:11] == [
+        ("Normal", "Plain italic and code and bold, see the explorer (https://etherscan.io/address/x)."),
+        ("Normal", "select 1\n  from t"),
+        ("List Continue", "1. first"),
+        ("List Continue", "2. second"),
+        ("List Bullet 2", "nested"),
+        ("Quote", "quoted"),
+        ("Normal", "Between the lists."),
+        ("List Continue", "1. again"),
+    ]
+    paragraphs = docx.Document(path).paragraphs
+    assert [run.font.name for run in paragraphs[4].runs] == ["Courier New"]
+    marks = [(run.text, run.italic, run.font.name, run.bold) for run in paragraphs[3].runs]
+    assert ("italic", True, None, None) in marks
+    assert ("code", None, "Courier New", None) in marks
+    assert ("bold", None, None, True) in marks
+
+
+def test_docx_writes_answer_md_and_chain_data_as_literal_text(answered, monkeypatch):
+    root, folder = answered
+    (folder / "answer.md").write_text(
+        '<div><img src="/etc/shadow"></div>\n\n<img src="/etc/passwd">\n\nInline <img src="/etc/hosts"> too.\n\n'
+        "![x](http://example.com/a.png)\n\n![y][ref]\n\n[ref]: http://example.com/b.png\n\n"
+        "=cmd|' /C calc'!A0\n"
+    )
+    (folder / "results" / "top_wallets.csv").write_text(
+        f'wallet,balance,share\n"{FORMULA.replace(chr(34), chr(34) * 2)}",+1+1,bell\x07\n'
+    )
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["definitions"] = {"=term": "=1+1"}
+    (folder / "answer.json").write_text(json.dumps(answer))
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"python-docx tried to add an image: {args}")
+
+    monkeypatch.setattr("docx.document.Document.add_picture", refuse)
+    monkeypatch.setattr("docx.text.run.Run.add_picture", refuse)
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    body = outline(path)
+    assert body[3:9] == [
+        ("Normal", '<div><img src="/etc/shadow"></div>'),
+        ("Normal", '<img src="/etc/passwd">'),
+        ("Normal", 'Inline <img src="/etc/hosts"> too.'),
+        ("Normal", "![x](http://example.com/a.png)"),
+        ("Normal", "![y]ref (http://example.com/b.png)"),
+        ("Normal", "=cmd|' /C calc'!A0"),
+    ]
+    assert ("Normal", "=term: =1+1") in body
+    assert ("table", [["wallet", "balance", "share"], [FORMULA, "+1+1", "bell\ufffd"]]) in body
+    with zipfile.ZipFile(path) as package:
+        assert not [name for name in package.namelist() if name.startswith("word/media/")]
+        xml = package.read("word/document.xml").decode()
+    assert not [tag for tag in ("w:fldSimple", "w:instrText", "w:hyperlink", "w:drawing", "w:pict") if tag in xml]
+
+
 def test_missing_answer_md_is_bad_input_and_writes_nothing(answered):
     root, folder = answered
     (folder / "answer.md").unlink()
@@ -166,7 +282,7 @@ def test_missing_answer_md_is_bad_input_and_writes_nothing(answered):
 def test_unknown_format_exits_2(answered, monkeypatch, capsys):
     root, _ = answered
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
-    assert main(["report", "top-wallets", "--format", "docx"]) == 2
+    assert main(["report", "top-wallets", "--format", "html"]) == 2
     assert "--format takes" in capsys.readouterr().err
 
 

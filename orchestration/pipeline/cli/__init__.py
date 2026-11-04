@@ -95,12 +95,12 @@ def parser() -> argparse.ArgumentParser:
 
     report = commands.add_parser(
         "report",
-        help="write an answer as an XLSX workbook and a PDF",
+        help="write an answer as an XLSX workbook, a PDF or a DOCX",
         description="Reads answers/<slug>/answer.json, answer.md and results/, and writes "
-        "answers/<slug>/reports/<slug>.xlsx and .pdf.",
+        "answers/<slug>/reports/<slug>.xlsx, .pdf or .docx.",
     )
     report.add_argument("slug")
-    report.add_argument("--format", default="xlsx,pdf", help="comma-separated: xlsx, pdf (default: both)")
+    report.add_argument("--format", default="xlsx,pdf", help="comma-separated: xlsx, pdf, docx (default: xlsx,pdf)")
     report.set_defaults(run=_report)
 
     run = commands.add_parser(

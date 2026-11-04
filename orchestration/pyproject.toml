@@ -10,6 +10,7 @@ dependencies = [
     "markdown>=3.10.3",
     "openpyxl>=3.1.5",
     "psycopg2-binary>=2.9.13",
+    "python-docx>=1.2.0",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
     "requests>=2.34.2",

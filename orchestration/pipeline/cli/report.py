@@ -1,16 +1,21 @@
-"""bj report: an answer as an XLSX workbook and a PDF, for readers who do not read JSON."""
+"""bj report: an answer as an XLSX workbook, a PDF and a DOCX, for readers who do not read JSON."""
 
 import csv
 import html
 import json
 import re
+from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
+from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
+import docx
 import markdown
+from docx.document import Document
+from docx.text.paragraph import Paragraph
 from fpdf import FPDF
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -20,8 +25,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from pipeline.cli import BadInput
 from pipeline.cli.question import answer_dir
 
-FORMATS = ("xlsx", "pdf")
-PDF_ROWS = 50
+FORMATS = ("xlsx", "pdf", "docx")
+ROWS_SHOWN = 50
 # A plain decimal number. Leading zeros make it an identifier, which stays text.
 NUMBER = re.compile(r"^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$")
 # The PDF core fonts hold Latin-1 only. These code points read the same in ASCII; anything else becomes "?".
@@ -109,6 +114,12 @@ def value_cell(answer: dict[str, Any]) -> Any:
 
 def paragraphs(text: str) -> list[str]:
     return [part.strip() for part in re.split(r"\n\s*\n", text.strip()) if part.strip()]
+
+
+def row_count(table: Table) -> str:
+    count = len(table.rows)
+    shown = f", the first {ROWS_SHOWN} shown above" if count > ROWS_SHOWN else ""
+    return f"{table.path} has {count} row{'s' if count != 1 else ''}{shown}."
 
 
 def input_rows(answer: dict[str, Any]) -> list[list[Any]]:
@@ -241,16 +252,184 @@ def write_pdf(report: Report, path: Path) -> None:
     table(["Check", "Status", "Detail"], ([c["name"], c["status"], c["detail"]] for c in answer["checks"]))
     for result in report.tables:
         heading(result.name)
-        table(result.columns, result.rows[:PDF_ROWS])
-        shown = f", the first {PDF_ROWS} shown above" if len(result.rows) > PDF_ROWS else ""
-        line(f"{result.path} has {len(result.rows)} row{'s' if len(result.rows) != 1 else ''}{shown}.")
+        table(result.columns, result.rows[:ROWS_SHOWN])
+        line(row_count(result))
     heading("Provenance")
     for key, value in answer["provenance"].items():
         line(f"{key}: {value}")
     pdf.output(str(path))
 
 
-WRITERS = {"xlsx": write_xlsx, "pdf": write_pdf}
+MONOSPACE = "Courier New"
+HEADINGS = {f"h{level}": f"Heading {level}" for level in range(1, 7)}
+BLOCKS = {*HEADINGS, "p", "ul", "ol", "li", "pre", "blockquote", "hr", "table"}
+MARKS = {"strong": "bold", "em": "italic", "code": "code"}
+
+
+@dataclass(frozen=True)
+class Run:
+    text: str
+    bold: bool = False
+    italic: bool = False
+    code: bool = False
+
+
+def add_runs(paragraph: Paragraph, runs: Iterable[Run]) -> None:
+    """Writes each run as literal text in a w:t element, which Word and Google Docs never read as a field or formula."""
+    for run in runs:
+        written = paragraph.add_run(ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, run.text))
+        written.bold = run.bold or None
+        written.italic = run.italic or None
+        if run.code:
+            written.font.name = MONOSPACE
+
+
+def add_table(document: Document, rows: list[list[list[Run]]]) -> None:
+    """Adds rows as a table whose first row is the header, in bold. A row is a list of cells, a cell a list of runs."""
+    header, *body = rows
+    grid = document.add_table(rows=len(rows), cols=max(len(row) for row in rows))
+    grid.style = "Table Grid"
+    for cells, row in zip(grid.rows, [[[replace(run, bold=True) for run in cell] for cell in header], *body]):
+        for cell, runs in zip(cells.cells, row):
+            add_runs(cell.paragraphs[0], runs)
+
+
+def text_table(columns: list[str], rows: Iterable[Iterable[Any]]) -> list[list[list[Run]]]:
+    return [[[Run("" if cell is None else str(cell))] for cell in row] for row in [columns, *rows]]
+
+
+class DocxMarkdown(HTMLParser):
+    """Writes the HTML of markdown_html into a document as headings, paragraphs, lists, quotes, code blocks
+    and tables, with bold, italic and inline code. A link becomes its text and its URL in brackets."""
+
+    def __init__(self, document: Document) -> None:
+        super().__init__()
+        self.document = document
+        self.runs: list[Run] = []
+        self.style: str | None = None
+        self.prefix = ""
+        # One entry per open list: None for a bulleted list, the items so far for a numbered one.
+        self.lists: list[int | None] = []
+        self.quotes = 0
+        self.pre = False
+        self.marks: Counter[str] = Counter()
+        self.links: list[tuple[str, int]] = []
+        self.table: list[list[list[Run]]] = []
+
+    def run(self, text: str) -> Run:
+        return Run(text, **{mark: self.marks[mark] > 0 for mark in MARKS.values()})
+
+    def list_style(self, name: str) -> str:
+        depth = min(len(self.lists), 3)
+        return name if depth == 1 else f"{name} {depth}"
+
+    def flush(self) -> None:
+        runs, self.runs = self.runs, []
+        if not "".join(run.text for run in runs).strip():
+            return
+        if self.pre:
+            runs[-1] = replace(runs[-1], text=runs[-1].text.rstrip("\n"))
+        else:
+            runs[0] = replace(runs[0], text=runs[0].text.lstrip())
+            runs[-1] = replace(runs[-1], text=runs[-1].text.rstrip())
+        if self.style is None and self.lists:
+            self.style = self.list_style("List Continue")
+        elif self.style is None and self.quotes:
+            self.style = "Quote"
+        add_runs(self.document.add_paragraph(style=self.style), [Run(self.prefix), *runs] if self.prefix else runs)
+        self.style, self.prefix = None, ""
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in BLOCKS:
+            self.flush()
+        if tag in HEADINGS:
+            self.style = HEADINGS[tag]
+        elif tag == "ul":
+            self.lists.append(None)
+        elif tag == "ol":
+            self.lists.append(0)
+        elif tag == "li" and self.lists[-1] is None:
+            self.style = self.list_style("List Bullet")
+        elif tag == "li":
+            # Word's List Number style counts on from the previous list, so each item carries its number as text.
+            self.lists[-1] += 1
+            self.style = self.list_style("List Continue")
+            self.prefix = f"{self.lists[-1]}. "
+        elif tag == "blockquote":
+            self.quotes += 1
+        elif tag == "pre":
+            self.pre = True
+        elif tag == "tr":
+            self.table.append([])
+        elif tag in ("th", "td"):
+            self.runs = []
+        elif tag in MARKS:
+            self.marks[MARKS[tag]] += 1
+        elif tag == "a":
+            self.links.append((dict(attrs).get("href") or "", len(self.runs)))
+        elif tag == "br":
+            self.runs.append(self.run("\n"))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in BLOCKS:
+            self.flush()
+            self.style, self.prefix = None, ""
+        if tag in ("ul", "ol"):
+            self.lists.pop()
+        elif tag == "blockquote":
+            self.quotes -= 1
+        elif tag == "pre":
+            self.pre = False
+        elif tag in ("th", "td"):
+            self.table[-1].append(self.runs)
+            self.runs = []
+        elif tag == "table":
+            add_table(self.document, self.table)
+            self.table = []
+        elif tag in MARKS:
+            self.marks[MARKS[tag]] -= 1
+        elif tag == "a":
+            href, start = self.links.pop()
+            if href and href != "".join(run.text for run in self.runs[start:]).strip():
+                self.runs.append(self.run(f" ({href})"))
+
+    def handle_data(self, data: str) -> None:
+        self.runs.append(self.run(data if self.pre else re.sub(r"\s+", " ", data)))
+
+
+def write_docx(report: Report, target: Path | IO[bytes]) -> None:
+    answer = report.answer
+    document = docx.Document()
+    document.core_properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])
+
+    def paragraph(*runs: Run, style: str | None = None) -> None:
+        add_runs(document.add_paragraph(style=style), runs)
+
+    paragraph(Run(answer["question"]), style="Title")
+    value = answer["value"]
+    paragraph(Run(f"Value: {'none' if value is None else value}"))
+    paragraph(Run(f"Answered at {answer['answered_at']}"))
+    parser = DocxMarkdown(document)
+    parser.feed(markdown_html(report.text))
+    parser.close()
+
+    if answer["definitions"]:
+        paragraph(Run("Definitions"), style="Heading 2")
+        for term, definition in answer["definitions"].items():
+            paragraph(Run(term, bold=True), Run(f": {definition}"))
+    paragraph(Run("Checks"), style="Heading 2")
+    add_table(document, text_table(["Check", "Status", "Detail"], ([c["name"], c["status"], c["detail"]] for c in answer["checks"])))
+    for result in report.tables:
+        paragraph(Run(result.name), style="Heading 2")
+        add_table(document, text_table(result.columns, result.rows[:ROWS_SHOWN]))
+        paragraph(Run(row_count(result)))
+    paragraph(Run("Provenance"), style="Heading 2")
+    for key, value in answer["provenance"].items():
+        paragraph(Run(f"{key}: {value}"))
+    document.save(target)
+
+
+WRITERS = {"xlsx": write_xlsx, "pdf": write_pdf, "docx": write_docx}
 
 
 def run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
