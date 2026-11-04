@@ -68,7 +68,7 @@ export const ethereumErc20Transfers: StreamSource<TransfersEnv> = {
     return evmPortalStream({
       id: "ethereum-erc20-transfers",
       portal,
-      logger: logger.child({ source: "ethereum", table: "erc20_transfers" }),
+      logger: logger.child({ source: this.name, table: this.table }),
       outputs: { incoming: transfers({ to: wallets }), outgoing: transfers({ from: wallets }) },
     });
   },
