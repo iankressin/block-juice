@@ -226,6 +226,7 @@ def offline(monkeypatch):
 
     monkeypatch.setattr(answer, "run_dbt_tests", run_dbt_tests)
     monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
+    monkeypatch.setattr(answer.coverage, "sources", lambda root: [TRANSFERS, "ethereum.eth_balances"])
     monkeypatch.setattr(answer.coverage, "stream_sources", lambda root: [TRANSFERS])
     monkeypatch.setattr(answer.coverage, "read", lambda root, name: {TRANSFERS: LOADED}[name])
     finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
