@@ -41,7 +41,8 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 │       ├── intermediate/<pipeline>/
 │       └── marts/<pipeline>/   # a pipeline's output tables, one folder per pipeline
 ├── infra/                      # the Postgres warehouse, eRPC, Dshackle and monitoring
-│   ├── postgres/init.sql       # eRPC database, monitor role, ops run log
+│   ├── postgres/init.sql       # eRPC database and monitor role, then runs ops.sql
+│   ├── postgres/ops.sql        # the ops run log, plain SQL so tests can load it
 │   ├── prometheus/
 │   └── grafana/
 │       ├── build_dashboards.py # writes dashboards/ingestion.json and pipeline.json
@@ -99,7 +100,7 @@ Each layer also runs alone, with the env vars loaded:
 
 A source run ends before Prometheus could scrape it, so each run pushes its result to the Pushgateway at `PUSHGATEWAY_URL`, and Prometheus scrapes that. The result covers whether the run succeeded, when it finished, how long it took, the records it wrote, its failed calls and the dead letters it retried, labelled by source and table. It also counts the dead letters left waiting, as `ingestion_dead_letters` with `state` set to `pending` (retried next run) or `parked` (failed too often or no longer matches the source's call schema, waits for a person). With `PUSHGATEWAY_URL` unset, a run pushes nothing.
 
-Prometheus keeps only each source's latest result, so the history of every run lives in the warehouse, in the `ops` schema that `infra/postgres/init.sql` creates:
+Prometheus keeps only each source's latest result, so the history of every run lives in the warehouse, in the `ops` schema that `infra/postgres/ops.sql` creates:
 
 - `ops.ingestion_runs` holds one row per source run. `runSource` writes it, with the error when the run failed and the time spent writing to the warehouse.
 - `ops.dbt_invocations` and `ops.dbt_node_runs` hold each dbt build and each model and test in it. The Dagster dbt asset writes them from `run_results.json`, so a `dbt build` run by hand is not recorded.

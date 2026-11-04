@@ -29,11 +29,11 @@ services:
       PGDATABASE: ${WAREHOUSE_DB:-warehouse}
       MONITOR_PASSWORD: ${MONITOR_PASSWORD:-monitor}
     volumes:
-      - ./postgres/init.sql:/init.sql:ro
+      - ./postgres:/sql:ro
     command:
       - sh
       - -c
-      - psql -v ON_ERROR_STOP=1 -v monitor_password="$$MONITOR_PASSWORD" -f /init.sql
+      - psql -v ON_ERROR_STOP=1 -v monitor_password="$$MONITOR_PASSWORD" -f /sql/init.sql
     depends_on:
       warehouse:
         condition: service_healthy
