@@ -18,6 +18,7 @@ A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it
 .
 ├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
 ├── answers/<slug>/             # one answer per question: question.yaml, answer.json, answer.md, results/
+├── catalog/protocols/<name>/   # contracts, events and ABIs of a protocol, proven on real logs
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
 ├── .env.example                # settings shared by all three tools
 ├── ingestion/                  # pnpm workspace
@@ -107,7 +108,7 @@ Open the repo in Claude Code and ask a question about chain data, or type `/bj <
 - `results/` holds one CSV per analysis.
 - `reports/` holds what `bj report` builds: XLSX, PDF and Word files, and the id of the answer's Google Doc. Git ignores it.
 
-`answers/tracked-wallets-eth/` is an example. The skill reads state through the balance sources and history through stream sources, which load events over a range of blocks. It can't yet explore a protocol it doesn't know. `.mcp.json` registers the SQD Portal MCP, which the skill uses to estimate a load and to cross-check a history answer.
+`answers/tracked-wallets-eth/` is an example. The skill reads state through the balance sources and history through stream sources, which load events over a range of blocks. When a question involves a protocol it doesn't know, it first writes the protocol's contracts, events and their meaning to `catalog/protocols/<name>/`, each proven on a real transaction. `catalog/protocols/uniswap/` is the first entry. `.mcp.json` registers the SQD Portal MCP, which the skill uses to estimate a load and to cross-check a history answer.
 
 The skill runs every mechanical step through the `bj` CLI, whose long name is `blockjuice`. It lives in `orchestration/pipeline/cli/` and reads `.env` itself. Run it from the repo root:
 

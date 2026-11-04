@@ -18,7 +18,7 @@ Pick the workflow for the request and read it:
 | Events, transfers or traces over a range of blocks that no source reads yet, or not far enough | [workflows/history-source.md](workflows/history-source.md) |
 | A reusable mart that no pipeline builds yet | [workflows/new-pipeline.md](workflows/new-pipeline.md) |
 
-Never stand in state reads for history ([references/choosing-the-data.md](references/choosing-the-data.md)). Exploring a protocol the catalog lacks is not built yet: when a question needs one, finish scoping, tell the user which protocol, and stop.
+Never stand in state reads for history ([references/choosing-the-data.md](references/choosing-the-data.md)). A protocol with no entry in `catalog/protocols/` gets one first: [workflows/explore-protocol.md](workflows/explore-protocol.md).
 
 ## Commands
 

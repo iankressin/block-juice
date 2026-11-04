@@ -25,7 +25,7 @@ When a source already reads the right events:
 
 ## A new history source
 
-1. Find the events in the protocol's catalog entry, `catalog/protocols/<name>/`. With no entry, stop and tell the user which protocol: exploring one is not built yet.
+1. Find the events in the protocol's catalog entry, `catalog/protocols/<name>/`. With no entry, follow [explore-protocol.md](explore-protocol.md) first.
 2. Estimate the load before you build: count the matching logs in a sample of blocks with the Portal MCP (`portal_evm_query_logs`), and scale to the window. Put the estimate in front of the user with the definitions, per [answer.md](answer.md).
 3. Scaffold from the transfers source:
 
