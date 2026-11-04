@@ -50,6 +50,12 @@ def _report(args: argparse.Namespace) -> int:
     return report.run(REPO_ROOT, args.slug, args.format)
 
 
+def _run(args: argparse.Namespace) -> int:
+    from pipeline.cli import run
+
+    return run.run(REPO_ROOT, args.pipeline)
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="The mechanical steps of answering a question about chain data.")
     commands = root.add_subparsers(dest="command", required=True, metavar="<command>")
@@ -96,6 +102,15 @@ def parser() -> argparse.ArgumentParser:
     report.add_argument("slug")
     report.add_argument("--format", default="xlsx,pdf", help="comma-separated: xlsx, pdf (default: both)")
     report.set_defaults(run=_report)
+
+    run = commands.add_parser(
+        "run",
+        help="materialize one pipeline's Dagster job: ingestion, then dbt",
+        description="Parses the dbt project, then runs the Dagster job of <pipeline> in this process. "
+        "Exits 1 when the run fails, naming the steps that failed.",
+    )
+    run.add_argument("pipeline")
+    run.set_defaults(run=_run)
 
     return root
 
