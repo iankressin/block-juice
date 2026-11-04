@@ -635,6 +635,25 @@ def test_gdoc_asks_for_consent_once_and_caches_the_token(consents):
     assert gdoc.TOKEN.stat().st_mode & 0o777 == 0o600
 
 
+def test_gdoc_rewrites_a_token_that_others_can_read_with_mode_600(consents):
+    cache_token("token-0", timedelta(hours=1))
+    gdoc.TOKEN.chmod(0o644)
+    gdoc.connect()
+    assert gdoc.TOKEN.stat().st_mode & 0o777 == 0o600
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-0"
+
+
+def test_gdoc_keeps_the_cached_token_whole_when_writing_the_new_one_fails(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=1))
+    cached = gdoc.TOKEN.read_text()
+    # UTF-8 cannot encode a lone surrogate, so the write fails after the file is open, as on a full disk.
+    monkeypatch.setattr(Credentials, "to_json", lambda credentials: '{"token": "\ud800"}')
+    with pytest.raises(UnicodeEncodeError):
+        gdoc.connect()
+    assert gdoc.TOKEN.read_text() == cached
+    assert [path.name for path in gdoc.TOKEN.parent.iterdir()] == [gdoc.TOKEN.name]
+
+
 def test_gdoc_refreshes_an_expired_token_without_asking_again(consents, monkeypatch):
     cache_token("token-0", timedelta(hours=-1))
 

@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -64,10 +65,22 @@ def user_credentials(client_secret: Path) -> Credentials:
         except ValueError as error:
             raise BadInput(f"GOOGLE_OAUTH_CLIENT_SECRET: {error}") from None
         credentials = flow.run_local_server(port=0)
-    TOKEN.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN.touch(mode=0o600)
-    TOKEN.write_text(credentials.to_json())
+    save_token(credentials)
     return credentials
+
+
+def save_token(credentials: Credentials) -> None:
+    """Writes credentials to TOKEN with mode 600. The write goes to a temporary file that then replaces TOKEN,
+    so a write that fails partway leaves the old token whole."""
+    TOKEN.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(dir=TOKEN.parent, prefix=f".{TOKEN.name}.")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(credentials.to_json())
+        os.replace(temporary, TOKEN)
+    except BaseException:
+        os.unlink(temporary)
+        raise
 
 
 def connect() -> Any:
