@@ -68,12 +68,23 @@ inputs:
 """,
     )
     question = load_question(tmp_path, "usdc-flows")
-    assert question.blocks == (26316189, 26340000)
+    assert question.blocks == {"ethereum": (26316189, 26340000)}
     assert question.window == {"chain": "ethereum", "blocks": [26316189, 26340000]}
     assert question.sources == (
         SourceInput("ethereum.erc20_transfers", {"tokens": [USDC]}),
         SourceInput("ethereum.erc20_transfers", {}),
     )
+
+
+def test_reads_a_block_range_for_each_chain(tmp_path):
+    write_question(tmp_path, "q", "question: q\nwindow: {blocks: {ethereum: [26316189, 26340000], base: [53350927, 53394126]}}\n")
+    assert load_question(tmp_path, "q").blocks == {"ethereum": (26316189, 26340000), "base": (53350927, 53394126)}
+
+
+def test_one_block_range_needs_the_chain_it_is_on(tmp_path):
+    write_question(tmp_path, "q", "question: q\nwindow: {blocks: [100, 200]}\n")
+    with pytest.raises(BadInput, match=re.escape("'window.blocks' as [from, to] needs 'window.chain'")):
+        load_question(tmp_path, "q")
 
 
 def test_unknown_key_names_it_and_lists_the_allowed_keys(tmp_path):
@@ -112,6 +123,11 @@ def test_wrong_type_names_the_key(tmp_path, text, key):
         ("window: {blocks: [100, latest]}\n", "window.blocks"),
         ("window: {blocks: [true, 2]}\n", "window.blocks"),
         ("window: {blocks: [-1, 2]}\n", "window.blocks"),
+        ("window: {blocks: {ethereum: [200, 100]}}\n", "window.blocks"),
+        ("window: {blocks: {ethereum: 100}}\n", "window.blocks"),
+        ("window: {blocks: {Ethereum: [100, 200]}}\n", "window.blocks"),
+        ("window: {blocks: {}}\n", "window.blocks"),
+        ("window: {chain: [ethereum], blocks: [100, 200]}\n", "window.chain"),
         ("inputs: [{source: erc20_transfers}]\n", "inputs[0].source"),
         ("inputs: [{name: a}, {source: 3}]\n", "inputs[1].source"),
         (f'inputs: [{{source: ethereum.erc20_transfers, filter: {{tokens: "{USDC}"}}}}]\n', "inputs[0].filter"),

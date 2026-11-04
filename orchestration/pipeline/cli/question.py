@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,7 @@ SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # A dbt node name, and nothing a dbt selector would read as a method, graph operator or path.
 ANALYSIS = re.compile(r"^[A-Za-z0-9_]+$")
 SOURCE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
+CHAIN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,11 @@ class SourceInput:
 
     source: str
     filter: dict[str, list[str]]
+
+    @property
+    def chain(self) -> str:
+        """The chain the source reads, which names the source before the dot."""
+        return self.source.split(".")[0]
 
 
 @dataclass(frozen=True)
@@ -37,7 +43,8 @@ class Question:
     inputs: tuple[dict[str, Any], ...]
     marts: tuple[str, ...]
     analyses: tuple[str, ...]
-    blocks: tuple[int, int] | None = None
+    # window.blocks, by chain.
+    blocks: dict[str, tuple[int, int]] = field(default_factory=dict)
     sources: tuple[SourceInput, ...] = ()
 
 
@@ -56,6 +63,25 @@ def _block_range(value: Any) -> bool:
         and all(isinstance(block, int) and not isinstance(block, bool) and block >= 0 for block in value)
         and value[0] <= value[1]
     )
+
+
+def _window_blocks(window: dict[str, Any], label: str) -> dict[str, tuple[int, int]]:
+    """window.blocks by chain: [from, to] on window.chain, or a map of each chain to its [from, to]."""
+    if "blocks" not in window:
+        return {}
+    blocks = window["blocks"]
+    if isinstance(blocks, dict) and blocks and all(CHAIN.match(str(c)) and _block_range(r) for c, r in blocks.items()):
+        return {chain: tuple(span) for chain, span in blocks.items()}
+    if not _block_range(blocks):
+        raise BadInput(
+            f"{label}: 'window.blocks' must be [from, to], two block numbers with from <= to,"
+            " or map each chain to its [from, to]"
+        )
+    if "chain" not in window:
+        raise BadInput(f"{label}: 'window.blocks' as [from, to] needs 'window.chain'; for several chains, map each to its [from, to]")
+    if not isinstance(window["chain"], str) or not CHAIN.match(window["chain"]):
+        raise BadInput(f"{label}: 'window.chain' must be a chain name, such as ethereum")
+    return {window["chain"]: tuple(blocks)}
 
 
 def _filter(value: Any) -> bool:
@@ -108,8 +134,7 @@ def load_question(repo_root: Path, slug: str) -> Question:
     if "question" not in raw:
         raise BadInput(f"{label}: 'question' is required")
     window = raw.get("window", {})
-    if "blocks" in window and not _block_range(window["blocks"]):
-        raise BadInput(f"{label}: 'window.blocks' must be [from, to], two block numbers with from <= to")
+    blocks = _window_blocks(window, label)
     sources = []
     for index, item in enumerate(raw.get("inputs", [])):
         if "source" not in item:
@@ -133,6 +158,6 @@ def load_question(repo_root: Path, slug: str) -> Question:
         inputs=tuple(raw.get("inputs", [])),
         marts=tuple(raw.get("marts", [])),
         analyses=tuple(raw.get("analyses", [slug.replace("-", "_")])),
-        blocks=tuple(window["blocks"]) if "blocks" in window else None,
+        blocks=blocks,
         sources=tuple(sources),
     )

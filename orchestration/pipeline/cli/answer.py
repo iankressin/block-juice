@@ -174,23 +174,27 @@ def stream_inputs(
                 f"{label}: the analyses read the stream source {read.name}; "
                 f"add an input with source: {read.name} and the filter it needs"
             )
-    if declared and question.blocks is None:
+    if declared and not question.blocks:
         raise BadInput(f"{label}: inputs read the stream source {', '.join(sorted(named))}, so set window.blocks: [from, to]")
     return declared
 
 
-def coverage_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage], blocks: tuple[int, int]) -> Check:
-    """Passed when each stream input's source has loaded every block of the window, for the addresses its filter names."""
+def coverage_check(
+    inputs: Iterable[SourceInput], coverages: dict[str, Coverage], blocks: dict[str, tuple[int, int]]
+) -> Check:
+    """Passed when each stream input's source has loaded every block of the window on its chain, for the
+    addresses its filter names."""
     details, passed = [], True
     for i in inputs:
         loaded = coverages[i.source]
         span = f"loaded {loaded.start_block}-{loaded.cursor}" if loaded.cursor is not None else "nothing loaded"
-        gaps = loaded.gaps(blocks, i.filter)
+        window = blocks.get(i.chain)
+        gaps = loaded.gaps(window, i.filter) if window else [f"window.blocks has no blocks for {i.chain}"]
         passed = passed and not gaps
         details.append(
             f"{i.source} ({span}): {', '.join(gaps)}"
             if gaps
-            else f"{i.source} ({span}) covers blocks {blocks[0]}-{blocks[1]} and the filter"
+            else f"{i.source} ({span}) covers blocks {window[0]}-{window[1]} and the filter"
         )
     return Check("coverage", passed, "; ".join(details))
 

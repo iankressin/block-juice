@@ -298,25 +298,25 @@ USDC_FLOWS = f'[{{source: {TRANSFERS}, filter: {{tokens: ["{USDC.lower()}"]}}}}]
 
 
 def test_coverage_passes_when_the_source_loaded_the_blocks_and_the_filter(history):
-    code, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
+    code, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     assert code == 0
     assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
 
 
 def test_bj_check_refuses_the_name_of_every_check_bj_answer_runs(history):
-    _, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
+    _, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     assert sorted(checks) == sorted(check.ANSWER_CHECKS)
 
 
 def test_a_new_answer_drops_the_checks_the_agent_added(tmp_path, history):
-    history("{blocks: [100, 180]}", USDC_FLOWS)
+    history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     assert check.run(tmp_path, "usdc-flows", "cross_check", "passed", "Portal agrees") == 0
-    _, checks = history("{blocks: [100, 180]}", USDC_FLOWS)
+    _, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     assert "cross_check" not in checks
 
 
 def test_dbt_tests_get_what_the_stream_inputs_loaded_and_state_answers_get_nothing(tmp_path, history, offline, monkeypatch):
-    history("{blocks: [100, 180]}", USDC_FLOWS)
+    history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     write_question(tmp_path)
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
     answer.run(tmp_path, "eth-total")
@@ -340,26 +340,53 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):
-    code, checks = history("{blocks: [100, 181]}", USDC_FLOWS)
+    code, checks = history("{chain: ethereum, blocks: [100, 181]}", USDC_FLOWS)
     assert code == 1
     assert checks["coverage"] == ("failed", "ethereum.erc20_transfers (loaded 100-180): cursor 180 is before 181")
     assert "coverage: FAILED" in capsys.readouterr().out
 
 
 def test_coverage_fails_naming_a_filter_address_the_source_did_not_load(history):
-    code, checks = history("{blocks: [120, 150]}", f'[{{source: {TRANSFERS}, filter: {{wallets: ["0xdead"]}}}}]')
+    code, checks = history("{chain: ethereum, blocks: [120, 150]}", f'[{{source: {TRANSFERS}, filter: {{wallets: ["0xdead"]}}}}]')
     assert code == 1
     assert checks["coverage"] == ("failed", "ethereum.erc20_transfers (loaded 100-180): wallets not in addresses.json: 0xdead")
 
 
 def test_coverage_reports_a_source_that_has_loaded_nothing():
-    check = answer.coverage_check([SourceInput(TRANSFERS, {})], {TRANSFERS: replace(LOADED, cursor=None)}, (100, 100))
+    check = answer.coverage_check([SourceInput(TRANSFERS, {})], {TRANSFERS: replace(LOADED, cursor=None)}, {"ethereum": (100, 100)})
     assert check == Check("coverage", False, "ethereum.erc20_transfers (nothing loaded): no run has saved a cursor")
+
+
+def test_coverage_checks_each_input_against_the_blocks_of_its_chain():
+    base = "base.erc20_transfers"
+    loaded = {TRANSFERS: LOADED, base: replace(LOADED, source="base", raw_table="raw.base_erc20_transfers", start_block=5, cursor=9)}
+    check = answer.coverage_check(
+        [SourceInput(TRANSFERS, {}), SourceInput(base, {})], loaded, {"ethereum": (100, 180), "base": (5, 9)}
+    )
+    assert check == Check(
+        "coverage",
+        True,
+        "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter; "
+        "base.erc20_transfers (loaded 5-9) covers blocks 5-9 and the filter",
+    )
+
+
+def test_coverage_passes_with_a_block_range_for_each_chain(history):
+    code, checks = history("{blocks: {base: [5, 9], ethereum: [100, 180]}}", USDC_FLOWS)
+    assert code == 0
+    assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
+
+
+@pytest.mark.parametrize("window", ["{chain: base, blocks: [100, 180]}", "{blocks: {base: [100, 180]}}"])
+def test_coverage_fails_when_the_window_has_no_blocks_for_the_chain_of_an_input(history, window):
+    code, checks = history(window, USDC_FLOWS)
+    assert code == 1
+    assert checks["coverage"] == ("failed", "ethereum.erc20_transfers (loaded 100-180): window.blocks has no blocks for ethereum")
 
 
 def test_a_stream_source_the_question_does_not_name_is_bad_input(history):
     with pytest.raises(BadInput, match="read the stream source ethereum.erc20_transfers; add an input with source: ethereum"):
-        history("{blocks: [100, 180]}", "[{name: transfers, mart: erc20_transfers}]")
+        history("{chain: ethereum, blocks: [100, 180]}", "[{name: transfers, mart: erc20_transfers}]")
 
 
 def test_an_input_naming_a_source_that_is_not_a_stream_source_gets_no_coverage_check(tmp_path, offline):
