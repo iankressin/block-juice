@@ -41,6 +41,14 @@ Three v4 rules break a one-to-one match between a Swap log and token Transfer lo
 2. Tokens move only when the unlocking contract calls `settle` or `take`, and those calls move the net balance of all its swaps in the unlock. A route through two v4 pools emits two Swap logs but no Transfer for the middle token.
 3. A swapper can keep its output inside the PoolManager as ERC-6909 claims. No ERC-20 Transfer leaves the PoolManager then.
 
+A hooked pool can also fill a swap from another pool. Transaction `0x6794a887c4cecd53232ae2b888d439e4ebbb28372d74c2add08354c6ff785560` (block 26200646) shows it on pool `0xcc2bed5ca7ab0c93173ea0c894b280b42dc146671183fc2c27a6a3254e496fe3`, PEPE/WETH with hook `0xDC766448fF29B8Cd12AE12D8252762d93ecD2ac0`.
+
+- Log 212 is a v2 Swap on the PEPE/WETH pair. Its `sender` is the hook and its `to` is the PoolManager. It sends 11946771513895702855892124 PEPE to the PoolManager.
+- Log 215 is the v4 Swap for the user's trade. Its `sender` is Universal Router 2.1.2 `0x23617e59A5925b2A4Bf75d73ff6711cD0b29De85` (from the v4 deployments page), and `amount0` is +11922877970867911004480773 PEPE. Log 223 moves exactly that amount from the PoolManager to `0xeDe509211873f0f23e982caDd287E69Df7D1a1aB`, which is neither `tx.from` nor `tx.to`.
+- Logs 213 and 217 are v4 Swaps on the same pool with `sender` set to the hook, both amounts 0 and liquidity 0. In October 2026, 576 of this pool's 855 Swap logs have a zero PEPE amount.
+
+So one buy appears as a v2 Swap and a v4 Swap in the same transaction. Count trades per transaction, not Swap logs across versions, and skip Swap logs whose token amount is 0.
+
 ### How these fields relate to `tx.from`
 
 `tx.from` is the account that signed and paid gas for the transaction. Between that account and the pool there is usually at least one contract. Neither `sender` nor `to`/`recipient` reliably names the person. The proof transactions show three common cases.
