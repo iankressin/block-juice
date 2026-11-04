@@ -31,7 +31,10 @@ async function portal(t: TestContext) {
 }
 
 async function records(url: string, startBlock: number) {
-  const stream = await ethereumErc20Transfers.stream({ PORTAL_URL: url, START_BLOCK: startBlock });
+  const stream = await ethereumErc20Transfers.stream(
+    { PORTAL_URL: url, START_BLOCK: startBlock },
+    ethereumErc20Transfers.addresses.parse(addresses),
+  );
   const read: RawRecord[] = [];
   for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
   return read.map(({ id, data }) => ({ id, block: data.block_number, from: data.from, to: data.to, value: data.value }));

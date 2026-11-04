@@ -38,6 +38,7 @@ function transfers(url: string, to: number, maxBlocksPerRun: number, broken = ()
     name: "test",
     table: "transfers",
     env: z.object({}),
+    addresses: z.undefined(),
     maxBlocksPerRun,
     stream: async () =>
       evmPortalStream({

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as z from "zod";
 import { describeError } from "#src/calls.ts";
-import { loadEnv } from "#src/env.ts";
+import { loadAddresses, loadEnv } from "#src/env.ts";
 import { logger } from "#src/logger.ts";
 import { pushRunMetrics } from "#src/run/metrics.ts";
 import type { Source, StreamSource } from "#src/source.ts";
@@ -36,12 +36,12 @@ export type RunReport = {
  * where Pipes resumes it after the last block it loaded. Either way, runSource counts what
  * happened. Failed calls only warn; the records that did arrive are kept.
  *
- * Any error, including an invalid environment, is logged once as fatal and sets the exit
- * code, instead of reaching Node's own crash output. Every run pushes its metrics and adds
- * a row to the warehouse's run log.
+ * Any error, including an invalid environment or addresses.json, is logged once as fatal and
+ * sets the exit code, instead of reaching Node's own crash output. Every run pushes its metrics
+ * and adds a row to the warehouse's run log.
  */
-export async function runSource<E, C>(
-  source: Source<E, C> | StreamSource<E>,
+export async function runSource<E, C, A>(
+  source: Source<E, C, A> | StreamSource<E, A>,
   warehouse: Warehouse = postgresWarehouse(),
 ): Promise<void> {
   const runId = randomUUID();
@@ -57,11 +57,12 @@ export async function runSource<E, C>(
 
   try {
     const env = loadEnv(source.env);
+    const addresses = loadAddresses(source.addresses);
     const table = await warehouse.open(`${source.name}_${source.table}`);
     try {
       if ("stream" in source) {
         log.info({ runId }, "Run started");
-        const stream = await source.stream(env);
+        const stream = await source.stream(env, addresses);
         await stream.pipeTo(
           table.pipesTarget({
             maxBlocks: source.maxBlocksPerRun ?? MAX_BLOCKS_PER_RUN,
@@ -83,7 +84,7 @@ export async function runSource<E, C>(
         retriedCalls = retry.length;
         log.info({ runId, retriedCalls }, "Run started");
 
-        for await (const batch of source.extract(env, retry)) {
+        for await (const batch of source.extract(env, retry, addresses)) {
           const loadStartedAt = performance.now();
           await table.load(batch);
           loadSeconds += (performance.now() - loadStartedAt) / 1000;

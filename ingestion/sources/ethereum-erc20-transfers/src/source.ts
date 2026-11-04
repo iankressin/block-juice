@@ -5,7 +5,7 @@ import {
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
-import { validateEthAddressList } from "@ingestion/lib/evm";
+import { address } from "@ingestion/lib/evm";
 import {
   commonAbis,
   evmEventDecoder,
@@ -22,6 +22,8 @@ const env = z.object({
 });
 
 export type TransfersEnv = z.infer<typeof env>;
+
+const addresses = z.object({ wallets: z.array(address), tokens: z.array(address) });
 
 const Transfer = commonAbis.erc20.events.Transfer;
 
@@ -47,15 +49,13 @@ const toRecord = (t: DecodedEvent<ReturnType<typeof Transfer.decode>>): RawRecor
 // Every Transfer of the tokens in addresses.json into or out of its wallets, up to Portal's
 // finalized head when the run starts. A transfer between two of the wallets is in both
 // outputs, under the same id, so the warehouse keeps one row.
-export const ethereumErc20Transfers: StreamSource<TransfersEnv> = {
+export const ethereumErc20Transfers: StreamSource<TransfersEnv, z.infer<typeof addresses>> = {
   name: "ethereum",
   table: "erc20_transfers",
   env,
-  async stream(env) {
-    // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
-    const wallets = validateEthAddressList(addresses.wallets).map((a) => a.toLowerCase());
-    const tokens = validateEthAddressList(addresses.tokens);
+  addresses,
+  async stream(env, { wallets: listed, tokens }) {
+    const wallets = listed.map((a) => a.toLowerCase());
     const portal = portalClient(env.PORTAL_URL);
     const range = { from: env.START_BLOCK, to: await finalizedHead(portal) };
 
