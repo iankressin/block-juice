@@ -21,7 +21,7 @@ History backfills (events, transfers or traces over a block range) and protocol 
 
 ## Commands
 
-Run commands from the repo root. The stack must be up (`docker compose up -d`), and `.env` must exist (`cp .env.example .env`).
+Run commands from the repo root. The stack must be up (`docker compose up -d`), and `.env` must exist (`cp .env.example .env`). `bj run` also needs `pnpm install` in `ingestion/`, once per checkout.
 
 - `uv run --project orchestration bj <command>` runs every mechanical step. It reads `.env` itself. `bj --help` lists the commands.
 - dbt and Dagster read settings from the environment, so start each such command with `set -a && . ./.env && set +a &&`.

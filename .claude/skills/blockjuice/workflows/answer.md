@@ -15,24 +15,14 @@ Write `answers/<slug>/question.yaml` in the format of [../references/question-sp
 
 Look for marts that already hold each input, in `transformation/models/marts/*/`. Read a mart's SQL and its `_<pipeline>__models.yml` before trusting its name.
 
-- Every input is in a mart: go to step 4.
+- Every input is in a mart: go to step 3.
 - An input needs history: stop and tell the user which input needs it. History backfills are not built yet.
 - An input needs state that no source reads: follow [state-source.md](state-source.md), then [new-pipeline.md](new-pipeline.md).
 - The sources hold the data but no mart shapes it the way the question needs: follow [new-pipeline.md](new-pipeline.md).
 
 Before you build a source or a pipeline, show the user the definitions, window and inputs from `question.yaml`, and wait for a go. When existing marts answer the question, do not stop to ask.
 
-## 3. Load
-
-Run the pipeline that builds the marts when they are missing, or older than the question needs:
-
-```sh
-uv run --project orchestration bj run <pipeline>
-```
-
-It runs every source and model the pipeline needs, the same job its schedule runs. Each source reads its own `ingestion/sources/<package>/.env`. Copy its `.env.example` when that file is missing, and tell the user which values to check.
-
-## 4. Write the analysis
+## 3. Write the analysis
 
 Write `transformation/analyses/<name>.sql`, where `<name>` is the slug with `_` for `-`.
 
@@ -41,13 +31,23 @@ Write `transformation/analyses/<name>.sql`, where `<name>` is the slug with `_` 
 - Put a breakdown in a second analysis, `<name>_by_<thing>.sql`, and list both under `analyses` in `question.yaml`.
 - Convert base units in SQL (wei to ETH, satoshis to BTC, token units by decimals) and name the unit in the column, such as `eth`.
 
-## 5. Run and check
+## 4. Run and check
 
 ```sh
 uv run --project orchestration bj answer <slug>
 ```
 
-It writes `results/<analysis>.csv` and `answer.json`, and exits 1 when a check fails. [../references/checks.md](../references/checks.md) says what each failure means and what to do. Fix the cause and rerun. Ship an answer with a failed check only when the user agrees, and say so in the answer.
+It answers from the data already in the warehouse. It writes `results/<analysis>.csv` and `answer.json`, and exits 1 when a check fails. The `freshness` detail says when each input last loaded. [../references/checks.md](../references/checks.md) says what each failure means and what to do. Ship an answer with a failed check only when the user agrees, and say so in the answer.
+
+## 5. Load newer data, only when needed
+
+Run the pipeline only when `freshness` fails, a result is empty that should not be, or the user asks for data newer than the last load:
+
+```sh
+uv run --project orchestration bj run <pipeline>
+```
+
+Then rerun step 4. A failed run leaves the last good load in place, so it never means the warehouse is empty. Read the error it prints, answer from the last load, and say how old that load is. Each source reads its own `ingestion/sources/<package>/.env`. Copy its `.env.example` when that file is missing, and tell the user which values to check.
 
 ## 6. Write the answer
 
