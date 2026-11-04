@@ -8,7 +8,7 @@ import {
   type Address,
 } from "@solana/kit";
 import { settleCalls } from "#src/calls.ts";
-import { createSolanaClient } from "#src/solana/account-state/index.ts";
+import { createSolanaClient } from "#src/solana/client.ts";
 
 /** A JSON-RPC endpoint that answers every request with `error`. Returns its URL. */
 async function failingRpc(t: TestContext, error: { code: number; message: string }) {

@@ -1,4 +1,5 @@
-import { address, settleCalls, toLower, type Chain } from "@ingestion/lib";
+import { settleCalls } from "@ingestion/lib";
+import { address, toLower, type EvmClient } from "@ingestion/lib/evm";
 import type { Address } from "viem";
 import * as z from "zod";
 
@@ -22,11 +23,11 @@ export const balanceCallsAt = (
 
 const callId = (call: BalanceCall) => `${call.block}:${call.wallet}`;
 
-export const fetchBalances = (chain: Chain, calls: readonly BalanceCall[]) =>
+export const fetchBalances = (client: EvmClient, calls: readonly BalanceCall[]) =>
   settleCalls(calls, callId, async (call) => ({
     block_number: call.block,
     wallet: call.wallet,
-    balance: await chain.getBalance({
+    balance: await client.getBalance({
       address: call.wallet,
       blockNumber: BigInt(call.block),
     }),

@@ -1,5 +1,23 @@
 import * as z from "zod";
-import { blockNumber } from "#src/env.ts";
+
+export const blockNumber = z.union(
+  [
+    z.enum(["latest", "safe", "finalized"]),
+    z
+      .string()
+      .regex(/^\d+$/)
+      .transform(Number)
+      .pipe(z.number().max(Number.MAX_SAFE_INTEGER)),
+  ],
+  {
+    error: (issue) =>
+      issue.input === undefined
+        ? "Required"
+        : "Expected a block number, or latest, safe or finalized",
+  },
+);
+
+export type BlockNumber = z.infer<typeof blockNumber>;
 
 export const evmEnv = z.object({
   BLOCK_NUMBER: blockNumber,

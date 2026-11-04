@@ -1,10 +1,10 @@
+import type { Source } from "@ingestion/lib";
 import {
   createSolanaClient,
   solanaEnv,
   validateSolanaAddressList,
   type SolanaEnv,
-  type Source,
-} from "@ingestion/lib";
+} from "@ingestion/lib/solana";
 import {
   balanceCallSchema,
   balanceCalls,

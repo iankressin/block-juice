@@ -12,6 +12,8 @@ Five sources read wallet balances: ETH, ERC-20 tokens, SOL, SPL tokens and BTC. 
 
 Each chain reaches `latest_balances` through one model in `transformation/models/intermediate/balances/`, `int_<chain>_balances`, which puts the chain's rows in the shape the mart reads: `chain`, `wallet`, `asset_type`, `asset`, `block_number` and `balance`, with no null balance. The mart only stacks these models and keeps each wallet's latest reading of each asset. To add a chain, add its model, one `union all` branch in `latest_balances.sql`, and the chain to the mart's `accepted_values`.
 
+A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it reads every Transfer of the tokens in its `addresses.json` into or out of its wallets, from `START_BLOCK` to Portal's finalized head, and each run resumes where the last one stopped. The `transfers` pipeline builds `analytics.erc20_transfers` from it, one row per transfer, in the token's base units.
+
 ```
 .
 ├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
@@ -23,9 +25,13 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 │   ├── tsconfig.json           # one typecheck for every package
 │   ├── lib/                    # @ingestion/lib: shared by all sources
 │   │   └── src/
-│   │       ├── index.ts        # public API
-│   │       ├── types.ts        # Source interface
-│   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, the run log
+│   │       ├── index.ts        # public API for any chain
+│   │       ├── types.ts        # Source and StreamSource interfaces
+│   │       ├── portal.ts       # Portal client and finalized head, for stream sources
+│   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, cursors, the run log
+│   │       ├── evm/            # @ingestion/lib/evm: env, addresses, client, connect()
+│   │       ├── solana/         # @ingestion/lib/solana: env, addresses, client
+│   │       ├── bitcoin/        # @ingestion/lib/bitcoin: env, addresses, client
 │   │       ├── logger.ts       # the pino logger
 │   │       ├── metrics.ts      # pushes each run's result to the Pushgateway
 │   │       └── run.ts          # runSource(): extract + load, logs, metrics and the run log
@@ -76,13 +82,14 @@ cd orchestration && uv run dagster dev
 
 Open http://localhost:3000 and materialize all assets.
 
-In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
+In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Code for one chain comes from that chain's subpath: `import { connect } from "@ingestion/lib/evm"`. Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
 
 Each layer also runs alone, with the env vars loaded:
 
 ```sh
 (cd ingestion/sources/ethereum-eth-balances && pnpm ingest)
 (cd ingestion/sources/ethereum-erc20-balances && pnpm ingest)
+(cd ingestion/sources/ethereum-erc20-transfers && pnpm ingest)
 (cd ingestion/sources/solana-sol-balances && pnpm ingest)
 (cd ingestion/sources/solana-spl-balances && pnpm ingest)
 (cd ingestion/sources/bitcoin-btc-balances && pnpm ingest)
@@ -146,11 +153,13 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 `uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. Then edit the copied `src/`, `addresses.json` and the staging stub. By hand:
 
-1. Copy `ingestion/sources/ethereum-eth-balances/` to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`.
+1. Copy `ingestion/sources/ethereum-eth-balances/` to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`. A chain's env, addresses and client go in `lib/src/<chain>/`. Its `index.ts` lists what sources may use, and `lib/package.json` exports that file as `@ingestion/lib/<chain>`.
 2. Add `transformation/models/staging/<source>/` with a sources yml and the `stg_` models.
 3. Add `(source, table)` to `SOURCES` in `orchestration/pipeline/assets/ingestion.py`.
 
 The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
+
+A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. To read a stream source again from its start, delete its rows from `raw._sync`, whose `id` is `<source>_<table>`.
 
 ## Add a pipeline
 

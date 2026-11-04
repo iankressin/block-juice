@@ -1,11 +1,5 @@
-import {
-  createChain,
-  evmEnv,
-  resolveBlock,
-  validateEthAddressList,
-  type EvmEnv,
-  type Source,
-} from "@ingestion/lib";
+import type { Source } from "@ingestion/lib";
+import { connect, evmEnv, validateEthAddressList, type EvmEnv } from "@ingestion/lib/evm";
 import {
   balanceCallSchema,
   balanceCallsAt,
@@ -25,8 +19,7 @@ export const ethereumErc20Balances: Source<EvmEnv, BalanceCall> = {
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const wallets = validateEthAddressList(addresses.wallets);
     const tokens = validateEthAddressList(addresses.tokens);
-    const chain = createChain(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE });
-    const block = await resolveBlock(chain, env.BLOCK_NUMBER);
-    yield await fetchBalances(chain, [...balanceCallsAt(block, wallets, tokens), ...retry]);
+    const { client, block } = await connect(env);
+    yield await fetchBalances(client, [...balanceCallsAt(block, wallets, tokens), ...retry]);
   },
 };

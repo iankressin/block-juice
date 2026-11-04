@@ -1,4 +1,5 @@
-import { settleCalls, solanaAddress, type SolanaClient } from "@ingestion/lib";
+import { settleCalls } from "@ingestion/lib";
+import { solanaAddress, type SolanaClient } from "@ingestion/lib/solana";
 import type { Address } from "@solana/kit";
 import * as z from "zod";
 
