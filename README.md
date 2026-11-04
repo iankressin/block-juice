@@ -23,7 +23,6 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 │   │   └── src/
 │   │       ├── index.ts        # public API
 │   │       ├── types.ts        # Source interface
-│   │       ├── config.ts
 │   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, the run log
 │   │       ├── logger.ts       # the pino logger
 │   │       ├── metrics.ts      # pushes each run's result to the Pushgateway
