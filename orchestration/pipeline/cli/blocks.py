@@ -23,10 +23,34 @@ class BlockRange:
     to_is_head: bool
 
 
-def first_block_at_or_after(time: int, head: int, timestamp_of: Callable[[int], int]) -> int:
+def around(time: int, guess: int, head: int, timestamp_of: Callable[[int], int]) -> tuple[int, int]:
+    """Blocks low and high with low <= the first block at or after `time` <= high, found by stepping
+    away from `guess` in steps that double."""
+    step = 1
+    if timestamp_of(guess) >= time:
+        high = guess
+        while high > 0:
+            probe = max(guess - step, 0)
+            if timestamp_of(probe) < time:
+                return probe + 1, high
+            high, step = probe, step * 2
+        return 0, 0
+    low = guess + 1
+    while low <= head:
+        probe = min(guess + step, head)
+        if timestamp_of(probe) >= time:
+            return low, probe
+        low, step = probe + 1, step * 2
+    return head + 1, head + 1
+
+
+def first_block_at_or_after(time: int, head: int, timestamp_of: Callable[[int], int], guess: int | None = None) -> int:
     """The first block whose timestamp is at or after `time`, or head + 1 when every block is earlier.
-    Block timestamps never decrease, so a binary search over 0..head finds it."""
+    Block timestamps never decrease, so a binary search over 0..head finds it. A guess near that block
+    narrows the search to the blocks around it first."""
     low, high = 0, head + 1
+    if guess is not None:
+        low, high = around(time, min(max(guess, 0), head), head, timestamp_of)
     while low < high:
         middle = (low + high) // 2
         if timestamp_of(middle) >= time:

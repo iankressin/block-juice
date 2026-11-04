@@ -3,7 +3,7 @@ import json
 import pytest
 
 from pipeline.cli import BadInput, main
-from pipeline.cli.blocks import BlockRange, block_range, parse_time, unix_seconds
+from pipeline.cli.blocks import BlockRange, block_range, first_block_at_or_after, parse_time, unix_seconds
 
 # Block n has timestamp TIMESTAMPS[n]. Blocks 2 and 3 share a second, as blocks can.
 TIMESTAMPS = [100, 112, 124, 124, 136]
@@ -47,6 +47,35 @@ def test_search_reads_a_logarithmic_number_of_blocks():
     found = block_range(1_000 + 12 * 1_234_567 - 5, 1_000 + 12 * 7_654_321 + 1, head, chain)
     assert found == BlockRange(from_block=1_234_567, to_block=7_654_321, to_is_head=False)
     assert len(reads) <= 2 * 26
+
+
+def test_any_guess_finds_the_same_block_as_no_guess():
+    for time in range(95, 140):
+        for guess in range(HEAD + 2):
+            assert first_block_at_or_after(time, HEAD, fake_chain, guess) == first_block_at_or_after(time, HEAD, fake_chain)
+
+
+def counted(chain):
+    reads = []
+
+    def timestamp_of(block: int) -> int:
+        reads.append(block)
+        return chain(block)
+
+    return reads, timestamp_of
+
+
+def test_a_guess_near_the_block_takes_fewer_reads_than_searching_the_whole_chain():
+    # Four blocks a second, as on Arbitrum; `first` is the first block of its second.
+    head, first = 400_000_000, 123_456_788
+    reads, chain = counted(lambda block: 1_000 + block // 4)
+    time = 1_000 + first // 4
+    assert first_block_at_or_after(time, head, chain) == first
+    whole_chain = len(reads)
+    for guess, most in ((first, 2), (first + 1, 3), (first + 50, 14), (first - 50, 14)):
+        reads.clear()
+        assert first_block_at_or_after(time, head, chain, guess) == first
+        assert len(reads) <= most < whole_chain
 
 
 def test_times_without_an_offset_are_utc():
