@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import zipfile
+import zlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -16,7 +17,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 
-from pipeline.cli import BadInput, main
+from pipeline.cli import BadInput, check, main
 from pipeline.cli.report import cell_value, run
 
 BALANCE = "1234567890123456789012345"
@@ -112,6 +113,25 @@ def test_pdf_is_a_pdf_with_pages(answered):
     data = (folder / "reports" / "top-wallets.pdf").read_bytes()
     assert data.startswith(b"%PDF")
     assert len(re.findall(rb"/Type /Page\b", data)) >= 1
+
+
+def page_text(pdf: bytes) -> bytes:
+    """The PDF's page content streams, which fpdf2 compresses, inflated and joined."""
+    return b"".join(zlib.decompress(stream) for stream in re.findall(rb"stream\n(.*?)\nendstream", pdf, re.S))
+
+
+def test_a_check_added_with_bj_check_shows_with_the_others(answered):
+    root, folder = answered
+    assert check.run(root, "top-wallets", "cross_check", "passed", "Etherscan lists the same top 2 wallets") == 0
+    assert run(root, "top-wallets") == 0
+
+    summary = openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx")["Answer"]
+    rows = [[cell.value for cell in row[:3]] for row in summary.iter_rows()]
+    checks = rows.index(["Check", "Status", "Detail"])
+    assert rows[checks + 4] == ["cross_check", "passed", "Etherscan lists the same top 2 wallets"]
+    text = page_text((folder / "reports" / "top-wallets.pdf").read_bytes())
+    assert b"(cross_check)" in text
+    assert b"(Etherscan lists the same top 2 wallets)" in text
 
 
 def test_both_formats_by_default_overwriting_old_reports(answered, monkeypatch):

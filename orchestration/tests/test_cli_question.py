@@ -1,7 +1,11 @@
+import re
+
 import pytest
 
 from pipeline.cli import BadInput, main
-from pipeline.cli.question import Question, load_question
+from pipeline.cli.question import Question, SourceInput, load_question
+
+USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 
 
 def write_question(root, slug, text):
@@ -50,6 +54,28 @@ def test_analyses_default_to_the_slug_with_underscores(tmp_path):
     )
 
 
+def test_reads_the_block_range_and_the_inputs_that_name_a_source(tmp_path):
+    write_question(
+        tmp_path,
+        "usdc-flows",
+        f"""
+question: How much USDC moved?
+window: {{chain: ethereum, blocks: [26316189, 26340000]}}
+inputs:
+  - {{name: transfers, strategy: history, source: ethereum.erc20_transfers, filter: {{tokens: ["{USDC}"]}}}}
+  - {{name: everything, source: ethereum.erc20_transfers}}
+  - {{name: pools, strategy: history, filter: {{token: PEPE}}}}
+""",
+    )
+    question = load_question(tmp_path, "usdc-flows")
+    assert question.blocks == (26316189, 26340000)
+    assert question.window == {"chain": "ethereum", "blocks": [26316189, 26340000]}
+    assert question.sources == (
+        SourceInput("ethereum.erc20_transfers", {"tokens": [USDC]}),
+        SourceInput("ethereum.erc20_transfers", {}),
+    )
+
+
 def test_unknown_key_names_it_and_lists_the_allowed_keys(tmp_path):
     write_question(tmp_path, "q", "question: How many?\nanswer: 3\n")
     with pytest.raises(BadInput) as raised:
@@ -75,6 +101,32 @@ def test_unknown_key_names_it_and_lists_the_allowed_keys(tmp_path):
 def test_wrong_type_names_the_key(tmp_path, text, key):
     write_question(tmp_path, "q", text)
     with pytest.raises(BadInput, match=f"'{key}' must be"):
+        load_question(tmp_path, "q")
+
+
+@pytest.mark.parametrize(
+    "text, key",
+    [
+        ("window: {blocks: [200, 100]}\n", "window.blocks"),
+        ("window: {blocks: [100]}\n", "window.blocks"),
+        ("window: {blocks: [100, latest]}\n", "window.blocks"),
+        ("window: {blocks: [true, 2]}\n", "window.blocks"),
+        ("window: {blocks: [-1, 2]}\n", "window.blocks"),
+        ("inputs: [{source: erc20_transfers}]\n", "inputs[0].source"),
+        ("inputs: [{name: a}, {source: 3}]\n", "inputs[1].source"),
+        (f'inputs: [{{source: ethereum.erc20_transfers, filter: {{tokens: "{USDC}"}}}}]\n', "inputs[0].filter"),
+        ("inputs: [{source: ethereum.erc20_transfers, filter: [a]}]\n", "inputs[0].filter"),
+    ],
+)
+def test_a_wrong_block_range_or_source_input_names_the_key(tmp_path, text, key):
+    write_question(tmp_path, "q", "question: q\n" + text)
+    with pytest.raises(BadInput, match=re.escape(f"'{key}' must")):
+        load_question(tmp_path, "q")
+
+
+def test_an_unquoted_address_in_a_filter_says_to_quote_it(tmp_path):
+    write_question(tmp_path, "q", f"question: q\ninputs: [{{source: ethereum.erc20_transfers, filter: {{tokens: [{USDC}]}}}}]\n")
+    with pytest.raises(BadInput, match=re.escape("YAML reads an unquoted 0x... as a number")):
         load_question(tmp_path, "q")
 
 
