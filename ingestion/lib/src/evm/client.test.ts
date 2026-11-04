@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { createChain, resolveBlock } from "#src/evm/client.ts";
+import { createEvmClient, resolveBlock } from "#src/evm/client.ts";
 
 type Request = { id: number; method: string; params: unknown[] };
 
@@ -35,7 +35,7 @@ async function fakeRpc(t: TestContext, head: number) {
 test("a tag becomes the number of the block it points to now", async (t) => {
   const { url, requests } = await fakeRpc(t, 21_000_000);
 
-  assert.equal(await resolveBlock(createChain(url, { retryCount: 0 }), "finalized"), 21_000_000);
+  assert.equal(await resolveBlock(createEvmClient(url, { retryCount: 0 }), "finalized"), 21_000_000);
   assert.deepEqual(
     requests.map(({ method, params }) => ({ method, params })),
     [{ method: "eth_getBlockByNumber", params: ["finalized", false] }],
@@ -45,6 +45,6 @@ test("a tag becomes the number of the block it points to now", async (t) => {
 test("a block number is kept as it is, with no request", async (t) => {
   const { url, requests } = await fakeRpc(t, 21_000_000);
 
-  assert.equal(await resolveBlock(createChain(url, { retryCount: 0 }), 5), 5);
+  assert.equal(await resolveBlock(createEvmClient(url, { retryCount: 0 }), 5), 5);
   assert.deepEqual(requests, []);
 });

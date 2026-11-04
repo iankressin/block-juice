@@ -11,7 +11,7 @@ import {
   multicall3Abi,
   type Hex,
 } from "viem";
-import { createChain } from "@ingestion/lib";
+import { createEvmClient } from "@ingestion/lib";
 import { balanceCallsAt, fetchBalances } from "#src/balances.ts";
 
 const wallet = "0x00000000000000000000000000000000000000aa";
@@ -22,7 +22,7 @@ const noCode = "0x00000000000000000000000000000000000000dd";
 type Aggregate3Call = { target: Hex; callData: Hex };
 type Reply = { result: Hex } | { error: { code: number; message: string } };
 
-/** createChain sends each batch as a deployless call: the deployer bytecode, then abi-encoded (code, aggregate3 calldata). */
+/** createEvmClient sends each batch as a deployless call: the deployer bytecode, then abi-encoded (code, aggregate3 calldata). */
 function aggregate3Calls(data: Hex): readonly Aggregate3Call[] {
   const [, calldata] = decodeAbiParameters(
     [{ type: "bytes" }, { type: "bytes" }],
@@ -109,7 +109,7 @@ async function fakeRpc(
 }
 
 // No transport retries, so a failed request fails at once rather than after viem's backoff.
-const chainAt = (url: string) => createChain(url, { retryCount: 0 });
+const clientAt = (url: string) => createEvmClient(url, { retryCount: 0 });
 
 test("records each balance at its own block", async (t) => {
   const url = await fakeRpc(
@@ -117,7 +117,7 @@ test("records each balance at its own block", async (t) => {
     ledger({ [`5:${token}:${wallet}`]: 42n, [`6:${token}:${wallet}`]: 7n }),
   );
 
-  const batch = await fetchBalances(chainAt(url), [
+  const batch = await fetchBalances(clientAt(url), [
     ...balanceCallsAt(5, [wallet], [token]),
     ...balanceCallsAt(6, [wallet], [token]),
   ]);
@@ -146,7 +146,7 @@ test("records null when balanceOf reverts or the token has no code at that block
   );
 
   const batch = await fetchBalances(
-    chainAt(url),
+    clientAt(url),
     balanceCallsAt(5, [wallet], [reverting, noCode]),
   );
 
@@ -164,7 +164,7 @@ test("keeps one record when a retried call repeats a new one", async (t) => {
   const url = await fakeRpc(t, ledger({ [`5:${token}:${wallet}`]: 42n }));
   const calls = balanceCallsAt(5, [wallet], [token]);
 
-  const batch = await fetchBalances(chainAt(url), [...calls, ...calls]);
+  const batch = await fetchBalances(clientAt(url), [...calls, ...calls]);
 
   assert.deepEqual(
     batch.records.map(({ id }) => id),
@@ -190,7 +190,7 @@ test("queues every call for retry when the batch request itself fails", async (t
       const url = await fakeRpc(t, () => reply);
       const calls = balanceCallsAt(5, [wallet], [token, reverting]);
 
-      const batch = await fetchBalances(chainAt(url), calls);
+      const batch = await fetchBalances(clientAt(url), calls);
 
       assert.deepEqual(batch.records, []);
       assert.deepEqual(

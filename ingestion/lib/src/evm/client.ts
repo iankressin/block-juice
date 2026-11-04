@@ -2,9 +2,9 @@ import { createPublicClient, http } from "viem";
 import { createLimiter } from "#src/concurrency.ts";
 import type { BlockNumber } from "#src/evm/env.ts";
 
-export type Chain = ReturnType<typeof createChain>;
+export type EvmClient = ReturnType<typeof createEvmClient>;
 
-export type ChainOptions = {
+export type EvmClientOptions = {
   maxConcurrency?: number;
   retryCount?: number;
   /** Most JSON-RPC calls per HTTP request. Providers cap this differently (drpc's free plan allows 3). */
@@ -19,9 +19,9 @@ export type ChainOptions = {
  * Requests sent in the same tick, such as one eth_getBalance per wallet, go out as JSON-RPC
  * batches of up to `batchSize` calls per HTTP request.
  */
-export function createChain(
+export function createEvmClient(
   rpcUrl: string,
-  { maxConcurrency = 16, retryCount = 5, batchSize = 100 }: ChainOptions = {},
+  { maxConcurrency = 16, retryCount = 5, batchSize = 100 }: EvmClientOptions = {},
 ) {
   const limit = createLimiter(maxConcurrency);
 
@@ -39,8 +39,8 @@ export function createChain(
  * A tag becomes the block it points to now. Calls carry that number, so every call in the
  * run reads the same block, and a call retried in a later run still reads the block it missed.
  */
-export async function resolveBlock(chain: Chain, block: BlockNumber): Promise<number> {
+export async function resolveBlock(client: EvmClient, block: BlockNumber): Promise<number> {
   if (typeof block === "number") return block;
-  const { number } = await chain.getBlock({ blockTag: block });
+  const { number } = await client.getBlock({ blockTag: block });
   return Number(number);
 }

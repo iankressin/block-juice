@@ -9,10 +9,10 @@ export {
 } from "#src/evm/address.ts";
 export { blockNumber, evmEnv, type BlockNumber, type EvmEnv } from "#src/evm/env.ts";
 export {
-  createChain,
+  createEvmClient,
   resolveBlock,
-  type Chain,
-  type ChainOptions,
+  type EvmClient,
+  type EvmClientOptions,
 } from "#src/evm/client.ts";
 export {
   solanaAddress,

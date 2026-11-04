@@ -6,7 +6,7 @@ import {
   type Address,
 } from "viem";
 import * as z from "zod";
-import { address, settleCalls, toLower, type Chain } from "@ingestion/lib";
+import { address, settleCalls, toLower, type EvmClient } from "@ingestion/lib";
 
 export const balanceCallSchema = z.object({
   kind: z.literal("erc20_balance"),
@@ -48,11 +48,11 @@ const revertedAtBlock = (error: unknown) =>
 
 /** The balance at the call's block, or null if balanceOf reverts there. Throws on errors a retry may fix. */
 async function balanceAt(
-  chain: Chain,
+  client: EvmClient,
   call: BalanceCall,
 ): Promise<bigint | null> {
   try {
-    return await chain.readContract({
+    return await client.readContract({
       address: call.token,
       abi: erc20Abi,
       functionName: "balanceOf",
@@ -66,11 +66,11 @@ async function balanceAt(
   }
 }
 
-/** The client merges calls at the same block into one Multicall3 call (see createChain). */
-export const fetchBalances = (chain: Chain, calls: readonly BalanceCall[]) =>
+/** The client merges calls at the same block into one Multicall3 call (see createEvmClient). */
+export const fetchBalances = (client: EvmClient, calls: readonly BalanceCall[]) =>
   settleCalls(calls, callId, async (call) => ({
     block_number: call.block,
     token: call.token,
     wallet: call.wallet,
-    balance: await balanceAt(chain, call),
+    balance: await balanceAt(client, call),
   }));

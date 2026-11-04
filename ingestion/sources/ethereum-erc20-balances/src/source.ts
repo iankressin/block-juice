@@ -1,5 +1,5 @@
 import {
-  createChain,
+  createEvmClient,
   evmEnv,
   resolveBlock,
   validateEthAddressList,
@@ -25,8 +25,8 @@ export const ethereumErc20Balances: Source<EvmEnv, BalanceCall> = {
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const wallets = validateEthAddressList(addresses.wallets);
     const tokens = validateEthAddressList(addresses.tokens);
-    const chain = createChain(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE });
-    const block = await resolveBlock(chain, env.BLOCK_NUMBER);
-    yield await fetchBalances(chain, [...balanceCallsAt(block, wallets, tokens), ...retry]);
+    const client = createEvmClient(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE });
+    const block = await resolveBlock(client, env.BLOCK_NUMBER);
+    yield await fetchBalances(client, [...balanceCallsAt(block, wallets, tokens), ...retry]);
   },
 };
