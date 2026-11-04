@@ -29,16 +29,10 @@ export type StreamRecords = RawRecord[] | Record<string, RawRecord[]>;
  * Dagster uses the pair as the asset key, which links each ingestion
  * asset to the dbt models that read from it.
  */
-interface SourceBase<E, A> {
+interface SourceBase<E> {
   name: string;
   table: string;
   env: z.ZodType<E>;
-  /**
-   * What `addresses.json` holds: the wallets and contracts the source reads. runSource reads
-   * the file from the working directory at the start of each run, as it reads `.env`, so a bad
-   * file fails the run. A source without the file declares `z.undefined()`.
-   */
-  addresses: z.ZodType<A>;
 }
 
 /**
@@ -49,9 +43,9 @@ interface SourceBase<E, A> {
  * would have produced, which is how a success clears its dead letter. A dead letter whose
  * call no longer parses is parked.
  */
-export interface Source<E, C, A = undefined> extends SourceBase<E, A> {
+export interface Source<E, C> extends SourceBase<E> {
   call: z.ZodType<C>;
-  extract(env: E, retry: C[], addresses: A): AsyncIterable<Batch<C>>;
+  extract(env: E, retry: C[]): AsyncIterable<Batch<C>>;
 }
 
 /**
@@ -59,8 +53,8 @@ export interface Source<E, C, A = undefined> extends SourceBase<E, A> {
  * where Pipes keeps its cursor, so each run resumes after the last block the one before loaded.
  * The stream must end: give its range a `to`, such as Portal's finalized head at the start.
  */
-export interface StreamSource<E, A = undefined> extends SourceBase<E, A> {
+export interface StreamSource<E> extends SourceBase<E> {
   /** About this many blocks a run (it ends on the batch that passes it), so a long backfill spreads over several runs. 1,000,000 by default. */
   maxBlocksPerRun?: number;
-  stream(env: E, addresses: A): Promise<PortalStream<any, StreamRecords>>;
+  stream(env: E): Promise<PortalStream<any, StreamRecords>>;
 }

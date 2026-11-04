@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { test, type TestContext } from "node:test";
+import { test } from "node:test";
 import type { PGlite } from "@electric-sql/pglite";
 import * as z from "zod";
 import { runSource } from "#src/run/index.ts";
@@ -15,33 +12,16 @@ process.env.PUSHGATEWAY_URL = "";
 
 type Wallet = { wallet: string };
 
-const source = <A = undefined>(
-  extract: (retry: Wallet[], addresses: A) => AsyncIterable<Batch<Wallet>>,
-  { env = z.object({}), addresses = z.undefined() as unknown as z.ZodType<A> }: { env?: z.ZodType; addresses?: z.ZodType<A> } = {},
-): Source<unknown, Wallet, A> => ({
+const source = (
+  extract: (retry: Wallet[]) => AsyncIterable<Batch<Wallet>>,
+  env: z.ZodType = z.object({}),
+): Source<unknown, Wallet> => ({
   name: "test",
   table: "wallets",
   env,
-  addresses,
   call: z.object({ wallet: z.string() }),
-  extract: (_env, retry, addresses) => extract(retry, addresses),
+  extract: (_env, retry) => extract(retry),
 });
-
-/** Runs `run` in a new working directory, with `addressesJson` as its addresses.json unless undefined. */
-async function inDirWith(t: TestContext, addressesJson: string | undefined, run: () => Promise<void>) {
-  const dir = await mkdtemp(join(tmpdir(), "run-test-"));
-  t.after(() => rm(dir, { recursive: true }));
-  if (addressesJson !== undefined) await writeFile(join(dir, "addresses.json"), addressesJson);
-  const cwd = process.cwd();
-  process.chdir(dir);
-  try {
-    await run();
-  } finally {
-    process.chdir(cwd);
-  }
-}
-
-const walletList = z.object({ wallets: z.array(z.string().regex(/^w\d$/, "Expected a wallet")) });
 
 async function runLog(db: PGlite) {
   const { rows } = await db.query<Record<string, unknown>>(
@@ -101,7 +81,7 @@ test("an invalid environment fails the run, and the run log says why", async (t)
   const { db, warehouse } = await pgliteWarehouse(t);
 
   await runSource(
-    source(async function* () {}, { env: z.object({ RUN_TEST_ENDPOINT: z.url() }) }),
+    source(async function* () {}, z.object({ RUN_TEST_ENDPOINT: z.url() })),
     warehouse,
   );
 
@@ -110,51 +90,4 @@ test("an invalid environment fails the run, and the run log says why", async (t)
   const [row] = await runLog(db);
   assert.equal(row?.succeeded, false);
   assert.match(String(row?.error), /Invalid environment[\s\S]*RUN_TEST_ENDPOINT/);
-});
-
-test("a run hands the source what addresses.json holds", async (t) => {
-  const { warehouse } = await pgliteWarehouse(t);
-  let read: unknown;
-
-  await inDirWith(t, '{ "wallets": ["w1", "w2"] }', () =>
-    runSource(
-      source(async function* (_retry, addresses) {
-        read = addresses;
-      }, { addresses: walletList }),
-      warehouse,
-    ),
-  );
-
-  assert.equal(process.exitCode, undefined);
-  assert.deepEqual(read, { wallets: ["w1", "w2"] });
-});
-
-test("a bad, malformed or missing addresses.json fails the run, and the run log says why", async (t) => {
-  const cases: [string, string | undefined, RegExp][] = [
-    ["a bad address", '{ "wallets": ["w1", "not a wallet"] }', /^Invalid addresses\.json:\n[\s\S]*Expected a wallet[\s\S]*wallets\[1\]/],
-    ["malformed JSON", '{ "wallets": [], }', /^Invalid addresses\.json: .*JSON/],
-    ["no file", undefined, /^addresses\.json is missing$/],
-  ];
-  for (const [name, json, error] of cases) {
-    await t.test(name, async (t) => {
-      const { db, warehouse } = await pgliteWarehouse(t);
-      let extracted = false;
-
-      await inDirWith(t, json, () =>
-        runSource(
-          source(async function* () {
-            extracted = true;
-          }, { addresses: walletList }),
-          warehouse,
-        ),
-      );
-
-      assert.equal(process.exitCode, 1);
-      process.exitCode = undefined;
-      assert.equal(extracted, false, "the source never starts");
-      const [row] = await runLog(db);
-      assert.equal(row?.succeeded, false);
-      assert.match(String(row?.error), error);
-    });
-  }
 });
