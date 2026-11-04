@@ -127,12 +127,16 @@ def headline(results: Sequence[Result]) -> Any:
 
 
 def dbt_tests_check(statuses: Iterable[tuple[str, str]]) -> Check:
-    """From each test's (name, status): passed when no test failed or errored."""
+    """From each test's (name, status): passed when no test failed or errored. Names the tests that warned or failed."""
     statuses = list(statuses)
     failed = sorted(name for name, status in statuses if status in ("fail", "error"))
+    warned = sorted(name for name, status in statuses if status == "warn")
     counts = Counter(status for _, status in statuses)
     parts = [f"{counts['pass']} passed"]
-    parts += [f"{counts[status]} {label}" for status, label in (("warn", "warned"), ("skipped", "skipped")) if counts[status]]
+    if warned:
+        parts.append(f"{len(warned)} warned: {', '.join(warned)}")
+    if counts["skipped"]:
+        parts.append(f"{counts['skipped']} skipped")
     if failed:
         parts.append(f"{len(failed)} failed: {', '.join(failed)}")
     return Check("dbt_tests", not failed, ", ".join(parts))
