@@ -16,6 +16,7 @@ from pipeline.warehouse import connect
 SOURCES = [
     ("ethereum", "eth_balances"),
     ("ethereum", "erc20_balances"),
+    ("ethereum", "erc20_transfers"),
     ("solana", "sol_balances"),
     ("solana", "spl_balances"),
     ("bitcoin", "btc_balances"),

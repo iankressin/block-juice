@@ -12,6 +12,8 @@ Five sources read wallet balances: ETH, ERC-20 tokens, SOL, SPL tokens and BTC. 
 
 Each chain reaches `latest_balances` through one model in `transformation/models/intermediate/balances/`, `int_<chain>_balances`, which puts the chain's rows in the shape the mart reads: `chain`, `wallet`, `asset_type`, `asset`, `block_number` and `balance`, with no null balance. The mart only stacks these models and keeps each wallet's latest reading of each asset. To add a chain, add its model, one `union all` branch in `latest_balances.sql`, and the chain to the mart's `accepted_values`.
 
+A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it reads every Transfer of the tokens in its `addresses.json` into or out of its wallets, from `START_BLOCK` to Portal's finalized head, and each run resumes where the last one stopped. The `transfers` pipeline builds `analytics.erc20_transfers` from it, one row per transfer, in the token's base units.
+
 ```
 .
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
@@ -80,6 +82,7 @@ Each layer also runs alone, with the env vars loaded:
 ```sh
 (cd ingestion/sources/ethereum-eth-balances && pnpm ingest)
 (cd ingestion/sources/ethereum-erc20-balances && pnpm ingest)
+(cd ingestion/sources/ethereum-erc20-transfers && pnpm ingest)
 (cd ingestion/sources/solana-sol-balances && pnpm ingest)
 (cd ingestion/sources/solana-spl-balances && pnpm ingest)
 (cd ingestion/sources/bitcoin-btc-balances && pnpm ingest)
