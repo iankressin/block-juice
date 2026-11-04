@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: latest_balances
+    columns:
+      - name: chain
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ethereum, solana]
+      - name: wallet
+        data_tests: [not_null]
+      - name: asset
+        data_tests: [not_null]
+      - name: block_number
+        data_tests: [not_null]

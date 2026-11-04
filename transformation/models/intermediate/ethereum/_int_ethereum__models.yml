@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: int_ethereum_balances_unioned
+    description: ETH and ERC-20 balances in one shape. `asset` is 'eth' or the token address.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: asset_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [native, erc20]
+      - name: asset
+        data_tests: [not_null]

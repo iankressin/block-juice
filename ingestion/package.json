@@ -1,0 +1,17 @@
+{
+  "name": "ingestion",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

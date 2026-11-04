@@ -1,0 +1,7 @@
+select
+    id,
+    (data ->> 'block_number')::bigint as block_number,
+    data ->> 'wallet' as wallet,
+    (data ->> 'balance')::numeric as balance,
+    _loaded_at
+from {{ source('ethereum', 'eth_balances') }}

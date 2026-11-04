@@ -1,0 +1,123 @@
+# ELT pipeline
+
+| Stage     | Tool       | Folder            |
+|-----------|------------|-------------------|
+| Extract + load | TypeScript | `ingestion/`      |
+| Transform | dbt        | `transformation/` |
+| Orchestrate | Dagster  | `orchestration/`  |
+
+Data flow: a TypeScript source writes raw JSON rows into `raw.<source>_<table>`. dbt reads them through `source()`, then builds staging views and mart tables in the `analytics` schema. Dagster runs both as one asset graph.
+
+Four sources read wallet balances: ETH, ERC-20 tokens, SOL and SPL tokens. The Ethereum sources read at `BLOCK_NUMBER`: a block number, or `latest`, `safe` or `finalized`, which each run turns into a number once at the start. A Solana RPC serves only current state, so the Solana sources read at the latest finalized slot, and each run adds a new reading, keyed by the slot it read. `analytics.latest_balances` holds each wallet's latest balance of each asset on both chains, in the asset's base units. On Solana its `block_number` is the slot.
+
+```
+.
+├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
+├── .env.example                # settings shared by all three tools
+├── ingestion/                  # pnpm workspace
+│   ├── pnpm-workspace.yaml
+│   ├── tsconfig.json           # one typecheck for every package
+│   ├── lib/                    # @ingestion/lib: shared by all sources
+│   │   └── src/
+│   │       ├── index.ts        # public API
+│   │       ├── types.ts        # Source interface
+│   │       ├── config.ts
+│   │       ├── postgres.ts     # idempotent upsert into the raw schema
+│   │       ├── logger.ts       # the pino logger
+│   │       ├── metrics.ts      # pushes each run's result to the Pushgateway
+│   │       ├── run-log.ts      # adds each run to ops.ingestion_runs
+│   │       └── run.ts          # runSource(): extract + load, logs, metrics and the run log
+│   └── sources/
+│       └── <source>/           # @ingestion/<source>: one package per source
+│           ├── package.json    # `ingest` script, depends on @ingestion/lib
+│           └── src/
+│               ├── source.ts   # the Source definition
+│               └── index.ts    # entry point: runSource(source)
+├── transformation/             # dbt project (profiles.yml lives here)
+│   └── models/
+│       ├── staging/<source>/   # sources yml + stg_ models, one folder per source
+│       ├── intermediate/
+│       └── marts/
+├── infra/                      # the Postgres warehouse, eRPC, Dshackle and monitoring
+│   ├── postgres/init.sql       # eRPC database, monitor role, ops run log
+│   ├── prometheus/
+│   └── grafana/
+│       ├── build_dashboards.py # writes dashboards/ingestion.json and pipeline.json
+│       └── check_dashboards.py # runs every dashboard query through Grafana
+└── orchestration/
+    ├── pipeline/
+    │   ├── definitions.py      # Dagster entry point
+    │   ├── project.py          # paths + DbtProject
+    │   ├── run_log.py          # adds each dbt build to ops.dbt_invocations and ops.dbt_node_runs
+    │   ├── assets/ingestion.py # one asset per TypeScript source
+    │   ├── assets/dbt.py       # every dbt model as an asset
+    │   └── schedules.py        # daily run of the whole graph
+    └── tests/
+```
+
+## Run it locally
+
+Needs Node 20+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/) and Docker.
+
+```sh
+cp .env.example .env
+docker compose up -d
+(cd ingestion && pnpm install)
+(cd orchestration && uv sync)
+
+set -a && source .env && set +a
+cd orchestration && uv run dagster dev
+```
+
+Open http://localhost:3000 and materialize all assets.
+
+In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
+
+Each layer also runs alone, with the env vars loaded:
+
+```sh
+(cd ingestion/sources/ethereum-eth-balances && pnpm ingest)
+(cd ingestion/sources/ethereum-erc20-balances && pnpm ingest)
+(cd ingestion/sources/solana-sol-balances && pnpm ingest)
+(cd ingestion/sources/solana-spl-balances && pnpm ingest)
+(cd transformation && ../orchestration/.venv/bin/dbt build)
+(cd orchestration && uv run pytest)
+```
+
+## Monitoring
+
+`docker compose up -d` also starts Prometheus, a Pushgateway, postgres-exporter and Grafana. You can view Grafana without logging in. Sign in as `admin`/`admin` to edit or use Explore.
+
+- Pipeline: http://localhost:3001/d/pipeline, the report of every run. Click a run in Every run to see its steps, and to zoom the warehouse and eRPC panels to the time it ran.
+- Ingestion: http://localhost:3001/d/ingestion
+- eRPC: http://localhost:3001/d/erpc_metrics, the dashboard that ships with the eRPC release pinned in `infra/docker-compose.yml`. Many of its panels stay empty until eRPC sees what they track, such as errors, rate limits or lagging upstreams.
+- Dshackle: http://localhost:3001/d/qkG2pqWnp, the dashboard from the Dshackle release pinned in `infra/docker-compose.yml`, edited to work here. Dshackle is the Bitcoin RPC proxy at http://localhost:8545/bitcoin, and http://localhost:8082/health?detailed shows the state of each upstream.
+- Prometheus: http://localhost:9090
+
+A source run ends before Prometheus could scrape it, so each run pushes its result to the Pushgateway at `PUSHGATEWAY_URL`, and Prometheus scrapes that. The result covers whether the run succeeded, when it finished, how long it took, the records it wrote, its failed calls and the dead letters it retried, labelled by source and table. It also counts the dead letters left waiting, as `ingestion_dead_letters` with `state` set to `pending` (retried next run) or `parked` (failed too often or no longer matches the source's call schema, waits for a person). With `PUSHGATEWAY_URL` unset, a run pushes nothing.
+
+Prometheus keeps only each source's latest result, so the history of every run lives in the warehouse, in the `ops` schema that `infra/postgres/init.sql` creates:
+
+- `ops.ingestion_runs` holds one row per source run. `runSource` writes it, with the error when the run failed and the time spent writing to the warehouse.
+- `ops.dbt_invocations` and `ops.dbt_node_runs` hold each dbt build and each model and test in it. The Dagster dbt asset writes them from `run_results.json`, so a `dbt build` run by hand is not recorded.
+- `ops.pipeline_runs` is a view with one row per Dagster run. Dagster passes its run id to each source as `DAGSTER_RUN_ID`, which ties the ingestion rows to the dbt rows of the same run.
+
+Grafana reads the warehouse as `monitor`, a role that can read everything and change nothing. The warehouse loads `pg_stat_statements` for the query panels. The eRPC panels count only sources whose `ERPC_URL` points at eRPC.
+
+To change a dashboard, edit `infra/grafana/build_dashboards.py`, run it, then check every query with `python3 infra/grafana/check_dashboards.py`.
+
+## Logging
+
+Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `console`. It writes JSON lines, and Dagster shows each line as a log event at its own level. In a terminal the lines are pretty-printed. `LOG_LEVEL` sets the level, `info` by default. An unknown level logs a warning and falls back to `info`. `runSource` logs any error as fatal and sets the exit code, so a failed run leaves one log line with the stack, not Node's crash output.
+
+## Add a source
+
+1. Copy `ingestion/sources/ethereum-eth-balances/` to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`.
+2. Add `transformation/models/staging/<source>/` with a sources yml and the `stg_` models.
+3. Add `(source, table)` to `SOURCES` in `orchestration/pipeline/assets/ingestion.py`.
+
+The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
+
+## Use another warehouse
+
+Change `ingestion/lib/src/postgres.ts`, the adapter in `transformation/profiles.yml`, and `dbt-postgres` in `orchestration/pyproject.toml`.

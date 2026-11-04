@@ -1,0 +1,18 @@
+.env
+.DS_Store
+
+# ingestion
+ingestion/**/node_modules/
+
+# transformation
+transformation/target/
+transformation/dbt_packages/
+transformation/logs/
+transformation/.user.yml
+
+# orchestration
+orchestration/.venv/
+orchestration/.dagster_home/
+__pycache__/
+*.egg-info/
+.pytest_cache/

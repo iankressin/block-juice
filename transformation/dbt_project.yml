@@ -1,0 +1,21 @@
+name: transformation
+version: "1.0.0"
+profile: transformation
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  transformation:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table

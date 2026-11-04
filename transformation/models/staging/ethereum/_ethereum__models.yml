@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_ethereum__eth_balances
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: wallet
+        data_tests: [not_null]
+  - name: stg_ethereum__erc20_balances
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: wallet
+        data_tests: [not_null]
+      - name: token
+        data_tests: [not_null]
