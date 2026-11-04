@@ -3,7 +3,6 @@
 import csv
 import json
 import math
-import os
 import shutil
 import subprocess
 from collections import Counter
@@ -19,11 +18,10 @@ import psycopg2
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
-from pipeline.cli import BadInput, utc_iso
+from pipeline.cli import BadInput, require_env, utc_iso
 from pipeline.cli.question import Question, load_question
 from pipeline.warehouse import connect, count_dead_letters
 
-REQUIRED_ENV = ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD", "WAREHOUSE_DB", "RAW_SCHEMA")
 # dbt's own logs and usage stats are off: the summary reports what matters, and the stats call the network.
 DBT_FLAGS = ("--log-level", "none", "--no-send-anonymous-usage-stats")
 # JSON readers parse numbers as doubles, which hold integers exactly only up to here.
@@ -297,9 +295,7 @@ def write_answer(folder: Path, results: Sequence[Result], document: dict[str, An
 
 def run(repo_root: Path, slug: str) -> int:
     question = load_question(repo_root, slug)
-    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
-    if missing:
-        raise BadInput(f"set {', '.join(missing)} in .env")
+    require_env()
     project = repo_root / "transformation"
     manifest, analysis_ids = compile_analyses(project, question.analyses)
     inputs = upstream_inputs(manifest, analysis_ids)

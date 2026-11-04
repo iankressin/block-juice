@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pipeline.cli import BadInput, answer
+from pipeline.cli import REQUIRED_ENV, BadInput, answer
 from pipeline.cli.answer import (
     Check,
     Input,
@@ -206,7 +206,7 @@ def test_an_analysis_dbt_does_not_know_is_bad_input(tmp_path, monkeypatch):
 @pytest.fixture
 def offline(monkeypatch):
     """answer.run with dbt and the warehouse replaced by fixed results."""
-    for name in answer.REQUIRED_ENV:
+    for name in REQUIRED_ENV:
         monkeypatch.setenv(name, "x")
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
     monkeypatch.setattr(answer, "run_dbt_tests", lambda project, names: Check("dbt_tests", True, "3 passed"))

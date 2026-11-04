@@ -5,6 +5,7 @@ config, reported as one line on stderr, with nothing written.
 """
 
 import argparse
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,10 +13,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+REQUIRED_ENV = ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD", "WAREHOUSE_DB", "RAW_SCHEMA")
 
 
 class BadInput(Exception):
     """Bad input or config. main prints the message as one line and exits 2."""
+
+
+def require_env() -> None:
+    """The warehouse settings that dbt, ingestion and bj share."""
+    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+    if missing:
+        raise BadInput(f"set {', '.join(missing)} in .env")
 
 
 def utc_iso(moment: datetime) -> str:
@@ -36,6 +45,12 @@ def _blocks(args: argparse.Namespace) -> int:
     from pipeline.cli import blocks
 
     return blocks.run(args.chain, args.start, args.end, rpc=args.rpc)
+
+
+def _coverage(args: argparse.Namespace) -> int:
+    from pipeline.cli import coverage
+
+    return coverage.run(REPO_ROOT, args.source)
 
 
 def _new_source(args: argparse.Namespace) -> int:
@@ -81,6 +96,17 @@ def parser() -> argparse.ArgumentParser:
     blocks.add_argument("end", metavar="to", nargs="?")
     blocks.add_argument("--rpc", metavar="URL", help="JSON-RPC endpoint (default: eRPC at localhost:$ERPC_PORT)")
     blocks.set_defaults(run=_blocks)
+
+    coverage = commands.add_parser(
+        "coverage",
+        help="the blocks and addresses each stream source has loaded",
+        description="Prints, as JSON, each stream source's START_BLOCK and the file that sets it, the cursor "
+        "Pipes keeps in the warehouse, its addresses.json as the filter, and covered: [START_BLOCK, cursor], "
+        "or null before its first run. A stream source is a SOURCES entry whose package's .env.example sets "
+        "START_BLOCK. With <source>.<table>, prints that source alone.",
+    )
+    coverage.add_argument("source", metavar="<source>.<table>", nargs="?")
+    coverage.set_defaults(run=_coverage)
 
     new_source = commands.add_parser(
         "new-source",
