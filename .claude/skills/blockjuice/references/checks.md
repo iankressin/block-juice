@@ -11,6 +11,6 @@
 
 The detail of `freshness` lists when each input last loaded. Read it even when the check passes: an answer about "now" built on data from last week says so in `answer.md`.
 
-A reconciliation test runs inside `dbt_tests` when an answer reads ERC-20 transfers. Between two balance readings inside the loaded blocks, each balance must change by its transfers in minus out. When it fails, the transfers miss something the chain counted, such as a rebase or a fee on transfer. Find which before you answer.
+A reconciliation test runs inside `dbt_tests` when an answer reads ERC-20 transfers. Between two balance readings inside the loaded blocks, each balance must change by its transfers in minus out. When it fails, the transfers miss something the chain counted, such as a rebase or a fee on transfer. Find which before you answer. When `dbt_tests` says `erc20_transfers_match_balances_has_pairs` warned, no two balance readings fall inside the loaded blocks, so nothing was reconciled. Run the balances pipeline once more and rerun `bj answer`, or say in the answer that the transfers were not reconciled.
 
 You run one check yourself. `cross_check` compares one number with an independent query, and `bj check <slug> cross_check passed|failed "<detail>"` records it in `answer.json`. Rerunning `bj answer` drops it, since new results void it.
