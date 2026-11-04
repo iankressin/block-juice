@@ -4,7 +4,7 @@ import { describeError } from "#src/calls.ts";
 import { loadEnv } from "#src/env.ts";
 import { logger } from "#src/logger.ts";
 import { pushRunMetrics } from "#src/run/metrics.ts";
-import type { Source, StreamSource } from "#src/types.ts";
+import type { Source, StreamSource } from "#src/source.ts";
 import { postgresWarehouse, type DeadLetterBacklog, type Warehouse } from "#src/warehouse/index.ts";
 
 const runEnv = z.object({ DAGSTER_RUN_ID: z.string().min(1).optional() });

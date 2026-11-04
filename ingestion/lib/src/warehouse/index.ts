@@ -5,7 +5,7 @@ import { chunk, uniqueBy } from "#src/calls.ts";
 import { loadEnv } from "#src/env.ts";
 import type { Logger } from "#src/logger.ts";
 import type { RunReport } from "#src/run/index.ts";
-import type { Batch } from "#src/types.ts";
+import type { Batch } from "#src/source.ts";
 import { pipesTarget, type PipesTargetOptions } from "#src/warehouse/stream.ts";
 
 /**

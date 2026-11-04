@@ -24,7 +24,7 @@ A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it
 │   ├── lib/                    # @ingestion/lib: shared by all sources
 │   │   └── src/
 │   │       ├── index.ts        # public API for any chain
-│   │       ├── types.ts        # Source and StreamSource interfaces
+│   │       ├── source.ts       # Source and StreamSource interfaces
 │   │       ├── portal.ts       # Portal client and finalized head, for stream sources
 │   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, cursors, the run log
 │   │       ├── evm/            # @ingestion/lib/evm: env, addresses, client, connect()

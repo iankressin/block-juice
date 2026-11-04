@@ -8,7 +8,7 @@ import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import { erc20Abi } from "viem";
 import * as z from "zod";
 import { runSource } from "#src/run/index.ts";
-import type { StreamSource } from "#src/types.ts";
+import type { StreamSource } from "#src/source.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
 process.env.PUSHGATEWAY_URL = "";
