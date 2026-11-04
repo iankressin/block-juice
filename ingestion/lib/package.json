@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./evm": "./src/evm/index.ts",
+    "./solana": "./src/solana/index.ts"
   },
   "imports": {
     "#src/*": "./src/*"

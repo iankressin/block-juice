@@ -1,4 +1,5 @@
-import { address, settleCalls, toLower, type EvmClient } from "@ingestion/lib";
+import { settleCalls } from "@ingestion/lib";
+import { address, toLower, type EvmClient } from "@ingestion/lib/evm";
 import type { Address } from "viem";
 import * as z from "zod";
 

@@ -2,10 +2,10 @@ import {
   finalizedHead,
   logger,
   portalClient,
-  validateEthAddressList,
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
+import { validateEthAddressList } from "@ingestion/lib/evm";
 import {
   commonAbis,
   evmEventDecoder,

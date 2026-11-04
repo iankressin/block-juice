@@ -11,7 +11,7 @@ import {
   multicall3Abi,
   type Hex,
 } from "viem";
-import { createEvmClient } from "@ingestion/lib";
+import { createEvmClient } from "@ingestion/lib/evm";
 import { balanceCallsAt, fetchBalances } from "#src/balances.ts";
 
 const wallet = "0x00000000000000000000000000000000000000aa";

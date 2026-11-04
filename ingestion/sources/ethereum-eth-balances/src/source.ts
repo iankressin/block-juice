@@ -1,10 +1,5 @@
-import {
-  connect,
-  evmEnv,
-  validateEthAddressList,
-  type EvmEnv,
-  type Source,
-} from "@ingestion/lib";
+import type { Source } from "@ingestion/lib";
+import { connect, evmEnv, validateEthAddressList, type EvmEnv } from "@ingestion/lib/evm";
 import {
   balanceCallSchema,
   balanceCallsAt,

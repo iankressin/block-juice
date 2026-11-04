@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { getAddressDecoder, type Address } from "@solana/kit";
-import { createSolanaClient } from "@ingestion/lib";
+import { createSolanaClient } from "@ingestion/lib/solana";
 import { balanceCalls, fetchBalances } from "#src/balances.ts";
 
 type Request = { id: number; method: string; params: [Address[], unknown] };
