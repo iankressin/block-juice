@@ -44,6 +44,12 @@ def _new_source(args: argparse.Namespace) -> int:
     return new_source.run(REPO_ROOT, args.source, args.table, args.like)
 
 
+def _report(args: argparse.Namespace) -> int:
+    from pipeline.cli import report
+
+    return report.run(REPO_ROOT, args.slug, args.format)
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="The mechanical steps of answering a question about chain data.")
     commands = root.add_subparsers(dest="command", required=True, metavar="<command>")
@@ -80,6 +86,16 @@ def parser() -> argparse.ArgumentParser:
     new_source.add_argument("table")
     new_source.add_argument("--like", metavar="<package>", required=True, help="the package under ingestion/sources/ to copy")
     new_source.set_defaults(run=_new_source)
+
+    report = commands.add_parser(
+        "report",
+        help="write an answer as an XLSX workbook and a PDF",
+        description="Reads answers/<slug>/answer.json, answer.md and results/, and writes "
+        "answers/<slug>/reports/<slug>.xlsx and .pdf.",
+    )
+    report.add_argument("slug")
+    report.add_argument("--format", default="xlsx,pdf", help="comma-separated: xlsx, pdf (default: both)")
+    report.set_defaults(run=_report)
 
     return root
 
