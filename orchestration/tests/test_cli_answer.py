@@ -366,6 +366,14 @@ def test_an_input_naming_a_source_that_is_not_a_stream_source_gets_no_coverage_c
     assert "coverage" not in [c["name"] for c in json.loads((folder / "answer.json").read_text())["checks"]]
 
 
+def test_an_input_naming_no_sources_entry_is_bad_input_before_any_write(tmp_path, offline):
+    folder = write_question(tmp_path, extra="inputs: [{source: ethereum.erc20_transfer}]\n")
+    offline(parked=0)
+    with pytest.raises(BadInput, match=r"names ethereum\.erc20_transfer, which is not in SOURCES; stream sources: ethereum\.erc20_transfers$"):
+        answer.run(tmp_path, "eth-total")
+    assert sorted(p.name for p in folder.iterdir()) == ["question.yaml"]
+
+
 def test_a_stream_input_needs_window_blocks(history):
     with pytest.raises(BadInput, match="inputs read the stream source ethereum.erc20_transfers, so set window.blocks"):
         history("{chain: ethereum}", USDC_FLOWS)
