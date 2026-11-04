@@ -8,7 +8,7 @@
 | `asked` | no | The date the user asked, `YYYY-MM-DD`. Resolve "last month" or "now" against it. |
 | `definitions` | no | Each word that could be counted two ways, mapped to the reading you used. |
 | `alternatives` | no | Readings you passed over that would change the number. |
-| `window` | no | The chain and time span: `chain`, `from`, `to`, and `blocks: [from, to]`, two block numbers from `bj blocks`. Use `at: latest` for a question about now. History inputs need `blocks`. |
+| `window` | no | The time span: `from`, `to`, and the blocks from `bj blocks`. On one chain, `chain` plus `blocks: [from, to]`. On several chains, `blocks` maps each chain to its range, `{arbitrum: [from, to], base: [from, to]}`. Use `at: latest` for a question about now. History inputs need blocks on their chain. |
 | `inputs` | no | One entry per kind of data: `name`, `strategy` (`state` or `history`), and the `mart` that holds it. A history input names its `source` as `<chain>.<table>`, and may narrow it with `filter`, keyed like the source's `addresses.json`, with every address quoted. `bj answer` checks coverage for it. |
 | `marts` | no | The marts the analyses read. |
 | `analyses` | no | The dbt analyses to run, headline first. Defaults to the slug with `_` for `-`. |

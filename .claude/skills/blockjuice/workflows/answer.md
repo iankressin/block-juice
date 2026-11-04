@@ -9,7 +9,7 @@ Write `answers/<slug>/question.yaml` in the format of [../references/question-sp
 - Define every word that could be counted two ways, such as "bought", "holder", "active" or "wallet". Pick the most literal reading, write it under `definitions`, and list the readings you passed over under `alternatives`.
 - Resolve every token, contract and wallet to an address on its chain. Take addresses from the repo (the `addresses.json` files, existing models) or from the user. Never use an address from memory alone.
 - When the repo does not hold an address, ask the user before any other work. Ask in one message, listing the candidates you can see: several tokens share a symbol, a token has older versions or migrated contracts, a bridged token has its own address on each chain, and a protocol has several versions. Do not search the web or wikis to pick one yourself; the user knows which they mean, and a wrong pick costs every step after it.
-- When the question names a past time on an EVM chain, turn it into blocks with `bj blocks <chain> <from> <to>` and record both under `window`.
+- When the question names a past time, turn it into blocks with `bj blocks <chain> <from> <to>` for each chain it covers, and record them under `window` ([../references/question-spec.md](../references/question-spec.md)). It reads EVM chains from Portal; an unknown chain name prints the ones it knows.
 - Choose `state` or `history` for each input with [../references/choosing-the-data.md](../references/choosing-the-data.md).
 
 ## 2. Find the data
