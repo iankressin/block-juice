@@ -281,6 +281,19 @@ def test_docx_writes_answer_md_and_chain_data_as_literal_text(answered, monkeypa
     assert not [tag for tag in ("w:fldSimple", "w:instrText", "w:hyperlink", "w:drawing", "w:pict") if tag in xml]
 
 
+def test_docx_title_property_stops_at_255_characters_and_the_body_keeps_the_question(answered):
+    root, folder = answered
+    question = "How much ETH do the tracked wallets hold right now, " * 6 + "in wei?"
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["question"] = question
+    (folder / "answer.json").write_text(json.dumps(answer))
+
+    assert run(root, "top-wallets", "docx") == 0
+    path = folder / "reports" / "top-wallets.docx"
+    assert docx.Document(path).core_properties.title == question[:255]
+    assert outline(path)[0] == ("Title", question)
+
+
 def test_missing_answer_md_is_bad_input_and_writes_nothing(answered):
     root, folder = answered
     (folder / "answer.md").unlink()

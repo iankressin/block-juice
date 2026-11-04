@@ -400,7 +400,8 @@ class DocxMarkdown(HTMLParser):
 def write_docx(report: Report, target: Path | IO[bytes]) -> None:
     answer = report.answer
     document = docx.Document()
-    document.core_properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])
+    # python-docx refuses a property longer than 255 characters. The Title paragraph keeps the whole question.
+    document.core_properties.title = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, answer["question"])[:255]
 
     def paragraph(*runs: Run, style: str | None = None) -> None:
         add_runs(document.add_paragraph(style=style), runs)
