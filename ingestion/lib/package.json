@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./evm": "./src/evm/index.ts",
-    "./solana": "./src/solana/index.ts"
+    "./solana": "./src/solana/index.ts",
+    "./bitcoin": "./src/bitcoin/index.ts"
   },
   "imports": {
     "#src/*": "./src/*"
@@ -15,6 +16,7 @@
   },
   "dependencies": {
     "@prometheus-io/client": "^0.16.1",
+    "@scure/btc-signer": "^1.8.1",
     "@solana/kit": "^8.6.0",
     "@subsquid/pipes": "1.0.0-beta.11",
     "drizzle-orm": "0.44.7",

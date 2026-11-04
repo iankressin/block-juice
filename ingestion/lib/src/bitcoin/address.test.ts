@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scriptPubKey, validateBitcoinAddressList } from "#src/address.ts";
-import { nodeScripts } from "#src/node-scripts.fixture.ts";
+import { scriptPubKey, validateBitcoinAddressList } from "#src/bitcoin/address.ts";
+import { nodeScripts } from "#src/bitcoin/node-scripts.fixture.ts";
 
 test("derives the scriptPubKey a node gives for each address type", () => {
   for (const [type, { address, script }] of Object.entries(nodeScripts)) {

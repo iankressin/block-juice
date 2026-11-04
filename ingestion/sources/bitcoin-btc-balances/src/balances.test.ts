@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { validateBitcoinAddressList } from "#src/address.ts";
+import { bitcoinAddress, createBitcoinClient, scriptPubKey } from "@ingestion/lib/bitcoin";
 import { balanceCalls, fetchBalances } from "#src/balances.ts";
-import { nodeScripts } from "#src/node-scripts.fixture.ts";
 
 type Request = { jsonrpc: string; id: number; method: string; params: [string, string[]] };
 type Reply =
@@ -57,8 +56,17 @@ const scanned = (unspents: { scriptPubKey: string; desc: string; amount: number 
   },
 });
 
-const { p2pkh, p2sh, p2wpkh, p2wsh, p2tr } = nodeScripts;
-const wallets = validateBitcoinAddressList([p2pkh, p2sh, p2wpkh, p2wsh, p2tr].map(({ address }) => address));
+/** A wallet and the script a node reports for it. The lib's address test checks scriptPubKey against a node. */
+const wallet = (address: string) => {
+  const parsed = bitcoinAddress.parse(address);
+  return { address: parsed, script: scriptPubKey(parsed) };
+};
+const p2pkh = wallet("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+const p2sh = wallet("34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo");
+const p2wpkh = wallet("bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h");
+const p2wsh = wallet("bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrpmv24sq90ecnvqqjwvw97");
+const p2tr = wallet("bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr");
+const wallets = [p2pkh, p2sh, p2wpkh, p2wsh, p2tr].map(({ address }) => address);
 
 test("reads every wallet in one scan and sums each wallet's unspents by script", async (t) => {
   const { url, requests } = await fakeRpc(
@@ -72,7 +80,7 @@ test("reads every wallet in one scan and sums each wallet's unspents by script",
     ]),
   );
 
-  const batch = await fetchBalances(url, balanceCalls(wallets));
+  const batch = await fetchBalances(createBitcoinClient(url), balanceCalls(wallets));
 
   assert.deepEqual(
     requests.map(({ jsonrpc, method, params }) => ({ jsonrpc, method, params })),
@@ -112,7 +120,7 @@ test("fails every wallet and writes no record when the scan fails", async (t) =>
     await t.test(name, async (t) => {
       const { url } = await fakeRpc(t, failure);
 
-      const batch = await fetchBalances(url, balanceCalls(wallets));
+      const batch = await fetchBalances(createBitcoinClient(url), balanceCalls(wallets));
 
       assert.deepEqual(batch.records, []);
       assert.deepEqual(
@@ -128,7 +136,7 @@ test("asks once for a wallet that a retried call repeats", async (t) => {
   const { url, requests } = await fakeRpc(t, scanned([]));
   const calls = balanceCalls(wallets.slice(0, 1));
 
-  const batch = await fetchBalances(url, [...calls, ...calls]);
+  const batch = await fetchBalances(createBitcoinClient(url), [...calls, ...calls]);
 
   assert.deepEqual(
     requests.map(({ params }) => params[1]),

@@ -1,6 +1,10 @@
 import type { Source } from "@ingestion/lib";
-import * as z from "zod";
-import { validateBitcoinAddressList } from "#src/address.ts";
+import {
+  bitcoinEnv,
+  createBitcoinClient,
+  validateBitcoinAddressList,
+  type BitcoinEnv,
+} from "@ingestion/lib/bitcoin";
 import {
   balanceCallSchema,
   balanceCalls,
@@ -8,11 +12,9 @@ import {
   type BalanceCall,
 } from "#src/balances.ts";
 
-const bitcoinEnv = z.object({ DSHACKLE_URL: z.url() });
-
 // BTC balance of every wallet in addresses.json, plus the wallets that failed in earlier runs,
 // at the chain tip.
-export const bitcoinBtcBalances: Source<z.infer<typeof bitcoinEnv>, BalanceCall> = {
+export const bitcoinBtcBalances: Source<BitcoinEnv, BalanceCall> = {
   name: "bitcoin",
   table: "btc_balances",
   env: bitcoinEnv,
@@ -21,6 +23,7 @@ export const bitcoinBtcBalances: Source<z.infer<typeof bitcoinEnv>, BalanceCall>
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const wallets = validateBitcoinAddressList(addresses.wallets);
-    yield await fetchBalances(env.DSHACKLE_URL, [...balanceCalls(wallets), ...retry]);
+    const client = createBitcoinClient(env.DSHACKLE_URL);
+    yield await fetchBalances(client, [...balanceCalls(wallets), ...retry]);
   },
 };
