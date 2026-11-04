@@ -61,6 +61,24 @@ def test_without_answer_json_exits_2(answered, capsys):
     assert main(["check", "no-such-answer", "cross_check", "passed", "x"]) == 2
 
 
+@pytest.mark.parametrize(
+    "text, error",
+    [
+        ("{", "answers/usdc-flows/answer.json is not valid JSON"),
+        ("[]", "answers/usdc-flows/answer.json has no checks list"),
+        ('{"question": "How much USDC moved?"}', "answers/usdc-flows/answer.json has no checks list"),
+        ('{"checks": {"dbt_tests": "passed"}}', "answers/usdc-flows/answer.json has no checks list"),
+        ('{"checks": ["dbt_tests"]}', "answers/usdc-flows/answer.json has no checks list"),
+    ],
+)
+def test_answer_json_bj_answer_did_not_write_exits_2_with_one_line(answered, capsys, text, error):
+    answered.write_text(text)
+    assert main(["check", "usdc-flows", "cross_check", "passed", "x"]) == 2
+    err = capsys.readouterr().err
+    assert error in err and err.count("\n") == 1
+    assert answered.read_text() == text
+
+
 @pytest.mark.parametrize("name, detail", [("Cross-Check", "x"), ("cross_check", " ")])
 def test_a_bad_name_or_an_empty_detail_exits_2(answered, name, detail):
     assert main(["check", "usdc-flows", name, "passed", detail]) == 2
