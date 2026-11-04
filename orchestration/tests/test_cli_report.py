@@ -281,6 +281,25 @@ def test_docx_writes_answer_md_and_chain_data_as_literal_text(answered, monkeypa
     assert not [tag for tag in ("w:fldSimple", "w:instrText", "w:hyperlink", "w:drawing", "w:pict") if tag in xml]
 
 
+def test_characters_xml_cannot_hold_become_replacement_characters_in_docx_and_xlsx(answered):
+    root, folder = answered
+    (folder / "answer.md").write_text("token \ufffe name\n")
+    (folder / "results" / "top_wallets.csv").write_text("wallet,balance,share\nbad\uffff,1,2\n")
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["definitions"] = {"lone": "a\ud800b"}
+    # json.dumps writes the lone surrogate as the escape \ud800, which json.loads reads back as a lone surrogate.
+    (folder / "answer.json").write_text(json.dumps(answer))
+
+    assert run(root, "top-wallets", "xlsx,pdf,docx") == 0
+    body = outline(folder / "reports" / "top-wallets.docx")
+    assert ("Normal", "token \ufffd name") in body
+    assert ("Normal", "lone: a\ufffdb") in body
+    assert ("table", [["wallet", "balance", "share"], ["bad\ufffd", "1", "2"]]) in body
+    book = openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx")
+    assert {"token \ufffd name", "a\ufffdb"} <= {cell.value for row in book["Answer"].iter_rows() for cell in row}
+    assert book["top_wallets"]["A2"].value == "bad\ufffd"
+
+
 def test_docx_title_property_stops_at_255_characters_and_the_body_keeps_the_question(answered):
     root, folder = answered
     question = "How much ETH do the tracked wallets hold right now, " * 6 + "in wei?"

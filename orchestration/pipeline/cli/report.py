@@ -18,7 +18,6 @@ from docx.document import Document
 from docx.text.paragraph import Paragraph
 from fpdf import FPDF
 from openpyxl import Workbook
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -48,6 +47,10 @@ ASCII = str.maketrans(
     }
 )
 REPLACEMENT = chr(0xFFFD)
+# The characters XML 1.0 cannot hold, which the DOCX and XLSX writers replace with REPLACEMENT: control characters
+# other than tab, LF and CR, lone surrogates (json.loads makes them from escapes), U+FFFE and U+FFFF.
+# openpyxl's ILLEGAL_CHARACTERS_RE matches only the control characters.
+ILLEGAL_CHARACTERS_RE = re.compile(r"[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
 
 
 @dataclass(frozen=True)
