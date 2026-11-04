@@ -1,11 +1,20 @@
+import io
 import json
 import re
+import subprocess
+import sys
 import zipfile
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import docx
+import httplib2
 import openpyxl
 import pytest
 from docx.table import Table
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.errors import HttpError
 
 from pipeline.cli import BadInput, main
 from pipeline.cli.report import cell_value, run
@@ -305,3 +314,187 @@ def test_unknown_format_exits_2(answered, monkeypatch, capsys):
 def test_cells_become_numbers_only_when_a_float_holds_them_exactly(text, value):
     assert cell_value(text) == value
     assert type(cell_value(text)) is type(value)
+
+
+def drive_error(status):
+    return HttpError(httplib2.Response({"status": str(status)}), b'{"error": {"message": "refused"}}')
+
+
+class FakeDrive:
+    """The files() part of a Drive v3 client, keeping each Doc in memory with the DOCX uploaded to it."""
+
+    def __init__(self):
+        self.docs = {}
+        self.refuse = None
+
+    def files(self):
+        return self
+
+    @staticmethod
+    def respond(result):
+        def execute():
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        return SimpleNamespace(execute=execute)
+
+    def link(self, doc_id):
+        return {"id": doc_id, "webViewLink": f"https://docs.google.com/document/d/{doc_id}/edit"}
+
+    def get(self, fileId, fields, **options):
+        if fileId not in self.docs:
+            return self.respond(drive_error(404))
+        return self.respond({"trashed": self.docs[fileId]["trashed"]})
+
+    def create(self, body, media_body, **options):
+        if self.refuse:
+            return self.respond(drive_error(self.refuse))
+        doc_id = f"doc-{len(self.docs) + 1}"
+        self.docs[doc_id] = {**body, "trashed": False, "upload": media_body}
+        return self.respond(self.link(doc_id))
+
+    def update(self, fileId, media_body, **options):
+        self.docs[fileId]["upload"] = media_body
+        return self.respond(self.link(fileId))
+
+
+def uploaded_text(doc):
+    upload = doc["upload"]
+    assert upload.mimetype() == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    return [paragraph.text for paragraph in docx.Document(io.BytesIO(upload.getbytes(0, upload.size()))).paragraphs]
+
+
+@pytest.fixture
+def drive(monkeypatch):
+    fake = FakeDrive()
+    monkeypatch.setattr("pipeline.cli.gdoc.connect", lambda: fake)
+    monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
+    return fake
+
+
+def test_gdoc_creates_a_doc_then_updates_the_same_doc(answered, drive, monkeypatch, capsys):
+    root, folder = answered
+    monkeypatch.setenv("GOOGLE_DRIVE_FOLDER_ID", "folder-1")
+    record = folder / "reports" / "top-wallets.gdoc.json"
+    url = "https://docs.google.com/document/d/doc-1/edit"
+
+    assert run(root, "top-wallets", "gdoc") == 0
+    assert list(drive.docs) == ["doc-1"]
+    doc = drive.docs["doc-1"]
+    assert (doc["name"], doc["mimeType"], doc["parents"]) == (ANSWER["question"], "application/vnd.google-apps.document", ["folder-1"])
+    assert uploaded_text(doc)[:3] == [ANSWER["question"], "Value: none", "Answered at 2026-11-04T19:00:00Z"]
+    assert json.loads(record.read_text()) == {"id": "doc-1", "url": url}
+    assert capsys.readouterr().out == f"created {url}\n"
+    assert sorted(p.name for p in record.parent.iterdir()) == ["top-wallets.gdoc.json"]
+
+    (folder / "answer.md").write_text("A second answer.\n")
+    assert run(root, "top-wallets", "gdoc") == 0
+    assert list(drive.docs) == ["doc-1"]
+    assert "A second answer." in uploaded_text(drive.docs["doc-1"])
+    assert json.loads(record.read_text()) == {"id": "doc-1", "url": url}
+    assert capsys.readouterr().out == f"updated {url}\n"
+
+
+@pytest.mark.parametrize("gone", ["deleted", "trashed"])
+def test_gdoc_creates_a_new_doc_when_the_recorded_one_is_gone(answered, drive, capsys, gone):
+    root, folder = answered
+    (folder / "reports").mkdir()
+    record = folder / "reports" / "top-wallets.gdoc.json"
+    record.write_text(json.dumps({"id": "old", "url": "https://docs.google.com/document/d/old/edit"}))
+    if gone == "trashed":
+        drive.docs["old"] = {"trashed": True}
+
+    assert run(root, "top-wallets", "gdoc") == 0
+    created = [doc_id for doc_id in drive.docs if doc_id != "old"]
+    assert len(created) == 1
+    new = created[0]
+    assert uploaded_text(drive.docs[new])[0] == ANSWER["question"]
+    assert "upload" not in drive.docs.get("old", {})
+    assert json.loads(record.read_text())["id"] == new
+    assert capsys.readouterr().out.startswith("created ")
+
+
+@pytest.mark.parametrize(
+    "env, message",
+    [
+        ({}, "In a Google Cloud project, enable the Google Drive API, create an OAuth client ID of type Desktop app"),
+        ({"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json"}, "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json, which does not exist"),
+        ({"GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"}, "GOOGLE_APPLICATION_CREDENTIALS: File /missing/key.json was not found"),
+        (
+            {"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json", "GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"},
+            "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json",
+        ),
+    ],
+)
+def test_gdoc_without_usable_credentials_exits_2_and_writes_nothing(answered, monkeypatch, capsys, env, message):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    for name in ("GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_APPLICATION_CREDENTIALS"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    assert main(["report", "top-wallets", "--format", "docx,gdoc"]) == 2
+    assert message in capsys.readouterr().err
+    assert not (folder / "reports").exists()
+
+
+def test_gdoc_asks_for_consent_once_and_caches_the_token(tmp_path, monkeypatch):
+    from pipeline.cli import gdoc
+
+    client = tmp_path / "client.json"
+    client.write_text(
+        json.dumps(
+            {
+                "installed": {
+                    "client_id": "client-1",
+                    "client_secret": "secret",
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": ["http://localhost"],
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", str(client))
+    monkeypatch.setattr(gdoc, "TOKEN", tmp_path / "blockjuice" / "google-token.json")
+    consents = []
+
+    def consent(flow, port):
+        consents.append(flow.client_config["client_id"])
+        return Credentials(
+            token="token-1",
+            refresh_token="refresh-1",
+            client_id="client-1",
+            client_secret="secret",
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=gdoc.SCOPES,
+            expiry=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1),
+        )
+
+    monkeypatch.setattr(InstalledAppFlow, "run_local_server", consent)
+    gdoc.connect()
+    gdoc.connect()
+    assert consents == ["client-1"]
+    assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-1"
+    assert gdoc.TOKEN.stat().st_mode & 0o777 == 0o600
+
+
+def test_gdoc_exits_2_when_drive_refuses_the_upload(answered, drive, monkeypatch, capsys):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    drive.refuse = 403
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    assert "Google Drive refused the upload: 403 refused" in capsys.readouterr().err
+    assert not (folder / "reports" / "top-wallets.gdoc.json").exists()
+
+
+def test_the_other_formats_never_load_the_google_client(answered):
+    root, _ = answered
+    script = (
+        "import sys; from pathlib import Path; from pipeline.cli.report import run; "
+        f"run(Path({str(root)!r}), 'top-wallets', 'xlsx,pdf,docx'); "
+        "print(sorted(m for m in sys.modules if m.startswith(('google', 'googleapiclient'))))"
+    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines()[-1] == "[]"

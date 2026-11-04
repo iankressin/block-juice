@@ -1,4 +1,4 @@
-"""bj report: an answer as an XLSX workbook, a PDF and a DOCX, for readers who do not read JSON."""
+"""bj report: an answer as an XLSX workbook, a PDF, a DOCX or a Google Doc, for readers who do not read JSON."""
 
 import csv
 import html
@@ -25,7 +25,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from pipeline.cli import BadInput
 from pipeline.cli.question import answer_dir
 
-FORMATS = ("xlsx", "pdf", "docx")
+FORMATS = ("xlsx", "pdf", "docx", "gdoc")
 ROWS_SHOWN = 50
 # A plain decimal number. Leading zeros make it an identifier, which stays text.
 NUMBER = re.compile(r"^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$")
@@ -437,9 +437,16 @@ def run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
     folder = answer_dir(repo_root, slug)
     report = load(folder, slug)
     reports = folder / "reports"
+    if "gdoc" in chosen:
+        # Imported here so that the other formats never load the Google client. It runs first, so that
+        # missing Google credentials stop the command before it writes anything.
+        from pipeline.cli import gdoc
+
+        print(gdoc.publish(report, reports / f"{slug}.gdoc.json"))
     reports.mkdir(exist_ok=True)
     for name in chosen:
-        path = reports / f"{slug}.{name}"
-        WRITERS[name](report, path)
-        print(f"wrote {path.relative_to(repo_root)}")
+        if name in WRITERS:
+            path = reports / f"{slug}.{name}"
+            WRITERS[name](report, path)
+            print(f"wrote {path.relative_to(repo_root)}")
     return 0
