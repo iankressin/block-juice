@@ -19,10 +19,19 @@ class BadInput(Exception):
 
 
 def utc_iso(moment: datetime) -> str:
+    """ISO 8601 in UTC, ending in Z. A datetime without an offset is already UTC."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
     return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # Each command imports its module only when it runs, so `bj blocks` does not load dbt or Dagster.
+def _answer(args: argparse.Namespace) -> int:
+    from pipeline.cli import answer
+
+    return answer.run(REPO_ROOT, args.slug)
+
+
 def _blocks(args: argparse.Namespace) -> int:
     from pipeline.cli import blocks
 
@@ -38,6 +47,16 @@ def _new_source(args: argparse.Namespace) -> int:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="The mechanical steps of answering a question about chain data.")
     commands = root.add_subparsers(dest="command", required=True, metavar="<command>")
+
+    answer = commands.add_parser(
+        "answer",
+        help="run a question's dbt analyses and check the data behind them",
+        description="Reads answers/<slug>/question.yaml, compiles and runs its dbt analyses on the warehouse, "
+        "runs the dbt tests upstream of them, checks the dead letters and freshness of every raw table they "
+        "read, and writes answers/<slug>/results/ and answer.json. Exits 1 when a check fails.",
+    )
+    answer.add_argument("slug")
+    answer.set_defaults(run=_answer)
 
     blocks = commands.add_parser(
         "blocks",

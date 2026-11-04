@@ -1,0 +1,256 @@
+import csv
+import json
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
+
+from pipeline.cli import BadInput, answer
+from pipeline.cli.answer import (
+    Check,
+    Input,
+    LastRun,
+    Result,
+    answer_document,
+    cell_text,
+    dbt_tests_check,
+    dead_letters_check,
+    freshness_check,
+    headline,
+    jsonable,
+    upstream_inputs,
+    write_answer,
+)
+from pipeline.cli.question import load_question
+
+WEI = Decimal(131322925334691899062636)
+ETH = Input("ethereum", "eth_balances", "raw.ethereum_eth_balances")
+SOL = Input("solana", "sol_balances", "raw.solana_sol_balances")
+
+
+def source(name, table):
+    return {"source_name": name, "name": table, "schema": "raw", "identifier": f"{name}_{table}"}
+
+
+MANIFEST = {
+    "sources": {
+        "source.t.ethereum.eth_balances": source("ethereum", "eth_balances"),
+        "source.t.solana.sol_balances": source("solana", "sol_balances"),
+        "source.t.bitcoin.btc_balances": source("bitcoin", "btc_balances"),
+    },
+    "nodes": {
+        "analysis.t.holders": {"depends_on": {"nodes": ["model.t.latest", "model.t.stg_eth"]}},
+        "model.t.latest": {"depends_on": {"nodes": ["model.t.int_eth", "model.t.int_sol", "seed.t.labels"]}},
+        "model.t.int_eth": {"depends_on": {"nodes": ["model.t.stg_eth"]}},
+        "model.t.int_sol": {"depends_on": {"nodes": ["model.t.stg_sol"]}},
+        "model.t.stg_eth": {"depends_on": {"nodes": ["source.t.ethereum.eth_balances"]}},
+        "model.t.stg_sol": {"depends_on": {"nodes": ["source.t.solana.sol_balances"]}},
+        "seed.t.labels": {"depends_on": {"nodes": []}},
+        "model.t.stg_btc": {"depends_on": {"nodes": ["source.t.bitcoin.btc_balances"]}},
+    },
+}
+
+
+def test_inputs_are_the_sources_reached_through_every_path_once():
+    assert upstream_inputs(MANIFEST, ["analysis.t.holders"]) == [ETH, SOL]
+
+
+def test_inputs_of_several_analyses_are_merged_and_sorted():
+    assert upstream_inputs(MANIFEST, ["model.t.stg_btc", "analysis.t.holders"]) == [
+        Input("bitcoin", "btc_balances", "raw.bitcoin_btc_balances"),
+        ETH,
+        SOL,
+    ]
+
+
+def test_json_keeps_big_numbers_exact_as_strings():
+    assert jsonable(2**53 - 1) == 2**53 - 1
+    assert jsonable(2**53) == "9007199254740992"
+    assert jsonable(WEI) == "131322925334691899062636"
+    assert jsonable(Decimal("0.0000000000")) == "0.0000000000"
+    assert jsonable(True) is True
+
+
+def test_json_datetimes_are_utc():
+    plus_two = timezone(timedelta(hours=2))
+    assert jsonable(datetime(2026, 11, 4, 21, 0, tzinfo=plus_two)) == "2026-11-04T19:00:00Z"
+    assert jsonable(datetime(2026, 11, 4, 19, 0)) == "2026-11-04T19:00:00Z"
+
+
+def test_csv_cells_are_exact_text():
+    assert [cell_text(v) for v in (None, WEI, 12, 0.1, True, {"a": 2**60}, "x")] == [
+        "",
+        "131322925334691899062636",
+        "12",
+        "0.1",
+        "true",
+        '{"a": "1152921504606846976"}',
+        "x",
+    ]
+
+
+def test_headline_is_the_first_analysis_single_cell():
+    one = Result("count", "", ["n"], [(WEI,)])
+    two_rows = Result("rows", "", ["n"], [(1,), (2,)])
+    two_columns = Result("cols", "", ["a", "b"], [(1, 2)])
+    assert headline([one, two_rows]) == WEI
+    assert headline([two_rows, one]) is None
+    assert headline([two_columns]) is None
+
+
+def test_dbt_tests_pass_unless_a_test_fails_or_errors():
+    assert dbt_tests_check([("a", "pass"), ("b", "warn")]) == Check("dbt_tests", True, "1 passed, 1 warned")
+    assert dbt_tests_check([("z", "fail"), ("a", "pass"), ("m", "error")]) == Check(
+        "dbt_tests", False, "1 passed, 2 failed: m, z"
+    )
+
+
+def test_dead_letters_fail_when_any_input_has_one():
+    assert dead_letters_check({ETH: (0, 0), SOL: (0, 0)}).passed
+    parked = dead_letters_check({ETH: (0, 0), SOL: (0, 2)})
+    assert not parked.passed
+    assert parked.detail == "ethereum.eth_balances 0 pending, 0 parked; solana.sol_balances 0 pending, 2 parked"
+    assert dead_letters_check({}) == Check("dead_letters", True, "no inputs")
+
+
+def test_freshness_fails_when_an_input_never_succeeded():
+    finished = datetime(2026, 11, 4, 6, 0, 12, tzinfo=timezone.utc)
+    check = freshness_check({ETH: LastRun(finished, 3, "run-1"), SOL: None})
+    assert check == Check(
+        "freshness",
+        False,
+        "ethereum.eth_balances finished 2026-11-04T06:00:12Z; solana.sol_balances has no successful run",
+    )
+
+
+def write_question(root, slug="eth-total", extra=""):
+    folder = root / "answers" / slug
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "question.yaml").write_text(
+        f"question: How much ETH do the wallets hold?\nwindow: {{at: 2026-11-01}}\n{extra}"
+    )
+    return folder
+
+
+def document(tmp_path, answered_at):
+    question = load_question(tmp_path, "eth-total")
+    finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
+    return answer_document(
+        question,
+        answered_at,
+        [Result("eth_total", "select 1", ["total"], [(WEI,)])],
+        {ETH: (0, 0), SOL: (1, 0)},
+        {ETH: LastRun(finished, 12, "run-1"), SOL: None},
+        [Check("dbt_tests", True, "3 passed")],
+        {"git_sha": "abc", "git_dirty": False, "dbt_version": "1.12.6"},
+    )
+
+
+def test_answer_document_has_the_documented_shape(tmp_path):
+    write_question(tmp_path)
+    doc = document(tmp_path, datetime(2026, 11, 4, 19, 0, 0, 123456, tzinfo=timezone.utc))
+    assert list(doc) == [
+        "question", "slug", "answered_at", "value", "definitions", "alternatives", "window",
+        "results", "inputs", "checks", "provenance",
+    ]
+    assert doc["answered_at"] == "2026-11-04T19:00:00Z"
+    assert doc["value"] == "131322925334691899062636"
+    assert doc["window"] == {"at": "2026-11-01"}
+    assert doc["results"] == [
+        {"analysis": "eth_total", "path": "results/eth_total.csv", "columns": ["total"], "rows": 1, "sql": "select 1"}
+    ]
+    assert doc["inputs"] == [
+        {
+            "source": "ethereum.eth_balances",
+            "raw_table": "raw.ethereum_eth_balances",
+            "last_run": {"finished_at": "2026-11-04T06:00:00Z", "records_written": 12, "dagster_run_id": "run-1"},
+            "dead_letters": {"pending": 0, "parked": 0},
+        },
+        {
+            "source": "solana.sol_balances",
+            "raw_table": "raw.solana_sol_balances",
+            "last_run": None,
+            "dead_letters": {"pending": 1, "parked": 0},
+        },
+    ]
+    assert doc["checks"] == [{"name": "dbt_tests", "status": "passed", "detail": "3 passed"}]
+
+
+def test_rerun_replaces_results_and_changes_only_answered_at(tmp_path):
+    folder = write_question(tmp_path)
+    (folder / "results").mkdir()
+    (folder / "results" / "stale.csv").write_text("old\n")
+    result = Result("eth_total", "select 1", ["total", "note"], [(WEI, None)])
+
+    write_answer(folder, [result], document(tmp_path, datetime(2026, 11, 4, 19, 0, tzinfo=timezone.utc)))
+    first = (folder / "answer.json").read_text()
+    write_answer(folder, [result], document(tmp_path, datetime(2026, 11, 5, 8, 0, tzinfo=timezone.utc)))
+    second = (folder / "answer.json").read_text()
+
+    assert sorted(p.name for p in (folder / "results").iterdir()) == ["eth_total.csv"]
+    with open(folder / "results" / "eth_total.csv", newline="") as file:
+        assert list(csv.reader(file)) == [["total", "note"], ["131322925334691899062636", ""]]
+    changed = [(a, b) for a, b in zip(first.splitlines(), second.splitlines()) if a != b]
+    assert changed == [('  "answered_at": "2026-11-04T19:00:00Z",', '  "answered_at": "2026-11-05T08:00:00Z",')]
+
+
+def test_an_analysis_dbt_does_not_know_is_bad_input(tmp_path, monkeypatch):
+    (tmp_path / "target").mkdir()
+    (tmp_path / "target" / "manifest.json").write_text(json.dumps({"nodes": {}, "sources": {}}))
+    monkeypatch.setattr(answer, "dbt", lambda project, *args: SimpleNamespace(success=True))
+    with pytest.raises(BadInput, match="write transformation/analyses/eth_total.sql"):
+        answer.compile_analyses(tmp_path, ["eth_total"])
+
+
+@pytest.fixture
+def offline(monkeypatch):
+    """answer.run with dbt and the warehouse replaced by fixed results."""
+    for name in answer.REQUIRED_ENV:
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
+    monkeypatch.setattr(answer, "run_dbt_tests", lambda project, names: Check("dbt_tests", True, "3 passed"))
+    monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
+    finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
+
+    def read_warehouse(manifest, analysis_ids, inputs, parked=0):
+        return (
+            [Result("eth_total", "select 1", ["total"], [(WEI,)])],
+            {i: (0, parked) for i in inputs},
+            {i: LastRun(finished, 1, None) for i in inputs},
+        )
+
+    def use(parked):
+        monkeypatch.setattr(answer, "read_warehouse", lambda *args: read_warehouse(*args, parked=parked))
+
+    return use
+
+
+def test_a_failed_check_still_writes_answer_json_and_exits_1(tmp_path, offline, capsys):
+    folder = write_question(tmp_path)
+    offline(parked=1)
+    assert answer.run(tmp_path, "eth-total") == 1
+    doc = json.loads((folder / "answer.json").read_text())
+    assert [(c["name"], c["status"]) for c in doc["checks"]] == [
+        ("dbt_tests", "passed"),
+        ("dead_letters", "failed"),
+        ("freshness", "passed"),
+    ]
+    out = capsys.readouterr().out
+    assert "value: 131322925334691899062636" in out
+    assert "dead_letters: FAILED" in out
+
+
+def test_all_checks_passing_exits_0(tmp_path, offline):
+    write_question(tmp_path)
+    offline(parked=0)
+    assert answer.run(tmp_path, "eth-total") == 0
+
+
+def test_missing_settings_are_bad_input_before_any_write(tmp_path, offline, monkeypatch):
+    folder = write_question(tmp_path)
+    offline(parked=0)
+    monkeypatch.delenv("RAW_SCHEMA")
+    with pytest.raises(BadInput, match="set RAW_SCHEMA in .env"):
+        answer.run(tmp_path, "eth-total")
+    assert sorted(p.name for p in folder.iterdir()) == ["question.yaml"]
