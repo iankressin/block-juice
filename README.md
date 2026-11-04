@@ -24,10 +24,9 @@ Each chain reaches `latest_balances` through one model in `transformation/models
 │   │       ├── index.ts        # public API
 │   │       ├── types.ts        # Source interface
 │   │       ├── config.ts
-│   │       ├── postgres.ts     # idempotent upsert into the raw schema
+│   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, the run log
 │   │       ├── logger.ts       # the pino logger
 │   │       ├── metrics.ts      # pushes each run's result to the Pushgateway
-│   │       ├── run-log.ts      # adds each run to ops.ingestion_runs
 │   │       └── run.ts          # runSource(): extract + load, logs, metrics and the run log
 │   └── sources/
 │       └── <source>/           # @ingestion/<source>: one package per source
@@ -133,4 +132,4 @@ If the pipeline reads a new source, also follow Add a source. Two pipelines that
 
 ## Use another warehouse
 
-Change `ingestion/lib/src/postgres.ts`, the adapter in `transformation/profiles.yml`, and `dbt-postgres` in `orchestration/pyproject.toml`.
+Change `ingestion/lib/src/warehouse/`, the adapter in `transformation/profiles.yml`, and `dbt-postgres` in `orchestration/pyproject.toml`.

@@ -20,13 +20,6 @@ export type Batch<C = unknown> = {
   failed: Failed<C>[];
 };
 
-export type DeadLetter = {
-  id: string;
-  call: unknown;
-  error: string;
-  attempts: number;
-};
-
 /**
  * `name` and `table` must match the dbt source name and table name.
  * Dagster uses the pair as the asset key, which links each ingestion
@@ -43,17 +36,6 @@ export interface Source<E, C> {
   env: z.ZodType<E>;
   call: z.ZodType<C>;
   extract(env: E, retry: C[]): AsyncIterable<Batch<C>>;
-}
-
-export interface Target {
-  open(table: string): Promise<TargetTable>;
-}
-
-/** `write` must be an upsert on `id`, so a rerun over the same blocks leaves the same rows. */
-export interface TargetTable {
-  name: string;
-  write(records: RawRecord[]): Promise<void>;
-  close(): Promise<void>;
 }
 
 /**
@@ -84,19 +66,3 @@ export type RunReport = {
   /** Undefined when the run failed before it counted its dead letters. */
   backlog: DeadLetterBacklog | undefined;
 };
-
-export interface DeadLetterQueue {
-  open(table: string): Promise<DeadLetterTable>;
-}
-
-export interface DeadLetterTable {
-  name: string;
-  /** Dead letters that have not yet failed `maxAttempts` times. */
-  pending(): Promise<DeadLetter[]>;
-  push(failed: Failed[]): Promise<void>;
-  /** Parks these dead letters at once, each with the error that says why. */
-  park(letters: Pick<DeadLetter, "id" | "error">[]): Promise<void>;
-  resolve(ids: string[]): Promise<void>;
-  backlog(): Promise<DeadLetterBacklog>;
-  close(): Promise<void>;
-}

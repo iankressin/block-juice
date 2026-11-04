@@ -1,116 +1,93 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { PGlite } from "@electric-sql/pglite";
 import * as z from "zod";
 import { runSource } from "#src/run.ts";
-import type { DeadLetter, DeadLetterQueue, Target } from "#src/types.ts";
+import type { Batch, Source } from "#src/types.ts";
+import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
-// loadEnv treats an empty value as unset, so the run pushes no metrics and cannot reach
-// ops.ingestion_runs, even when the shell or a .env file points at the warehouse.
+// loadEnv treats an empty value as unset, so the run pushes no metrics, even when the shell
+// or a .env file sets PUSHGATEWAY_URL.
 process.env.PUSHGATEWAY_URL = "";
-process.env.WAREHOUSE_HOST = "";
 
-function memoryTarget() {
-  const written: string[] = [];
-  const target: Target = {
-    open: async () => ({
-      name: "memory",
-      write: async (records) => {
-        written.push(...records.map((r) => r.id));
-      },
-      close: async () => {},
-    }),
-  };
-  return { target, written };
-}
+type Wallet = { wallet: string };
 
-function memoryDeadLetters(letters: DeadLetter[]) {
-  const rows = new Map(letters.map((letter) => [letter.id, { ...letter, parked: false }]));
-  const queue: DeadLetterQueue = {
-    open: async () => ({
-      name: "memory",
-      pending: async () => [...rows.values()].filter((row) => !row.parked),
-      push: async (failed) => {
-        for (const { id, call, error } of failed) rows.set(id, { id, call, error, attempts: 1, parked: false });
-      },
-      park: async (letters) => {
-        for (const { id, error } of letters) Object.assign(rows.get(id)!, { error, parked: true });
-      },
-      resolve: async (ids) => {
-        for (const id of ids) rows.delete(id);
-      },
-      backlog: async () => {
-        const all = [...rows.values()];
-        return { pending: all.filter((r) => !r.parked).length, parked: all.filter((r) => r.parked).length };
-      },
-      close: async () => {},
-    }),
-  };
-  return { queue, rows };
-}
-
-test("a dead letter whose call no longer parses is parked, and the run goes on without it", async () => {
-  const { queue, rows } = memoryDeadLetters([
-    { id: "a", call: { wallet: "a" }, error: "timeout", attempts: 1 },
-    { id: "b", call: { address: "b" }, error: "timeout", attempts: 2 },
-  ]);
-  const { target, written } = memoryTarget();
-  let retried: unknown[] | undefined;
-
-  await runSource(
-    {
-      name: "test",
-      table: "wallets",
-      env: z.object({}),
-      call: z.object({ wallet: z.string() }),
-      async *extract(_env, retry) {
-        retried = retry;
-        const calls = [...retry, { wallet: "c" }];
-        yield { records: calls.map((c) => ({ id: c.wallet, callId: c.wallet, data: {} })), failed: [] };
-      },
-    },
-    target,
-    queue,
-  );
-
-  assert.equal(process.exitCode, undefined, "the run succeeded");
-  assert.deepEqual(retried, [{ wallet: "a" }]);
-  assert.deepEqual(written, ["a", "c"]);
-  const [parked, ...others] = rows.values();
-  assert.deepEqual(others, [], "the retried letter was resolved");
-  assert.deepEqual({ ...parked, error: undefined }, {
-    id: "b",
-    call: { address: "b" },
-    error: undefined,
-    attempts: 2,
-    parked: true,
-  });
-  assert.match(parked!.error, /no longer matches the source's call schema.*wallet/s);
+const source = (
+  extract: (retry: Wallet[]) => AsyncIterable<Batch<Wallet>>,
+  env: z.ZodType = z.object({}),
+): Source<unknown, Wallet> => ({
+  name: "test",
+  table: "wallets",
+  env,
+  call: z.object({ wallet: z.string() }),
+  extract: (_env, retry) => extract(retry),
 });
 
-test("a record clears the dead letter of the call it answers, under its own row id", async () => {
-  const { queue, rows } = memoryDeadLetters([
-    { id: "W", call: { wallet: "W" }, error: "timeout", attempts: 1 },
-  ]);
-  const { target, written } = memoryTarget();
+async function runLog(db: PGlite) {
+  const { rows } = await db.query<Record<string, unknown>>(
+    `select succeeded, records_written, failed_calls, retried_calls,
+            dead_letters_pending, dead_letters_parked, error
+     from ops.ingestion_runs order by started_at, finished_at`,
+  );
+  return rows;
+}
+
+test("a run retries the dead letters of earlier runs and records what it did", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  let retried: Wallet[] = [];
 
   await runSource(
-    {
-      name: "test",
-      table: "wallets",
-      env: z.object({}),
-      call: z.object({ wallet: z.string() }),
-      async *extract(_env, retry) {
-        yield {
-          records: retry.map((c) => ({ id: `205:${c.wallet}`, callId: c.wallet, data: {} })),
-          failed: [],
-        };
-      },
-    },
-    target,
-    queue,
+    source(async function* () {
+      yield { records: [{ id: "a", callId: "a", data: {} }], failed: [{ id: "c", call: { wallet: "c" }, error: "timeout" }] };
+    }),
+    warehouse,
+  );
+  await runSource(
+    source(async function* (retry) {
+      retried = retry;
+      yield { records: retry.map((c) => ({ id: `2:${c.wallet}`, callId: c.wallet, data: {} })), failed: [] };
+    }),
+    warehouse,
   );
 
-  assert.equal(process.exitCode, undefined, "the run succeeded");
-  assert.deepEqual(written, ["205:W"]);
-  assert.deepEqual([...rows.keys()], [], "the dead letter was cleared");
+  assert.equal(process.exitCode, undefined, "both runs succeeded");
+  assert.deepEqual(retried, [{ wallet: "c" }]);
+  assert.deepEqual(await runLog(db), [
+    { succeeded: true, records_written: 1, failed_calls: 1, retried_calls: 0, dead_letters_pending: 1, dead_letters_parked: 0, error: null },
+    { succeeded: true, records_written: 1, failed_calls: 0, retried_calls: 1, dead_letters_pending: 0, dead_letters_parked: 0, error: null },
+  ]);
+});
+
+test("a run that fails keeps the batches it loaded and records the error", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+
+  await runSource(
+    source(async function* () {
+      yield { records: [{ id: "g", callId: "g", data: {} }], failed: [] };
+      throw new Error("boom");
+    }),
+    warehouse,
+  );
+
+  assert.equal(process.exitCode, 1);
+  process.exitCode = undefined;
+  assert.deepEqual((await db.query("select id from raw.test_wallets")).rows, [{ id: "g" }]);
+  assert.deepEqual(await runLog(db), [
+    { succeeded: false, records_written: 1, failed_calls: 0, retried_calls: 0, dead_letters_pending: null, dead_letters_parked: null, error: "boom" },
+  ]);
+});
+
+test("an invalid environment fails the run, and the run log says why", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+
+  await runSource(
+    source(async function* () {}, z.object({ RUN_TEST_ENDPOINT: z.url() })),
+    warehouse,
+  );
+
+  assert.equal(process.exitCode, 1);
+  process.exitCode = undefined;
+  const [row] = await runLog(db);
+  assert.equal(row?.succeeded, false);
+  assert.match(String(row?.error), /Invalid environment[\s\S]*RUN_TEST_ENDPOINT/);
 });
