@@ -15,10 +15,11 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from docx.table import Table
-from google.auth.exceptions import RefreshError
+from google.auth.exceptions import RefreshError, TransportError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
+from httplib2 import ServerNotFoundError
 
 from pipeline.cli import BadInput, gdoc, main
 from pipeline.cli.report import cell_value, run
@@ -657,6 +658,87 @@ def test_gdoc_asks_for_consent_again_when_google_refuses_the_refresh(consents, m
     gdoc.connect()
     assert consents == ["client-1"]
     assert json.loads(gdoc.TOKEN.read_text())["token"] == "token-1"
+
+
+def test_gdoc_exits_2_when_google_cannot_be_reached_for_the_refresh(consents, monkeypatch):
+    cache_token("token-0", timedelta(hours=-1))
+
+    def unreachable(credentials, request):
+        raise TransportError("Unable to find the server at oauth2.googleapis.com")
+
+    monkeypatch.setattr(Credentials, "refresh", unreachable)
+    with pytest.raises(BadInput, match="Could not reach Google: Unable to find the server at oauth2.googleapis.com"):
+        gdoc.connect()
+    assert consents == []
+
+
+@pytest.mark.parametrize("cached", ["", "not json\n", "{}"])
+def test_gdoc_exits_2_when_the_cached_token_is_not_a_token(consents, cached):
+    gdoc.TOKEN.parent.mkdir(parents=True)
+    gdoc.TOKEN.write_text(cached)
+    with pytest.raises(BadInput, match=f"{re.escape(str(gdoc.TOKEN))} is not a Google token .*: delete it to sign in again"):
+        gdoc.connect()
+    assert consents == []
+    assert gdoc.TOKEN.read_text() == cached
+
+
+@pytest.mark.parametrize("recorded", ["<<<<<<< HEAD\n", '{"url": "https://docs.google.com/document/d/doc-1/edit"}', "[]"])
+def test_gdoc_exits_2_when_the_record_holds_no_doc_id(answered, drive, monkeypatch, capsys, recorded):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    (folder / "reports").mkdir()
+    record = folder / "reports" / "top-wallets.gdoc.json"
+    record.write_text(recorded)
+
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert f"{record} does not hold a Doc id: fix it, or delete it to create a new Doc" in err
+    assert drive.calls == []
+    assert record.read_text() == recorded
+
+
+@pytest.mark.parametrize(
+    "error, message",
+    [
+        pytest.param(
+            RefreshError("invalid_grant: Token has been expired or revoked.", {"error": "invalid_grant"}),
+            "Google refused the credentials (invalid_grant: Token has been expired or revoked.)",
+            id="revoked",
+        ),
+        pytest.param(
+            RefreshError("<html>\n<body>Bad gateway</body>\n</html>"),
+            "Google refused the credentials (<html> <body>Bad gateway</body> </html>)",
+            id="refused-with-a-page",
+        ),
+        pytest.param(
+            TransportError("Unable to find the server at oauth2.googleapis.com"),
+            "Could not reach Google: Unable to find the server at oauth2",
+            id="no-token-endpoint",
+        ),
+        pytest.param(
+            ServerNotFoundError("Unable to find the server at www.googleapis.com"),
+            "Could not reach Google: Unable to find the server at www",
+            id="no-drive",
+        ),
+        pytest.param(
+            ConnectionResetError(54, "Connection reset by peer"),
+            "Could not reach Google: [Errno 54] Connection reset by peer",
+            id="reset",
+        ),
+    ],
+)
+def test_gdoc_exits_2_with_one_line_when_a_request_fails_on_the_credentials_or_the_network(
+    answered, drive, monkeypatch, capsys, error, message
+):
+    root, folder = answered
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", root)
+    drive.fail = {"create": error}
+    assert main(["report", "top-wallets", "--format", "gdoc"]) == 2
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert message in err
+    assert not (folder / "reports" / "top-wallets.gdoc.json").exists()
 
 
 def test_gdoc_exits_2_when_drive_refuses_the_upload(answered, drive, monkeypatch, capsys):
