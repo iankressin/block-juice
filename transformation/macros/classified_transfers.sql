@@ -1,6 +1,5 @@
-{#- The ERC-20 transfers of each token on its chain inside its blocks, with what kind of address each side
-    is and the transfer's category. `windows` is a list of {chain, token, blocks: [from, to]}, token in
-    lower case.
+{#- The transfers of token_transfers(), the token in var('token'), with what kind of address each side is
+    and the transfer's category.
 
     A side's kind comes from address_labels: exchange, contract or eoa. Two kinds come from the transfers
     themselves: 'bridge' for the zero address, which mints come from and burns go to, and 'deposit' for an
@@ -10,19 +9,10 @@
     category is the first that fits: bridge (a mint or burn), exchange (either side is an exchange or a
     deposit address), contract (either side is a contract), p2p (both sides are EOAs), else unknown.
     A transfer from an address to itself is left out. -#}
-{%- macro classified_transfers(windows) %}
+{%- macro classified_transfers() %}
 with transfers as (
-    {%- for w in windows %}
-    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value
-    from {{ ref('erc20_transfers') }}
-    where chain = '{{ w.chain }}'
-        and token = '{{ w.token }}'
-        and block_number between {{ w.blocks[0] }} and {{ w.blocks[1] }}
-        and from_address <> to_address
-    {%- if not loop.last %}
-    union all
-    {%- endif %}
-    {%- endfor %}
+    select * from ({{ token_transfers() }}) as t
+    where from_address <> to_address
 ),
 
 labels as (

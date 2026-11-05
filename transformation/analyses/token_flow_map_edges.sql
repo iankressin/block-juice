@@ -1,14 +1,10 @@
--- The edges of the SQD entity graph of October 2026, most SQD first: from one entity to another, per
--- chain and category, with each end's group. An exchange's addresses and deposit addresses are one entity,
--- named for the exchange; a mint or burn's other end is bridge:<chain>. A withdrawal from one L2 that pairs
--- with a deposit into the other through Ethereum (bridge_pairs) is an edge across chains, such as
--- arbitrum>base. Moves between an exchange's own addresses are left out.
-{%- set windows = [
-    {'chain': 'arbitrum', 'token': '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1', 'blocks': [510496864, 520129273]},
-    {'chain': 'base', 'token': '0xd4554bea546efa83c1e6b389ecac40ea999b3e78', 'blocks': [52011727, 53350926]},
-] %}
+-- The edges of the token's entity graph in its windows, largest amount first: from one entity to another,
+-- per chain and category, with each end's group. An exchange's addresses and deposit addresses are one
+-- entity, named for the exchange; a mint or burn's other end is bridge:<chain>. A withdrawal from one L2
+-- inside its window that pairs with a deposit into the other through Ethereum (bridge_pairs) is an edge
+-- across chains, such as arbitrum>base. Moves between an exchange's own addresses are left out.
 with classified as (
-    {{ classified_transfers(windows) }}
+    {{ classified_transfers() }}
 ),
 
 -- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint
@@ -51,14 +47,13 @@ cross_chain as (
         sum(p.amount) as value,
         count(*) as transfers
     from {{ ref('bridge_pairs') }} as p
+    join ({{ token_bridge_transfers() }}) as w on w.chain = p.from_chain and w.id = p.withdrawal_id
     left join {{ ref('address_labels') }} as f on f.chain = p.from_chain and f.address = p.from_address
     left join {{ ref('address_labels') }} as t on t.chain = p.to_chain and t.address = p.to_address
-    where p.ethereum_token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'
-        and p.withdrawn_at >= '2026-10-01 00:00:00+00' and p.withdrawn_at < '2026-11-01 00:00:00+00'
     group by 1, 2, 3, 4, 5, 6
 )
 
-select source, source_group, target, target_group, chain, category, round(value / 1e18, 6) as sqd, transfers
+select source, source_group, target, target_group, chain, category, round(value / {{ token_unit() }}, 6) as amount, transfers
 from (
     select * from same_chain
     union all

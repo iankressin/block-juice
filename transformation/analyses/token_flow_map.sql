@@ -1,11 +1,7 @@
--- How many addresses that are no exchange took SQD out of one exchange and paid SQD into a different one
--- in October 2026, on Arbitrum or Base. sqd_flow_map_cross_exchange lists them.
-{%- set windows = [
-    {'chain': 'arbitrum', 'token': '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1', 'blocks': [510496864, 520129273]},
-    {'chain': 'base', 'token': '0xd4554bea546efa83c1e6b389ecac40ea999b3e78', 'blocks': [52011727, 53350926]},
-] %}
+-- How many addresses that are no exchange took the token out of one exchange and paid it into a different
+-- one in the token's windows. token_flow_map_cross_exchange lists them.
 with classified as (
-    {{ classified_transfers(windows) }}
+    {{ classified_transfers() }}
 ),
 
 -- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint
