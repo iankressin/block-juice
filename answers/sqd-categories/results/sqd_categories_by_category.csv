@@ -1,0 +1,8 @@
+category,chain,transfers,sqd,senders,recipients
+bridge,arbitrum,9,1210992.334705,2,2
+bridge,base,3,330782.285588,1,1
+contract,arbitrum,10566,512118193.135307,344,402
+contract,base,5386,73811855.737479,222,297
+exchange,arbitrum,2607,802506873.057650,289,288
+p2p,arbitrum,1009,141415063.527725,210,226
+p2p,base,15,1051139.295850,9,10

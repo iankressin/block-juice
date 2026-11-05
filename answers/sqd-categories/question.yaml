@@ -1,0 +1,74 @@
+question: >-
+  Break the October SQD transfers on Arbitrum and Base into exchanges and the wallets that dealt with
+  them, contracts and the wallets that dealt with them, bridges (which wallet sent SQD to wallets on a
+  different chain), and P2P transfers between EOAs, bridges included
+asked: 2026-11-05
+definitions:
+  SQD: >-
+    The SQD token at 0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1 on Arbitrum and
+    0xd4554bea546efa83c1e6b389ecac40ea999b3e78 on Base, as in answers/sqd-net-accumulators
+  window: October 2026, from 2026-10-01 00:00 UTC up to 2026-11-01 00:00 UTC
+  exchange: >-
+    An address in Dune's cex.addresses labels for its chain (transformation/seeds), or an address that
+    sent all its SQD in the window to one such exchange address (a deposit address)
+  contract: An address with code at the latest block when the code was read, other than an exchange or an EIP-7702 delegated EOA
+  EOA: An address with no code, or with an EIP-7702 delegation, that is not an exchange
+  bridge: >-
+    A mint or burn of SQD by the chain's canonical bridge to Ethereum. An Arbitrum withdrawal and a Base
+    deposit (or the reverse) pair up when the Ethereum address and the amount match, the deposit coming
+    after the withdrawal
+  P2P: A transfer between two EOAs on one chain, plus a paired bridge flow whose two ends are EOAs
+  pairing: >-
+    Within one Ethereum address, token and amount, the nth withdrawal pairs with the nth deposit into
+    the other L2, in time order, when the deposit comes at least 6.4 days (from Arbitrum) or 1 day (from
+    Base) after it (models/marts/bridges/bridge_pairs.sql)
+  transfer to self: A transfer from an address to itself is left out
+  category of a transfer: >-
+    The first that fits: bridge (a mint or burn), exchange (either side is an exchange), contract (either
+    side is a contract), P2P (both sides are EOAs)
+alternatives:
+  - Read code at the window's last block instead of now, so an address that became a contract after October counts as an EOA
+  - Leave inferred deposit addresses out of the exchange category
+  - Count EIP-7702 delegated EOAs as contracts
+  - Pair bridge flows by loading Ethereum's side of each bridge instead of matching Ethereum address and amount
+window:
+  from: 2026-10-01
+  to: 2026-11-01
+  blocks:
+    arbitrum: [510496864, 520129273]
+    base: [52011727, 53350926]
+inputs:
+  - name: arbitrum_sqd_transfers
+    strategy: history
+    mart: erc20_transfers
+    source: arbitrum.erc20_transfers
+    filter: {tokens: ["0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1"]}
+  - name: base_sqd_transfers
+    strategy: history
+    mart: erc20_transfers
+    source: base.erc20_transfers
+    filter: {tokens: ["0xd4554bea546efa83c1e6b389ecac40ea999b3e78"]}
+  - name: arbitrum_bridge
+    strategy: history
+    mart: bridge_transfers
+    source: arbitrum.token_bridge
+    filter: {tokens: ["0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1"]}
+  - name: base_bridge
+    strategy: history
+    mart: bridge_transfers
+    source: base.op_standard_bridge
+    filter: {tokens: ["0xd4554bea546efa83c1e6b389ecac40ea999b3e78"]}
+  - name: exchange_labels
+    strategy: state
+    mart: address_labels
+  - name: address_code
+    strategy: state
+    mart: address_labels
+marts: [erc20_transfers, address_labels, bridge_transfers, bridge_pairs]
+analyses:
+  - sqd_categories
+  - sqd_categories_by_category
+  - sqd_categories_exchanges
+  - sqd_categories_contracts
+  - sqd_categories_bridges
+  - sqd_categories_p2p

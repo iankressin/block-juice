@@ -1,0 +1,212 @@
+{
+  "question": "Rebuild the SQD transfer graph of October 2026 on Arbitrum and Base with the exchange, contract, bridge and P2P data, so it shows new information rather than the same graph",
+  "slug": "sqd-flow-map",
+  "answered_at": "2026-11-05T19:53:05Z",
+  "value": 11,
+  "definitions": {
+    "SQD, window, exchange, contract, EOA, bridge, P2P": "As in answers/sqd-categories/question.yaml",
+    "entity": "A node of the graph. All the labelled addresses and inferred deposit addresses of one exchange are one entity, named for the exchange. A mint or burn makes the chain's bridge to Ethereum an entity. Every other address is its own entity",
+    "edge": "SQD that went from one entity to another in the window, per chain and category. Moves between an exchange's own addresses are left out. A paired Arbitrum-to-Base bridge flow is an edge across chains",
+    "group": "The kind of an entity for the flow matrix - exchange, contract, eoa or bridge",
+    "cross-exchange wallet": "An address that is no exchange, got SQD from one exchange and sent SQD to a different exchange in the window, directly or through that exchange's deposit addresses"
+  },
+  "alternatives": [
+    "Keep each exchange address as its own node",
+    "Count a wallet that gets SQD from an exchange and sends it back to the same exchange as cross-exchange",
+    "The other readings listed in answers/sqd-categories/question.yaml"
+  ],
+  "window": {
+    "from": "2026-10-01",
+    "to": "2026-11-01",
+    "blocks": {
+      "arbitrum": [
+        510496864,
+        520129273
+      ],
+      "base": [
+        52011727,
+        53350926
+      ]
+    }
+  },
+  "results": [
+    {
+      "analysis": "sqd_flow_map",
+      "path": "results/sqd_flow_map.csv",
+      "columns": [
+        "cross_exchange_wallets"
+      ],
+      "rows": 1,
+      "sql": "-- How many addresses that are no exchange took SQD out of one exchange and paid SQD into a different one\n-- in October 2026, on Arbitrum or Base. sqd_flow_map_cross_exchange lists them.\nwith classified as (\n    \nwith transfers as (\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'arbitrum'\n        and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and block_number between 510496864 and 520129273\n        and from_address <> to_address\n    union all\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'base'\n        and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n        and block_number between 52011727 and 53350926\n        and from_address <> to_address\n),\n\nlabels as (\n    select chain, address, kind, exchange from \"warehouse\".\"analytics_sqd\".\"address_labels\"\n),\n\n-- Addresses whose every transfer out in the window went to one exchange's labelled addresses.\ndeposits as (\n    select t.chain, t.from_address as address, min(l.exchange) as exchange\n    from transfers as t\n    left join labels as l on l.chain = t.chain and l.address = t.to_address and l.kind = 'exchange'\n    left join labels as self on self.chain = t.chain and self.address = t.from_address\n    where t.from_address <> '0x0000000000000000000000000000000000000000'\n        and coalesce(self.kind, '') <> 'exchange'\n    group by t.chain, t.from_address\n    having bool_and(l.exchange is not null) and count(distinct l.exchange) = 1\n),\n\nsides as (\n    select\n        t.*,\n        case\n            when t.from_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when fd.address is not null then 'deposit'\n            else coalesce(fl.kind, 'unknown')\n        end as from_kind,\n        coalesce(fl.exchange, fd.exchange) as from_exchange,\n        case\n            when t.to_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when td.address is not null then 'deposit'\n            else coalesce(tl.kind, 'unknown')\n        end as to_kind,\n        coalesce(tl.exchange, td.exchange) as to_exchange\n    from transfers as t\n    left join labels as fl on fl.chain = t.chain and fl.address = t.from_address\n    left join labels as tl on tl.chain = t.chain and tl.address = t.to_address\n    left join deposits as fd on fd.chain = t.chain and fd.address = t.from_address\n    left join deposits as td on td.chain = t.chain and td.address = t.to_address\n)\n\nselect\n    *,\n    case\n        when 'bridge' in (from_kind, to_kind) then 'bridge'\n        when from_kind in ('exchange', 'deposit') or to_kind in ('exchange', 'deposit') then 'exchange'\n        when 'contract' in (from_kind, to_kind) then 'contract'\n        when from_kind = 'eoa' and to_kind = 'eoa' then 'p2p'\n        else 'unknown'\n    end as category\nfrom sides\n),\n\n-- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint\n-- or burn's zero address is the chain's bridge, any other address is itself.\nsides as (\n    select\n        chain,\n        category,\n        value,\n        case\n            when from_kind in ('exchange', 'deposit') then from_exchange\n            when from_kind = 'bridge' then 'bridge:' || chain\n            else from_address\n        end as source,\n        case when from_kind = 'deposit' then 'exchange' else from_kind end as source_group,\n        case\n            when to_kind in ('exchange', 'deposit') then to_exchange\n            when to_kind = 'bridge' then 'bridge:' || chain\n            else to_address\n        end as target,\n        case when to_kind = 'deposit' then 'exchange' else to_kind end as target_group\n    from classified\n),\n\ntaken as (\n    select distinct target as wallet, source as exchange\n    from sides\n    where source_group = 'exchange' and target_group <> 'exchange'\n),\n\npaid as (\n    select distinct source as wallet, target as exchange\n    from sides\n    where target_group = 'exchange' and source_group <> 'exchange'\n)\n\nselect count(distinct t.wallet) as cross_exchange_wallets\nfrom taken as t\njoin paid as p on p.wallet = t.wallet and p.exchange <> t.exchange"
+    },
+    {
+      "analysis": "sqd_flow_map_groups",
+      "path": "results/sqd_flow_map_groups.csv",
+      "columns": [
+        "source_group",
+        "target_group",
+        "sqd",
+        "transfers",
+        "sources",
+        "targets"
+      ],
+      "rows": 11,
+      "sql": "-- SQD that moved in October 2026 on Arbitrum and Base from each group of entity to each other: exchange,\n-- contract, eoa, bridge. Moves between an exchange's own addresses are left out.\nwith classified as (\n    \nwith transfers as (\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'arbitrum'\n        and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and block_number between 510496864 and 520129273\n        and from_address <> to_address\n    union all\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'base'\n        and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n        and block_number between 52011727 and 53350926\n        and from_address <> to_address\n),\n\nlabels as (\n    select chain, address, kind, exchange from \"warehouse\".\"analytics_sqd\".\"address_labels\"\n),\n\n-- Addresses whose every transfer out in the window went to one exchange's labelled addresses.\ndeposits as (\n    select t.chain, t.from_address as address, min(l.exchange) as exchange\n    from transfers as t\n    left join labels as l on l.chain = t.chain and l.address = t.to_address and l.kind = 'exchange'\n    left join labels as self on self.chain = t.chain and self.address = t.from_address\n    where t.from_address <> '0x0000000000000000000000000000000000000000'\n        and coalesce(self.kind, '') <> 'exchange'\n    group by t.chain, t.from_address\n    having bool_and(l.exchange is not null) and count(distinct l.exchange) = 1\n),\n\nsides as (\n    select\n        t.*,\n        case\n            when t.from_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when fd.address is not null then 'deposit'\n            else coalesce(fl.kind, 'unknown')\n        end as from_kind,\n        coalesce(fl.exchange, fd.exchange) as from_exchange,\n        case\n            when t.to_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when td.address is not null then 'deposit'\n            else coalesce(tl.kind, 'unknown')\n        end as to_kind,\n        coalesce(tl.exchange, td.exchange) as to_exchange\n    from transfers as t\n    left join labels as fl on fl.chain = t.chain and fl.address = t.from_address\n    left join labels as tl on tl.chain = t.chain and tl.address = t.to_address\n    left join deposits as fd on fd.chain = t.chain and fd.address = t.from_address\n    left join deposits as td on td.chain = t.chain and td.address = t.to_address\n)\n\nselect\n    *,\n    case\n        when 'bridge' in (from_kind, to_kind) then 'bridge'\n        when from_kind in ('exchange', 'deposit') or to_kind in ('exchange', 'deposit') then 'exchange'\n        when 'contract' in (from_kind, to_kind) then 'contract'\n        when from_kind = 'eoa' and to_kind = 'eoa' then 'p2p'\n        else 'unknown'\n    end as category\nfrom sides\n),\n\n-- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint\n-- or burn's zero address is the chain's bridge, any other address is itself.\nsides as (\n    select\n        chain,\n        category,\n        value,\n        case\n            when from_kind in ('exchange', 'deposit') then from_exchange\n            when from_kind = 'bridge' then 'bridge:' || chain\n            else from_address\n        end as source,\n        case when from_kind = 'deposit' then 'exchange' else from_kind end as source_group,\n        case\n            when to_kind in ('exchange', 'deposit') then to_exchange\n            when to_kind = 'bridge' then 'bridge:' || chain\n            else to_address\n        end as target,\n        case when to_kind = 'deposit' then 'exchange' else to_kind end as target_group\n    from classified\n)\n\nselect\n    source_group,\n    target_group,\n    round(sum(value) / 1e18, 6) as sqd,\n    count(*) as transfers,\n    count(distinct source) as sources,\n    count(distinct target) as targets\nfrom sides\nwhere source <> target\ngroup by source_group, target_group\norder by sum(value) desc"
+    },
+    {
+      "analysis": "sqd_flow_map_edges",
+      "path": "results/sqd_flow_map_edges.csv",
+      "columns": [
+        "source",
+        "source_group",
+        "target",
+        "target_group",
+        "chain",
+        "category",
+        "sqd",
+        "transfers"
+      ],
+      "rows": 2123,
+      "sql": "-- The edges of the SQD entity graph of October 2026, most SQD first: from one entity to another, per\n-- chain and category, with each end's group. An exchange's addresses and deposit addresses are one entity,\n-- named for the exchange; a mint or burn's other end is bridge:<chain>. A withdrawal from one L2 that pairs\n-- with a deposit into the other through Ethereum (bridge_pairs) is an edge across chains, such as\n-- arbitrum>base. Moves between an exchange's own addresses are left out.\nwith classified as (\n    \nwith transfers as (\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'arbitrum'\n        and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and block_number between 510496864 and 520129273\n        and from_address <> to_address\n    union all\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'base'\n        and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n        and block_number between 52011727 and 53350926\n        and from_address <> to_address\n),\n\nlabels as (\n    select chain, address, kind, exchange from \"warehouse\".\"analytics_sqd\".\"address_labels\"\n),\n\n-- Addresses whose every transfer out in the window went to one exchange's labelled addresses.\ndeposits as (\n    select t.chain, t.from_address as address, min(l.exchange) as exchange\n    from transfers as t\n    left join labels as l on l.chain = t.chain and l.address = t.to_address and l.kind = 'exchange'\n    left join labels as self on self.chain = t.chain and self.address = t.from_address\n    where t.from_address <> '0x0000000000000000000000000000000000000000'\n        and coalesce(self.kind, '') <> 'exchange'\n    group by t.chain, t.from_address\n    having bool_and(l.exchange is not null) and count(distinct l.exchange) = 1\n),\n\nsides as (\n    select\n        t.*,\n        case\n            when t.from_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when fd.address is not null then 'deposit'\n            else coalesce(fl.kind, 'unknown')\n        end as from_kind,\n        coalesce(fl.exchange, fd.exchange) as from_exchange,\n        case\n            when t.to_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when td.address is not null then 'deposit'\n            else coalesce(tl.kind, 'unknown')\n        end as to_kind,\n        coalesce(tl.exchange, td.exchange) as to_exchange\n    from transfers as t\n    left join labels as fl on fl.chain = t.chain and fl.address = t.from_address\n    left join labels as tl on tl.chain = t.chain and tl.address = t.to_address\n    left join deposits as fd on fd.chain = t.chain and fd.address = t.from_address\n    left join deposits as td on td.chain = t.chain and td.address = t.to_address\n)\n\nselect\n    *,\n    case\n        when 'bridge' in (from_kind, to_kind) then 'bridge'\n        when from_kind in ('exchange', 'deposit') or to_kind in ('exchange', 'deposit') then 'exchange'\n        when 'contract' in (from_kind, to_kind) then 'contract'\n        when from_kind = 'eoa' and to_kind = 'eoa' then 'p2p'\n        else 'unknown'\n    end as category\nfrom sides\n),\n\n-- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint\n-- or burn's zero address is the chain's bridge, any other address is itself.\nsides as (\n    select\n        chain,\n        category,\n        value,\n        case\n            when from_kind in ('exchange', 'deposit') then from_exchange\n            when from_kind = 'bridge' then 'bridge:' || chain\n            else from_address\n        end as source,\n        case when from_kind = 'deposit' then 'exchange' else from_kind end as source_group,\n        case\n            when to_kind in ('exchange', 'deposit') then to_exchange\n            when to_kind = 'bridge' then 'bridge:' || chain\n            else to_address\n        end as target,\n        case when to_kind = 'deposit' then 'exchange' else to_kind end as target_group\n    from classified\n),\n\nsame_chain as (\n    select source, source_group, target, target_group, chain, category, sum(value) as value, count(*) as transfers\n    from sides\n    where source <> target\n    group by 1, 2, 3, 4, 5, 6\n),\n\ncross_chain as (\n    select\n        p.from_address as source,\n        coalesce(f.kind, 'unknown') as source_group,\n        p.to_address as target,\n        coalesce(t.kind, 'unknown') as target_group,\n        p.from_chain || '>' || p.to_chain as chain,\n        'bridge' as category,\n        sum(p.amount) as value,\n        count(*) as transfers\n    from \"warehouse\".\"analytics_sqd\".\"bridge_pairs\" as p\n    left join \"warehouse\".\"analytics_sqd\".\"address_labels\" as f on f.chain = p.from_chain and f.address = p.from_address\n    left join \"warehouse\".\"analytics_sqd\".\"address_labels\" as t on t.chain = p.to_chain and t.address = p.to_address\n    where p.ethereum_token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and p.withdrawn_at >= '2026-10-01 00:00:00+00' and p.withdrawn_at < '2026-11-01 00:00:00+00'\n    group by 1, 2, 3, 4, 5, 6\n)\n\nselect source, source_group, target, target_group, chain, category, round(value / 1e18, 6) as sqd, transfers\nfrom (\n    select * from same_chain\n    union all\n    select * from cross_chain\n) as edges\norder by value desc, source, target, chain"
+    },
+    {
+      "analysis": "sqd_flow_map_cross_exchange",
+      "path": "results/sqd_flow_map_cross_exchange.csv",
+      "columns": [
+        "wallet",
+        "wallet_kind",
+        "took_from",
+        "paid_into",
+        "sqd_from_exchanges",
+        "sqd_to_exchanges"
+      ],
+      "rows": 11,
+      "sql": "-- Every address that is no exchange yet got SQD from one exchange and sent SQD to a different exchange in\n-- October 2026, on Arbitrum or Base, most SQD first: which exchanges it took from and paid into, and how\n-- much. Exchange addresses and their deposit addresses count as the exchange.\nwith classified as (\n    \nwith transfers as (\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'arbitrum'\n        and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and block_number between 510496864 and 520129273\n        and from_address <> to_address\n    union all\n    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value\n    from \"warehouse\".\"analytics_sqd\".\"erc20_transfers\"\n    where chain = 'base'\n        and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n        and block_number between 52011727 and 53350926\n        and from_address <> to_address\n),\n\nlabels as (\n    select chain, address, kind, exchange from \"warehouse\".\"analytics_sqd\".\"address_labels\"\n),\n\n-- Addresses whose every transfer out in the window went to one exchange's labelled addresses.\ndeposits as (\n    select t.chain, t.from_address as address, min(l.exchange) as exchange\n    from transfers as t\n    left join labels as l on l.chain = t.chain and l.address = t.to_address and l.kind = 'exchange'\n    left join labels as self on self.chain = t.chain and self.address = t.from_address\n    where t.from_address <> '0x0000000000000000000000000000000000000000'\n        and coalesce(self.kind, '') <> 'exchange'\n    group by t.chain, t.from_address\n    having bool_and(l.exchange is not null) and count(distinct l.exchange) = 1\n),\n\nsides as (\n    select\n        t.*,\n        case\n            when t.from_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when fd.address is not null then 'deposit'\n            else coalesce(fl.kind, 'unknown')\n        end as from_kind,\n        coalesce(fl.exchange, fd.exchange) as from_exchange,\n        case\n            when t.to_address = '0x0000000000000000000000000000000000000000' then 'bridge'\n            when td.address is not null then 'deposit'\n            else coalesce(tl.kind, 'unknown')\n        end as to_kind,\n        coalesce(tl.exchange, td.exchange) as to_exchange\n    from transfers as t\n    left join labels as fl on fl.chain = t.chain and fl.address = t.from_address\n    left join labels as tl on tl.chain = t.chain and tl.address = t.to_address\n    left join deposits as fd on fd.chain = t.chain and fd.address = t.from_address\n    left join deposits as td on td.chain = t.chain and td.address = t.to_address\n)\n\nselect\n    *,\n    case\n        when 'bridge' in (from_kind, to_kind) then 'bridge'\n        when from_kind in ('exchange', 'deposit') or to_kind in ('exchange', 'deposit') then 'exchange'\n        when 'contract' in (from_kind, to_kind) then 'contract'\n        when from_kind = 'eoa' and to_kind = 'eoa' then 'p2p'\n        else 'unknown'\n    end as category\nfrom sides\n),\n\n-- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint\n-- or burn's zero address is the chain's bridge, any other address is itself.\nsides as (\n    select\n        chain,\n        category,\n        value,\n        case\n            when from_kind in ('exchange', 'deposit') then from_exchange\n            when from_kind = 'bridge' then 'bridge:' || chain\n            else from_address\n        end as source,\n        case when from_kind = 'deposit' then 'exchange' else from_kind end as source_group,\n        case\n            when to_kind in ('exchange', 'deposit') then to_exchange\n            when to_kind = 'bridge' then 'bridge:' || chain\n            else to_address\n        end as target,\n        case when to_kind = 'deposit' then 'exchange' else to_kind end as target_group\n    from classified\n),\n\ntaken as (\n    select target as wallet, target_group as wallet_group, source as exchange, sum(value) as value\n    from sides\n    where source_group = 'exchange' and target_group <> 'exchange'\n    group by 1, 2, 3\n),\n\npaid as (\n    select source as wallet, source_group as wallet_group, target as exchange, sum(value) as value\n    from sides\n    where target_group = 'exchange' and source_group <> 'exchange'\n    group by 1, 2, 3\n),\n\nmovers as (\n    select distinct t.wallet\n    from taken as t\n    join paid as p on p.wallet = t.wallet and p.exchange <> t.exchange\n)\n\nselect\n    m.wallet,\n    min(t.wallet_group) as wallet_kind,\n    string_agg(distinct t.exchange, ', ' order by t.exchange) as took_from,\n    (select string_agg(distinct p.exchange, ', ' order by p.exchange) from paid as p where p.wallet = m.wallet) as paid_into,\n    round(sum(t.value) / 1e18, 6) as sqd_from_exchanges,\n    round((select sum(p.value) from paid as p where p.wallet = m.wallet) / 1e18, 6) as sqd_to_exchanges\nfrom movers as m\njoin taken as t on t.wallet = m.wallet\ngroup by m.wallet\norder by sum(t.value) desc, m.wallet"
+    }
+  ],
+  "inputs": [
+    {
+      "source": "arbitrum.address_code",
+      "raw_table": "raw.arbitrum_address_code",
+      "last_run": {
+        "finished_at": "2026-11-05T18:22:32.031000Z",
+        "records_written": 230,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "arbitrum.erc20_transfers",
+      "raw_table": "raw.arbitrum_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:04:17.417000Z",
+        "records_written": 2071,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "arbitrum.token_bridge",
+      "raw_table": "raw.arbitrum_token_bridge",
+      "last_run": {
+        "finished_at": "2026-11-05T19:19:30.938000Z",
+        "records_written": 0,
+        "dagster_run_id": "bfbdafcd-39ea-4985-8077-217f9442230b"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "base.address_code",
+      "raw_table": "raw.base_address_code",
+      "last_run": {
+        "finished_at": "2026-11-05T18:21:11.080000Z",
+        "records_written": 325,
+        "dagster_run_id": null
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "base.erc20_transfers",
+      "raw_table": "raw.base_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:06:09.230000Z",
+        "records_written": 1087,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "base.op_standard_bridge",
+      "raw_table": "raw.base_op_standard_bridge",
+      "last_run": {
+        "finished_at": "2026-11-05T19:21:10.694000Z",
+        "records_written": 0,
+        "dagster_run_id": "bfbdafcd-39ea-4985-8077-217f9442230b"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "ethereum.erc20_transfers",
+      "raw_table": "raw.ethereum_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:06:23.144000Z",
+        "records_written": 0,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "dbt_tests",
+      "status": "passed",
+      "detail": "93 passed"
+    },
+    {
+      "name": "dead_letters",
+      "status": "passed",
+      "detail": "arbitrum.address_code 0 pending, 0 parked; arbitrum.erc20_transfers 0 pending, 0 parked; arbitrum.token_bridge 0 pending, 0 parked; base.address_code 0 pending, 0 parked; base.erc20_transfers 0 pending, 0 parked; base.op_standard_bridge 0 pending, 0 parked; ethereum.erc20_transfers 0 pending, 0 parked"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "detail": "arbitrum.address_code finished 2026-11-05T18:22:32.031000Z; arbitrum.erc20_transfers finished 2026-11-05T17:04:17.417000Z; arbitrum.token_bridge finished 2026-11-05T19:19:30.938000Z; base.address_code finished 2026-11-05T18:21:11.080000Z; base.erc20_transfers finished 2026-11-05T17:06:09.230000Z; base.op_standard_bridge finished 2026-11-05T19:21:10.694000Z; ethereum.erc20_transfers finished 2026-11-05T17:06:23.144000Z"
+    },
+    {
+      "name": "coverage",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers (loaded 510496864-521506195) covers blocks 510496864-520129273 and the filter; base.erc20_transfers (loaded 52011727-53553973) covers blocks 52011727-53350926 and the filter; arbitrum.token_bridge (loaded 510496864-521564973) covers blocks 510496864-520129273 and the filter; base.op_standard_bridge (loaded 52011727-53574786) covers blocks 52011727-53350926 and the filter"
+    },
+    {
+      "name": "cross_check",
+      "status": "passed",
+      "detail": "Same data as answers/sqd-categories, whose cross-check passed: Base SQD ERC20BridgeFinalized in blocks 52370000-52390000, Portal 1 log and warehouse 1 row, block 52377952, 74779634313900000000000"
+    }
+  ],
+  "provenance": {
+    "git_sha": "6857c04bf074e84aea85de6f5feaad571a6855d9",
+    "git_dirty": true,
+    "dbt_version": "1.12.6"
+  }
+}

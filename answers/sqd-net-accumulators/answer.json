@@ -1,0 +1,132 @@
+{
+  "question": "Which wallets accumulated the most $SQD across Arbitrum and Base in the last month (net new)?",
+  "slug": "sqd-net-accumulators",
+  "answered_at": "2026-11-05T17:07:53Z",
+  "value": "0xdd43644c3abbd26ed9a76075b020cf2cff5570ef",
+  "definitions": {
+    "SQD": "The SQD token at 0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1 on Arbitrum and 0xd4554bea546efa83c1e6b389ecac40ea999b3e78 on Base, 18 decimals each, from Portal's token list",
+    "last month": "October 2026, from 2026-10-01 00:00 UTC up to 2026-11-01 00:00 UTC",
+    "wallet": "Any address that sent or received SQD, contracts included. The zero address is left out, since mints come from it and burns go to it",
+    "net new": "SQD the address received minus SQD it sent in the window, from the token's Transfer logs, added up over both chains by address"
+  },
+  "alternatives": [
+    "Count only wallets without code, leaving out pools, bridges, exchanges and staking contracts",
+    "The last 30 days (2026-10-05 to 2026-11-04) instead of the calendar month",
+    "Rank each chain on its own instead of adding the chains up",
+    "Count SQD received, ignoring what each address sent"
+  ],
+  "window": {
+    "from": "2026-10-01",
+    "to": "2026-11-01",
+    "blocks": {
+      "arbitrum": [
+        510496864,
+        520129273
+      ],
+      "base": [
+        52011727,
+        53350926
+      ]
+    }
+  },
+  "results": [
+    {
+      "analysis": "sqd_net_accumulators",
+      "path": "results/sqd_net_accumulators.csv",
+      "columns": [
+        "top_accumulator"
+      ],
+      "rows": 1,
+      "sql": "-- The address that gained the most SQD over October 2026 on Arbitrum and Base together: SQD received\n-- minus SQD sent, the zero address left out. sqd_net_accumulators_by_wallet ranks every address with the\n-- same window and tokens.\nwith sqd as (\n    select from_address, to_address, value\n    from \"warehouse\".\"analytics\".\"erc20_transfers\"\n    where (\n        chain = 'arbitrum'\n        and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and block_number between 510496864 and 520129273\n    ) or (\n        chain = 'base'\n        and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n        and block_number between 52011727 and 53350926\n    )\n),\n\nflows as (\n    select to_address as address, value as net from sqd\n    union all\n    select from_address as address, -value as net from sqd\n)\n\nselect address as top_accumulator\nfrom flows\nwhere address <> '0x0000000000000000000000000000000000000000'\ngroup by address\norder by sum(net) desc, address\nlimit 1"
+    },
+    {
+      "analysis": "sqd_net_accumulators_by_wallet",
+      "path": "results/sqd_net_accumulators_by_wallet.csv",
+      "columns": [
+        "address",
+        "net_sqd",
+        "arbitrum_net_sqd",
+        "base_net_sqd",
+        "received_sqd",
+        "sent_sqd",
+        "transfers_in",
+        "transfers_out"
+      ],
+      "rows": 1274,
+      "sql": "-- Each address's net SQD over October 2026 on Arbitrum and Base: SQD received minus SQD sent, per chain\n-- and added up over both, most first. The zero address is left out: mints come from it and burns go to\n-- it. The blocks are October 2026 UTC on each chain, from answers/sqd-net-accumulators/question.yaml.\nwith sqd as (\n    select chain, from_address, to_address, value\n    from \"warehouse\".\"analytics\".\"erc20_transfers\"\n    where (\n        chain = 'arbitrum'\n        and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n        and block_number between 510496864 and 520129273\n    ) or (\n        chain = 'base'\n        and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n        and block_number between 52011727 and 53350926\n    )\n),\n\nflows as (\n    select chain, to_address as address, value as received, 0 as sent, 1 as transfers_in, 0 as transfers_out\n    from sqd\n\n    union all\n\n    select chain, from_address as address, 0 as received, value as sent, 0 as transfers_in, 1 as transfers_out\n    from sqd\n)\n\nselect\n    address,\n    round(sum(received - sent) / 1e18, 6) as net_sqd,\n    round(sum(received - sent) filter (where chain = 'arbitrum') / 1e18, 6) as arbitrum_net_sqd,\n    round(sum(received - sent) filter (where chain = 'base') / 1e18, 6) as base_net_sqd,\n    round(sum(received) / 1e18, 6) as received_sqd,\n    round(sum(sent) / 1e18, 6) as sent_sqd,\n    sum(transfers_in) as transfers_in,\n    sum(transfers_out) as transfers_out\nfrom flows\nwhere address <> '0x0000000000000000000000000000000000000000'\ngroup by address\norder by sum(received - sent) desc, address"
+    }
+  ],
+  "inputs": [
+    {
+      "source": "arbitrum.erc20_transfers",
+      "raw_table": "raw.arbitrum_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:04:17.417000Z",
+        "records_written": 2071,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "base.erc20_transfers",
+      "raw_table": "raw.base_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:06:09.230000Z",
+        "records_written": 1087,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "ethereum.erc20_transfers",
+      "raw_table": "raw.ethereum_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:06:23.144000Z",
+        "records_written": 0,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "dbt_tests",
+      "status": "passed",
+      "detail": "37 passed"
+    },
+    {
+      "name": "dead_letters",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers 0 pending, 0 parked; base.erc20_transfers 0 pending, 0 parked; ethereum.erc20_transfers 0 pending, 0 parked"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers finished 2026-11-05T17:04:17.417000Z; base.erc20_transfers finished 2026-11-05T17:06:09.230000Z; ethereum.erc20_transfers finished 2026-11-05T17:06:23.144000Z"
+    },
+    {
+      "name": "coverage",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers (loaded 510496864-521506195) covers blocks 510496864-520129273 and the filter; base.erc20_transfers (loaded 52011727-53553973) covers blocks 52011727-53350926 and the filter"
+    },
+    {
+      "name": "cross_check",
+      "status": "passed",
+      "detail": "SQD Transfer logs in arbitrum blocks 515000000-515020000: Portal 14, warehouse 14; in base blocks 52705001-52707000: Portal 8, warehouse 8"
+    }
+  ],
+  "provenance": {
+    "git_sha": "6857c04bf074e84aea85de6f5feaad571a6855d9",
+    "git_dirty": true,
+    "dbt_version": "1.12.6"
+  }
+}

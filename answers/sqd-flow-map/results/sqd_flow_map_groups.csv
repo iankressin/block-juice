@@ -1,0 +1,12 @@
+source_group,target_group,sqd,transfers,sources,targets
+contract,contract,294691795.341091,8489,196,213
+eoa,exchange,224395693.513081,577,84,8
+exchange,eoa,173450977.125982,384,10,89
+contract,eoa,161190137.452973,4434,141,407
+eoa,eoa,142466202.823575,1024,217,234
+eoa,contract,130048116.078723,3029,270,81
+exchange,exchange,69687487.298390,270,10,9
+contract,exchange,5348238.720181,577,9,3
+eoa,bridge,876517.028868,6,1,1
+bridge,eoa,665257.591424,6,2,1
+exchange,contract,560379.783575,29,3,7

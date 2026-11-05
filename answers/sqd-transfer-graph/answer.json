@@ -1,0 +1,147 @@
+{
+  "question": "Based on the SQD transactions we've indexed, a graph of the wallets that transact with each other, transferring SQD around, in the same window",
+  "slug": "sqd-transfer-graph",
+  "answered_at": "2026-11-05T17:30:45Z",
+  "value": 2444,
+  "definitions": {
+    "SQD": "The SQD token at 0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1 on Arbitrum and 0xd4554bea546efa83c1e6b389ecac40ea999b3e78 on Base, as in answers/sqd-net-accumulators",
+    "same window": "October 2026, from 2026-10-01 00:00 UTC up to 2026-11-01 00:00 UTC, as in answers/sqd-net-accumulators",
+    "wallet": "Any address that sent or received SQD, contracts included. The zero address is left out, since mints come from it and burns go to it; they are not transfers between wallets",
+    "transact with each other": "An edge from A to B when A sent B at least one SQD Transfer in the window. Edges are directed and add up both chains; each edge keeps its transfer count and SQD amount per chain. A transfer from an address to itself is no edge"
+  },
+  "alternatives": [
+    "Undirected edges, joining A to B and B to A into one pair",
+    "Only pairs that sent SQD both ways",
+    "Keep mints and burns as edges from and to the zero address",
+    "Leave out zero-value transfers",
+    "One graph per chain instead of one for both"
+  ],
+  "window": {
+    "from": "2026-10-01",
+    "to": "2026-11-01",
+    "blocks": {
+      "arbitrum": [
+        510496864,
+        520129273
+      ],
+      "base": [
+        52011727,
+        53350926
+      ]
+    }
+  },
+  "results": [
+    {
+      "analysis": "sqd_transfer_graph",
+      "path": "results/sqd_transfer_graph.csv",
+      "columns": [
+        "edges"
+      ],
+      "rows": 1,
+      "sql": "-- How many edges the SQD transfer graph has over October 2026 on Arbitrum and Base: pairs of addresses\n-- where the first sent the second SQD. sqd_transfer_graph_by_edge lists them.\nselect count(*) as edges\nfrom (\n    select distinct from_address, to_address\n    from \"warehouse\".\"analytics\".\"erc20_transfers\"\n    where (\n        (\n            chain = 'arbitrum'\n            and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n            and block_number between 510496864 and 520129273\n        ) or (\n            chain = 'base'\n            and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n            and block_number between 52011727 and 53350926\n        )\n    )\n    and from_address <> to_address\n    and '0x0000000000000000000000000000000000000000' not in (from_address, to_address)\n) as edges"
+    },
+    {
+      "analysis": "sqd_transfer_graph_by_edge",
+      "path": "results/sqd_transfer_graph_by_edge.csv",
+      "columns": [
+        "from_address",
+        "to_address",
+        "sqd",
+        "transfers",
+        "arbitrum_sqd",
+        "arbitrum_transfers",
+        "base_sqd",
+        "base_transfers"
+      ],
+      "rows": 2444,
+      "sql": "-- The edges of the SQD transfer graph over October 2026 on Arbitrum and Base: one row per sender and\n-- recipient, with the transfers and SQD that went from one to the other, per chain and in total, most SQD\n-- first. Transfers to self, mints and burns are left out. The blocks and tokens are those of\n-- answers/sqd-transfer-graph/question.yaml.\nwith sqd as (\n    select chain, from_address, to_address, value\n    from \"warehouse\".\"analytics\".\"erc20_transfers\"\n    where (\n        (\n            chain = 'arbitrum'\n            and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n            and block_number between 510496864 and 520129273\n        ) or (\n            chain = 'base'\n            and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n            and block_number between 52011727 and 53350926\n        )\n    )\n    and from_address <> to_address\n    and '0x0000000000000000000000000000000000000000' not in (from_address, to_address)\n)\n\nselect\n    from_address,\n    to_address,\n    round(sum(value) / 1e18, 6) as sqd,\n    count(*) as transfers,\n    round(coalesce(sum(value) filter (where chain = 'arbitrum'), 0) / 1e18, 6) as arbitrum_sqd,\n    count(*) filter (where chain = 'arbitrum') as arbitrum_transfers,\n    round(coalesce(sum(value) filter (where chain = 'base'), 0) / 1e18, 6) as base_sqd,\n    count(*) filter (where chain = 'base') as base_transfers\nfrom sqd\ngroup by from_address, to_address\norder by sum(value) desc, from_address, to_address"
+    },
+    {
+      "analysis": "sqd_transfer_graph_by_wallet",
+      "path": "results/sqd_transfer_graph_by_wallet.csv",
+      "columns": [
+        "address",
+        "sent_to",
+        "received_from",
+        "sqd_sent",
+        "sqd_received",
+        "net_sqd"
+      ],
+      "rows": 1274,
+      "sql": "-- The nodes of the SQD transfer graph over October 2026 on Arbitrum and Base: each address with how many\n-- addresses it sent SQD to and got SQD from, and the SQD on those edges, most SQD moved first. The same\n-- transfers as sqd_transfer_graph_by_edge.\nwith sqd as (\n    select from_address, to_address, value\n    from \"warehouse\".\"analytics\".\"erc20_transfers\"\n    where (\n        (\n            chain = 'arbitrum'\n            and token = '0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1'\n            and block_number between 510496864 and 520129273\n        ) or (\n            chain = 'base'\n            and token = '0xd4554bea546efa83c1e6b389ecac40ea999b3e78'\n            and block_number between 52011727 and 53350926\n        )\n    )\n    and from_address <> to_address\n    and '0x0000000000000000000000000000000000000000' not in (from_address, to_address)\n),\n\nsides as (\n    select from_address as address, to_address as other, 'out' as direction, value from sqd\n    union all\n    select to_address as address, from_address as other, 'in' as direction, value from sqd\n)\n\nselect\n    address,\n    count(distinct other) filter (where direction = 'out') as sent_to,\n    count(distinct other) filter (where direction = 'in') as received_from,\n    round(coalesce(sum(value) filter (where direction = 'out'), 0) / 1e18, 6) as sqd_sent,\n    round(coalesce(sum(value) filter (where direction = 'in'), 0) / 1e18, 6) as sqd_received,\n    round((coalesce(sum(value) filter (where direction = 'in'), 0) - coalesce(sum(value) filter (where direction = 'out'), 0)) / 1e18, 6) as net_sqd\nfrom sides\ngroup by address\norder by sum(value) desc, address"
+    }
+  ],
+  "inputs": [
+    {
+      "source": "arbitrum.erc20_transfers",
+      "raw_table": "raw.arbitrum_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:04:17.417000Z",
+        "records_written": 2071,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "base.erc20_transfers",
+      "raw_table": "raw.base_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:06:09.230000Z",
+        "records_written": 1087,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "ethereum.erc20_transfers",
+      "raw_table": "raw.ethereum_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-05T17:06:23.144000Z",
+        "records_written": 0,
+        "dagster_run_id": "f08b0237-1e5e-4748-ac19-25546a210992"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "dbt_tests",
+      "status": "passed",
+      "detail": "37 passed"
+    },
+    {
+      "name": "dead_letters",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers 0 pending, 0 parked; base.erc20_transfers 0 pending, 0 parked; ethereum.erc20_transfers 0 pending, 0 parked"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers finished 2026-11-05T17:04:17.417000Z; base.erc20_transfers finished 2026-11-05T17:06:09.230000Z; ethereum.erc20_transfers finished 2026-11-05T17:06:23.144000Z"
+    },
+    {
+      "name": "coverage",
+      "status": "passed",
+      "detail": "arbitrum.erc20_transfers (loaded 510496864-521506195) covers blocks 510496864-520129273 and the filter; base.erc20_transfers (loaded 52011727-53553973) covers blocks 52011727-53350926 and the filter"
+    },
+    {
+      "name": "cross_check",
+      "status": "passed",
+      "detail": "Edge 0xe68ee8a12c611fd043fb05d65e1548dc1383f2b9 -> 0xdd43644c3abbd26ed9a76075b020cf2cff5570ef on Arbitrum, blocks 510496864-520129273: keyed Portal stream 7 transfers, 44904358355658269692059992 base units; warehouse 7 transfers, 44904358355658269692059992"
+    }
+  ],
+  "provenance": {
+    "git_sha": "6857c04bf074e84aea85de6f5feaad571a6855d9",
+    "git_dirty": true,
+    "dbt_version": "1.12.6"
+  }
+}
