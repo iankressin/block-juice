@@ -3,6 +3,8 @@
 
 # ingestion
 ingestion/**/node_modules/
+# The pools Pipes' factory pattern has found, kept next to each source that follows a factory.
+ingestion/sources/*/factory.sqlite*
 
 # transformation
 transformation/target/
