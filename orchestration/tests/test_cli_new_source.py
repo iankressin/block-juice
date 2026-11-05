@@ -18,6 +18,7 @@ def repo(tmp_path):
     shutil.copytree(REPO_ROOT / "ingestion" / "sources" / TEMPLATE, template, ignore=shutil.ignore_patterns("node_modules", ".env"))
     (template / "node_modules" / "viem").mkdir(parents=True)
     (template / ".env").write_text("ERPC_URL=http://secret\n")
+    (template / "factory.sqlite").write_bytes(b"pools of another source")
     shutil.copytree(REPO_ROOT / "transformation" / "models" / "staging", tmp_path / "transformation" / "models" / "staging")
     assets = tmp_path / "orchestration" / "pipeline" / "assets"
     assets.mkdir(parents=True)
@@ -47,6 +48,7 @@ def test_adds_a_table_to_an_existing_source(repo, capsys):
     package = repo / "ingestion/sources/ethereum-erc721-holdings"
     assert not (package / "node_modules").exists()
     assert not (package / ".env").exists()
+    assert not (package / "factory.sqlite").exists()
     assert (package / ".env.example").is_file()
     assert (package / "addresses.json").is_file()
     assert json.loads((package / "package.json").read_text())["name"] == "@ingestion/ethereum-erc721-holdings"
