@@ -86,19 +86,19 @@ def test_adds_a_table_to_an_existing_source(repo, capsys):
 
 
 def test_creates_the_sources_file_of_a_new_source(repo):
-    assert run(repo, "base", "eth_balances", TEMPLATE) == 0
+    assert run(repo, "polygon", "eth_balances", TEMPLATE) == 0
 
-    yml = (repo / "transformation/models/staging/base/_base__sources.yml").read_text()
+    yml = (repo / "transformation/models/staging/polygon/_polygon__sources.yml").read_text()
     shape = (repo / "transformation/models/staging/ethereum/_ethereum__sources.yml").read_text()
-    assert yml.splitlines()[:7] == shape.replace("ethereum", "base").splitlines()[:7]
-    (base,) = yaml.safe_load(yml)["sources"]
-    assert base["name"] == "base"
-    assert base["schema"] == "{{ env_var('RAW_SCHEMA', 'raw') }}"
-    assert base["tables"][0]["identifier"] == "base_eth_balances"
-    assert (repo / "transformation/models/staging/base/stg_base__eth_balances.sql").is_file()
-    source_ts = (repo / "ingestion/sources/base-eth-balances/src/source.ts").read_text()
-    assert 'name: "base"' in source_ts and 'name: "ethereum"' not in source_ts
-    assert sources_of(repo)[-1] == ("base", "eth_balances")
+    assert yml.splitlines()[:7] == shape.replace("ethereum", "polygon").splitlines()[:7]
+    (polygon,) = yaml.safe_load(yml)["sources"]
+    assert polygon["name"] == "polygon"
+    assert polygon["schema"] == "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    assert polygon["tables"][0]["identifier"] == "polygon_eth_balances"
+    assert (repo / "transformation/models/staging/polygon/stg_polygon__eth_balances.sql").is_file()
+    source_ts = (repo / "ingestion/sources/polygon-eth-balances/src/source.ts").read_text()
+    assert 'name: "polygon"' in source_ts and 'name: "ethereum"' not in source_ts
+    assert sources_of(repo)[-1] == ("polygon", "eth_balances")
 
 
 def refuses_without_writing(repo, *args, match):
@@ -111,6 +111,15 @@ def refuses_without_writing(repo, *args, match):
 def test_refuses_a_template_missing_from_sources(repo):
     shutil.copytree(repo / "ingestion/sources" / TEMPLATE, repo / "ingestion/sources/scratch")
     refuses_without_writing(repo, "ethereum", "nft_balances", "scratch", match="no SOURCES entry")
+
+
+def test_refuses_to_copy_a_package_that_loads_every_evm_chain(repo):
+    shutil.copytree(
+        REPO_ROOT / "ingestion/sources/evm-erc20-transfers",
+        repo / "ingestion/sources/evm-erc20-transfers",
+        ignore=shutil.ignore_patterns("node_modules", ".env"),
+    )
+    refuses_without_writing(repo, "polygon", "erc20_transfers", "evm-erc20-transfers", match="loads every EVM chain")
 
 
 def test_refuses_a_template_that_does_not_exist(repo):

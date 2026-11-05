@@ -1,4 +1,5 @@
--- One Transfer log of a token in the source's addresses.json, into or out of one of its wallets.
+-- One Transfer log of a token in chains/ethereum/addresses.json of evm-erc20-transfers, into or out
+-- of one of its wallets.
 -- value is in the token's base units.
 select
     id,

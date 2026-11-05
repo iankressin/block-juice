@@ -24,9 +24,19 @@ class Plan:
     files: dict[Path, str]
 
 
+# Packages that load one table on every EVM chain, by that table. A run reads its chain from CHAIN, and
+# the chain's .env and addresses.json from chains/<chain>/ in the package.
+EVM_PACKAGES = {"erc20_transfers": "evm-erc20-transfers", "address_code": "evm-address-code"}
+
+
 def package_name(source: str, table: str) -> str:
-    # The rule of package_dir in assets/ingestion.py, which this module cannot import without loading Dagster.
-    return f"{source}-{table.replace('_', '-')}"
+    """The package in ingestion/sources/ that loads <source>.<table>. assets/ingestion.py runs it."""
+    return EVM_PACKAGES.get(table) or f"{source}-{table.replace('_', '-')}"
+
+
+def settings_path(source: str, table: str) -> Path:
+    """Where in its package <source>.<table> keeps its .env and addresses.json."""
+    return Path("chains") / source if table in EVM_PACKAGES else Path()
 
 
 def read_sources(text: str) -> tuple[list[tuple[str, str]], int]:
@@ -98,6 +108,10 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
     template = sources_root / like
     if "/" in like or like.startswith(".") or not template.is_dir():
         raise BadInput(f"no source package {like!r} in ingestion/sources/")
+    if like in EVM_PACKAGES.values():
+        raise BadInput(
+            f"{like} loads every EVM chain; for a new chain, add chains/<chain>/ to it and the pair to SOURCES"
+        )
 
     ingestion_py = repo_root / SOURCES_FILE
     ingestion_text = ingestion_py.read_text()

@@ -45,8 +45,11 @@ export async function resolveBlock(client: EvmClient, block: BlockNumber): Promi
   return Number(number);
 }
 
-/** The client for ERPC_URL, sending up to RPC_BATCH_SIZE calls per request, and the block BLOCK_NUMBER resolves to. */
+/**
+ * The client for ERPC_URL, sending up to RPC_BATCH_SIZE calls per request and RPC_MAX_CONCURRENCY
+ * requests at once, and the block BLOCK_NUMBER resolves to.
+ */
 export async function connect(env: EvmEnv): Promise<{ client: EvmClient; block: number }> {
-  const client = createEvmClient(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE });
+  const client = createEvmClient(env.ERPC_URL, { batchSize: env.RPC_BATCH_SIZE, maxConcurrency: env.RPC_MAX_CONCURRENCY });
   return { client, block: await resolveBlock(client, env.BLOCK_NUMBER) };
 }

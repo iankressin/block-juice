@@ -58,6 +58,18 @@ def test_dex_trades_reads_each_protocol_version_through_its_own_model():
         }
 
 
+def test_erc20_transfers_reads_each_chain_through_its_own_model():
+    graph = defs.resolve_asset_graph()
+    chains = ["ethereum", "arbitrum", "base"]
+    assert graph.get(dg.AssetKey("erc20_transfers")).parent_keys == {
+        dg.AssetKey(f"int_{chain}_erc20_transfers") for chain in chains
+    }
+    for chain in chains:
+        assert graph.get(dg.AssetKey(f"int_{chain}_erc20_transfers")).parent_keys == {
+            dg.AssetKey(f"stg_{chain}__erc20_transfers"),
+        }
+
+
 def test_every_asset_and_check_runs_in_a_scheduled_pipeline():
     graph = defs.resolve_asset_graph()
     scheduled = {schedule.job_name for schedule in defs.schedules}

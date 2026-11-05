@@ -389,6 +389,12 @@ def test_a_stream_source_the_question_does_not_name_is_bad_input(history):
         history("{chain: ethereum, blocks: [100, 180]}", "[{name: transfers, mart: erc20_transfers}]")
 
 
+def test_a_stream_source_on_a_chain_outside_the_window_needs_no_input(history):
+    code, checks = history("{blocks: {base: [100, 180]}}", "[{name: transfers, mart: erc20_transfers}]")
+    assert code == 0
+    assert "coverage" not in checks
+
+
 def test_an_input_naming_a_source_that_is_not_a_stream_source_gets_no_coverage_check(tmp_path, offline):
     folder = write_question(tmp_path, extra='inputs: [{source: ethereum.eth_balances, filter: {wallets: ["0xdead"]}}]\n')
     offline(parked=0)

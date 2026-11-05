@@ -17,7 +17,8 @@ select
     count(t.id) as transfers
 from pairs as r
 left join {{ ref('erc20_transfers') }} as t
-    on t.token = r.token
+    on t.chain = 'ethereum'
+    and t.token = r.token
     and r.wallet in (t.from_address, t.to_address)
     and t.block_number > r.from_block
     and t.block_number <= r.to_block

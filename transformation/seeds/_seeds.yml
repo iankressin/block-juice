@@ -1,0 +1,26 @@
+version: 2
+
+seeds:
+  - name: cex_addresses
+    description: >-
+      Exchange-labelled addresses that sent or received SQD on Arbitrum or Base in October 2026, from
+      Dune's cex.addresses labels, exported on 2026-11-05. The export joined cex.addresses to Dune's
+      erc20_arbitrum.evt_Transfer and erc20_base.evt_Transfer for SQD (Arbitrum
+      0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1, Base 0xd4554bea546efa83c1e6b389ecac40ea999b3e78) in
+      blocks 510496864-520129273 and 52011727-53350926, and kept the labels of the addresses on either
+      side. `label` is Dune's distinct_name. To label other addresses, add rows and say where they come from.
+    config:
+      column_types:
+        chain: text
+        address: text
+        exchange: text
+        label: text
+    columns:
+      - name: address
+        data_tests: [not_null]
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [arbitrum, base]

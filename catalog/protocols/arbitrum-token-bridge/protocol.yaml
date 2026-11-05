@@ -1,0 +1,113 @@
+name: arbitrum-token-bridge
+scope: >-
+  The Arbitrum One side of the canonical token bridge to Ethereum: the L2 events that say a
+  withdrawal to Ethereum started and a deposit from Ethereum finished. The Ethereum side is
+  listed under ethereum_counterparts only to read the L2 events; no source loads it.
+docs:
+  - https://docs.arbitrum.io/build-decentralized-apps/reference/contract-addresses
+  - https://docs.arbitrum.io/build-decentralized-apps/token-bridging/token-bridge-erc20
+  - https://docs.arbitrum.io/arbitrum-essentials/bridging/withdraw/tokens
+  - https://registry.npmjs.org/@arbitrum/token-bridge-contracts/-/token-bridge-contracts-1.2.5.tgz
+  - https://registry.npmjs.org/@arbitrum/nitro-contracts/-/nitro-contracts-1.1.1.tgz
+chains:
+  arbitrum:
+    portal_dataset: arbitrum-one
+    contracts:
+      l2_gateway_router:
+        address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933"
+        deployed_block: 2108
+        role: >-
+          Entry point for withdrawals. outboundTransfer(l1Token, to, amount, data) looks up the
+          token's gateway, emits TransferRouted and forwards the call. Users can skip it and call
+          the gateway directly, so it does not see every withdrawal.
+        source: >-
+          "L2 Gateway Router" for Arbitrum One on the contract addresses page. Deploy block from
+          Portal portal_evm_get_contract_deployment (create trace in tx
+          0x09bf65a9be362759f187135b1f7351f2ae7c6b6895b8ff78ace0fe7e2303a584). The address is a
+          proxy.
+      l2_custom_gateway:
+        address: "0x096760F208390250649E3e8763348E783AEF5562"
+        deployed_block: 2598
+        role: >-
+          The gateway the router assigns to SQD (TransferRouted.gateway in proof row 1). It burns
+          SQD on withdrawal and emits WithdrawalInitiated. It mints SQD when a deposit arrives and
+          emits DepositFinalized.
+        source: >-
+          "L2 Arb-Custom Gateway" for Arbitrum One on the contract addresses page. Deploy block
+          from Portal portal_evm_get_contract_deployment (create trace in tx
+          0x9ddfa6ac7c9e832a1b1309e1a5a8f96ad670355f4ee71ecc771930b87413a350). The address is a
+          proxy.
+      arbsys:
+        address: "0x0000000000000000000000000000000000000064"
+        deployed_block: null
+        role: >-
+          Precompile that queues the L2-to-L1 message. Its L2ToL1Tx event carries the call the
+          L1 gateway will receive.
+        source: >-
+          "ArbSys" in the precompiles section of the contract addresses page. A precompile has
+          no deploy transaction.
+ethereum_counterparts:
+  l1_gateway_router:
+    address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef"
+    source: '"L1 Gateway Router" for Arbitrum One on the contract addresses page.'
+  l1_custom_gateway:
+    address: "0xcEe284F754E854890e311e3280b767F80797180d"
+    source: >-
+      "L1 Arb-Custom Gateway" for Arbitrum One on the contract addresses page. It escrows L1 SQD.
+      On Arbitrum it appears as the L2ToL1Tx destination, and its aliased address
+      0xdFf384F754E854890E311e3280B767F80797291e is tx.from of the October SQD deposit transactions.
+  outbox:
+    address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840"
+    source: >-
+      "Outbox" for Arbitrum One on the contract addresses page. Users call
+      executeTransaction on it to release a withdrawal on Ethereum.
+tokens:
+  SQD:
+    ethereum: "0x1337420dED5ADb9980CFc35f8f2B054ea86f8aB1"
+    arbitrum: "0x1337420dED5ADb9980CFc35f8f2B054ea86f8aB1"
+    topic: "0x0000000000000000000000001337420ded5adb9980cfc35f8f2b054ea86f8ab1"
+    source: >-
+      Both addresses are the same. WithdrawalInitiated.l1Token and DepositFinalized.l1Token
+      report 0x1337420d..., and the SQD Transfer logs in the same transactions come from
+      0x1337420d... on Arbitrum. On Ethereum, 0x1337420d... moved the same 74779.6343139 SQD out
+      of the L1 custom gateway (see NOTES.md, "The paired transfer on Ethereum").
+events:
+  WithdrawalInitiated:
+    use: source
+    emitted_by: l2_custom_gateway
+    signature: "event WithdrawalInitiated(address l1Token, address indexed _from, address indexed _to, uint256 indexed _l2ToL1Id, uint256 _exitNum, uint256 _amount)"
+    topic0: "0x3073a74ecb728d10be779fe19a74a1428e20468f5b4d167bf9c73d9067847d73"
+    abi: abis/l2-custom-gateway.json
+    fields:
+      l2_user: {param: _from, at: topic1}
+      l1_counterpart: {param: _to, at: topic2}
+      l1_token: {param: l1Token, at: data word 0, indexed: false}
+      amount: {param: _amount, at: data word 2}
+      withdrawal_id: {param: _l2ToL1Id, at: topic3}
+    token_filter: >-
+      l1Token is not indexed, so a query cannot filter on it. Filter on address and topic0, then
+      keep the rows whose l1Token is SQD. Other L2 gateways emit the same topic0.
+  DepositFinalized:
+    use: source
+    emitted_by: l2_custom_gateway
+    signature: "event DepositFinalized(address indexed l1Token, address indexed _from, address indexed _to, uint256 _amount)"
+    topic0: "0xc7f2e9c55c40a50fbc217dfc70cd39a222940dfa62145aa0ca49eb9535d4fcb2"
+    abi: abis/l2-custom-gateway.json
+    fields:
+      l1_token: {param: l1Token, at: topic1}
+      l1_counterpart: {param: _from, at: topic2}
+      l2_user: {param: _to, at: topic3}
+      amount: {param: _amount, at: data word 0}
+    token_filter: "topic1 = tokens.SQD.topic"
+  TransferRouted:
+    use: proof only
+    emitted_by: l2_gateway_router
+    signature: "event TransferRouted(address indexed token, address indexed _userFrom, address indexed _userTo, address gateway)"
+    topic0: "0x85291dff2161a93c2f12c819d31889c96c63042116f5bc5a205aa701c2c429f5"
+    abi: abis/l2-gateway-router.json
+  L2ToL1Tx:
+    use: proof only
+    emitted_by: arbsys
+    signature: "event L2ToL1Tx(address caller, address indexed destination, uint256 indexed hash, uint256 indexed position, uint256 arbBlockNum, uint256 ethBlockNum, uint256 timestamp, uint256 callvalue, bytes data)"
+    topic0: "0x3e7aafa77dbf186b7fd488006beff893744caa3c4f6f299e8a709fa2087374fc"
+    abi: abis/arbsys.json

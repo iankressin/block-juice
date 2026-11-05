@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: int_arbitrum_token_bridge_transfers
+    description: Arbitrum token bridge withdrawals and deposits, with the L2 and Ethereum address of each.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: int_base_op_standard_bridge_transfers
+    description: Base standard bridge withdrawals and deposits, with the L2 and Ethereum address of each.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+
+unit_tests:
+  - name: an_arbitrum_withdrawal_goes_from_the_l2_user_to_ethereum
+    description: The proof withdrawal of catalog/protocols/arbitrum-token-bridge/NOTES.md, and a deposit back.
+    model: int_arbitrum_token_bridge_transfers
+    given:
+      - input: ref('stg_arbitrum__token_bridge')
+        rows:
+          - {id: "511073531:10", event: WithdrawalInitiated, l1_token: "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1", from_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", to_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", amount: "74779634313900000000000"}
+          - {id: "514745098:3", event: DepositFinalized, l1_token: "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1", from_address: "0x00000000000000000000000000000000000000cc", to_address: "0x00000000000000000000000000000000000000aa", amount: 1}
+    expect:
+      rows:
+        - {id: "511073531:10", direction: to_ethereum, l2_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", amount: "74779634313900000000000"}
+        - {id: "514745098:3", direction: from_ethereum, l2_address: "0x00000000000000000000000000000000000000aa", ethereum_address: "0x00000000000000000000000000000000000000cc", amount: 1}
+  - name: a_base_deposit_goes_from_ethereum_to_the_l2_user
+    description: The proof deposit of catalog/protocols/op-standard-bridge/NOTES.md, and a withdrawal out.
+    model: int_base_op_standard_bridge_transfers
+    given:
+      - input: ref('stg_base__op_standard_bridge')
+        rows:
+          - {id: "52377952:2", event: ERC20BridgeFinalized, local_token: "0xd4554bea546efa83c1e6b389ecac40ea999b3e78", remote_token: "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1", from_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", to_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", amount: "74779634313900000000000"}
+          - {id: "1:1", event: ERC20BridgeInitiated, local_token: "0xd4554bea546efa83c1e6b389ecac40ea999b3e78", remote_token: "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1", from_address: "0x00000000000000000000000000000000000000aa", to_address: "0x00000000000000000000000000000000000000cc", amount: 1}
+    expect:
+      rows:
+        - {id: "52377952:2", direction: from_ethereum, l2_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_token: "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1", l2_token: "0xd4554bea546efa83c1e6b389ecac40ea999b3e78"}
+        - {id: "1:1", direction: to_ethereum, l2_address: "0x00000000000000000000000000000000000000aa", ethereum_address: "0x00000000000000000000000000000000000000cc", ethereum_token: "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1", l2_token: "0xd4554bea546efa83c1e6b389ecac40ea999b3e78"}

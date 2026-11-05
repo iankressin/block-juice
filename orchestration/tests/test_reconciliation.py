@@ -84,10 +84,11 @@ def run(tests: dict[str, tuple[str, str]], balances: list[tuple], transfers: lis
     )
     db.execute(
         "create table warehouse.analytics.erc20_transfers"
-        " (id text, token text, from_address text, to_address text, block_number bigint, value decimal(38, 0))"
+        " (id text, token text, from_address text, to_address text, block_number bigint, value decimal(38, 0), chain text)"
     )
     db.executemany("insert into warehouse.analytics.stg_ethereum__erc20_balances values (?, ?, ?, ?)", balances)
-    db.executemany("insert into warehouse.analytics.erc20_transfers values (?, ?, ?, ?, ?, ?)", transfers)
+    rows = [transfer if len(transfer) == 7 else (*transfer, "ethereum") for transfer in transfers]
+    db.executemany("insert into warehouse.analytics.erc20_transfers values (?, ?, ?, ?, ?, ?, ?)", rows)
     return {name: (severity, db.execute(sql).fetchall()) for name, (severity, sql) in tests.items()}
 
 
@@ -97,6 +98,12 @@ def test_the_reconciliation_is_among_the_tests(compiled):
 
 def test_consistent_readings_inside_the_loaded_blocks_return_no_rows(compiled):
     assert {name: rows for name, (_, rows) in run(compiled["loaded"], BALANCES, TRANSFERS).items() if rows} == {}
+
+
+def test_a_transfer_on_another_chain_does_not_count_toward_an_ethereum_balance(compiled):
+    # The same token and wallet addresses on Arbitrum, inside the loaded blocks.
+    elsewhere = ("g", T, OTHER, W, 160, 7, "arbitrum")
+    assert {name: rows for name, (_, rows) in run(compiled["loaded"], BALANCES, [*TRANSFERS, elsewhere]).items() if rows} == {}
 
 
 @pytest.mark.parametrize(

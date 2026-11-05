@@ -23,5 +23,14 @@ models:
       # Views, so each protocol version's rows show up as their own step in Dagster.
       dex:
         +materialized: view
+      # Views, so each chain's transfers show up as their own step in Dagster.
+      transfers:
+        +materialized: view
+      # Views, so each chain's code readings show up as their own step in Dagster.
+      labels:
+        +materialized: view
+      # Views, so each bridge's rows show up as their own step in Dagster.
+      bridges:
+        +materialized: view
     marts:
       +materialized: table

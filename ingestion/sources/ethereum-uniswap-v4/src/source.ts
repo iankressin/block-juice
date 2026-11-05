@@ -31,6 +31,8 @@ const events = defineAbi(poolManagerAbi as readonly JsonAbiItem[]).events;
 const env = z
   .object({
     PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/ethereum-mainnet"),
+    // Sent with every Portal request when set. Without one, the public Portal answers at its anonymous limits.
+    PORTAL_API_KEY: z.string().optional(),
     // The first block of pool creations. A pool created before START_BLOCK still trades after it.
     POOLS_START_BLOCK: z.coerce.number().int().nonnegative().default(POOL_MANAGER_DEPLOYED_BLOCK),
     // The first block of Swaps. Later runs resume after the cursor Pipes keeps in the warehouse.
@@ -90,7 +92,7 @@ export const ethereumUniswapV4: StreamSource<PoolManagerSourceEnv> = {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
-    const portal = portalClient(env.PORTAL_URL);
+    const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
     const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
     const storeIsNew = !existsSync(env.FACTORY_DB);
     // Opened, and so created, only once the check in `start` below passes. A run that check stops leaves
