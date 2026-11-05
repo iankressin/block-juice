@@ -152,7 +152,9 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
 def run(repo_root: Path, source: str, table: str, like: str) -> int:
     planned = plan(repo_root, source, table, like)
     existed = {path for path in planned.files if path.exists()}
-    shutil.copytree(planned.template, planned.package, ignore=shutil.ignore_patterns("node_modules", ".env"))
+    # A SQLite file is a source's local state, such as the pools Pipes' factory pattern found.
+    local = shutil.ignore_patterns("node_modules", ".env", "*.sqlite*")
+    shutil.copytree(planned.template, planned.package, ignore=local)
     for path, text in planned.files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
