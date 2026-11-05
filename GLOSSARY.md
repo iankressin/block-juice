@@ -11,7 +11,7 @@ A package that reads one kind of data from one origin and fills one raw table.
 _Avoid_: connector, extractor, job
 
 **Stream source**:
-A source that reads blocks in order through a Pipes stream instead of making calls. Each run resumes after its cursor.
+A source that reads blocks in order through a Pipes stream instead of making calls. Each run resumes after its cursor. It makes no calls, so it has no dead letters: an error fails the run, and the next run resumes after the last batch that committed.
 _Avoid_: indexer, pipe
 
 **Call**:
@@ -45,7 +45,7 @@ The warehouse table one source fills, which dbt reads as a source.
 _Avoid_: target table, landing table
 
 **Dead letter**:
-A failed call, kept in the warehouse so a later run can make it again.
+A failed call, kept in the warehouse so a later run can make it again. Only a call source has them; a stream source makes no calls.
 _Avoid_: retry queue item, failed job
 
 **Pending dead letter**:

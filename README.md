@@ -161,7 +161,15 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
 
-A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. To read a stream source again from its start, delete its rows from `raw._sync`, whose `id` is `<source>_<table>`.
+A call source makes calls, such as RPC reads at one block, and its `src/source.ts` exports a `Source`. Before its first run, check that:
+
+- The `Source` has a zod `call` schema. Each run parses its pending dead letters with it, and a dead letter whose call no longer parses is parked for a person.
+- A failed call's `id` is the `callId` of the record the call would have produced. A record with that `callId` clears the dead letter. `settleCalls` in `lib/` keys both from one id function.
+- `extract(env, retry)` makes the retried calls next to the new ones, as `[...newCalls, ...retry]`. A failed call does not fail the run: the records that did arrive are written, and the failed calls wait as dead letters for the next run. A call that fails five runs in a row is parked.
+- `addresses.json` loads inside `extract`, not at import, so a bad file fails the run and `runSource` logs why.
+- `name` and `table` match the dbt source and table and the `SOURCES` entry, as above.
+
+A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls; scaffold one with `--like ethereum-erc20-transfers` or one of the `ethereum-uniswap-v*` packages. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. A stream source has no calls, so it has no dead letters: an error, from Portal or from the warehouse, fails the run, nothing from the batch it was writing commits, and the next run resumes after the last batch that did. To read a stream source again from its start, delete its row from `raw._sync`, whose `id` is `<source>_<table>`.
 
 ## Add a pipeline
 
