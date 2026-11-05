@@ -45,7 +45,7 @@
 **Checks**
 1. Root `.env` exists — missing FAIL  
 2. Each package in `sources.json` has `.env` — missing WARN; `--copy-env` copies from `.env.example`, never overwrites  
-3. Every key in that package’s `.env.example` has a value — missing FAIL, report by name only  
+3. Validate required keys using the env schemas or an explicit required-key list, honoring optional fields and defaults (for example, an unset `PUSHGATEWAY_URL` is valid) — missing required values FAIL, report by name only  
 4. Ports (defaults): warehouse 5432, eRPC 4000/4001, Dshackle 8545/8082, Grafana 3001, Prometheus 9090, Pushgateway 9091, Dagster 3000  
 5. Warehouse reachable via `pipeline.warehouse.connect`  
 6. eRPC `GET :4000/healthcheck` (verify; not set in `erpc.yaml` but on by default)  
