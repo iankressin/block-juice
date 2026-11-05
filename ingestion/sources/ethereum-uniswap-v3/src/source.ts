@@ -93,7 +93,12 @@ export const ethereumUniswapV3: StreamSource<FactorySourceEnv> = {
     const portal = portalClient(env.PORTAL_URL);
     const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
     const storeIsNew = !existsSync(env.FACTORY_DB);
-    const database = contractFactorySqliteStore({ path: env.FACTORY_DB });
+    // The factories wait for the store, which opens, and so creates its file, only once the check in
+    // `start` below passes. A run that check stops leaves no new file for the next run to trust.
+    let openStore = () => {};
+    const database = new Promise<Awaited<ReturnType<typeof contractFactorySqliteStore>>>((resolve) => {
+      openStore = () => resolve(contractFactorySqliteStore({ path: env.FACTORY_DB }));
+    });
 
     // A pool holds a token as token0 or token1, and a filter names one side, so each side gets its own
     // decoders: Pipes refuses two filters on the same event in one decoder (E0004). A factory learns its
@@ -137,6 +142,7 @@ export const ethereumUniswapV3: StreamSource<FactorySourceEnv> = {
               "before the cursor are gone, so their Swaps would be missed. Reset the source and load it again.",
           );
         }
+        openStore();
       },
       transform({ transactions, ...outputs }) {
         const logs = Object.values(outputs).flat();

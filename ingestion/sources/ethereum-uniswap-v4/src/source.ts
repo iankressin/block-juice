@@ -93,7 +93,9 @@ export const ethereumUniswapV4: StreamSource<PoolManagerSourceEnv> = {
     const portal = portalClient(env.PORTAL_URL);
     const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
     const storeIsNew = !existsSync(env.FACTORY_DB);
-    const store = await contractFactorySqliteStore({ path: env.FACTORY_DB });
+    // Opened, and so created, only once the check in `start` below passes. A run that check stops leaves
+    // no new file for the next run to trust.
+    let store: Awaited<ReturnType<typeof contractFactorySqliteStore>>;
     const pools = new Set<string>();
 
     // A pool holds a token as currency0 or currency1, and a filter names one side, so each side gets its
@@ -128,8 +130,12 @@ export const ethereumUniswapV4: StreamSource<PoolManagerSourceEnv> = {
               "before the cursor are gone, so their Swaps would be missed. Reset the source and load it again.",
           );
         }
+        store = await contractFactorySqliteStore({ path: env.FACTORY_DB });
         await store.migrate();
-        for (const pool of await store.all()) pools.add(pool.childAddress);
+        // Only the pools of the tokens in addresses.json now, as the v2 and v3 factories check each lookup.
+        for (const currency of ["currency0", "currency1"]) {
+          for (const pool of await store.all({ [currency]: tokens })) pools.add(pool.childAddress);
+        }
       },
       async transform({ transactions, created0, created1, swaps }) {
         const created = [...created0, ...created1];

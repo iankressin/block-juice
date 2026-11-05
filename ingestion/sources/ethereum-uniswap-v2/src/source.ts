@@ -35,9 +35,15 @@ const childEvents = events(pairAbi);
 
 const env = z
   .object({
-    PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/ethereum-mainnet"),
+    PORTAL_URL: z
+      .url()
+      .default("https://portal.sqd.dev/datasets/ethereum-mainnet"),
     // The first block of pool creations. A pool created before START_BLOCK still trades after it.
-    POOLS_START_BLOCK: z.coerce.number().int().nonnegative().default(FACTORY_DEPLOYED_BLOCK),
+    POOLS_START_BLOCK: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(FACTORY_DEPLOYED_BLOCK),
     // The first block of Swaps. Later runs resume after the cursor Pipes keeps in the warehouse.
     START_BLOCK: z.coerce.number().int().nonnegative(),
     // The last block to read, set only to check a short window. Unset, each run ends at Portal's finalized head.
@@ -46,7 +52,8 @@ const env = z
     FACTORY_DB: z.string().min(1).default("factory.sqlite"),
   })
   .refine((e) => e.POOLS_START_BLOCK <= e.START_BLOCK, {
-    message: "POOLS_START_BLOCK must not be after START_BLOCK, or the Swaps of pools created between them are lost",
+    message:
+      "POOLS_START_BLOCK must not be after START_BLOCK, or the Swaps of pools created between them are lost",
   });
 
 export type FactorySourceEnv = z.infer<typeof env>;
@@ -73,9 +80,21 @@ function logRecord(event: string, log: Log): RawRecord {
   };
 }
 
-function transactionRecord(blockNumber: number, tx: { hash: string; from: string }): RawRecord {
+function transactionRecord(
+  blockNumber: number,
+  tx: { hash: string; from: string },
+): RawRecord {
   const id = `tx:${tx.hash}`;
-  return { id, callId: id, data: { kind: "transaction", block_number: blockNumber, hash: tx.hash, from: tx.from } };
+  return {
+    id,
+    callId: id,
+    data: {
+      kind: "transaction",
+      block_number: blockNumber,
+      hash: tx.hash,
+      from: tx.from,
+    },
+  };
 }
 
 // Uniswap v2 logs of the tokens in addresses.json, each as emitted: every PairCreated naming a token,
@@ -88,20 +107,37 @@ export const ethereumUniswapV2: StreamSource<FactorySourceEnv> = {
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
-    const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
+    const { default: addresses } = await import("../addresses.json", {
+      with: { type: "json" },
+    });
+    const tokens = validateEthAddressList(addresses.tokens).map((a) =>
+      a.toLowerCase(),
+    );
     const portal = portalClient(env.PORTAL_URL);
     const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
     const storeIsNew = !existsSync(env.FACTORY_DB);
-    const database = contractFactorySqliteStore({ path: env.FACTORY_DB });
+    // The factories wait for the store, which opens, and so creates its file, only once the check in
+    // `start` below passes. A run that check stops leaves no new file for the next run to trust.
+    let openStore = () => {};
+    const database = new Promise<Awaited<ReturnType<typeof contractFactorySqliteStore>>>((resolve) => {
+      openStore = () => resolve(contractFactorySqliteStore({ path: env.FACTORY_DB }));
+    });
 
     // A pool holds a token as token0 or token1, and a filter names one side, so each side gets its own
     // decoders: Pipes refuses two filters on the same event in one decoder (E0004). A factory learns its
     // pools from every creation log in a batch, whichever decoder asked for it, so the pools created
     // before START_BLOCK are known when its Swaps start.
     const side = (token: "token0" | "token1") => {
-      const created = { event: factoryEvents[CREATED]!, params: { [token]: tokens } as Record<typeof token, string[]> };
-      const pools = contractFactory({ address: FACTORY, event: created, childAddressField: CHILD_ADDRESS, database });
+      const created = {
+        event: factoryEvents[CREATED]!,
+        params: { [token]: tokens } as Record<typeof token, string[]>,
+      };
+      const pools = contractFactory({
+        address: FACTORY,
+        event: created,
+        childAddressField: CHILD_ADDRESS,
+        database,
+      });
       return {
         created: evmEventDecoder({
           range: { from: env.POOLS_START_BLOCK, to },
@@ -123,7 +159,10 @@ export const ethereumUniswapV2: StreamSource<FactorySourceEnv> = {
       logger: logger.child({ source: this.name, table: this.table }),
       outputs: {
         // The decoders ask Portal for each log's transaction; this output reads them.
-        transactions: evmQuery().addFields({ block: { number: true }, transaction: { hash: true, from: true } }),
+        transactions: evmQuery().addFields({
+          block: { number: true },
+          transaction: { hash: true, from: true },
+        }),
         created0: token0.created,
         children0: token0.children,
         created1: token1.created,
@@ -137,15 +176,20 @@ export const ethereumUniswapV2: StreamSource<FactorySourceEnv> = {
               "before the cursor are gone, so their Swaps would be missed. Reset the source and load it again.",
           );
         }
+        openStore();
       },
       transform({ transactions, ...outputs }) {
         const logs = Object.values(outputs).flat();
         // Portal also sends the transactions of the logs the decoders dropped, such as other pools' Swaps.
-        const written = new Set(logs.map(({ log }) => log.rawEvent.transactionHash));
+        const written = new Set(
+          logs.map(({ log }) => log.rawEvent.transactionHash),
+        );
         return [
           ...logs.map(({ event, log }) => logRecord(event, log)),
           ...transactions.flatMap((block) =>
-            block.transactions.filter((tx) => written.has(tx.hash)).map((tx) => transactionRecord(block.header.number, tx)),
+            block.transactions
+              .filter((tx) => written.has(tx.hash))
+              .map((tx) => transactionRecord(block.header.number, tx)),
           ),
         ];
       },

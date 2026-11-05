@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -129,16 +129,22 @@ test("a later run follows the pools an earlier run found, from the factory store
   );
 });
 
-test("a run that resumes after a cursor with a new factory store fails instead of missing pools", async (t) => {
-  const stream = await ethereumUniswapV2.stream(env(await portal(t), {}));
-  await assert.rejects(
-    stream.pipeTo({
-      write: async ({ read }) => {
-        for await (const _ of read({ latest: { number: 102 }, finalized: null }));
-      },
-    }),
-    /factory\.sqlite is new, but the cursor is at block 102/,
-  );
+test("every run that resumes after a cursor with a new factory store fails instead of missing pools", async (t) => {
+  const url = await portal(t);
+  const lost = env(url, {});
+  for (const attempt of [1, 2]) {
+    const stream = await ethereumUniswapV2.stream(lost);
+    await assert.rejects(
+      stream.pipeTo({
+        write: async ({ read }) => {
+          for await (const _ of read({ latest: { number: 102 }, finalized: null }));
+        },
+      }),
+      /factory\.sqlite is new, but the cursor is at block 102/,
+      `attempt ${attempt}`,
+    );
+  }
+  assert.equal(existsSync(lost.FACTORY_DB), false, "a refused run leaves no store behind");
 });
 
 test("POOLS_START_BLOCK after START_BLOCK is refused", () => {

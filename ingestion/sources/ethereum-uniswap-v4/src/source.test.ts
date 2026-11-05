@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { RawRecord } from "@ingestion/lib";
+import { contractFactorySqliteStore } from "@subsquid/pipes/evm";
 import { mockPortal } from "@subsquid/pipes/testing";
 import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import type { Abi, Hex } from "viem";
@@ -132,14 +133,36 @@ test("a later run follows the pools an earlier run found, from the store", async
   );
 });
 
-test("a run that resumes after a cursor with a new store fails instead of missing pools", async (t) => {
-  const stream = await ethereumUniswapV4.stream(env(await portal(t), {}));
-  await assert.rejects(
-    stream.pipeTo({
-      write: async ({ read }) => {
-        for await (const _ of read({ latest: { number: 102 }, finalized: null }));
-      },
-    }),
-    /factory\.sqlite is new, but the cursor is at block 102/,
+test("a later run follows only the stored pools of the tokens in addresses.json", async (t) => {
+  const later = env(await portal(t), { POOLS_START_BLOCK: 103 });
+  const store = await contractFactorySqliteStore({ path: later.FACTORY_DB });
+  await store.migrate();
+  await store.save([
+    { childAddress: stranger, factoryAddress: poolManager, blockNumber: 101, transactionIndex: 0, logIndex: 1, event: { id: stranger, currency0: eth, currency1: other } },
+  ]);
+
+  const read = await records(later);
+  assert.equal(
+    read.some((r) => r.kind === "log" && r.args.id === stranger),
+    false,
+    "a pool left in the store from a token no longer listed is not followed",
   );
+});
+
+test("every run that resumes after a cursor with a new store fails instead of missing pools", async (t) => {
+  const url = await portal(t);
+  const lost = env(url, {});
+  for (const attempt of [1, 2]) {
+    const stream = await ethereumUniswapV4.stream(lost);
+    await assert.rejects(
+      stream.pipeTo({
+        write: async ({ read }) => {
+          for await (const _ of read({ latest: { number: 102 }, finalized: null }));
+        },
+      }),
+      /factory\.sqlite is new, but the cursor is at block 102/,
+      `attempt ${attempt}`,
+    );
+  }
+  assert.equal(existsSync(lost.FACTORY_DB), false, "a refused run leaves no store behind");
 });
