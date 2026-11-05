@@ -1,5 +1,5 @@
 import { BaseError } from "viem";
-import type { Batch } from "#src/types.ts";
+import type { Batch } from "#src/source.ts";
 
 export function describeError(error: unknown): string {
   if (error instanceof BaseError) {

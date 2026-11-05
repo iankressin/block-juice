@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PGlite } from "@electric-sql/pglite";
 import * as z from "zod";
-import { runSource } from "#src/run.ts";
-import type { Batch, Source } from "#src/types.ts";
+import { runSource } from "#src/run/index.ts";
+import type { Batch, Source } from "#src/source.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
 // loadEnv treats an empty value as unset, so the run pushes no metrics, even when the shell

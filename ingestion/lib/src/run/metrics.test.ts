@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runMetrics } from "#src/metrics.ts";
-import type { RunReport } from "#src/types.ts";
+import type { RunReport } from "#src/run/index.ts";
+import { runMetrics } from "#src/run/metrics.ts";
 
 const report: RunReport = {
   runId: "1b4e28ba-2fa1-41d2-883f-0016d3cca427",

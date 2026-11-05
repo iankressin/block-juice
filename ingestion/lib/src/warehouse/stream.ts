@@ -2,7 +2,7 @@ import type { PortalBatch, Target, TargetState } from "@subsquid/pipes";
 import { drizzleTarget, type Transaction } from "@subsquid/pipes/targets/drizzle/node-postgres";
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import type { Batch, StreamRecords } from "#src/types.ts";
+import type { Batch, StreamRecords } from "#src/source.ts";
 import type { Query } from "#src/warehouse/index.ts";
 
 export type PipesTargetOptions = {

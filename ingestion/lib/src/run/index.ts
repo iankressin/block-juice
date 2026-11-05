@@ -3,12 +3,32 @@ import * as z from "zod";
 import { describeError } from "#src/calls.ts";
 import { loadEnv } from "#src/env.ts";
 import { logger } from "#src/logger.ts";
-import { pushRunMetrics } from "#src/metrics.ts";
-import type { DeadLetterBacklog, Source, StreamSource } from "#src/types.ts";
-import { postgresWarehouse, type Warehouse } from "#src/warehouse/index.ts";
+import { pushRunMetrics } from "#src/run/metrics.ts";
+import type { Source, StreamSource } from "#src/source.ts";
+import { postgresWarehouse, type DeadLetterBacklog, type Warehouse } from "#src/warehouse/index.ts";
 
 const runEnv = z.object({ DAGSTER_RUN_ID: z.string().min(1).optional() });
 const MAX_BLOCKS_PER_RUN = 1_000_000;
+
+/** What runSource reports when a run ends, to the Pushgateway and to ops.ingestion_runs. */
+export type RunReport = {
+  runId: string;
+  /** Set when Dagster started the run. */
+  dagsterRunId: string | undefined;
+  source: string;
+  table: string;
+  startedAt: Date;
+  finishedAt: Date;
+  /** Undefined when the run succeeded. */
+  error: string | undefined;
+  retriedCalls: number;
+  recordsWritten: number;
+  failedCalls: number;
+  /** Time spent writing records and dead letters to the warehouse. The rest went to extraction. */
+  loadSeconds: number;
+  /** Undefined when the run failed before it counted its dead letters. */
+  backlog: DeadLetterBacklog | undefined;
+};
 
 /**
  * The entry point of every source. A call source has its dead letters that still parse
@@ -97,7 +117,7 @@ export async function runSource<E, C>(
     process.exitCode = 1;
   }
 
-  const report = {
+  const report: RunReport = {
     runId,
     dagsterRunId: DAGSTER_RUN_ID,
     source: source.name,

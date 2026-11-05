@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as z from "zod";
 import { logger, type Logger } from "#src/logger.ts";
-import type { RunReport } from "#src/types.ts";
+import type { RunReport } from "#src/run/index.ts";
 import { postgresWarehouse } from "#src/warehouse/index.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
