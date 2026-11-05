@@ -77,7 +77,7 @@ events:
     emitted_by: l2_custom_gateway
     signature: "event WithdrawalInitiated(address l1Token, address indexed _from, address indexed _to, uint256 indexed _l2ToL1Id, uint256 _exitNum, uint256 _amount)"
     topic0: "0x3073a74ecb728d10be779fe19a74a1428e20468f5b4d167bf9c73d9067847d73"
-    abi: abis/l2-custom-gateway.json
+    abi: abis/l2-gateway.json
     fields:
       l2_user: {param: _from, at: topic1}
       l1_counterpart: {param: _to, at: topic2}
@@ -92,7 +92,7 @@ events:
     emitted_by: l2_custom_gateway
     signature: "event DepositFinalized(address indexed l1Token, address indexed _from, address indexed _to, uint256 _amount)"
     topic0: "0xc7f2e9c55c40a50fbc217dfc70cd39a222940dfa62145aa0ca49eb9535d4fcb2"
-    abi: abis/l2-custom-gateway.json
+    abi: abis/l2-gateway.json
     fields:
       l1_token: {param: l1Token, at: topic1}
       l1_counterpart: {param: _from, at: topic2}

@@ -8,7 +8,7 @@ import {
 import { validateEthAddressList } from "@ingestion/lib/evm";
 import { defineAbi, evmEventDecoder, evmPortalStream, type DecodedEvent, type JsonAbiItem } from "@subsquid/pipes/evm";
 import * as z from "zod";
-import gatewayAbi from "../../../../catalog/protocols/arbitrum-token-bridge/abis/l2-custom-gateway.json" with { type: "json" };
+import gatewayAbi from "../../../../catalog/protocols/arbitrum-token-bridge/abis/l2-gateway.json" with { type: "json" };
 
 // The contract system, from catalog/protocols/arbitrum-token-bridge/protocol.yaml: the L2 Arb-Custom
 // Gateway, which burns a token on withdrawal and mints it on deposit, and emits both events below.

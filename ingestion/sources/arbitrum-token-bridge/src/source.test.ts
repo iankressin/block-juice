@@ -4,7 +4,7 @@ import type { RawRecord } from "@ingestion/lib";
 import { mockPortal } from "@subsquid/pipes/testing";
 import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import type { Abi, Hex } from "viem";
-import gatewayAbi from "../../../../catalog/protocols/arbitrum-token-bridge/abis/l2-custom-gateway.json" with { type: "json" };
+import gatewayAbi from "../../../../catalog/protocols/arbitrum-token-bridge/abis/l2-gateway.json" with { type: "json" };
 import addresses from "../addresses.json" with { type: "json" };
 import { GATEWAY, source } from "#src/source.ts";
 
