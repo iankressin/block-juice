@@ -13,7 +13,7 @@
 
 **BlockJuice: sources contract, consultant setup, ingestion clarity, DEX contracts, and skills**
 
-Ship as **ordered worktree PRs** (one concern per PR), not one mega-PR. Dependency order below is binding.
+Ship as **worktree PRs** (one concern per PR), not one mega-PR. Dependencies below are binding; the sections are not a strict serial order, and independent work may proceed in parallel.
 
 ---
 
@@ -36,7 +36,7 @@ Ship as **ordered worktree PRs** (one concern per PR), not one mega-PR. Dependen
 
 ---
 
-## Ordered workstreams (execute in this order)
+## Workstreams and dependency order
 
 ### PR A — `sources.json` + name-contract (highest priority)
 
@@ -107,7 +107,7 @@ Ship as **ordered worktree PRs** (one concern per PR), not one mega-PR. Dependen
 
 **Out of scope:** Shared balance kit; stream templates; stream dead-letter behavior.
 
-**Deps:** None vs A; if PR D lands first, write test with `EVM_RPC_URL`. Prefer **same docs pass** as failure docs (Ingestion Plan 3).
+**Deps:** Independent of A/B; PR D must land before or alongside C. Prefer **same docs pass** as failure docs (Ingestion Plan 3).
 
 ---
 
@@ -202,8 +202,8 @@ Ship as **ordered worktree PRs** (one concern per PR), not one mega-PR. Dependen
 ```
 worktree A: bj/sources-json          → PR A
 worktree E: bj/dex-contracts         → PR E (parallel)
-worktree D: bj/erpc-rename           → PR D (parallel with C after A or alone)
-worktree C: bj/batch-checklist-docs  → PR C (after or with D)
+worktree D: bj/erpc-rename           → PR D (start independently; before or alongside C)
+worktree C: bj/batch-checklist-docs  → PR C (after or alongside D)
 worktree B: bj/doctor                → PR B (after A merges)
 worktree H: bj/health-alerts         → PR H (anytime after A preferred)
 skills:     UpdateSkill locally      → F then G (G refresh after A)
