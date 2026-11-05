@@ -86,11 +86,11 @@ Ship as **ordered worktree PRs** (one concern per PR), not one mega-PR. Dependen
 
 ---
 
-### PR C — Batch-source checklist + `ethereum-eth-balances` test parity (+ failure docs)
+### PR C — Call-source checklist + `ethereum-eth-balances` test parity (+ failure docs)
 
 **Owner:** Ingestion (optional CLI pointer line → Orchestration)
 
-**Goal:** Document batch-source contract; give eth-balances `balances.test.ts` parity; document that stream sources do not use dead letters.
+**Goal:** Document call-source contract; give eth-balances `balances.test.ts` parity; document that stream sources do not use dead letters.
 
 **Files**
 - `README.md` “Add a source” (checklist + short stream failure / `_sync` reset)

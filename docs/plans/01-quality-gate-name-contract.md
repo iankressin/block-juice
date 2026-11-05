@@ -8,7 +8,7 @@
 
 Fail fast when dbt staging (and related naming) drifts from each ingestion package’s exported `name` / `table`, so consultants never get silent empty assets or orphan models.
 
-Gate owns the **check**. Orchestration owns generating `sources.json` and building Dagster `SOURCES` from it. Ingestion owns the generator script and committed JSON (Team Lead split, confirmed).
+Gate owns the **check** (freshness/drift tests + human review). Ingestion owns the generator script and committed `sources.json`. Orchestration owns loading that file into Dagster `SOURCES` and the `bj new-source` CLI hook.
 
 ## What check lives where
 
