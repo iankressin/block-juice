@@ -44,7 +44,7 @@ Also owns (PR A, with Orchestration/QG): `ingestion/scripts/generate-sources-jso
 
 **Leave alone:** `ERPC_PORT`, `ERPC_METRICS_PORT`, `ERPC_CACHE_DATABASE_URL`; `PORTAL_URL`; `DSHACKLE_URL`; `new_source.py` (no hit). No Dagster/compose env override on main for this.
 
-**Steps:** Rename EVM → `EVM_RPC_URL`, Solana → `SOLANA_RPC_URL`. Keep example URLs (`/main/evm/1` vs `/main/solana`). After PR, `rg ERPC_URL` must return 0 (excluding the leave-alone names). PR body tells consultants to update gitignored `ingestion/sources/*/.env`.
+**Steps:** Rename EVM → `EVM_RPC_URL`, Solana → `SOLANA_RPC_URL`. Keep example URLs (`/main/evm/1` vs `/main/solana`). After PR, `rg --hidden ERPC_URL ingestion orchestration README.md` must find no matches; historical references under `docs/plans/` remain unchanged. PR body tells consultants to update gitignored `ingestion/sources/*/.env`.
 
 **Tests:** ingestion/lib + four balance packages; `test_cli_new_source.py`; typecheck.
 
