@@ -9,7 +9,7 @@ import addresses from "../addresses.json" with { type: "json" };
 import { BRIDGE, source } from "#src/source.ts";
 
 const abi = bridgeAbi as Abi;
-const sqd = addresses.tokens[0]!.toLowerCase() as Hex;
+const token = addresses.tokens[0]!.toLowerCase() as Hex;
 const otherToken = "0x00000000000000000000000000000000000000bb";
 const remote = "0x00000000000000000000000000000000000000ee";
 const user = "0x00000000000000000000000000000000000000aa";
@@ -27,10 +27,10 @@ const event = (eventName: string, localToken: Hex, amount: bigint) =>
 
 async function records(t: TestContext) {
   const logs = [
-    event("ERC20BridgeFinalized", sqd, 1n), // kept
+    event("ERC20BridgeFinalized", token, 1n), // kept
     event("ERC20BridgeFinalized", otherToken, 2n), // another Base token
-    event("ERC20BridgeInitiated", sqd, 3n), // kept
-    event("DepositFinalized", sqd, 4n), // the legacy twin of a finalized deposit: never read
+    event("ERC20BridgeInitiated", token, 3n), // kept
+    event("DepositFinalized", token, 4n), // the legacy twin of a finalized deposit: never read
   ];
   const mock = await mockPortal({ blocks: logs.map((log, i) => mockBlock({ number: i + 1, transactions: [{ logs: [log] }] })) });
   t.after(() => mock.close());
@@ -46,5 +46,5 @@ test("the two ERC20Bridge events of the listed tokens become records; other toke
     [1, "ERC20BridgeFinalized"],
     [3, "ERC20BridgeInitiated"],
   ]);
-  assert.deepEqual(read[0]!.data.args, { localToken: sqd, remoteToken: remote, from: l1, to: user, amount: 1n, extraData: "0x" });
+  assert.deepEqual(read[0]!.data.args, { localToken: token, remoteToken: remote, from: l1, to: user, amount: 1n, extraData: "0x" });
 });
