@@ -10,7 +10,7 @@ import { erc20Transfers } from "#src/source.ts";
 
 const [binance, coinbase] = ethereum.wallets.map((a) => a.toLowerCase() as Hex);
 const [usdc] = ethereum.tokens.map((a) => a.toLowerCase() as Hex);
-const [sqd] = arbitrum.tokens.map((a) => a.toLowerCase() as Hex);
+const [uni] = arbitrum.tokens.map((a) => a.toLowerCase() as Hex);
 const stranger = "0x00000000000000000000000000000000000000aa";
 const otherStranger = "0x00000000000000000000000000000000000000cc";
 const otherToken = "0x00000000000000000000000000000000000000bb";
@@ -63,9 +63,9 @@ test("the stream starts at START_BLOCK", async (t) => {
 
 test("a chain whose addresses.json lists no wallets reads every transfer of its tokens", async (t) => {
   const url = await portal(t, [
-    transfer(sqd!, stranger, otherStranger, 1n),
+    transfer(uni!, stranger, otherStranger, 1n),
     transfer(otherToken, stranger, otherStranger, 2n),
-    transfer(sqd!, otherStranger, stranger, 3n),
+    transfer(uni!, otherStranger, stranger, 3n),
   ]);
   const read = await records("arbitrum", url, 1);
   assert.deepEqual(read.map((r) => [r.block, r.from, r.to]), [
