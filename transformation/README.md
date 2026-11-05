@@ -2,6 +2,8 @@
 
 dbt models that read each source's raw table and build the marts consultants query.
 
+Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses are kept as-is because they are case-sensitive (base58).
+
 ## Adding a chain
 
 `bj new-source` already scaffolds the dbt sources YAML, a staging model that selects `id`, `data` and `_loaded_at` from that source, and the Dagster `SOURCES` entry. See `orchestration/pipeline/cli/new_source.py`. It does not add the chain to a mart.
