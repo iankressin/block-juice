@@ -15,7 +15,7 @@ import psycopg2
 from dotenv import dotenv_values
 
 from pipeline.cli import BadInput, require_env
-from pipeline.cli.new_source import SOURCES_FILE, package_name, read_sources
+from pipeline.sources import SOURCES_FILE, read_sources
 from pipeline.warehouse import read_cursor
 
 
@@ -69,23 +69,30 @@ class Coverage:
         }
 
 
+def packages(repo_root: Path) -> dict[str, Path]:
+    """Every source in sources.json, as <source>.<table>, with its package folder."""
+    return {
+        f"{entry.name}.{entry.table}": repo_root / "ingestion" / "sources" / entry.package
+        for entry in read_sources((repo_root / SOURCES_FILE).read_text())
+    }
+
+
 def package(repo_root: Path, source: str, table: str) -> Path:
-    return repo_root / "ingestion" / "sources" / package_name(source, table)
+    return packages(repo_root)[f"{source}.{table}"]
 
 
 def sources(repo_root: Path) -> list[str]:
-    """Every SOURCES entry, as <source>.<table>."""
-    entries, _ = read_sources((repo_root / SOURCES_FILE).read_text())
-    return [f"{source}.{table}" for source, table in entries]
+    """Every source in sources.json, as <source>.<table>."""
+    return list(packages(repo_root))
 
 
 def stream_sources(repo_root: Path) -> list[str]:
-    """The SOURCES entries that are stream sources: those whose package's .env.example sets START_BLOCK.
+    """The sources that are stream sources: those whose package's .env.example sets START_BLOCK.
     A stream source needs a first block; a call source reads at one block, or at the tip."""
     return [
         name
-        for name in sources(repo_root)
-        if dotenv_values(package(repo_root, *name.split(".")) / ".env.example").get("START_BLOCK")
+        for name, folder in packages(repo_root).items()
+        if dotenv_values(folder / ".env.example").get("START_BLOCK")
     ]
 
 

@@ -24,6 +24,7 @@ A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it
 ├── ingestion/                  # pnpm workspace
 │   ├── pnpm-workspace.yaml
 │   ├── tsconfig.json           # one typecheck for every package
+│   ├── sources.json            # every source's exported name and table; `pnpm generate-sources` writes it
 │   ├── lib/                    # @ingestion/lib: shared by all sources
 │   │   └── src/
 │   │       ├── index.ts        # public API for any chain
@@ -153,13 +154,13 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 ## Add a source
 
-`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. Then edit the copied `src/`, `addresses.json` and the staging stub. By hand:
+`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. Then edit the copied `src/`, `addresses.json` and the staging stub. Reading the source from a mart, and scheduling that mart in `PIPELINES`, stay hand steps: see Add a pipeline, and `## Adding a chain` in `transformation/README.md`. By hand:
 
 1. Copy `ingestion/sources/ethereum-eth-balances/` to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`. A chain's env, addresses and client go in `lib/src/<chain>/`. Its `index.ts` lists what sources may use, and `lib/package.json` exports that file as `@ingestion/lib/<chain>`.
 2. Add `transformation/models/staging/<source>/` with a sources yml and the `stg_` models.
-3. Add `(source, table)` to `SOURCES` in `orchestration/pipeline/assets/ingestion.py`.
+3. Run `pnpm generate-sources` in `ingestion/`. It rewrites `ingestion/sources.json`, the list of the `name` and `table` every package exports from `src/source.ts`, with the package's folder. Dagster builds its `SOURCES` from that file, so nothing lists the sources by hand, and the orchestration tests fail while the file is stale.
 
-The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
+The dbt source name and table name must match the `name` and `table` the source exports. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them. A test names any pair that drifts.
 
 A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. To read a stream source again from its start, delete its rows from `raw._sync`, whose `id` is `<source>_<table>`.
 

@@ -1,18 +1,49 @@
 import json
+import re
 import shutil
+import subprocess
 
 import pytest
 import yaml
 
 from pipeline.assets.ingestion import SOURCES, package_dir
 from pipeline.cli import REPO_ROOT, BadInput
-from pipeline.cli.new_source import package_name, read_sources, run
+from pipeline.cli import new_source
+from pipeline.cli.new_source import GENERATE, package_name, run
+from pipeline.sources import SOURCES_FILE, read_sources
 
 TEMPLATE = "ethereum-eth-balances"
 
 
+def fake_generator(root):
+    """What `pnpm generate-sources` does, for the packages this repo has: every package's exported name and
+    table, sorted. The repo copy holds only the template, so the entries already in the file stay."""
+    entries = {(e.name, e.table): e.package for e in read_sources((root / SOURCES_FILE).read_text())}
+    for source_ts in root.glob("ingestion/sources/*/src/source.ts"):
+        text = source_ts.read_text()
+        pair = (re.search(r'name: "(\w+)"', text).group(1), re.search(r'table: "(\w+)"', text).group(1))
+        entries[pair] = source_ts.parents[1].name
+    listed = [{"name": name, "table": table, "package": package} for (name, table), package in sorted(entries.items())]
+    (root / SOURCES_FILE).write_text(json.dumps(listed, indent=2) + "\n")
+
+
 @pytest.fixture
-def repo(tmp_path):
+def pnpm(tmp_path, monkeypatch):
+    """pnpm as a fake: records each command, and writes sources.json the way the generator would."""
+    commands = []
+
+    def fake_run(command, cwd, **kwargs):
+        commands.append((command, cwd))
+        if command == GENERATE[-1]:
+            fake_generator(tmp_path)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(new_source.subprocess, "run", fake_run)
+    return commands
+
+
+@pytest.fixture
+def repo(tmp_path, pnpm):
     """The files new-source reads, copied from the real repository, with local-only files in the template."""
     template = tmp_path / "ingestion" / "sources" / TEMPLATE
     shutil.copytree(REPO_ROOT / "ingestion" / "sources" / TEMPLATE, template, ignore=shutil.ignore_patterns("node_modules", ".env"))
@@ -20,9 +51,7 @@ def repo(tmp_path):
     (template / ".env").write_text("ERPC_URL=http://secret\n")
     (template / "factory.sqlite").write_bytes(b"pools of another source")
     shutil.copytree(REPO_ROOT / "transformation" / "models" / "staging", tmp_path / "transformation" / "models" / "staging")
-    assets = tmp_path / "orchestration" / "pipeline" / "assets"
-    assets.mkdir(parents=True)
-    shutil.copy(REPO_ROOT / "orchestration" / "pipeline" / "assets" / "ingestion.py", assets)
+    shutil.copy(REPO_ROOT / SOURCES_FILE, tmp_path / SOURCES_FILE)
     return tmp_path
 
 
@@ -31,7 +60,7 @@ def snapshot(root):
 
 
 def sources_of(repo):
-    return read_sources((repo / "orchestration/pipeline/assets/ingestion.py").read_text())[0]
+    return [(e.name, e.table) for e in read_sources((repo / SOURCES_FILE).read_text())]
 
 
 def test_package_name_matches_the_dagster_asset_rule():
@@ -39,8 +68,7 @@ def test_package_name_matches_the_dagster_asset_rule():
         assert package_name(source, table) == package_dir(source, table).name
 
 
-def test_adds_a_table_to_an_existing_source(repo, capsys):
-    ingestion_before = (repo / "orchestration/pipeline/assets/ingestion.py").read_text()
+def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
     yml_before = (repo / "transformation/models/staging/ethereum/_ethereum__sources.yml").read_text()
 
     assert run(repo, "ethereum", "erc721_holdings", TEMPLATE) == 0
@@ -73,16 +101,17 @@ def test_adds_a_table_to_an_existing_source(repo, capsys):
     assert "{{ source('ethereum', 'erc721_holdings') }}" in model
     assert all(column in model for column in ("id,", "data,", "_loaded_at"))
 
-    ingestion_after = (repo / "orchestration/pipeline/assets/ingestion.py").read_text()
-    assert sources_of(repo) == [*SOURCES, ("ethereum", "erc721_holdings")]
-    added = [line for line in ingestion_after.splitlines() if line not in ingestion_before.splitlines()]
-    assert added == ['    ("ethereum", "erc721_holdings"),']
-    assert len(ingestion_after.splitlines()) == len(ingestion_before.splitlines()) + 1
+    # The generator ran in the workspace, after pnpm install linked the new package, and rewrote sources.json.
+    assert pnpm == [(list(command), repo / "ingestion") for command in GENERATE]
+    assert sources_of(repo) == sorted([*SOURCES, ("ethereum", "erc721_holdings")])
+    entries = read_sources((repo / SOURCES_FILE).read_text())
+    assert [e.package for e in entries if e.table == "erc721_holdings"] == ["ethereum-erc721-holdings"]
 
     out = capsys.readouterr().out
-    assert "changed orchestration/pipeline/assets/ingestion.py" in out
+    assert "changed ingestion/sources.json" in out
     assert "changed transformation/models/staging/ethereum/_ethereum__sources.yml" in out
-    assert "pnpm install" in out and "mart" in out
+    assert "orchestration/pipeline/assets/ingestion.py" not in out
+    assert "Adding a chain" in out and "PIPELINES" in out and "mart" in out
 
 
 def test_creates_the_sources_file_of_a_new_source(repo):
@@ -98,51 +127,80 @@ def test_creates_the_sources_file_of_a_new_source(repo):
     assert (repo / "transformation/models/staging/base/stg_base__eth_balances.sql").is_file()
     source_ts = (repo / "ingestion/sources/base-eth-balances/src/source.ts").read_text()
     assert 'name: "base"' in source_ts and 'name: "ethereum"' not in source_ts
-    assert sources_of(repo)[-1] == ("base", "eth_balances")
+    assert ("base", "eth_balances") in sources_of(repo)
 
 
-def refuses_without_writing(repo, *args, match):
+def test_a_failed_generator_leaves_the_files_and_exits_1(repo, monkeypatch, capsys):
+    def failing_run(command, cwd, **kwargs):
+        return subprocess.CompletedProcess(command, 1, "", "ERR_PNPM_SOMETHING\n")
+
+    monkeypatch.setattr(new_source.subprocess, "run", failing_run)
+    before = sources_of(repo)
+
+    assert run(repo, "ethereum", "erc721_holdings", TEMPLATE) == 1
+
+    assert (repo / "ingestion/sources/ethereum-erc721-holdings/src/source.ts").is_file()
+    assert sources_of(repo) == before
+    out, err = capsys.readouterr()
+    assert "created ingestion/sources/ethereum-erc721-holdings/" in out
+    assert "changed ingestion/sources.json" not in out
+    assert "`pnpm install` in ingestion/ exited with code 1" in err and "ERR_PNPM_SOMETHING" in err
+    assert "('ethereum', 'erc721_holdings')" in err and "pnpm generate-sources" in err
+
+
+def test_a_missing_pnpm_exits_1(repo, monkeypatch, capsys):
+    def no_pnpm(command, cwd, **kwargs):
+        raise FileNotFoundError(command[0])
+
+    monkeypatch.setattr(new_source.subprocess, "run", no_pnpm)
+    assert run(repo, "ethereum", "erc721_holdings", TEMPLATE) == 1
+    assert "pnpm is not installed" in capsys.readouterr().err
+
+
+def refuses_without_writing(repo, pnpm, *args, match):
     before = snapshot(repo)
     with pytest.raises(BadInput, match=match):
         run(repo, *args)
     assert snapshot(repo) == before
+    assert pnpm == []
 
 
-def test_refuses_a_template_missing_from_sources(repo):
+def test_refuses_a_template_missing_from_sources(repo, pnpm):
     shutil.copytree(repo / "ingestion/sources" / TEMPLATE, repo / "ingestion/sources/scratch")
-    refuses_without_writing(repo, "ethereum", "nft_balances", "scratch", match="no SOURCES entry")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", "scratch", match="in no entry of ingestion/sources.json")
 
 
-def test_refuses_a_template_that_does_not_exist(repo):
-    refuses_without_writing(repo, "ethereum", "nft_balances", "ethereum-nft-balances", match="no source package")
+def test_refuses_a_template_that_does_not_exist(repo, pnpm):
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", "ethereum-nft-balances", match="no source package")
 
 
-def test_refuses_a_package_that_exists(repo):
+def test_refuses_a_package_that_exists(repo, pnpm):
     (repo / "ingestion/sources/ethereum-nft-balances").mkdir()
-    refuses_without_writing(repo, "ethereum", "nft_balances", TEMPLATE, match="already exists")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="already exists")
 
 
-def test_refuses_a_pair_already_in_sources(repo):
-    refuses_without_writing(repo, "ethereum", "erc20_balances", TEMPLATE, match="already in SOURCES")
+def test_refuses_a_pair_already_in_sources(repo, pnpm):
+    refuses_without_writing(repo, pnpm, "ethereum", "erc20_balances", TEMPLATE, match="already in ingestion/sources.json")
 
 
-def test_refuses_a_source_ts_it_cannot_rename_exactly_once(repo):
+def test_refuses_a_source_ts_it_cannot_rename_exactly_once(repo, pnpm):
     source_ts = repo / "ingestion/sources" / TEMPLATE / "src/source.ts"
     source_ts.write_text(source_ts.read_text() + '\n// table: "eth_balances"\n')
-    refuses_without_writing(repo, "ethereum", "nft_balances", TEMPLATE, match="exactly once")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="exactly once")
 
 
-def test_refuses_a_table_the_sources_file_already_has(repo):
+def test_refuses_a_table_the_sources_file_already_has(repo, pnpm):
     yml = repo / "transformation/models/staging/ethereum/_ethereum__sources.yml"
     yml.write_text(yml.read_text() + "      - name: nft_balances\n        identifier: ethereum_nft_balances\n")
-    refuses_without_writing(repo, "ethereum", "nft_balances", TEMPLATE, match="already has table")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="already has table")
 
 
-def test_refuses_a_sources_file_where_the_table_would_land_under_another_source(repo):
+def test_refuses_a_sources_file_where_the_table_would_land_under_another_source(repo, pnpm):
     yml = repo / "transformation/models/staging/ethereum/_ethereum__sources.yml"
     yml.write_text(yml.read_text() + "  - name: legacy\n    tables:\n      - name: old\n")
-    refuses_without_writing(repo, "ethereum", "nft_balances", TEMPLATE, match="could not add")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="could not add")
+
 
 @pytest.mark.parametrize("source, table", [("Ethereum", "x"), ("ethereum", "nft-balances"), ("1chain", "x")])
-def test_refuses_names_that_are_not_identifiers(repo, source, table):
-    refuses_without_writing(repo, source, table, TEMPLATE, match="must match")
+def test_refuses_names_that_are_not_identifiers(repo, pnpm, source, table):
+    refuses_without_writing(repo, pnpm, source, table, TEMPLATE, match="must match")

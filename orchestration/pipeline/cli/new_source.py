@@ -1,18 +1,21 @@
-"""bj new-source: add a source by copying a source package, with its dbt source and Dagster asset."""
+"""bj new-source: add a source by copying a source package, with its dbt source, and regenerate sources.json."""
 
-import ast
 import json
 import re
 import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from pipeline.cli import BadInput
+from pipeline.sources import SOURCES_FILE, read_sources
 
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
-SOURCES_FILE = Path("orchestration/pipeline/assets/ingestion.py")
+# pnpm install links the new package into the workspace, which the generator needs to import it.
+GENERATE = (["pnpm", "install"], ["pnpm", "--silent", "generate-sources"])
 
 
 @dataclass(frozen=True)
@@ -25,27 +28,8 @@ class Plan:
 
 
 def package_name(source: str, table: str) -> str:
-    # The rule of package_dir in assets/ingestion.py, which this module cannot import without loading Dagster.
+    """The folder of a new package under ingestion/sources/. sources.json records each existing package's folder."""
     return f"{source}-{table.replace('_', '-')}"
-
-
-def read_sources(text: str) -> tuple[list[tuple[str, str]], int]:
-    """SOURCES from assets/ingestion.py, and the line of its closing bracket."""
-    for node in ast.parse(text).body:
-        if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] == ["SOURCES"]:
-            return [tuple(pair) for pair in ast.literal_eval(node.value)], node.end_lineno
-    raise BadInput(f"{SOURCES_FILE} has no SOURCES list")
-
-
-def add_to_sources(text: str, source: str, table: str) -> str:
-    sources, closing_line = read_sources(text)
-    lines = text.splitlines(keepends=True)
-    indent = re.match(r"\s*", lines[closing_line - 2]).group() if sources else "    "
-    lines.insert(closing_line - 1, f'{indent}("{source}", "{table}"),\n')
-    updated = "".join(lines)
-    if read_sources(updated)[0] != [*sources, (source, table)]:
-        raise BadInput(f"could not add ({source!r}, {table!r}) to SOURCES in {SOURCES_FILE}; add it by hand")
-    return updated
 
 
 def source_tables(text: str, source: str, path: Path) -> list[str]:
@@ -99,15 +83,13 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
     if "/" in like or like.startswith(".") or not template.is_dir():
         raise BadInput(f"no source package {like!r} in ingestion/sources/")
 
-    ingestion_py = repo_root / SOURCES_FILE
-    ingestion_text = ingestion_py.read_text()
-    sources, _ = read_sources(ingestion_text)
-    old = [pair for pair in sources if package_name(*pair) == like]
+    entries = read_sources((repo_root / SOURCES_FILE).read_text())
+    old = [entry for entry in entries if entry.package == like]
     if not old:
-        raise BadInput(f"{like} is in no SOURCES entry of {SOURCES_FILE}, so it is not a source to copy")
-    old_source, old_table = old[0]
-    if (source, table) in sources:
-        raise BadInput(f"({source!r}, {table!r}) is already in SOURCES")
+        raise BadInput(f"{like} is in no entry of {SOURCES_FILE}, so it is not a source to copy")
+    old_source, old_table = old[0].name, old[0].table
+    if any((entry.name, entry.table) == (source, table) for entry in entries):
+        raise BadInput(f"({source!r}, {table!r}) is already in {SOURCES_FILE}")
     package = sources_root / package_name(source, table)
     if package.exists():
         raise BadInput(f"{package.relative_to(repo_root)} already exists")
@@ -144,9 +126,21 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
             package / "src" / "source.ts": renamed,
             sources_yml: yml,
             model: staging_model(source, table),
-            ingestion_py: add_to_sources(ingestion_text, source, table),
         },
     )
+
+
+def generate_sources(repo_root: Path) -> str | None:
+    """Regenerates sources.json from every package's export. Returns why it could not, when it could not."""
+    for command in GENERATE:
+        try:
+            result = subprocess.run(command, cwd=repo_root / "ingestion", capture_output=True, text=True)
+        except FileNotFoundError:
+            return f"{command[0]} is not installed"
+        if result.returncode != 0:
+            output = (result.stdout + result.stderr).strip()
+            return f"`{' '.join(command)}` in ingestion/ exited with code {result.returncode}" + (f":\n{output}" if output else "")
+    return None
 
 
 def run(repo_root: Path, source: str, table: str, like: str) -> int:
@@ -164,12 +158,24 @@ def run(repo_root: Path, source: str, table: str, like: str) -> int:
     print(f"created {package}/ (a copy of {like})")
     for path in planned.files:
         print(f"{'changed' if path in existed else 'created'} {path.relative_to(repo_root)}")
+
+    failure = generate_sources(repo_root)
+    if failure:
+        print(
+            f"{failure}\nThe files above are written. Fix the error, then run `pnpm install` and "
+            f"`pnpm generate-sources` in ingestion/ to add ({source!r}, {table!r}) to {SOURCES_FILE}.",
+            file=sys.stderr,
+        )
+        return 1
+    print("ran `pnpm install` in ingestion/, which links the new package and updates pnpm-lock.yaml")
+    print(f"changed {SOURCES_FILE}")
     print(
         "\nNext steps:\n"
-        "1. Run `pnpm install` in ingestion/.\n"
-        f"2. Edit the copied code in {package}/src/ and {package}/addresses.json to read the new data.\n"
-        f"3. Shape {model}: turn `data` into the columns you need.\n"
-        "4. Read the new source from a mart in transformation/models/marts/<pipeline>/. Until one does,"
-        " the orchestration tests fail, because the new asset belongs to no scheduled pipeline."
+        f"1. Edit the copied code in {package}/src/ and {package}/addresses.json to read the new data.\n"
+        f"2. Shape {model}: turn `data` into the columns you need.\n"
+        "3. By hand, read the new source from a mart in transformation/models/marts/<pipeline>/: follow "
+        "`## Adding a chain` in transformation/README.md. bj new-source does not touch marts.\n"
+        "4. By hand, make sure a scheduled pipeline builds that mart: PIPELINES in orchestration/pipeline/schedules.py."
+        " Until one does, the orchestration tests fail, because the new asset belongs to no scheduled pipeline."
     )
     return 0

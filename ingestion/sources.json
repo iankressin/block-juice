@@ -1,0 +1,47 @@
+[
+  {
+    "name": "bitcoin",
+    "table": "btc_balances",
+    "package": "bitcoin-btc-balances"
+  },
+  {
+    "name": "ethereum",
+    "table": "erc20_balances",
+    "package": "ethereum-erc20-balances"
+  },
+  {
+    "name": "ethereum",
+    "table": "erc20_transfers",
+    "package": "ethereum-erc20-transfers"
+  },
+  {
+    "name": "ethereum",
+    "table": "eth_balances",
+    "package": "ethereum-eth-balances"
+  },
+  {
+    "name": "ethereum",
+    "table": "uniswap_v2",
+    "package": "ethereum-uniswap-v2"
+  },
+  {
+    "name": "ethereum",
+    "table": "uniswap_v3",
+    "package": "ethereum-uniswap-v3"
+  },
+  {
+    "name": "ethereum",
+    "table": "uniswap_v4",
+    "package": "ethereum-uniswap-v4"
+  },
+  {
+    "name": "solana",
+    "table": "sol_balances",
+    "package": "solana-sol-balances"
+  },
+  {
+    "name": "solana",
+    "table": "spl_balances",
+    "package": "solana-spl-balances"
+  }
+]

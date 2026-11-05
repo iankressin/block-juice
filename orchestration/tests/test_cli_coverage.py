@@ -5,7 +5,7 @@ import pytest
 
 from pipeline.cli import BadInput, coverage, main
 from pipeline.cli.coverage import Coverage, stream_sources
-from pipeline.cli.new_source import SOURCES_FILE, read_sources
+from pipeline.sources import SOURCES_FILE, read_sources
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
@@ -18,12 +18,15 @@ def repo(tmp_path, monkeypatch):
     """A repo with one stream source and one call source."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
-    (tmp_path / SOURCES_FILE).write_text('SOURCES = [("ethereum", "erc20_transfers"), ("ethereum", "eth_balances")]\n')
-    for package, env in (("ethereum-erc20-transfers", "START_BLOCK=100\n"), ("ethereum-eth-balances", "BLOCK_NUMBER=latest\n")):
+    entries = []
+    for table, env in (("erc20_transfers", "START_BLOCK=100\n"), ("eth_balances", "BLOCK_NUMBER=latest\n")):
+        package = f"ethereum-{table.replace('_', '-')}"
+        entries.append({"name": "ethereum", "table": table, "package": package})
         folder = tmp_path / "ingestion" / "sources" / package
         folder.mkdir(parents=True)
         (folder / ".env.example").write_text(env)
         (folder / "addresses.json").write_text(ADDRESSES)
+    (tmp_path / SOURCES_FILE).write_text(json.dumps(entries))
     return tmp_path
 
 
@@ -31,7 +34,7 @@ def test_a_stream_source_is_a_sources_entry_whose_env_example_sets_start_block(r
     assert stream_sources(repo) == ["ethereum.erc20_transfers"]
 
 
-@pytest.mark.parametrize("source, table", read_sources((REPO_ROOT / SOURCES_FILE).read_text())[0])
+@pytest.mark.parametrize("source, table", [(e.name, e.table) for e in read_sources((REPO_ROOT / SOURCES_FILE).read_text())])
 def test_the_rule_finds_exactly_the_packages_that_export_a_stream_source(source, table):
     package = coverage.package(REPO_ROOT, source, table)
     exports_stream = "StreamSource<" in (package / "src" / "source.ts").read_text()
