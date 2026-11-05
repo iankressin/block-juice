@@ -10,9 +10,6 @@ import { defineAbi, evmEventDecoder, evmPortalStream, type DecodedEvent, type Js
 import * as z from "zod";
 import gatewayAbi from "../../../../catalog/protocols/arbitrum-token-bridge/abis/l2-gateway.json" with { type: "json" };
 
-// The contract system, from catalog/protocols/arbitrum-token-bridge/protocol.yaml: the L2 Arb-Custom
-// Gateway, which burns a token on withdrawal and mints it on deposit, and emits both events below.
-export const GATEWAY = "0x096760f208390250649e3e8763348e783aef5562";
 // The catalog's ABI files are JSON, so their events are typed by name only.
 const events = defineAbi(gatewayAbi as readonly JsonAbiItem[]).events;
 
@@ -48,9 +45,13 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
 }
 
 /**
- * The gateway's logs as emitted: every DepositFinalized of the Ethereum tokens in addresses.json, and
- * every WithdrawalInitiated, whose token is not indexed, so the query cannot filter it; dbt keeps the
- * tokens it needs. From START_BLOCK to Portal's finalized head when the run starts.
+ * Every DepositFinalized of the Ethereum tokens in addresses.json and every WithdrawalInitiated, from
+ * any contract, as emitted, from START_BLOCK to Portal's finalized head when the run starts.
+ *
+ * The query names no contract: the gateway router gives each token a gateway, the standard one unless
+ * the token has its own, and every L2 gateway emits these two events. A withdrawal's token is not
+ * indexed, so the query cannot filter it; dbt keeps the tokens it needs. Any contract can emit an event
+ * with the same signature, so each record keeps the contract that emitted it.
  */
 export const source: StreamSource<TokenBridgeEnv> = {
   name: "arbitrum",
@@ -70,12 +71,10 @@ export const source: StreamSource<TokenBridgeEnv> = {
       outputs: {
         deposits: evmEventDecoder({
           range,
-          contracts: [GATEWAY],
           events: { logs: { event: events.DepositFinalized!, params: { l1Token: tokens } as Record<"l1Token", string[]> } },
         }).pipe(({ logs }) => logs.map((log) => logRecord("DepositFinalized", log))),
         withdrawals: evmEventDecoder({
           range,
-          contracts: [GATEWAY],
           events: { logs: events.WithdrawalInitiated! },
         }).pipe(({ logs }) => logs.map((log) => logRecord("WithdrawalInitiated", log))),
       },
