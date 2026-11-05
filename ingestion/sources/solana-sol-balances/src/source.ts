@@ -23,7 +23,7 @@ export const solanaSolBalances: Source<SolanaEnv, BalanceCall> = {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const wallets = validateSolanaAddressList(addresses.wallets);
-    const rpc = createSolanaClient(env.ERPC_URL);
+    const rpc = createSolanaClient(env.SOLANA_RPC_URL);
     yield await fetchBalances(rpc, [...balanceCalls(wallets), ...retry]);
   },
 };

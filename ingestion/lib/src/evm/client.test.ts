@@ -55,10 +55,10 @@ test("a block number is kept as it is, with no request", async (t) => {
   assert.deepEqual(requests, []);
 });
 
-test("connect resolves BLOCK_NUMBER at ERPC_URL and batches RPC_BATCH_SIZE calls per request", async (t) => {
+test("connect resolves BLOCK_NUMBER at EVM_RPC_URL and batches RPC_BATCH_SIZE calls per request", async (t) => {
   const { url, requests, httpRequests } = await fakeRpc(t, 21_000_000);
 
-  const { client, block } = await connect({ ERPC_URL: url, RPC_BATCH_SIZE: 2, BLOCK_NUMBER: "safe" });
+  const { client, block } = await connect({ EVM_RPC_URL: url, RPC_BATCH_SIZE: 2, BLOCK_NUMBER: "safe" });
   const wallets = ["0x01", "0x02", "0x03"].map((n) => `0x${n.slice(2).padStart(40, "0")}` as const);
   await Promise.all(wallets.map((address) => client.getBalance({ address, blockNumber: BigInt(block) })));
 
