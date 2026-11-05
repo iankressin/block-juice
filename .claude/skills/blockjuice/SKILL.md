@@ -1,7 +1,7 @@
 ---
 name: bj
 description: blockjuice. Answers questions about blockchain data by building the sources, dbt models and reports it needs in this repo. Use for any on-chain question about wallets, tokens, protocols, volumes or balances, and to turn an answer into a PDF or spreadsheet.
-argument-hint: "<question> | report <slug> | source <chain> <table> | pipeline <name>"
+argument-hint: "<question> | report <slug> | source <chain> <table> | pipeline <name> | schedule <pipeline> <cron>"
 ---
 
 # blockjuice
@@ -19,6 +19,7 @@ Pick the workflow for the request and read it:
 | Data that a view function or RPC method returns, which no source reads yet | [workflows/state-source.md](workflows/state-source.md) |
 | Events, transfers or traces over a range of blocks that no source reads yet, or not far enough | [workflows/history-source.md](workflows/history-source.md) |
 | A reusable mart that no pipeline builds yet | [workflows/new-pipeline.md](workflows/new-pipeline.md) |
+| Change when a pipeline runs | [workflows/schedule-jobs.md](workflows/schedule-jobs.md) |
 
 Never stand in state reads for history ([references/choosing-the-data.md](references/choosing-the-data.md)). A protocol with no entry in `catalog/protocols/` gets one first: [workflows/explore-protocol.md](workflows/explore-protocol.md).
 

@@ -8,7 +8,7 @@ A state source reads values that a view function or RPC method returns at one bl
    uv run --project orchestration bj new-source <chain> <table> --like <package>
    ```
 
-   It copies the package, renames it, adds the dbt source with a staging stub, and adds the pair to `SOURCES`. Then run `pnpm install` in `ingestion/`.
+   It copies the package, sets its `name` and `table`, adds the dbt source with a staging stub, then runs `pnpm install` and `pnpm generate-sources` in `ingestion/`, which rewrites `ingestion/sources.json`, the list Dagster builds its `SOURCES` from. [new-pipeline.md](new-pipeline.md) says what it does in full, and what stays by hand: the mart and `PIPELINES`.
 
 2. Edit the copied `src/`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is a call's result as the chain returned it, and units, joins and rules go in dbt.
    - Give each call its block number in the `call` zod schema, so a call retried in a later run reads the same block. On EVM, `connect(env)` from `@ingestion/lib/evm` returns the client and `BLOCK_NUMBER` turned into one number for the run.
