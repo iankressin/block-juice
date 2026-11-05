@@ -17,7 +17,7 @@ A sixth source, `evm-erc20-transfers`, is a stream source that loads ERC-20 tran
 ```
 .
 ├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
-├── answers/<slug>/             # one answer per question: question.yaml, answer.json, answer.md, results/
+├── answers/<slug>/             # one answer per question, kept out of git: question.yaml, answer.json, answer.md, results/
 ├── catalog/protocols/<name>/   # contracts, events and ABIs of a protocol, proven on real logs
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
 ├── .env.example                # settings shared by all three tools
