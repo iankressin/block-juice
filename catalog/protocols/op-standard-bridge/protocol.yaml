@@ -1,8 +1,9 @@
 name: op-standard-bridge
 scope: >-
-  The Base side of the OP Stack standard bridge to Ethereum: the L2 events that say a withdrawal
-  to Ethereum started and a deposit from Ethereum finished. Only Base is covered. The Ethereum
-  side is listed under ethereum_counterparts only to read the L2 events; no source loads it.
+  The Base side of the OP Stack standard bridge to Ethereum, for any ERC-20 token: the L2 events
+  that say a withdrawal to Ethereum started and a deposit from Ethereum finished. Only Base is
+  covered. The Ethereum side is listed under ethereum_counterparts only to read the L2 events;
+  no source loads it.
 docs:
   - https://specs.optimism.io/protocol/predeploys.html
   - https://docs.base.org/base-chain/network-information/base-contracts
@@ -18,9 +19,11 @@ chains:
         address: "0x4200000000000000000000000000000000000010"
         deployed_block: 0
         role: >-
-          Burns SQD and emits ERC20BridgeInitiated (plus the legacy WithdrawalInitiated) when a
-          withdrawal starts. Mints SQD and emits ERC20BridgeFinalized (plus the legacy
-          DepositFinalized) when a deposit arrives.
+          Burns the Base token and emits ERC20BridgeInitiated (plus the legacy
+          WithdrawalInitiated) when a withdrawal starts. Mints the Base token and emits
+          ERC20BridgeFinalized (plus the legacy DepositFinalized) when a deposit arrives. A Base
+          token that is not an OptimismMintableERC20 is held and released instead of burned and
+          minted.
         source: >-
           "L2StandardBridge" on the Base contracts page and in the predeploy table of the OP
           specs. Genesis predeploy: the specs say predeploys "exist ... at predetermined
@@ -47,8 +50,8 @@ ethereum_counterparts:
   l1_standard_bridge:
     address: "0x3154Cf16ccdb4C6d922629664174b904d80F2C35"
     source: >-
-      "L1StandardBridge" for Base Mainnet on the Base contracts page. It escrows L1 SQD. It is
-      the _sender of every deposit's relayMessage call on Base.
+      "L1StandardBridge" for Base Mainnet on the Base contracts page. It holds the Ethereum
+      tokens deposited to Base. It is the _sender of every deposit's relayMessage call on Base.
   l1_cross_domain_messenger:
     address: "0x866E82a600A1414e583f7F13623F1aC5d58b0Afa"
     source: >-
@@ -58,18 +61,6 @@ ethereum_counterparts:
   optimism_portal:
     address: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e"
     source: '"OptimismPortal" for Base Mainnet on the Base contracts page.'
-tokens:
-  SQD:
-    ethereum: "0x1337420dED5ADb9980CFc35f8f2B054ea86f8aB1"
-    base: "0xd4554BEa546EFa83C1E6B389ecac40EA999B3E78"
-    ethereum_topic: "0x0000000000000000000000001337420ded5adb9980cfc35f8f2b054ea86f8ab1"
-    base_topic: "0x000000000000000000000000d4554bea546efa83c1e6b389ecac40ea999b3e78"
-    source: >-
-      ERC20BridgeFinalized in proof row 1 reports localToken 0xd4554bea... and remoteToken
-      0x1337420d.... The bridge mints an OptimismMintableERC20 only after checking that the
-      token's remote token is remoteToken, and the mint happened. On Ethereum, 0x1337420d...
-      moved the same 74779.6343139 SQD into the L1StandardBridge 2 minutes 56 seconds earlier
-      (see NOTES.md).
 events:
   ERC20BridgeInitiated:
     use: source
@@ -84,9 +75,10 @@ events:
       l1_counterpart: {param: to, at: data word 0, indexed: false}
       amount: {param: amount, at: data word 1}
     token_filter: >-
-      topic1 = tokens.SQD.base_topic. The bridge then requires remoteToken to be L1 SQD, so
-      topic2 adds nothing. Never filter on topic2 alone: other Base tokens can name L1 SQD as
-      their remote token.
+      topic1 = the Base token's address padded to 32 bytes. When the Base token is an
+      OptimismMintableERC20, the bridge requires remoteToken to be that token's remote token, so
+      topic2 adds nothing. Never filter on topic2 alone: other Base tokens can name the same
+      Ethereum token as their remote token.
   ERC20BridgeFinalized:
     use: source
     emitted_by: l2_standard_bridge
@@ -100,9 +92,10 @@ events:
       l2_user: {param: to, at: data word 0, indexed: false}
       amount: {param: amount, at: data word 1}
     token_filter: >-
-      topic1 = tokens.SQD.base_topic. The bridge then requires remoteToken to be L1 SQD, so
-      topic2 adds nothing. Never filter on topic2 alone: other Base tokens can name L1 SQD as
-      their remote token.
+      topic1 = the Base token's address padded to 32 bytes. When the Base token is an
+      OptimismMintableERC20, the bridge requires remoteToken to be that token's remote token, so
+      topic2 adds nothing. Never filter on topic2 alone: other Base tokens can name the same
+      Ethereum token as their remote token.
   WithdrawalInitiated:
     use: legacy twin of ERC20BridgeInitiated, do not load both
     emitted_by: l2_standard_bridge
