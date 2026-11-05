@@ -52,6 +52,8 @@ unit_tests:
           - {id: "26093754:52", event: Swap, block_number: 26093754, tx_hash: "0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0", contract: "0x11950d141ecb863f01007add7d1a342041227b58", sender: "0xbdb3ba9ffe392549e1f8658dd2630c141fdf47b6", recipient: "0xbdb3ba9ffe392549e1f8658dd2630c141fdf47b6", amount0: "60703901842778745531793408", amount1: "-96537242406164546"}
           # Made up: a Swap of a pool with no PoolCreated loaded is left out.
           - {id: "26093754:53", event: Swap, block_number: 26093754, contract: "0x00000000000000000000000000000000000000a3", amount0: "5", amount1: "-7"}
+          # Made up: a Swap that moved neither token trades nothing.
+          - {id: "26093754:54", event: Swap, block_number: 26093754, contract: "0x11950d141ecb863f01007add7d1a342041227b58", amount0: "0", amount1: "0"}
       - input: ref('stg_ethereum__uniswap_v3_transactions')
         rows:
           # The transaction of that proof row, whose sender NOTES.md names.
