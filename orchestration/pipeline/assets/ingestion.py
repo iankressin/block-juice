@@ -18,6 +18,9 @@ SOURCES = [
     ("solana", "sol_balances"),
     ("solana", "spl_balances"),
     ("bitcoin", "btc_balances"),
+    ("ethereum", "uniswap_v3"),
+    ("ethereum", "uniswap_v2"),
+    ("ethereum", "uniswap_v4"),
 ]
 
 
