@@ -21,11 +21,11 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 
 ## Staging
 
-`transformation/models/staging/<source>/`, one view per raw table. Cast each field out of `data` into a typed column and lowercase addresses. No joins and no rules.
+`transformation/models/staging/<source>/`, one view per raw table and kind of record. A raw table that holds logs and transactions gets `stg_<chain>__<table>` for its logs and `stg_<chain>__<table>_transactions`. Cast each field out of `data` into a typed column and lowercase addresses. No joins and no rules.
 
 ## Intermediate
 
-`transformation/models/intermediate/<pipeline>/`. Joins and rules live here: swaps joined to their pools, sign conventions, buy or sell, token in and out, deduplication, units. Each version gets its own model with its own rules, such as `int_uniswap_v3_trades`, which brings its rows into the mart's shape. Test each rule with a dbt unit test built from a real log in the protocol's catalog `NOTES.md`.
+`transformation/models/intermediate/<pipeline>/`. Joins and rules live here: swaps joined to their pools, sign conventions, buy or sell, token in and out, deduplication, units. Each version gets its own model with its own rules, named `int_<chain>_<protocol>_<version>_<thing>`, such as `int_ethereum_uniswap_v3_trades`, which brings its rows into the mart's shape. Test each rule with a dbt unit test built from a real log in the protocol's catalog `NOTES.md`.
 
 ## Marts
 
@@ -42,7 +42,7 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 | Which contracts, blocks and events to fetch | ingestion, one source per protocol version |
 | Decoding a log with its ABI | ingestion |
 | Loading the transactions that logs came from | ingestion, as their own records |
-| Joining a log to its transaction, such as for `tx.from` | staging or intermediate |
+| Joining a log to its transaction, such as for `tx.from` | intermediate |
 | Casting a field, lowercasing an address | staging |
 | Joining swaps to pools, finding a pool's tokens | intermediate |
 | Sign rules, buy or sell, token in and out | intermediate, one model per version |
