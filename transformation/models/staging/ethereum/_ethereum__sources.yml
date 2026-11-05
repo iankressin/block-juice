@@ -20,3 +20,18 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: uniswap_v3
+        identifier: ethereum_uniswap_v3
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: uniswap_v2
+        identifier: ethereum_uniswap_v2
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: uniswap_v4
+        identifier: ethereum_uniswap_v4
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

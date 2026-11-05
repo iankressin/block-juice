@@ -20,5 +20,8 @@ models:
       # Views, not ephemeral, so each chain's rows show up as their own step in Dagster.
       balances:
         +materialized: view
+      # Views, so each protocol version's rows show up as their own step in Dagster.
+      dex:
+        +materialized: view
     marts:
       +materialized: table
