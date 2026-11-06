@@ -149,8 +149,8 @@ def parser() -> argparse.ArgumentParser:
     dev = commands.add_parser(
         "dev",
         help="bj install, then start the compose stack, check it, and run dagster dev",
-        description="Runs bj install, then docker compose up -d, and waits for warehouse-init to set up the "
-        "warehouse. Then runs the checks of bj doctor, less Dagster's port, and replaces bj with dagster dev in "
+        description="Runs bj install, then docker compose up -d, which returns once warehouse-init has set up "
+        "the warehouse. Then runs the checks of bj doctor, less Dagster's port, and replaces bj with dagster dev in "
         "orchestration/, so Ctrl-C stops Dagster. Exits 2 when port 3000 is in use or docker or pnpm is missing, "
         "and 1 when a step or a check failed, without starting Dagster.",
     )

@@ -89,7 +89,7 @@ uv run --project orchestration bj dev
 2. Runs `pnpm install --frozen-lockfile` in `ingestion/`.
 3. Runs `dbt parse`, which writes `transformation/target/manifest.json`. Dagster needs that file to load its assets.
 
-`bj dev` then runs `docker compose up -d`, waits for `warehouse-init` to set up the warehouse, and runs the checks of `bj doctor` except Dagster's port, which stays closed until Dagster starts. If none fails, it hands the terminal to `dagster dev` in `orchestration/`, with `.env` loaded. Ctrl-C stops Dagster and leaves the stack up; `docker compose down` stops the stack. Run `bj install` alone to set up without starting anything. Both commands are safe to run again.
+`bj dev` then runs `docker compose up -d`, which returns once `warehouse-init` has set up the warehouse, and runs the checks of `bj doctor` except Dagster's port, which stays closed until Dagster starts. If none fails, it hands the terminal to `dagster dev` in `orchestration/`, with `.env` loaded. Ctrl-C stops Dagster and leaves the stack up; `docker compose down` stops the stack. Run `bj install` alone to set up without starting anything. Both commands are safe to run again.
 
 `uv run --project orchestration bj doctor` checks the setup: the env files and their keys, the ports, the warehouse, eRPC and Dshackle, and the tool versions.
 
@@ -134,7 +134,7 @@ uv run --project orchestration bj --help
 | `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
 | `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
 | `bj install` | Sets up a checkout and starts nothing: copies each missing `.env` from its `.env.example` and checks them, runs `pnpm install --frozen-lockfile` in `ingestion/`, and runs `dbt parse`. Never overwrites an `.env`. Exits 2 when pnpm is missing, and 1 when an `.env` lacks a required key or pnpm fails. |
-| `bj dev` | Runs `bj install`, starts the stack with `docker compose up -d`, waits for `warehouse-init`, runs the checks of `bj doctor` less Dagster's port, then hands over to `dagster dev`. Exits 2 when port 3000 is in use or a tool is missing, and 1 when a step or check failed. |
+| `bj dev` | Runs `bj install`, starts the stack with `docker compose up -d`, runs the checks of `bj doctor` less Dagster's port, then hands over to `dagster dev`. Exits 2 when port 3000 is in use or a tool is missing, and 1 when a step or check failed. |
 | `bj doctor [--copy-env]` | Checks the local setup: `.env` and each source's `.env` against their `.env.example` (keys by name, never values), the compose ports, the warehouse, the eRPC and Dshackle health endpoints, and the tool versions `mise.toml` pins. `--copy-env` copies `.env.example` to each source `.env` that is missing. Exits 1 when a check failed. |
 | `bj coverage [<source>.<table>]` | Prints the blocks each history source has loaded: `START_BLOCK` to the cursor Pipes keeps in `raw._sync`, and the addresses it read. |
 | `bj check <slug> <name> <passed\|failed> <detail>` | Records a check the agent ran itself, such as a cross-check against Portal, in `answer.json`. Exits 1 when it failed. |

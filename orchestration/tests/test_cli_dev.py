@@ -9,7 +9,6 @@ from test_cli_doctor import Services
 from test_cli_install import NEXT, PNPM, Tools, make_repo, without_root_settings
 
 UP = "docker compose up -d"
-WAIT = "docker compose wait warehouse-init"
 
 
 class Execed(Exception):
@@ -59,7 +58,6 @@ def test_installs_starts_the_stack_then_execs_dagster_dev_from_orchestration(rep
         (PNPM, repo / "ingestion"),
         ("dbt parse", repo / "transformation"),
         (UP, repo),
-        (WAIT, repo),
     ]
     assert execs == [("dagster", ["dagster", "dev"], (repo / "orchestration").resolve())]
     out = capsys.readouterr().out
@@ -67,15 +65,15 @@ def test_installs_starts_the_stack_then_execs_dagster_dev_from_orchestration(rep
     assert NEXT not in out
 
 
-@pytest.mark.parametrize("failing", [UP, WAIT])
-def test_a_failed_compose_command_exits_1_and_never_starts_dagster(repo, tools, execs, capsys, failing):
-    tools.failing[failing] = (3, "warehouse-init exited with code 3\n")
+def test_a_failed_compose_up_exits_1_and_never_starts_dagster(repo, tools, execs, capsys):
+    tools.failing[UP] = (1, "service \"warehouse-init\" didn't complete successfully: exit 3\n")
 
     assert main(["dev"]) == 1
 
     assert execs == []
-    assert tools.ran[-1] == (failing, repo)
-    assert f"`{failing}` exited with code 3:\nwarehouse-init exited with code 3" in capsys.readouterr().out
+    assert tools.ran[-1] == (UP, repo)
+    out = capsys.readouterr().out
+    assert f"`{UP}` exited with code 1:\nservice \"warehouse-init\" didn't complete successfully: exit 3" in out
 
 
 def test_a_doctor_fail_exits_1_and_never_starts_dagster(repo, tools, services, execs, capsys):
