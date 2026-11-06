@@ -82,9 +82,9 @@ export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
       );
 
     return evmPortalStream({
-      id: `${chain}-erc20-transfers`,
+      id: `${this.name}_${this.table}`,
       portal,
-      logger: logger.child({ source: chain, table: "erc20_transfers" }),
+      logger: logger.child({ source: this.name, table: this.table }),
       outputs: wallets
         ? { incoming: transfers({ to: wallets }), outgoing: transfers({ from: wallets }) }
         : { all: transfers({}) },
