@@ -78,6 +78,17 @@ test("a record clears the dead letter of the call it answers, under its own row 
   assert.deepEqual(await table.backlog(), { pending: 0, parked: 0 });
 });
 
+test("a successful call with no records clears its dead letter", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [], failed: [failure("a")] });
+
+  await table.load({ records: [], failed: [], succeededCallIds: ["a"] });
+
+  assert.deepEqual((await db.query("select id from raw.test_wallets")).rows, []);
+  assert.deepEqual(await table.backlog(), { pending: 0, parked: 0 });
+});
+
 test("a dead letter whose call no longer parses is parked with the reason, and the rest are retried", async (t) => {
   const { db, warehouse } = await pgliteWarehouse(t);
   const table = await warehouse.open("test_wallets");

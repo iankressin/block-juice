@@ -17,6 +17,17 @@ models:
       - name: id
         data_tests: [unique, not_null]
 
+  - name: int_binance_token_prices
+    description: Binance candles in the shape token_prices reads.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: int_coinbase_token_prices
+    description: Coinbase candles in the shape token_prices reads.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+
 unit_tests:
   - name: a_chainlink_round_is_priced_by_its_feed
     description: >-

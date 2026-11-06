@@ -29,7 +29,7 @@ When something breaks, you can see it. `bj doctor` checks your env and services 
 | DEX activity | Uniswap v2/v3/v4 → `analytics.dex_trades` |
 | Address labels | Code + exchange seeds → `analytics.address_labels` |
 | Token metadata | Name, symbol and decimals of listed ERC-20 tokens on Ethereum, Arbitrum, Base → `analytics.tokens` |
-| Token prices | Binance candles for any listed token → `analytics.token_prices`; Chainlink rounds on Ethereum, Arbitrum, Base → `analytics.oracle_prices` |
+| Token prices | Binance and Coinbase candles for any listed token → `analytics.token_prices`; Chainlink rounds on Ethereum, Arbitrum, Base → `analytics.oracle_prices` |
 | How it runs | TypeScript extract/load → dbt → Dagster, plus Docker for the warehouse, eRPC, Dshackle and monitoring |
 | How you drive it | `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`, …) and the blockjuice skill |
 
