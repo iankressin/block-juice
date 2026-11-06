@@ -1,5 +1,5 @@
 -- One ERC20BridgeInitiated or ERC20BridgeFinalized log of Base's L2StandardBridge, as the
--- base-op-standard-bridge source loaded it. Field meanings are in
+-- evm-op-standard-bridge source loaded it. Field meanings are in
 -- catalog/protocols/op-standard-bridge/NOTES.md. amount is in the token's base units.
 select
     id,
