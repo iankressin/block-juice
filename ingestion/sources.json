@@ -34,6 +34,11 @@
     "package": "base-op-standard-bridge"
   },
   {
+    "name": "binance",
+    "table": "candles",
+    "package": "binance-candles"
+  },
+  {
     "name": "bitcoin",
     "table": "btc_balances",
     "package": "bitcoin-btc-balances"
