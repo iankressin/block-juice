@@ -4,7 +4,7 @@
 
 If you advise funds, treasuries, or protocol teams, you already know the awkward middle of on-chain work: explorers are great for a screenshot, shared analytics platforms are great until the query, the join, or the retention policy isn’t yours. BlockJuice is the other path. It runs in **your** environment, loads chain data into **your** Postgres, transforms it with dbt, and schedules the work with Dagster — so balances, transfers, trades, and labels live next to the rest of your stack, under keys and policies you control.
 
-The point isn’t another indexer to babysit. It’s a readable pipeline a consultant can stand up, extend, and hand to a client without apologizing for a black box.
+The point isn’t another indexer to babysit. It’s a readable pipeline a analyst can stand up, extend, and hand to a client without apologizing for a black box.
 
 ## Why this makes life easier
 
@@ -53,14 +53,14 @@ Open http://localhost:3000, materialize what you need, then ask a question with 
 4. **Ask the business question** in Claude Code; get an answer folder with checks and an optional report.
 5. **When the brief changes**, add a source, a chain, or [your own pipeline](#add-your-own-pipeline) — or let the [skill](#the-skill-that-ships-with-it) walk you through it.
 
-That’s the UX bar: a consultant should feel oriented in an afternoon, not after a week of folklore.
+That’s the UX bar: a analyst should feel oriented in an afternoon, not after a week of folklore.
 
 
 ## The skill that ships with it
 
 BlockJuice includes a Claude Code skill at `.claude/skills/blockjuice/` (slash commands `/bj` and `/blockjuice`).
 
-It is how a consultant drives the stack without memorizing every folder:
+It is how a analyst drives the stack without memorizing every folder:
 
 - **Answer a question** — scopes the ask, finds or builds the marts, writes a dbt analysis, runs checks, and leaves `answers/<slug>/` (`question.yaml`, `answer.json`, `answer.md`, `results/`).
 - **Report** — turns that answer into XLSX, PDF, Word, or a Google Doc via `bj report`, from **your** warehouse rows.
@@ -92,4 +92,4 @@ Orchestration tests fail if an asset isn’t on any scheduled pipeline — that 
 
 ## Status
 
-BlockJuice is under active development. Today the framework **is** this repository: clone it, configure `.env`, own the warehouse. We’re designing thinner packaging for customer apps; the contracts consultants touch (`name`/`table`, mart shapes, `bj`) are meant to stay stable as that lands.
+BlockJuice is under active development. Today the framework **is** this repository: clone it, configure `.env`, own the warehouse. We’re designing thinner packaging for customer apps; the contracts analysts touch (`name`/`table`, mart shapes, `bj`) are meant to stay stable as that lands.
