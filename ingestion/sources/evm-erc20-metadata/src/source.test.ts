@@ -117,6 +117,19 @@ test("decodes a string reply, and a bytes32 reply without its zero padding", asy
   });
 });
 
+test("queues a truncated string reply for retry instead of decoding it as bytes32", async (t) => {
+  const truncatedString = `0x${"0".repeat(62)}20${"0".repeat(63)}1`;
+  const { url } = await node(
+    t,
+    answering({ [`5:${usdc}`]: { name: truncatedString, symbol: symbol("USDC"), decimals: decimals(6) } }),
+  );
+
+  const batch = await fetchMetadata(clientAt(url), metadataCallsAt(5, [usdc]));
+
+  assert.deepEqual(batch.records, []);
+  assert.deepEqual(batch.failed.map(({ id }) => id), [`5:${usdc}`]);
+});
+
 test("drops zero bytes inside a string, and records null for a name that is only zero bytes", async (t) => {
   const { url } = await node(
     t,

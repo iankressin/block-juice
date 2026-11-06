@@ -76,7 +76,8 @@ function text(functionName: "name" | "symbol", data: Hex | null): string | null 
   let value: string;
   try {
     value = decodeFunctionResult({ abi: erc20Abi, functionName, data });
-  } catch {
+  } catch (error) {
+    if (data.length !== 66) throw error;
     value = hexToString(decodeFunctionResult({ abi: erc20Abi_bytes32, functionName, data }));
   }
   return value.replaceAll("\u0000", "") || null;
