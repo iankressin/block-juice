@@ -1,37 +1,39 @@
 # BlockJuice
 
-**A self-hosted ELT framework and warehouse for blockchain data you can trust — and rerun.**
+A self-hosted ELT framework and warehouse for blockchain data. You can trace any number it gives you back to raw rows, and rebuild it.
 
-If you advise funds, treasuries, or protocol teams, you already know the awkward middle of on-chain work: explorers are great for a screenshot, shared analytics platforms are great until the query, the join, or the retention policy isn’t yours. BlockJuice is the other path. It runs in **your** environment, loads chain data into **your** Postgres, transforms it with dbt, and schedules the work with Dagster — so balances, transfers, trades, and labels live next to the rest of your stack, under keys and policies you control.
+If you advise funds, treasuries or protocol teams, you know where on-chain work gets awkward. Explorers are fine for a quick look. Shared analytics platforms work until you need to own the query, the join or how long the data is kept.
 
-The point isn’t another indexer to babysit. It’s a readable pipeline a analyst can stand up, extend, and hand to a client without apologizing for a black box.
+BlockJuice runs in your environment. It loads chain data into your Postgres, transforms it with dbt and schedules the work with Dagster. Balances, transfers, trades and labels sit next to the rest of your data, under keys and policies you set.
 
-## Why this makes life easier
+The result is a pipeline an analyst can read, change and hand to a client. Every step is in the repo for anyone to check.
 
-**You keep the data.** Raw rows, marts, run logs, and answer artifacts stay in the warehouse and repo you operate. No “export from the SaaS” step when diligence asks how a number was built.
+## Why
 
-**You ask in plain language, get a checked answer.** The [skill that ships with the repo](#the-skill-that-ships-with-it) (`/bj <question>`) maps the ask onto marts (or builds what’s missing), runs analyses through the `bj` CLI, writes `answers/<slug>/` with the value, checks, and method — then optional PDF, spreadsheet, or Google Doc. Question → warehouse → shareable report is the product UX, not a side script.
+You keep the data. Raw rows, marts, run logs and answers live in a warehouse and repo you run. When an auditor or a client asks how a number was built, you can show them the model and the run that produced it.
 
-**You extend without inventing a platform.** Need another wallet list, another EVM chain, another protocol? Copy a source with `bj new-source`, regenerate `sources.json`, follow the chain-add pattern in dbt, schedule a pipeline. Call sources and stream sources are named in the [glossary](GLOSSARY.md); dead letters and cursors are already in the shared library. The framework absorbs the boring glue so you spend time on the question.
+You can ask in plain language. The repo's [Claude Code skill](#claude-code-skill) (`/bj <question>`) maps the question onto marts, and builds any that are missing. It runs the analysis through the `bj` CLI and writes `answers/<slug>/` with the value, the checks and the method. From there it can make a PDF, a spreadsheet or a Google Doc.
 
-**You can see when it broke.** `bj doctor` checks env and infra before you debug in the dark. Grafana and the `ops.*` run log show ingestion and dbt together. Failed calls park as dead letters instead of silently vanishing.
+Adding coverage doesn't mean building a platform. For another wallet list, EVM chain or protocol, copy a source with `bj new-source`, regenerate `sources.json`, add the chain in dbt (see [transformation/README.md](transformation/README.md)) and schedule a pipeline. The [glossary](GLOSSARY.md) explains call sources and stream sources. The shared library already handles cursors and dead letters, so you can spend your time on the question.
 
-## What you get
+When something breaks, you can see it. `bj doctor` checks your env and services before you start debugging. Grafana and the `ops.*` run log show ingestion and dbt side by side. The library keeps failed calls as dead letters instead of dropping them.
 
-| You care about | What ships |
+## What
+
+| You need | What ships |
 |---|---|
 | Point-in-time balances | ETH, ERC-20, SOL, SPL, BTC → `analytics.latest_balances` |
 | Transfer history | ERC-20 on Ethereum, Arbitrum, Base → `analytics.erc20_transfers` |
 | DEX activity | Uniswap v2/v3/v4 → `analytics.dex_trades` |
 | Address labels | Code + exchange seeds → `analytics.address_labels` |
-| How it runs | TypeScript extract/load → dbt → Dagster, plus Docker for warehouse, eRPC, Dshackle, and monitoring |
+| How it runs | TypeScript extract/load → dbt → Dagster, plus Docker for the warehouse, eRPC, Dshackle and monitoring |
 | How you drive it | `bj` CLI (`doctor`, `run`, `answer`, `report`, `new-source`, …) and the blockjuice skill |
 
-Under the hood it’s ordinary software engineering for data: typed sources, tests, schedules, and docs a teammate can follow. Details live in [docs/architecture.md](docs/architecture.md).
+The code is ordinary software engineering: typed sources, tests, schedules and docs a teammate can follow. [docs/architecture.md](docs/architecture.md) has the details.
 
 ## Quick start
 
-Needs Node 24 and [pnpm](https://pnpm.io) (pinned in `mise.toml`), [uv](https://docs.astral.sh/uv/), and Docker.
+You need Node 24 and [pnpm](https://pnpm.io) (both pinned in `mise.toml`), [uv](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 cp .env.example .env
@@ -43,53 +45,52 @@ set -a && source .env && set +a
 cd orchestration && uv run dagster dev
 ```
 
-Open http://localhost:3000, materialize what you need, then ask a question with `/bj` or follow [Ask a question](docs/architecture.md#ask-a-question). If something’s off, start with `bj doctor` — not a scavenger hunt through five `.env` files.
+Open http://localhost:3000 and materialize the assets you need. Then ask a question with `/bj`, or read [Ask a question](docs/architecture.md#ask-a-question) to see what the skill does and the `bj` commands behind it. If something looks wrong, run `bj doctor` before anything else.
 
-## A day with BlockJuice
+## How you use it
 
-1. **Stand up the stack** once (`docker compose`, `bj doctor`, Dagster UI).
-2. **Point sources at the wallets and tokens that matter** (`addresses.json`, chain folders for multi-chain packages).
-3. **Materialize a pipeline** (balances, transfers, dex, labels) on a schedule you own.
-4. **Ask the business question** in Claude Code; get an answer folder with checks and an optional report.
-5. **When the brief changes**, add a source, a chain, or [your own pipeline](#add-your-own-pipeline) — or let the [skill](#the-skill-that-ships-with-it) walk you through it.
+1. Set up the stack once: `docker compose`, `bj doctor`, the Dagster UI.
+2. Point sources at the wallets and tokens you care about, in each source's `addresses.json`. A source that covers several chains keeps one per chain under `chains/<chain>/`.
+3. Materialize a pipeline (balances, transfers, dex or labels) on a schedule you choose.
+4. Ask the business question in Claude Code. You get an answer folder with its checks, and a report if you want one.
+5. When the brief changes, add a source, a chain or [your own pipeline](#add-your-own-pipeline). The [skill](#claude-code-skill) can walk you through any of these.
 
-That’s the UX bar: a analyst should feel oriented in an afternoon, not after a week of folklore.
+A new analyst should be able to get through these steps in an afternoon.
 
+## Claude Code skill
 
-## The skill that ships with it
+BlockJuice includes a Claude Code skill at `.claude/skills/blockjuice/`. Start it with `/bj` or `/blockjuice`. It lets an analyst run the stack without first learning every folder. It can:
 
-BlockJuice includes a Claude Code skill at `.claude/skills/blockjuice/` (slash commands `/bj` and `/blockjuice`).
+- answer a question: scope it, find or build the marts, write a dbt analysis, run checks and write `answers/<slug>/` (`question.yaml`, `answer.json`, `answer.md`, `results/`)
+- turn an answer into XLSX, PDF, Word or a Google Doc with `bj report`, using rows from your warehouse
+- add a state or history source (a call source or a stream source) when the data isn't loaded yet
+- add a pipeline when you need a reusable mart that no schedule builds yet
+- explore a protocol, writing `catalog/protocols/<name>/` from real logs before anyone writes SQL against it
 
-It is how a analyst drives the stack without memorizing every folder:
-
-- **Answer a question** — scopes the ask, finds or builds the marts, writes a dbt analysis, runs checks, and leaves `answers/<slug>/` (`question.yaml`, `answer.json`, `answer.md`, `results/`).
-- **Report** — turns that answer into XLSX, PDF, Word, or a Google Doc via `bj report`, from **your** warehouse rows.
-- **New state or history source** — walks the call-source / stream-source path when the data isn’t loaded yet.
-- **New pipeline** — when you need a reusable mart that no schedule builds yet.
-- **Explore a protocol** — writes `catalog/protocols/<name>/` from real logs before you invent SQL.
-
-Mechanical steps go through the `bj` CLI so the same checks run for a human or an agent. Sovereignty stays obvious: answers and reports are files and warehouse tables you own, not a rented dashboard. Start at `.claude/skills/blockjuice/SKILL.md`.
+The skill runs every mechanical step through the `bj` CLI, so a person and an agent get the same checks. Answers and reports end up as files and warehouse tables you own. To see how the skill works, start at `.claude/skills/blockjuice/SKILL.md`.
 
 ## Add your own pipeline
 
 A **pipeline** is a mart folder plus everything it reads (sources and models), run as one Dagster job on its own cron.
 
+The easiest way to build one is to ask the [Claude Code skill](#claude-code-skill). Its new-pipeline workflow (`.claude/skills/blockjuice/workflows/new-pipeline.md`) has every step and runs them for you. To do it by hand:
+
 1. Add mart models under `transformation/models/marts/<pipeline>/`, and any models only that pipeline needs under `transformation/models/intermediate/<pipeline>/`. Staging stays per source under `staging/<source>/`.
 2. Register the name and schedule in `PIPELINES` in `orchestration/pipeline/schedules.py`.
 3. If you need new raw data first, add a source (`bj new-source …`, see [Add a source](docs/architecture.md#add-a-source)), then point the mart at its staging models.
-4. Materialize once in Dagster (or `bj run <pipeline>`), confirm tests pass, and let the schedule take it from there.
+4. Materialize once in Dagster (or `bj run <pipeline>`) and confirm the tests pass. The schedule runs it from then on.
 
-Orchestration tests fail if an asset isn’t on any scheduled pipeline — that keeps “we built it but nobody runs it” from shipping. Full steps: [architecture — Add a pipeline](docs/architecture.md#add-a-pipeline). The skill’s new-pipeline workflow follows the same path.
+Orchestration tests fail if an asset belongs to no scheduled pipeline, so nothing ships that never runs. [Add a pipeline](docs/architecture.md#add-a-pipeline) has the full steps.
 
 ## Docs
 
-| Doc | When you need it |
+| Doc | Read it for |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Layout, data flow, CLI reference, monitoring, adding sources and pipelines |
-| [GLOSSARY.md](GLOSSARY.md) | Shared language: source, stream source, call, record, batch, run, dead letter |
-| [transformation/README.md](transformation/README.md) | dbt models and adding a chain to balances |
-| `.claude/skills/blockjuice/` | Question → mart → answer → report workflows |
+| [GLOSSARY.md](GLOSSARY.md) | Terms: source, stream source, call, record, batch, run, dead letter |
+| [transformation/README.md](transformation/README.md) | dbt models, and adding a chain to balances |
+| `.claude/skills/blockjuice/` | The skill's workflows, from question to report |
 
 ## Status
 
-BlockJuice is under active development. Today the framework **is** this repository: clone it, configure `.env`, own the warehouse. We’re designing thinner packaging for customer apps; the contracts analysts touch (`name`/`table`, mart shapes, `bj`) are meant to stay stable as that lands.
+BlockJuice is in active development. For now the framework is this repository: clone it, fill in `.env` and run your own warehouse. We're working on thinner packaging for customer apps. The parts analysts touch (`name`/`table`, mart shapes, `bj`) should stay the same when it ships.
