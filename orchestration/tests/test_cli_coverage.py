@@ -10,7 +10,7 @@ from pipeline.cli.new_source import SOURCES_FILE, read_sources
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
 USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-SQD = "0x1337420ded5adb9980cfc35f8f2b054ea86f8ab1"
+UNI = "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0"
 ADDRESSES = json.dumps({"wallets": [WALLET], "tokens": [USDC]})
 
 
@@ -64,14 +64,14 @@ def test_each_chain_of_an_evm_package_reads_its_own_folder(repo, monkeypatch):
     folder = repo / "ingestion" / "sources" / "evm-erc20-transfers" / "chains" / "arbitrum"
     folder.mkdir(parents=True)
     (folder / ".env.example").write_text("START_BLOCK=500\n")
-    (folder / "addresses.json").write_text(json.dumps({"tokens": [SQD]}))
+    (folder / "addresses.json").write_text(json.dumps({"tokens": [UNI]}))
 
     read = coverage.read(repo, "arbitrum.erc20_transfers")
     assert (read.raw_table, read.start_block, read.start_block_file, read.filter) == (
         "raw.arbitrum_erc20_transfers",
         500,
         "ingestion/sources/evm-erc20-transfers/chains/arbitrum/.env.example",
-        {"tokens": [SQD]},
+        {"tokens": [UNI]},
     )
     assert coverage.read(repo, "ethereum.erc20_transfers").start_block == 100
     assert stream_sources(repo) == ["ethereum.erc20_transfers", "arbitrum.erc20_transfers"]
