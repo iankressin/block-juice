@@ -1,3 +1,5 @@
+-- Each address's net amount of the token over its windows: received minus sent, per chain and in total,
+-- most first. The zero address is left out: mints come from it and burns go to it.
 with transfers as (
     {{ token_transfers() }}
 ),

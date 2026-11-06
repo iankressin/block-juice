@@ -1,3 +1,6 @@
+-- The nodes of the token's transfer graph: each address with how many addresses it sent the token to and
+-- got it from, and the amount on those edges, most moved first. The same transfers as
+-- token_transfer_graph_by_edge.
 with transfers as (
     select from_address, to_address, value
     from ({{ token_transfers() }}) as t

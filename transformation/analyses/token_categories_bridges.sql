@@ -1,3 +1,5 @@
+-- Every move of the token between an L2 and Ethereum in its windows, oldest first: the L2 address and
+-- its kind, the Ethereum address, and the other L2 end of the move when bridge_pairs pairs it.
 -- Only moves through each chain's own bridge. The other_* columns come from bridge_pairs, which infers a
 -- pair from the same Ethereum address and amount.
 with moves as (

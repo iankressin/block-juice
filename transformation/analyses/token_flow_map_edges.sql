@@ -1,3 +1,6 @@
+-- The edges of the token's entity graph, most moved first: from one entity to another, per chain and
+-- category, with each end's group. An exchange's addresses and deposit addresses are one entity, a mint
+-- or burn's other end is bridge:<chain>, and a pair from bridge_pairs is an edge such as arbitrum>base.
 with classified as (
     {{ classified_transfers() }}
 ),

@@ -1,3 +1,5 @@
+-- Every address that is no exchange yet got the token from one exchange and sent it to another, most moved
+-- first: which exchanges it took from and paid into, and how much.
 with classified as (
     {{ classified_transfers() }}
 ),

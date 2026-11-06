@@ -1,3 +1,5 @@
+-- The token moved from each group of entity to each other: exchange, contract, eoa, bridge. Moves between
+-- an exchange's own addresses are left out.
 with classified as (
     {{ classified_transfers() }}
 ),

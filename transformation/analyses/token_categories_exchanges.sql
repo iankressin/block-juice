@@ -1,3 +1,5 @@
+-- Each exchange and every wallet that sent it the token or got the token from it, most moved first.
+-- wallet_kind says what the other side is: eoa, contract, or another exchange or its deposit address.
 -- An exchange includes its inferred deposit addresses, so a wallet that paid into a deposit address shows
 -- here, and moves between one exchange's own addresses do not.
 with classified as (

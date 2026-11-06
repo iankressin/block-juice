@@ -1,3 +1,5 @@
+-- The edges of the token's transfer graph: one row per sender and recipient, with the transfers and amount
+-- per chain and in total, most first. Transfers to self, mints and burns are left out.
 with transfers as (
     select chain, from_address, to_address, value
     from ({{ token_transfers() }}) as t

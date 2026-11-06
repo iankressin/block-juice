@@ -1,4 +1,7 @@
-{#- A side's kind comes from address_labels: exchange, contract or eoa. Two kinds come from the transfers
+{#- The transfers of var('token') in its windows, with what kind of address each side is and the
+    transfer's category.
+
+    A side's kind comes from address_labels: exchange, contract or eoa. Two kinds come from the transfers
     themselves: 'bridge' for the zero address, which mints come from and burns go to, and 'deposit' for an
     address that is no exchange yet sent every transfer it made in the window to the addresses of one
     exchange; it takes that exchange's name. A side with no label is 'unknown'.

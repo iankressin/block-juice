@@ -1,3 +1,6 @@
+-- Every pair of EOAs that sent the token from one to the other, most moved first: on one chain, and across
+-- chains when bridge_pairs pairs a withdrawal with a deposit and both L2 ends are EOAs. chain names the
+-- route of a cross-chain pair, such as arbitrum>base.
 -- EIP-7702 delegated EOAs count as EOAs.
 with classified as (
     {{ classified_transfers() }}
