@@ -2,16 +2,26 @@ version: 2
 
 models:
   - name: token_prices
-    description: One candle of one token against one quote asset at one interval, from Binance. Prices are in quote-asset units, volume in token units and quote_volume in quote-asset units.
+    description: >-
+      One candle of one token against one quote asset at one interval, from one exchange: Binance or
+      Coinbase. Prices are in quote-asset units, volume in token units and quote_volume in quote-asset
+      units.
     columns:
+      - name: exchange
+        description: The exchange the candle comes from.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [binance, coinbase]
       - name: token
-        description: The token's Binance ticker, such as UNI.
+        description: The token's ticker on the exchange, such as UNI.
         data_tests: [not_null]
       - name: quote
-        description: The asset the prices are in, such as USDT.
+        description: The asset the prices are in, such as USDT on Binance or USD on Coinbase.
         data_tests: [not_null]
       - name: interval
-        description: The candle's length, as Binance names it, such as 1h or 1d.
+        description: The candle's length, as Binance names it, such as 1h or 1d. Coinbase offers 1m, 5m, 15m, 1h, 6h and 1d.
         data_tests:
           - not_null
           - accepted_values:
@@ -39,11 +49,9 @@ models:
         description: How much of the token traded, in token units.
         data_tests: [not_null]
       - name: quote_volume
-        description: How much of the quote asset traded, in quote-asset units.
-        data_tests: [not_null]
+        description: How much of the quote asset traded, in quote-asset units. Null for Coinbase, which does not send it.
       - name: trades
-        description: How many trades the candle holds.
-        data_tests: [not_null]
+        description: How many trades the candle holds. Null for Coinbase, which does not send it.
   - name: oracle_prices
     description: >-
       One round of one oracle price feed, from Chainlink on Ethereum, Arbitrum and Base. price is the

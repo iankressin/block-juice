@@ -8,5 +8,6 @@
 - [ ] Token list
 - [ ] Token prices
     - [ ] Binance
+    - [ ] Coinbase
     - [ ] Chainlink oracles
 

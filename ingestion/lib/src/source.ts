@@ -19,6 +19,8 @@ export type Failed<C = unknown> = {
 export type Batch<C = unknown> = {
   records: RawRecord[];
   failed: Failed<C>[];
+  /** Successful calls can clear their dead letters even when they produced no records. */
+  succeededCallIds?: string[];
 };
 
 /** What a stream source's outputs must be: records, or named lists of them that load together. */
@@ -40,8 +42,9 @@ interface SourceBase<E> {
  *
  * `retry` holds the calls that failed in earlier runs, parsed with `call`. A source makes
  * them again next to its new calls. A failed call's `id` is the `callId` of the record it
- * would have produced, which is how a success clears its dead letter. A dead letter whose
- * call no longer parses is parked.
+ * would have produced, which is how a success clears its dead letter. A batch can also report
+ * successful call ids when a call produces no records. A dead letter whose call no longer
+ * parses is parked.
  */
 export interface Source<E, C> extends SourceBase<E> {
   call: z.ZodType<C>;
