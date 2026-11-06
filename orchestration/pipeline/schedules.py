@@ -10,6 +10,7 @@ PIPELINES = {
     "labels": "0 6 * * *",
     "bridges": "0 6 * * *",
     "prices": "0 6 * * *",
+    "tokens": "0 6 * * *",
 }
 
 jobs = [
