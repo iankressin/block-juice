@@ -57,6 +57,11 @@
     "package": "bitcoin-btc-balances"
   },
   {
+    "name": "coinbase",
+    "table": "candles",
+    "package": "coinbase-candles"
+  },
+  {
     "name": "ethereum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
