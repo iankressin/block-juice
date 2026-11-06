@@ -59,6 +59,12 @@ def _coverage(args: argparse.Namespace) -> int:
     return coverage.run(REPO_ROOT, args.source)
 
 
+def _dev(args: argparse.Namespace) -> int:
+    from pipeline.cli import dev
+
+    return dev.run(REPO_ROOT)
+
+
 def _doctor(args: argparse.Namespace) -> int:
     from pipeline.cli import doctor
 
@@ -139,6 +145,16 @@ def parser() -> argparse.ArgumentParser:
     )
     coverage.add_argument("source", metavar="<source>.<table>", nargs="?")
     coverage.set_defaults(run=_coverage)
+
+    dev = commands.add_parser(
+        "dev",
+        help="bj install, then start the compose stack, check it, and run dagster dev",
+        description="Runs bj install, then docker compose up -d, and waits for warehouse-init to set up the "
+        "warehouse. Then runs the checks of bj doctor, less Dagster's port, and replaces bj with dagster dev in "
+        "orchestration/, so Ctrl-C stops Dagster. Exits 2 when port 3000 is in use or docker or pnpm is missing, "
+        "and 1 when a step or a check failed, without starting Dagster.",
+    )
+    dev.set_defaults(run=_dev)
 
     doctor = commands.add_parser(
         "doctor",

@@ -48,8 +48,8 @@ OPTIONAL_KEYS = frozenset(
 )
 
 # The compose ports, each with the root .env variable that moves it and the default of both
-# infra/docker-compose.yml (${NAME:-default}) and this check. Dagster's is `dagster dev`'s own.
-PORTS = (
+# infra/docker-compose.yml (${NAME:-default}) and this check.
+COMPOSE_PORTS = (
     ("warehouse", "WAREHOUSE_PORT", 5432),
     ("erpc", "ERPC_PORT", 4000),
     ("erpc metrics", "ERPC_METRICS_PORT", 4001),
@@ -58,8 +58,10 @@ PORTS = (
     ("grafana", "GRAFANA_PORT", 3001),
     ("prometheus", "PROMETHEUS_PORT", 9090),
     ("pushgateway", "PUSHGATEWAY_PORT", 9091),
-    ("dagster", None, 3000),
 )
+# `dagster dev`'s own port, which no setting moves.
+DAGSTER_PORT = 3000
+PORTS = (*COMPOSE_PORTS, ("dagster", None, DAGSTER_PORT))
 # Root keys that docker compose (the ports and MONITOR_PASSWORD) and dbt (DBT_SCHEMA, in
 # transformation/profiles.yml) default when unset. Not WAREHOUSE_PORT: dbt and bj read it with no default.
 ROOT_OPTIONAL_KEYS = (
@@ -174,9 +176,9 @@ def port_open(port: int) -> bool:
         return False
 
 
-def check_ports(settings: dict[str, str | None]) -> list[Check]:
+def check_ports(settings: dict[str, str | None], ports: tuple[tuple[str, str | None, int], ...]) -> list[Check]:
     checks = []
-    for name, key, default in PORTS:
+    for name, key, default in ports:
         port = port_of(settings, key, default)
         if port_open(port):
             checks.append(Check(PASS, f"port {port} ({name}) is open"))
@@ -264,11 +266,11 @@ def check_tools(repo_root: Path) -> list[Check]:
     return checks
 
 
-def run(repo_root: Path, copy_env: bool) -> int:
+def run(repo_root: Path, copy_env: bool, ports: tuple[tuple[str, str | None, int], ...] = PORTS) -> int:
     settings = root_settings(repo_root)
     checks = [
         *check_envs(repo_root, copy_env),
-        *check_ports(settings),
+        *check_ports(settings, ports),
         check_warehouse(),
         *check_healths(settings),
         *check_tools(repo_root),
