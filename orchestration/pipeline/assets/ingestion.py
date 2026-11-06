@@ -5,27 +5,20 @@ import subprocess
 
 import dagster as dg
 
-from pipeline.project import INGESTION_DIR
+from pipeline.project import INGESTION_DIR, REPO_ROOT
+from pipeline.sources import SOURCES_FILE, read_sources
 from pipeline.warehouse import count_dead_letters
 
-# (source name, table name) pairs. Each must match a package at ingestion/sources/<source>-<table>,
-# with underscores in the table name written as hyphens, and a source table in the dbt project;
-# dagster-dbt keys dbt sources the same way.
-SOURCES = [
-    ("ethereum", "eth_balances"),
-    ("ethereum", "erc20_balances"),
-    ("ethereum", "erc20_transfers"),
-    ("solana", "sol_balances"),
-    ("solana", "spl_balances"),
-    ("bitcoin", "btc_balances"),
-    ("ethereum", "uniswap_v3"),
-    ("ethereum", "uniswap_v2"),
-    ("ethereum", "uniswap_v4"),
-]
+# (source name, table name) pairs, from ingestion/sources.json: the `name` and `table` each package
+# exports, which `pnpm generate-sources` writes there. Each must match a source table in the dbt
+# project; dagster-dbt keys dbt sources the same way.
+ENTRIES = read_sources((REPO_ROOT / SOURCES_FILE).read_text())
+SOURCES = [(entry.name, entry.table) for entry in ENTRIES]
+PACKAGES = {(entry.name, entry.table): entry.package for entry in ENTRIES}
 
 
 def package_dir(source: str, table: str):
-    return INGESTION_DIR / "sources" / f"{source}-{table.replace('_', '-')}"
+    return INGESTION_DIR / "sources" / PACKAGES[(source, table)]
 
 
 PINO_LEVELS = {

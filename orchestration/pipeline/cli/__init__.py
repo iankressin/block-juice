@@ -122,17 +122,20 @@ def parser() -> argparse.ArgumentParser:
         help="the blocks and addresses each stream source has loaded",
         description="Prints, as JSON, each stream source's START_BLOCK and the file that sets it, the cursor "
         "Pipes keeps in the warehouse, its addresses.json as the filter, and covered: [START_BLOCK, cursor], "
-        "or null before its first run. A stream source is a SOURCES entry whose package's .env.example sets "
-        "START_BLOCK. With <source>.<table>, prints that source alone.",
+        "or null before its first run. A stream source is an entry of ingestion/sources.json whose package's "
+        ".env.example sets START_BLOCK. With <source>.<table>, prints that source alone.",
     )
     coverage.add_argument("source", metavar="<source>.<table>", nargs="?")
     coverage.set_defaults(run=_coverage)
 
     new_source = commands.add_parser(
         "new-source",
-        help="add a source: copy a source package, add its dbt source and its Dagster asset",
+        help="add a source: copy a source package, add its dbt source, regenerate ingestion/sources.json",
         description="Copies ingestion/sources/<package> to a new package for <source>.<table>, adds the table "
-        "to the dbt sources of <source> with a staging model, and adds the pair to SOURCES.",
+        "to the dbt sources of <source> with a staging model, then runs pnpm install and pnpm generate-sources "
+        "in ingestion/, which rewrites ingestion/sources.json, the list Dagster builds its SOURCES from. "
+        "Reading the source from a mart and scheduling it in PIPELINES stay hand steps: see Adding a chain "
+        "in transformation/README.md.",
     )
     new_source.add_argument("source")
     new_source.add_argument("table")
