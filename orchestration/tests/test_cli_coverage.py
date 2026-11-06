@@ -13,12 +13,12 @@ USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 UNI = "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0"
 ADDRESSES = json.dumps({"wallets": [WALLET], "tokens": [USDC]})
 TRANSFERS = {"name": "ethereum", "table": "erc20_transfers", "package": "evm-erc20-transfers", "settings": "chains/ethereum"}
-BALANCES = {"name": "ethereum", "table": "eth_balances", "package": "ethereum-eth-balances"}
+BALANCES = {"name": "ethereum", "table": "eth_balances", "package": "evm-eth-balances", "settings": "chains/ethereum"}
 
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
-    """A repo with one stream source, in a package that loads several chains, and one call source."""
+    """A repo with one stream source and one call source, each in a package that loads several chains."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
     for entry, env in ((TRANSFERS, "START_BLOCK=100\n"), (BALANCES, "BLOCK_NUMBER=latest\n")):

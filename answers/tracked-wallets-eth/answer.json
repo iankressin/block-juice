@@ -4,7 +4,7 @@
   "answered_at": "2026-11-04T19:31:18Z",
   "value": "3055.159790",
   "definitions": {
-    "tracked wallets": "The wallets in ingestion/sources/ethereum-eth-balances/addresses.json",
+    "tracked wallets": "The wallets in ingestion/sources/evm-eth-balances/chains/ethereum/addresses.json",
     "right now": "Each wallet's latest ETH balance reading"
   },
   "alternatives": [],

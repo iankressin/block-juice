@@ -1,38 +1,34 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { bitcoinBtcBalances } from "#src/source.ts";
 
-const packageDir = fileURLToPath(new URL("..", import.meta.url));
 const env = { DSHACKLE_URL: "http://127.0.0.1:1" };
 
-/** This package's source, imported from a copy of the package whose addresses.json holds `json`. */
-async function sourceWith(t: TestContext, json: string) {
+/** Runs the rest of the test from a folder whose addresses.json holds `json`, as a source runs from its package. */
+async function addressesHold(t: TestContext, json: string) {
   const dir = await mkdtemp(join(tmpdir(), "bitcoin-btc-balances-"));
-  t.after(() => rm(dir, { recursive: true }));
-  await cp(join(packageDir, "src"), join(dir, "src"), { recursive: true });
-  await cp(join(packageDir, "package.json"), join(dir, "package.json"));
-  await symlink(join(packageDir, "node_modules"), join(dir, "node_modules"));
+  const cwd = process.cwd();
+  t.after(async () => {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true });
+  });
   await writeFile(join(dir, "addresses.json"), json);
-  const copy: typeof import("#src/source.ts") = await import(
-    pathToFileURL(join(dir, "src", "source.ts")).href
-  );
-  return copy.bitcoinBtcBalances;
+  process.chdir(dir);
 }
 
-const firstBatch = (source: Awaited<ReturnType<typeof sourceWith>>) =>
-  source.extract(env, [])[Symbol.asyncIterator]().next();
+const firstBatch = () => bitcoinBtcBalances.extract(env, [])[Symbol.asyncIterator]().next();
 
 test("a bad address in addresses.json fails the run, not the import", async (t) => {
-  const source = await sourceWith(t, JSON.stringify({ wallets: ["not-an-address"] }));
-  await assert.rejects(firstBatch(source), {
+  await addressesHold(t, JSON.stringify({ wallets: ["not-an-address"] }));
+  await assert.rejects(firstBatch(), {
     message: "Invalid Bitcoin addresses:\n  not-an-address",
   });
 });
 
 test("malformed addresses.json fails the run, not the import", async (t) => {
-  const source = await sourceWith(t, '{ "wallets": [], }');
-  await assert.rejects(firstBatch(source), /addresses\.json/);
+  await addressesHold(t, '{ "wallets": [], }');
+  await assert.rejects(firstBatch(), /addresses\.json is not valid JSON/);
 });

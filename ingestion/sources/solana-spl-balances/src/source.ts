@@ -1,4 +1,4 @@
-import type { Source } from "@ingestion/lib";
+import { readJson, type Source } from "@ingestion/lib";
 import {
   createSolanaClient,
   solanaEnv,
@@ -21,7 +21,7 @@ export const solanaSplBalances: Source<SolanaEnv, BalanceCall> = {
   call: balanceCallSchema,
   async *extract(env, retry) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
+    const addresses = readJson("addresses.json");
     const wallets = validateSolanaAddressList(addresses.wallets);
     const mints = validateSolanaAddressList(addresses.mints);
     // The free RPCs that serve getTokenAccountsByOwner allow about 2 calls a second

@@ -2,6 +2,7 @@ import {
   finalizedHead,
   logger,
   portalClient,
+  readJson,
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
@@ -60,7 +61,7 @@ export const source: StreamSource<StandardBridgeEnv> = {
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
+    const addresses = readJson("addresses.json");
     const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
     const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
     const range = { from: env.START_BLOCK, to: Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal)) };

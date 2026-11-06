@@ -19,7 +19,7 @@ A question about now, answered from an existing mart:
 question: How much ETH do the tracked wallets hold right now?
 asked: 2026-11-04
 definitions:
-  tracked wallets: The wallets in ingestion/sources/ethereum-eth-balances/addresses.json
+  tracked wallets: The wallets in ingestion/sources/evm-eth-balances/chains/ethereum/addresses.json
   right now: Each wallet's latest balance reading
 window:
   chain: ethereum

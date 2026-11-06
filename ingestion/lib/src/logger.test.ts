@@ -12,7 +12,7 @@ function logWith(LOG_LEVEL: string) {
       "tsx",
       "--input-type=module",
       "--eval",
-      `const { logger } = await import("#src/logger.ts"); logger.debug("debug line"); logger.info("info line");`,
+      `import { logger } from "#src/logger.ts"; logger.debug("debug line"); logger.info("info line");`,
     ],
     {
       cwd: fileURLToPath(new URL("..", import.meta.url)),

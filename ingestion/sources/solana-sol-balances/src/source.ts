@@ -1,4 +1,4 @@
-import type { Source } from "@ingestion/lib";
+import { readJson, type Source } from "@ingestion/lib";
 import {
   createSolanaClient,
   solanaEnv,
@@ -21,7 +21,7 @@ export const solanaSolBalances: Source<SolanaEnv, BalanceCall> = {
   call: balanceCallSchema,
   async *extract(env, retry) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
+    const addresses = readJson("addresses.json");
     const wallets = validateSolanaAddressList(addresses.wallets);
     const rpc = createSolanaClient(env.SOLANA_RPC_URL);
     yield await fetchBalances(rpc, [...balanceCalls(wallets), ...retry]);
