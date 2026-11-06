@@ -1,4 +1,4 @@
-import { describeError, type Batch, type RawRecord } from "@ingestion/lib";
+import { describeError, logger, type Batch, type RawRecord } from "@ingestion/lib";
 import * as z from "zod";
 import { BinanceError, type BinanceClient, type Candle, type Clock } from "#src/binance.ts";
 
@@ -70,6 +70,8 @@ export const callId = (call: CandleCall) => `${call.symbol}:${call.interval}:${c
 /**
  * The open time of the market's first candle at or after `from`. It is where the market's
  * windows start, so none falls before a listing, and 3d and 1w windows stay on Binance's grid.
+ * When the read fails for any reason but an unknown market or a ban, it returns `from`: the
+ * market's windows still run, and any that fail wait as dead letters for the next run.
  */
 export async function firstOpenTime(
   binance: BinanceClient,
@@ -86,7 +88,12 @@ export async function firstOpenTime(
         `Binance has no market ${market.symbol} for token ${market.base_asset} against ${market.quote_asset}. Fix tokens.json.`,
       );
     }
-    throw new Error(`Could not read ${market.symbol}'s first candle: ${describeError(error)}`, { cause: error });
+    if (error instanceof BinanceError && error.banned) throw error;
+    logger.warn(
+      { symbol: market.symbol, error: describeError(error) },
+      "Could not read the market's first candle, so its windows start at START_TIME",
+    );
+    return from;
   }
   const [first] = candles;
   if (!first) {
@@ -128,6 +135,9 @@ export async function fetchWindows(
 ): Promise<Batch<CandleCall>> {
   const outcomes = await Promise.allSettled(
     calls.map(async (call) => {
+      // A candle still open when Binance answers still changes, even if it closes before the reply
+      // arrives, so only candles closed before the request count. The first run after that loads it.
+      const cutoff = clock.now();
       const candles = await binance.candles({
         symbol: call.symbol,
         interval: call.interval,
@@ -135,9 +145,7 @@ export async function fetchWindows(
         endTime: call.end_time,
         limit: WINDOW_CANDLES,
       });
-      // The open candle still changes. The first run after it closes loads it.
-      const now = clock.now();
-      return candles.filter((candle) => candle.close_time < now);
+      return candles.filter((candle) => candle.close_time < cutoff);
     }),
   );
   const batch: Batch<CandleCall> = { records: [], failed: [] };

@@ -252,15 +252,67 @@ test("a window whose request fails waits for the next run, and the others load",
   );
 });
 
-test("a ban fails the run", async (t) => {
+test("a ban fails the run, in the probe or in a window", async (t) => {
+  for (const limit of ["1", "1000"]) {
+    const url = await fakeBinance(t, {
+      markets: { UNIUSDT: hourly(LISTED, 10) },
+      reply: (query) =>
+        query.get("limit") === limit ? { status: 418, body: { code: -1003, msg: "Way too many requests." } } : undefined,
+    });
+    const source = await sourceWith(t, uniTokens, fakeClock(LISTED + 5 * HOUR));
+
+    await assert.rejects(run(source, envAt(url)), /banned this IP.*HTTP 418/, `limit ${limit}`);
+  }
+});
+
+test("a probe that fails starts the market's windows at START_TIME, and the other markets load as usual", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeBinance(t, {
+    markets: { UNIUSDT: hourly(LISTED, 10), BTCUSDT: hourly(LISTED, 10) },
+    reply: (query) =>
+      query.get("symbol") === "UNIUSDT" && query.get("limit") === "1"
+        ? { status: 500, body: { code: -1000, msg: "An unknown error occurred while processing the request." } }
+        : undefined,
+    requests,
+  });
+  const source = await sourceWith(t, { quote: "USDT", tokens: ["UNI", "BTC"] }, fakeClock(LISTED + 9 * HOUR + HOUR / 2));
+
+  const batches = await run(source, envAt(url));
+
+  // The two windows are requested at once, so they may arrive in either order.
+  assert.deepEqual(
+    requests.filter((request) => !request.endsWith("-")).sort(),
+    [`BTCUSDT ${LISTED}-${LISTED + 1000 * HOUR - 1}`, `UNIUSDT ${START}-${START + 1000 * HOUR - 1}`],
+  );
+  const records = batches.flatMap((batch) => batch.records);
+  for (const symbol of ["UNIUSDT", "BTCUSDT"]) {
+    assert.deepEqual(
+      records.filter(({ id }) => id.startsWith(symbol)).map(({ id }) => id),
+      Array.from({ length: 9 }, (_, i) => `${symbol}:1h:${LISTED + i * HOUR}`),
+    );
+  }
+  assert.deepEqual(batches.flatMap((batch) => batch.failed), []);
+});
+
+test("a candle that closes while Binance's reply is on its way is left for the next run", async (t) => {
+  // Candle 9 is open when the window is requested and has closed by the time the reply arrives.
+  let now = LISTED + 9 * HOUR + HOUR / 2;
+  const clock: Clock = { now: () => now, sleep: async (ms) => void (now += ms) };
   const url = await fakeBinance(t, {
     markets: { UNIUSDT: hourly(LISTED, 10) },
-    reply: (query) =>
-      query.get("limit") === "1000" ? { status: 418, body: { code: -1003, msg: "Way too many requests." } } : undefined,
+    reply: (query) => {
+      if (query.get("limit") === "1000") now = LISTED + 10 * HOUR + 60_000;
+      return undefined;
+    },
   });
-  const source = await sourceWith(t, uniTokens, fakeClock(LISTED + 5 * HOUR));
+  const source = await sourceWith(t, uniTokens, clock);
 
-  await assert.rejects(run(source, envAt(url)), /banned this IP.*HTTP 418/);
+  const batches = await run(source, envAt(url));
+
+  assert.deepEqual(
+    batches.flatMap((batch) => batch.records.map(({ id }) => id)),
+    Array.from({ length: 9 }, (_, i) => `UNIUSDT:1h:${LISTED + i * HOUR}`),
+  );
 });
 
 test("retried calls are made again, and a new call replaces its retried twin", async (t) => {
@@ -322,4 +374,11 @@ test("START_TIME takes an ISO date or datetime, and the rest have defaults", () 
   assert.equal(binanceCandles.env.parse({ START_TIME: "2026-10-01T02:00:00+02:00" }).START_TIME, midnight);
   assert.throws(() => binanceCandles.env.parse({ START_TIME: "yesterday" }), /ISO date or datetime/);
   assert.throws(() => binanceCandles.env.parse({ START_TIME: "2026-10-01", CANDLE_INTERVAL: "1M" }));
+});
+
+test("BINANCE_MAX_CONCURRENCY is at most 100, so a chunk fits in the weight left under the budget", () => {
+  const parse = (concurrency: string) =>
+    binanceCandles.env.parse({ START_TIME: "2026-10-01", BINANCE_MAX_CONCURRENCY: concurrency });
+  assert.equal(parse("100").BINANCE_MAX_CONCURRENCY, 100);
+  assert.throws(() => parse("101"));
 });

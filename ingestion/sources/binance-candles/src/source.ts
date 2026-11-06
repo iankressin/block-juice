@@ -26,7 +26,9 @@ const binanceEnv = z.object({
   BINANCE_API_URL: z.url().default("https://data-api.binance.vision"),
   CANDLE_INTERVAL: interval.default("1h"),
   START_TIME: startTime,
-  BINANCE_MAX_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  // A chunk sends this many requests of weight 2 at once after the weight check, so it must fit in the
+  // 1000 weight between the client's 5000 budget and Binance's limit of 6000.
+  BINANCE_MAX_CONCURRENCY: z.coerce.number().int().positive().max(100).default(5),
 });
 
 export type BinanceEnv = z.infer<typeof binanceEnv>;
