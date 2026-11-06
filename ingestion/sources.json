@@ -31,7 +31,8 @@
   {
     "name": "base",
     "table": "op_standard_bridge",
-    "package": "base-op-standard-bridge"
+    "package": "evm-op-standard-bridge",
+    "settings": "chains/base"
   },
   {
     "name": "bitcoin",
