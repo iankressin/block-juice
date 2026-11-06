@@ -33,12 +33,14 @@ unit_tests:
         - {id: "511075363:3", direction: from_ethereum, l2_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", ethereum_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "230535619012808833421"}
         - {id: "1:1", direction: from_ethereum, l2_address: "0x00000000000000000000000000000000000000aa", ethereum_address: "0x00000000000000000000000000000000000000cc", amount: 1}
   - name: only_gateway_logs_become_arbitrum_bridge_moves
+    description: A log from a contract outside the seed, and a withdrawal a gateway sent from itself, are dropped.
     model: int_arbitrum_token_bridge_transfers
     given:
       - input: ref('stg_arbitrum__token_bridge')
         rows:
           - {id: "1:1", event: DepositFinalized, contract: "0x096760f208390250649e3e8763348e783aef5562", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x00000000000000000000000000000000000000cc", to_address: "0x00000000000000000000000000000000000000aa", amount: 1}
           - {id: "2:1", event: DepositFinalized, contract: "0x00000000000000000000000000000000000000ee", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x00000000000000000000000000000000000000cc", to_address: "0x00000000000000000000000000000000000000aa", amount: 5}
+          - {id: "3:1", event: WithdrawalInitiated, contract: "0x096760f208390250649e3e8763348e783aef5562", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x096760f208390250649e3e8763348e783aef5562", to_address: "0x00000000000000000000000000000000000000cc", amount: 7}
       - input: ref('arbitrum_token_gateways')
         rows:
           - {address: "0x09e9222e96e7b4ae2a407b98d48e330053351eee", name: L2 ERC20 gateway}
