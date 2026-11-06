@@ -1,17 +1,19 @@
-{#- The transfers of var('token') in its windows, with what kind of address each side is and the
-    transfer's category.
-
-    A side's kind comes from address_labels: exchange, contract or eoa. Two kinds come from the transfers
-    themselves: 'bridge' for the zero address, which mints come from and burns go to, and 'deposit' for an
-    address that is no exchange yet sent every transfer it made in the window to the addresses of one
-    exchange; it takes that exchange's name. A side with no label is 'unknown'.
-
-    category is the first that fits: bridge (a mint or burn), exchange (either side is an exchange or a
-    deposit address), contract (either side is a contract), p2p (both sides are EOAs), else unknown.
-    A transfer from an address to itself is left out. -#}
-{%- macro classified_transfers() %}
+-- Every ERC-20 transfer in erc20_transfers except one from an address to itself, with what kind of address
+-- each side is, the entity each side belongs to, and the transfer's category.
+--
+-- A side's kind comes from address_labels: exchange, contract or eoa. Two kinds come from the transfers
+-- themselves: 'bridge' for the zero address, which mints come from and burns go to, and 'deposit' for an
+-- address that is no exchange yet sent every transfer it made on its chain, of any token, to the addresses
+-- of one exchange; it takes that exchange's name. A deposit address forwards every token it gets, so a
+-- transfer of another token elsewhere rules an address out. A side with no label is 'unknown'.
+--
+-- A side's entity is its exchange for an exchange or deposit address, bridge:<chain> for the zero address,
+-- and the address itself otherwise. Its group is its kind, with a deposit address counted as an exchange.
+--
+-- category is the first that fits: bridge (a mint or burn), exchange (either side is an exchange or a
+-- deposit address), contract (either side is a contract), p2p (both sides are EOAs), else unknown.
 with transfers as (
-    select * from ({{ token_transfers() }}) as t
+    select * from {{ ref('erc20_transfers') }}
     where from_address <> to_address
 ),
 
@@ -19,7 +21,6 @@ labels as (
     select chain, address, kind, exchange from {{ ref('address_labels') }}
 ),
 
--- Addresses whose every transfer out in the window went to one exchange's labelled addresses.
 deposits as (
     select t.chain, t.from_address as address, min(l.exchange) as exchange
     from transfers as t
@@ -54,7 +55,23 @@ sides as (
 )
 
 select
-    *,
+    chain, id, block_number, block_timestamp, tx_hash, log_index, token, from_address, to_address, value,
+    from_kind,
+    from_exchange,
+    case
+        when from_kind in ('exchange', 'deposit') then from_exchange
+        when from_kind = 'bridge' then 'bridge:' || chain
+        else from_address
+    end as from_entity,
+    case when from_kind = 'deposit' then 'exchange' else from_kind end as from_group,
+    to_kind,
+    to_exchange,
+    case
+        when to_kind in ('exchange', 'deposit') then to_exchange
+        when to_kind = 'bridge' then 'bridge:' || chain
+        else to_address
+    end as to_entity,
+    case when to_kind = 'deposit' then 'exchange' else to_kind end as to_group,
     case
         when 'bridge' in (from_kind, to_kind) then 'bridge'
         when from_kind in ('exchange', 'deposit') or to_kind in ('exchange', 'deposit') then 'exchange'
@@ -63,4 +80,3 @@ select
         else 'unknown'
     end as category
 from sides
-{%- endmacro %}

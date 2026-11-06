@@ -1,7 +1,7 @@
 -- The token's transfers in its windows by category and chain: transfers, amount, and how many addresses
--- sent and received. The categories are those of macros/classified_transfers.sql.
+-- sent and received. The categories are those of the classified_transfers mart.
 with classified as (
-    {{ classified_transfers() }}
+    {{ token_transfers(ref('classified_transfers')) }}
 )
 
 select

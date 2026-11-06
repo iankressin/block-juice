@@ -1,7 +1,9 @@
-{%- macro token_transfers() %}
+{#- The transfers of var('token') in its windows, read from `relation`: erc20_transfers unless given. -#}
+{%- macro token_transfers(relation=none) %}
+    {%- set relation = relation or ref('erc20_transfers') %}
     {%- for w in var('token').windows %}
-    select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value
-    from {{ ref('erc20_transfers') }}
+    select *
+    from {{ relation }}
     where chain = '{{ w.chain }}'
         and token = '{{ w.token | lower }}'
         and block_number between {{ w.blocks[0] }} and {{ w.blocks[1] }}

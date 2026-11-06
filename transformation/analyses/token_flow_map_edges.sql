@@ -2,35 +2,21 @@
 -- category, with each end's group. An exchange's addresses and deposit addresses are one entity, a mint
 -- or burn's other end is bridge:<chain>, and a pair from bridge_pairs is an edge such as arbitrum>base.
 with classified as (
-    {{ classified_transfers() }}
-),
-
--- Each transfer between entities: an exchange's addresses and deposit addresses are the exchange, a mint
--- or burn's zero address is the chain's bridge, any other address is itself.
-sides as (
-    select
-        chain,
-        category,
-        value,
-        case
-            when from_kind in ('exchange', 'deposit') then from_exchange
-            when from_kind = 'bridge' then 'bridge:' || chain
-            else from_address
-        end as source,
-        case when from_kind = 'deposit' then 'exchange' else from_kind end as source_group,
-        case
-            when to_kind in ('exchange', 'deposit') then to_exchange
-            when to_kind = 'bridge' then 'bridge:' || chain
-            else to_address
-        end as target,
-        case when to_kind = 'deposit' then 'exchange' else to_kind end as target_group
-    from classified
+    {{ token_transfers(ref('classified_transfers')) }}
 ),
 
 same_chain as (
-    select source, source_group, target, target_group, chain, category, sum(value) as value, count(*) as transfers
-    from sides
-    where source <> target
+    select
+        from_entity as source,
+        from_group as source_group,
+        to_entity as target,
+        to_group as target_group,
+        chain,
+        category,
+        sum(value) as value,
+        count(*) as transfers
+    from classified
+    where from_entity <> to_entity
     group by 1, 2, 3, 4, 5, 6
 ),
 

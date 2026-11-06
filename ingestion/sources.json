@@ -35,6 +35,11 @@
     "settings": "chains/base"
   },
   {
+    "name": "binance",
+    "table": "candles",
+    "package": "binance-candles"
+  },
+  {
     "name": "bitcoin",
     "table": "btc_balances",
     "package": "bitcoin-btc-balances"

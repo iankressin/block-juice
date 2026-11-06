@@ -3,7 +3,7 @@
 -- An exchange includes its inferred deposit addresses, so a wallet that paid into a deposit address shows
 -- here, and moves between one exchange's own addresses do not.
 with classified as (
-    {{ classified_transfers() }}
+    {{ token_transfers(ref('classified_transfers')) }}
 ),
 
 legs as (
