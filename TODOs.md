@@ -5,8 +5,7 @@
 - [ ] Historical data through SQD
 - [ ] Historical data through RPC
 - [ ] Support for BTC
-- [ ] Token list
+- [ ] Token metadata
 - [ ] Token prices
     - [ ] Binance
     - [ ] Chainlink oracles
-

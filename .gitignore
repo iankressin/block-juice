@@ -20,4 +20,4 @@ __pycache__/
 .pytest_cache/
 
 # answers
-answers/*/reports/
+answers/
