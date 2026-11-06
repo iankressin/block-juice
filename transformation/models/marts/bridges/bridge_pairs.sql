@@ -9,7 +9,7 @@ with withdrawals as (
     select
         *,
         block_timestamp + case chain when 'arbitrum' then interval '6.4 days' else interval '1 day' end as ready_at,
-        row_number() over (partition by ethereum_address, ethereum_token, amount order by block_timestamp, id) as n
+        row_number() over (partition by chain, ethereum_address, ethereum_token, amount order by block_timestamp, id) as n
     from {{ ref('bridge_transfers') }}
     where direction = 'to_ethereum'
 ),
@@ -17,7 +17,7 @@ with withdrawals as (
 deposits as (
     select
         *,
-        row_number() over (partition by ethereum_address, ethereum_token, amount order by block_timestamp, id) as n
+        row_number() over (partition by chain, ethereum_address, ethereum_token, amount order by block_timestamp, id) as n
     from {{ ref('bridge_transfers') }}
     where direction = 'from_ethereum'
 )
