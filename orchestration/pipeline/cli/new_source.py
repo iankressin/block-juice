@@ -87,6 +87,11 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
     old = [entry for entry in entries if entry.package == like]
     if not old:
         raise BadInput(f"{like} is in no entry of {SOURCES_FILE}, so it is not a source to copy")
+    if old[0].settings:
+        raise BadInput(
+            f"{like} loads one table on several chains; for a new chain, add chains/<chain>/ to it "
+            "and run `pnpm generate-sources` in ingestion/"
+        )
     old_source, old_table = old[0].name, old[0].table
     if any((entry.name, entry.table) == (source, table) for entry in entries):
         raise BadInput(f"({source!r}, {table!r}) is already in {SOURCES_FILE}")

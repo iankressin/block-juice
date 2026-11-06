@@ -8,14 +8,20 @@ type Request = { id: number; method: string; params: unknown[] };
 
 /**
  * A JSON-RPC endpoint where every block is block `head` and every balance is 0. Returns its URL,
- * the requests it saw, and the methods each HTTP request carried.
+ * the requests it saw, the methods each HTTP request carried, and the most HTTP requests it held at
+ * once. Each answer waits a few milliseconds, so requests sent together overlap.
  */
 async function fakeRpc(t: TestContext, head: number) {
   const requests: Request[] = [];
   const httpRequests: string[][] = [];
+  const load = { now: 0, most: 0 };
   const server = createServer(async (req, res) => {
+    load.now += 1;
+    load.most = Math.max(load.most, load.now);
     let body = "";
     for await (const chunk of req) body += chunk;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    load.now -= 1;
     const answer = (request: Request) => {
       requests.push(request);
       const result =
@@ -35,7 +41,7 @@ async function fakeRpc(t: TestContext, head: number) {
     server.closeAllConnections();
     server.close();
   });
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests, httpRequests };
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests, httpRequests, load };
 }
 
 test("a tag becomes the number of the block it points to now", async (t) => {
@@ -58,7 +64,7 @@ test("a block number is kept as it is, with no request", async (t) => {
 test("connect resolves BLOCK_NUMBER at EVM_RPC_URL and batches RPC_BATCH_SIZE calls per request", async (t) => {
   const { url, requests, httpRequests } = await fakeRpc(t, 21_000_000);
 
-  const { client, block } = await connect({ EVM_RPC_URL: url, RPC_BATCH_SIZE: 2, BLOCK_NUMBER: "safe" });
+  const { client, block } = await connect({ EVM_RPC_URL: url, RPC_BATCH_SIZE: 2, RPC_MAX_CONCURRENCY: 16, BLOCK_NUMBER: "safe" });
   const wallets = ["0x01", "0x02", "0x03"].map((n) => `0x${n.slice(2).padStart(40, "0")}` as const);
   await Promise.all(wallets.map((address) => client.getBalance({ address, blockNumber: BigInt(block) })));
 
@@ -68,4 +74,14 @@ test("connect resolves BLOCK_NUMBER at EVM_RPC_URL and batches RPC_BATCH_SIZE ca
     httpRequests.slice(1).map((methods) => methods.length).sort(),
     [1, 2],
   );
+});
+
+test("connect holds at most RPC_MAX_CONCURRENCY requests in flight", async (t) => {
+  const { url, load } = await fakeRpc(t, 21_000_000);
+
+  const { client, block } = await connect({ EVM_RPC_URL: url, RPC_BATCH_SIZE: 1, RPC_MAX_CONCURRENCY: 1, BLOCK_NUMBER: "latest" });
+  const wallets = ["0x01", "0x02", "0x03", "0x04"].map((n) => `0x${n.slice(2).padStart(40, "0")}` as const);
+  await Promise.all(wallets.map((address) => client.getBalance({ address, blockNumber: BigInt(block) })));
+
+  assert.equal(load.most, 1);
 });

@@ -29,12 +29,22 @@ PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 #   PUSHGATEWAY_URL    ingestion/lib/src/run/metrics.ts: unset pushes no metrics
 #   LOG_LEVEL          ingestion/lib/src/logger.ts: info
 #   RPC_BATCH_SIZE     ingestion/lib/src/evm/env.ts: 100
+#   RPC_MAX_CONCURRENCY ingestion/lib/src/evm/env.ts: 16
 #   PORTAL_URL         ingestion/sources/*/src/source.ts: the public Portal
 #   POOLS_START_BLOCK  ingestion/sources/ethereum-uniswap-*/src/source.ts: the factory's deploy block
 #   END_BLOCK          ingestion/sources/ethereum-uniswap-*/src/source.ts: unset reads to the head
 #   FACTORY_DB         ingestion/sources/ethereum-uniswap-*/src/source.ts: factory.sqlite
 OPTIONAL_KEYS = frozenset(
-    {"PUSHGATEWAY_URL", "LOG_LEVEL", "RPC_BATCH_SIZE", "PORTAL_URL", "POOLS_START_BLOCK", "END_BLOCK", "FACTORY_DB"}
+    {
+        "PUSHGATEWAY_URL",
+        "LOG_LEVEL",
+        "RPC_BATCH_SIZE",
+        "RPC_MAX_CONCURRENCY",
+        "PORTAL_URL",
+        "POOLS_START_BLOCK",
+        "END_BLOCK",
+        "FACTORY_DB",
+    }
 )
 
 # The compose ports, each with the root .env variable that moves it and the default of both
@@ -103,16 +113,39 @@ def check_env(repo_root: Path, folder: Path, optional: frozenset[str], missing_s
     return Check(PASS, f"{label} copied from .env.example" if copied else f"{label} sets every required key")
 
 
+def check_chain_env(repo_root: Path, folder: Path) -> Check:
+    """One line for a chain's .env in a package that loads several chains. The package's src/index.ts
+    loads the chain's .env.example beneath its .env, so the .env may be missing or set only the keys it
+    changes. It fails only when it leaves empty a key the .env.example sets."""
+    env, example = folder / ".env", folder / ".env.example"
+    label = env.relative_to(repo_root)
+    if not example.is_file():
+        return Check(FAIL, f"{label}: no .env.example to compare against")
+    if not env.exists():
+        return Check(PASS, f"{label} is missing, so {example.relative_to(repo_root)} applies")
+    emptied = sorted(required_keys(example, OPTIONAL_KEYS) & (set(dotenv_values(env)) - set_keys(env)))
+    if emptied:
+        return Check(FAIL, f"{label} leaves {', '.join(emptied)} empty")
+    return Check(PASS, f"{label} sets no required key empty")
+
+
 def check_envs(repo_root: Path, copy: bool) -> list[Check]:
-    """The root .env, then the .env of every package in sources.json. --copy-env copies a package's
-    .env.example to its missing .env; the root .env is the first step of the README and stays by hand."""
+    """The root .env, then the .env of every package in sources.json, and of each chain in a package
+    that loads several chains. --copy-env copies a package's .env.example to its missing .env; the root
+    .env is the first step of the README and stays by hand."""
     checks = [check_env(repo_root, repo_root, ROOT_OPTIONAL_KEYS, FAIL, False)]
-    for entry in read_sources((repo_root / SOURCES_FILE).read_text()):
-        folder = repo_root / "ingestion" / "sources" / entry.package
+    entries = read_sources((repo_root / SOURCES_FILE).read_text())
+    for package in dict.fromkeys(entry.package for entry in entries):
+        folder = repo_root / "ingestion" / "sources" / package
         if not folder.is_dir():
-            checks.append(Check(FAIL, f"{SOURCES_FILE} names package {entry.package!r}, which is not under ingestion/sources/"))
+            checks.append(Check(FAIL, f"{SOURCES_FILE} names package {package!r}, which is not under ingestion/sources/"))
             continue
         checks.append(check_env(repo_root, folder, OPTIONAL_KEYS, WARN, copy))
+        checks += [
+            check_chain_env(repo_root, entry.folder(repo_root))
+            for entry in entries
+            if entry.package == package and entry.settings
+        ]
     return checks
 
 

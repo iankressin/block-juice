@@ -187,6 +187,42 @@ def test_doctor_reports_missing_keys_without_values(repo, services, capsys):
         assert key not in out
 
 
+def multi_chain_package(repo):
+    """Adds evm-address-code, which loads one table on two chains, to the repo and its sources.json."""
+    package = repo / "ingestion" / "sources" / "evm-address-code"
+    package.mkdir(parents=True)
+    for name in (".env.example", ".env"):
+        (package / name).write_text("WAREHOUSE_HOST=localhost\nBLOCK_NUMBER=latest\n")
+    entries = json.loads((repo / SOURCES_FILE).read_text())
+    for chain in ("arbitrum", "base"):
+        (package / "chains" / chain).mkdir(parents=True)
+        (package / "chains" / chain / ".env.example").write_text("EVM_RPC_URL=http://localhost:4000/main/evm/1\nRPC_MAX_CONCURRENCY=2\n")
+        entries.append({"name": chain, "table": "address_code", "package": "evm-address-code", "settings": f"chains/{chain}"})
+    (repo / SOURCES_FILE).write_text(json.dumps(entries))
+    return package
+
+
+def test_doctor_checks_a_multi_chain_package_once_and_each_chain_against_its_example(repo, services, capsys):
+    with_envs(repo)
+    chains = multi_chain_package(repo) / "chains"
+    (chains / "base" / ".env").write_text("EVM_RPC_URL=\nRPC_MAX_CONCURRENCY=\n")
+
+    main(["doctor"])
+
+    out = lines(capsys)
+    assert out.count("PASS  ingestion/sources/evm-address-code/.env sets every required key") == 1
+    assert (
+        "PASS  ingestion/sources/evm-address-code/chains/arbitrum/.env is missing, "
+        "so ingestion/sources/evm-address-code/chains/arbitrum/.env.example applies"
+    ) in out
+    assert "FAIL  ingestion/sources/evm-address-code/chains/base/.env leaves EVM_RPC_URL empty" in out
+
+    # The chain's .env.example loads beneath its .env, so a .env may set only the keys it changes.
+    (chains / "base" / ".env").write_text("RPC_MAX_CONCURRENCY=1\n")
+    main(["doctor"])
+    assert "PASS  ingestion/sources/evm-address-code/chains/base/.env sets no required key empty" in lines(capsys)
+
+
 def test_doctor_root_env_may_leave_out_what_compose_and_dbt_default(repo, services, capsys):
     with_envs(repo)
     (repo / ".env").write_text("".join(

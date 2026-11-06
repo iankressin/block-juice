@@ -1,5 +1,39 @@
 [
   {
+    "name": "arbitrum",
+    "table": "address_code",
+    "package": "evm-address-code",
+    "settings": "chains/arbitrum"
+  },
+  {
+    "name": "arbitrum",
+    "table": "erc20_transfers",
+    "package": "evm-erc20-transfers",
+    "settings": "chains/arbitrum"
+  },
+  {
+    "name": "arbitrum",
+    "table": "token_bridge",
+    "package": "arbitrum-token-bridge"
+  },
+  {
+    "name": "base",
+    "table": "address_code",
+    "package": "evm-address-code",
+    "settings": "chains/base"
+  },
+  {
+    "name": "base",
+    "table": "erc20_transfers",
+    "package": "evm-erc20-transfers",
+    "settings": "chains/base"
+  },
+  {
+    "name": "base",
+    "table": "op_standard_bridge",
+    "package": "base-op-standard-bridge"
+  },
+  {
     "name": "bitcoin",
     "table": "btc_balances",
     "package": "bitcoin-btc-balances"
@@ -12,7 +46,8 @@
   {
     "name": "ethereum",
     "table": "erc20_transfers",
-    "package": "ethereum-erc20-transfers"
+    "package": "evm-erc20-transfers",
+    "settings": "chains/ethereum"
   },
   {
     "name": "ethereum",

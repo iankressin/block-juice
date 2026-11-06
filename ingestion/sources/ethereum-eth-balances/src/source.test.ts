@@ -6,7 +6,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
-const env = { BLOCK_NUMBER: "latest", EVM_RPC_URL: "http://127.0.0.1:1", RPC_BATCH_SIZE: 1 } as const;
+const env = { BLOCK_NUMBER: "latest", EVM_RPC_URL: "http://127.0.0.1:1", RPC_BATCH_SIZE: 1, RPC_MAX_CONCURRENCY: 1 } as const;
 
 /** This package's source, imported from a copy of the package whose addresses.json holds `json`. */
 async function sourceWith(t: TestContext, json: string) {

@@ -2,9 +2,19 @@ version: 2
 
 models:
   - name: erc20_transfers
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || id"
     columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum, arbitrum, base]
       - name: id
-        data_tests: [unique, not_null]
+        data_tests: [not_null]
       - name: block_number
         data_tests: [not_null]
       - name: tx_hash

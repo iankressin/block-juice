@@ -16,12 +16,18 @@ import {
 import * as z from "zod";
 
 const env = z.object({
-  PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/ethereum-mainnet"),
+  // The chain's Portal dataset, set in chains/<chain>/.env.example.
+  PORTAL_URL: z.url(),
+  // Sent with every Portal request when set. Without one, the public Portal answers at its anonymous limits.
+  PORTAL_API_KEY: z.string().optional(),
   // Where the first run starts. Later runs resume after the cursor Pipes keeps in the warehouse.
   START_BLOCK: z.coerce.number().int().nonnegative(),
 });
 
 export type TransfersEnv = z.infer<typeof env>;
+
+/** A chain name as SOURCES and the dbt sources spell it, such as `arbitrum`. */
+export const chainName = z.string().regex(/^[a-z][a-z0-9]*$/, "Expected a chain name such as arbitrum");
 
 const Transfer = commonAbis.erc20.events.Transfer;
 
@@ -44,19 +50,28 @@ const toRecord = (t: DecodedEvent<ReturnType<typeof Transfer.decode>>): RawRecor
   };
 };
 
-// Every Transfer of the tokens in addresses.json into or out of its wallets, up to Portal's
-// finalized head when the run starts. A transfer between two of the wallets is in both
-// outputs, under the same id, so the warehouse keeps one row.
-export const ethereumErc20Transfers: StreamSource<TransfersEnv> = {
-  name: "ethereum",
+/**
+ * The Transfers of the tokens in chains/<chain>/addresses.json on one EVM chain, up to Portal's
+ * finalized head when the run starts. The source is named for its chain, so each chain loads into
+ * raw.<chain>_erc20_transfers with a cursor of its own.
+ *
+ * With `wallets` in addresses.json, only transfers into or out of those wallets. A transfer between
+ * two of them is in both outputs, under the same id, so the warehouse keeps one row. Without
+ * `wallets`, every transfer of the tokens.
+ */
+export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
+  name: chainName.parse(chain),
   table: "erc20_transfers",
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
-    const wallets = validateEthAddressList(addresses.wallets).map((a) => a.toLowerCase());
+    const { default: addresses } = await import(`../chains/${chain}/addresses.json`, { with: { type: "json" } });
     const tokens = validateEthAddressList(addresses.tokens);
-    const portal = portalClient(env.PORTAL_URL);
+    if (addresses.wallets?.length === 0) {
+      throw new Error(`chains/${chain}/addresses.json lists no wallets; leave the key out to read every transfer`);
+    }
+    const wallets = addresses.wallets && validateEthAddressList(addresses.wallets).map((a: string) => a.toLowerCase());
+    const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
     const range = { from: env.START_BLOCK, to: await finalizedHead(portal) };
 
     // One decoder per filter: Pipes refuses two filters on the same event in one decoder (E0004).
@@ -66,10 +81,12 @@ export const ethereumErc20Transfers: StreamSource<TransfersEnv> = {
       );
 
     return evmPortalStream({
-      id: "ethereum-erc20-transfers",
+      id: `${chain}-erc20-transfers`,
       portal,
-      logger: logger.child({ source: this.name, table: this.table }),
-      outputs: { incoming: transfers({ to: wallets }), outgoing: transfers({ from: wallets }) },
+      logger: logger.child({ source: chain, table: "erc20_transfers" }),
+      outputs: wallets
+        ? { incoming: transfers({ to: wallets }), outgoing: transfers({ from: wallets }) }
+        : { all: transfers({}) },
     });
   },
-};
+});

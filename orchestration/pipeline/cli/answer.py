@@ -159,7 +159,9 @@ def stream_inputs(
     question: Question, inputs: Iterable[Input], sources: Collection[str], streams: Collection[str]
 ) -> list[SourceInput]:
     """The question's inputs that read a stream source. Every stream source the analyses read needs one,
-    so its filter is on record, and the question then needs window.blocks. An input's source must be in SOURCES."""
+    so its filter is on record, and the question then needs window.blocks. An input's source must be in SOURCES.
+    A source on a chain that window.blocks leaves out needs none: a mart that stacks chains reads it, but the
+    analyses keep to the window's chains."""
     label = f"answers/{question.slug}/question.yaml"
     for i in question.sources:
         if i.source not in sources:
@@ -169,7 +171,8 @@ def stream_inputs(
     declared = [i for i in question.sources if i.source in streams]
     named = {i.source for i in declared}
     for read in inputs:
-        if read.name in streams and read.name not in named:
+        outside_window = bool(question.blocks) and read.name.split(".")[0] not in question.blocks
+        if read.name in streams and read.name not in named and not outside_window:
             raise BadInput(
                 f"{label}: the analyses read the stream source {read.name}; "
                 f"add an input with source: {read.name} and the filter it needs"

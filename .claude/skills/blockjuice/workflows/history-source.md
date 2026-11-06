@@ -1,6 +1,6 @@
 # Add or extend a history source
 
-A history source is a Pipes stream source. It reads events over a range of blocks from SQD Portal, and each run resumes after the last block it saved. `ingestion/sources/ethereum-erc20-transfers/` is the pattern: every Transfer of the tokens in its `addresses.json` into or out of its wallets, from `START_BLOCK` on.
+A history source is a Pipes stream source. It reads events over a range of blocks from SQD Portal, and each run resumes after the last block it saved. `ingestion/sources/evm-erc20-transfers/` is the pattern: on each chain in its `chains/`, every Transfer of the tokens in that chain's `addresses.json`, into or out of its wallets when it lists any, from the chain's `START_BLOCK` on.
 
 ## What a history source has loaded
 
@@ -33,7 +33,8 @@ When a source already reads the right events:
 
    | Contracts | Copy |
    |---|---|
-   | Known contracts, such as tokens | `ethereum-erc20-transfers` |
+   | Tokens, for their Transfers | Nothing: add the chain's folder to `evm-erc20-transfers`, as the README's Add a source says |
+   | Known contracts, such as gateways | `arbitrum-token-bridge` |
    | Contracts a factory creates, such as pools | `ethereum-uniswap-v3` |
    | One contract that names its children by id, such as the v4 PoolManager | `ethereum-uniswap-v4` |
 

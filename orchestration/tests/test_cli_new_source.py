@@ -6,7 +6,7 @@ import subprocess
 import pytest
 import yaml
 
-from pipeline.assets.ingestion import SOURCES, package_dir
+from pipeline.assets.ingestion import ENTRIES, SOURCES, package_dir
 from pipeline.cli import REPO_ROOT, BadInput
 from pipeline.cli import new_source
 from pipeline.cli.new_source import GENERATE, package_name, run
@@ -18,12 +18,12 @@ TEMPLATE = "ethereum-eth-balances"
 def fake_generator(root):
     """What `pnpm generate-sources` does, for the packages this repo has: every package's exported name and
     table, sorted. The repo copy holds only the template, so the entries already in the file stay."""
-    entries = {(e.name, e.table): e.package for e in read_sources((root / SOURCES_FILE).read_text())}
+    entries = {(e["name"], e["table"]): e for e in json.loads((root / SOURCES_FILE).read_text())}
     for source_ts in root.glob("ingestion/sources/*/src/source.ts"):
         text = source_ts.read_text()
-        pair = (re.search(r'name: "(\w+)"', text).group(1), re.search(r'table: "(\w+)"', text).group(1))
-        entries[pair] = source_ts.parents[1].name
-    listed = [{"name": name, "table": table, "package": package} for (name, table), package in sorted(entries.items())]
+        name, table = re.search(r'name: "(\w+)"', text).group(1), re.search(r'table: "(\w+)"', text).group(1)
+        entries[(name, table)] = {"name": name, "table": table, "package": source_ts.parents[1].name}
+    listed = [entry for _, entry in sorted(entries.items())]
     (root / SOURCES_FILE).write_text(json.dumps(listed, indent=2) + "\n")
 
 
@@ -64,8 +64,10 @@ def sources_of(repo):
 
 
 def test_package_name_matches_the_dagster_asset_rule():
-    for source, table in SOURCES:
-        assert package_name(source, table) == package_dir(source, table).name
+    """A package that loads several chains is named for what it loads; every other follows the rule."""
+    for entry in ENTRIES:
+        if not entry.settings:
+            assert package_name(entry.name, entry.table) == package_dir(entry.name, entry.table).name
 
 
 def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
@@ -115,19 +117,19 @@ def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
 
 
 def test_creates_the_sources_file_of_a_new_source(repo):
-    assert run(repo, "base", "eth_balances", TEMPLATE) == 0
+    assert run(repo, "polygon", "eth_balances", TEMPLATE) == 0
 
-    yml = (repo / "transformation/models/staging/base/_base__sources.yml").read_text()
+    yml = (repo / "transformation/models/staging/polygon/_polygon__sources.yml").read_text()
     shape = (repo / "transformation/models/staging/ethereum/_ethereum__sources.yml").read_text()
-    assert yml.splitlines()[:7] == shape.replace("ethereum", "base").splitlines()[:7]
-    (base,) = yaml.safe_load(yml)["sources"]
-    assert base["name"] == "base"
-    assert base["schema"] == "{{ env_var('RAW_SCHEMA', 'raw') }}"
-    assert base["tables"][0]["identifier"] == "base_eth_balances"
-    assert (repo / "transformation/models/staging/base/stg_base__eth_balances.sql").is_file()
-    source_ts = (repo / "ingestion/sources/base-eth-balances/src/source.ts").read_text()
-    assert 'name: "base"' in source_ts and 'name: "ethereum"' not in source_ts
-    assert ("base", "eth_balances") in sources_of(repo)
+    assert yml.splitlines()[:7] == shape.replace("ethereum", "polygon").splitlines()[:7]
+    (polygon,) = yaml.safe_load(yml)["sources"]
+    assert polygon["name"] == "polygon"
+    assert polygon["schema"] == "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    assert polygon["tables"][0]["identifier"] == "polygon_eth_balances"
+    assert (repo / "transformation/models/staging/polygon/stg_polygon__eth_balances.sql").is_file()
+    source_ts = (repo / "ingestion/sources/polygon-eth-balances/src/source.ts").read_text()
+    assert 'name: "polygon"' in source_ts and 'name: "ethereum"' not in source_ts
+    assert ("polygon", "eth_balances") in sources_of(repo)
 
 
 def test_a_failed_generator_leaves_the_files_and_exits_1(repo, monkeypatch, capsys):
@@ -168,6 +170,15 @@ def refuses_without_writing(repo, pnpm, *args, match):
 def test_refuses_a_template_missing_from_sources(repo, pnpm):
     shutil.copytree(repo / "ingestion/sources" / TEMPLATE, repo / "ingestion/sources/scratch")
     refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", "scratch", match="in no entry of ingestion/sources.json")
+
+
+def test_refuses_to_copy_a_package_that_loads_several_chains(repo, pnpm):
+    shutil.copytree(
+        REPO_ROOT / "ingestion/sources/evm-erc20-transfers",
+        repo / "ingestion/sources/evm-erc20-transfers",
+        ignore=shutil.ignore_patterns("node_modules", ".env"),
+    )
+    refuses_without_writing(repo, pnpm, "polygon", "erc20_transfers", "evm-erc20-transfers", match="several chains")
 
 
 def test_refuses_a_template_that_does_not_exist(repo, pnpm):

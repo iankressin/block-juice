@@ -69,35 +69,32 @@ class Coverage:
         }
 
 
-def packages(repo_root: Path) -> dict[str, Path]:
-    """Every source in sources.json, as <source>.<table>, with its package folder."""
+def folders(repo_root: Path) -> dict[str, Path]:
+    """Every source in sources.json, as <source>.<table>, with the folder of its .env.example and
+    addresses.json: its package, or the chain's folder in a package that loads several chains."""
     return {
-        f"{entry.name}.{entry.table}": repo_root / "ingestion" / "sources" / entry.package
+        f"{entry.name}.{entry.table}": entry.folder(repo_root)
         for entry in read_sources((repo_root / SOURCES_FILE).read_text())
     }
 
 
-def package(repo_root: Path, source: str, table: str) -> Path:
-    return packages(repo_root)[f"{source}.{table}"]
-
-
 def sources(repo_root: Path) -> list[str]:
     """Every source in sources.json, as <source>.<table>."""
-    return list(packages(repo_root))
+    return list(folders(repo_root))
 
 
 def stream_sources(repo_root: Path) -> list[str]:
-    """The sources that are stream sources: those whose package's .env.example sets START_BLOCK.
+    """The sources that are stream sources: those whose .env.example sets START_BLOCK.
     A stream source needs a first block; a call source reads at one block, or at the tip."""
     return [
         name
-        for name, folder in packages(repo_root).items()
+        for name, folder in folders(repo_root).items()
         if dotenv_values(folder / ".env.example").get("START_BLOCK")
     ]
 
 
 def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
-    """START_BLOCK as a run reads it, and the file it came from: the package's .env, else .env.example."""
+    """START_BLOCK as a run reads it, and the file it came from: the folder's .env, else .env.example."""
     for name in (".env", ".env.example"):
         value = dotenv_values(folder / name).get("START_BLOCK")
         if value:
@@ -124,7 +121,7 @@ def address_filter(repo_root: Path, folder: Path) -> dict[str, list[str]]:
 
 def read(repo_root: Path, name: str) -> Coverage:
     source, table = name.split(".")
-    folder = package(repo_root, source, table)
+    folder = folders(repo_root)[name]
     block, block_file = start_block(repo_root, folder)
     schema = os.environ["RAW_SCHEMA"]
     try:

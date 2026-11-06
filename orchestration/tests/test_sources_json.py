@@ -54,6 +54,7 @@ def test_sources_json_package_dirs_exist(entry):
     assert (package / "src" / "source.ts").is_file(), (
         f"{pair(entry)} names package {entry.package!r}, which is not a source package under ingestion/sources/"
     )
+    assert (entry.folder(REPO_ROOT) / ".env.example").is_file(), f"{pair(entry)} has no .env.example in its folder"
 
 
 def dbt_source_tables() -> dict[tuple[str, str], str]:
@@ -92,6 +93,7 @@ def test_every_source_has_its_dbt_source_and_staging_model():
         ('[{"name": "ethereum", "table": "x"}]', "must be a list"),
         ('[{"name": "ethereum", "table": 1, "package": "p"}]', "not a string"),
         ('[{"name": "a", "table": "t", "package": "p"}, {"name": "a", "table": "t", "package": "q"}]', "a.t more than once"),
+        ('[{"name": "a", "table": "t", "package": "p", "settings": 1}]', "settings is not a string"),
     ],
 )
 def test_read_sources_rejects_a_malformed_file(text, match):

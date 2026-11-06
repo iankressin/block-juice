@@ -19,6 +19,13 @@ class SourceEntry:
     name: str
     table: str
     package: str
+    # For a package that loads one table on several chains: the chain's folder in the package,
+    # chains/<name>, which holds its .env.example and addresses.json. Empty for any other package.
+    settings: str = ""
+
+    def folder(self, repo_root: Path) -> Path:
+        """The folder with this source's .env, .env.example and addresses.json."""
+        return repo_root / "ingestion" / "sources" / self.package / self.settings
 
 
 def read_sources(text: str) -> list[SourceEntry]:
@@ -26,10 +33,12 @@ def read_sources(text: str) -> list[SourceEntry]:
     try:
         entries = [SourceEntry(**entry) for entry in json.loads(text)]
     except (json.JSONDecodeError, TypeError) as error:
-        raise BadInput(f"{SOURCES_FILE} must be a list of {{name, table, package}} objects: {error}") from None
+        raise BadInput(f"{SOURCES_FILE} must be a list of {{name, table, package[, settings]}} objects: {error}") from None
     for entry in entries:
         if not all(isinstance(value, str) and value for value in (entry.name, entry.table, entry.package)):
             raise BadInput(f"{SOURCES_FILE} has an entry whose name, table or package is not a string: {entry}")
+        if not isinstance(entry.settings, str):
+            raise BadInput(f"{SOURCES_FILE} has an entry whose settings is not a string: {entry}")
     pairs = [(entry.name, entry.table) for entry in entries]
     repeated = sorted({pair for pair in pairs if pairs.count(pair) > 1})
     if repeated:

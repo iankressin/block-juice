@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_arbitrum__erc20_transfers
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: token
+        data_tests: [not_null]
+  - name: stg_arbitrum__address_code
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: address
+        data_tests: [not_null]
+      - name: code
+        data_tests: [not_null]
+  - name: stg_arbitrum__token_bridge
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: event
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [WithdrawalInitiated, DepositFinalized]
+      - name: amount
+        data_tests: [not_null]
+      - name: contract
+        description: >-
+          A contract that is not in the arbitrum_token_gateways seed is a new gateway, which needs a row
+          there, or a contract that imitates the events.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('arbitrum_token_gateways')
+                field: address
+              config:
+                severity: warn

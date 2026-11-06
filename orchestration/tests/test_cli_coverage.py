@@ -10,23 +10,23 @@ from pipeline.sources import SOURCES_FILE, read_sources
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
 USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+UNI = "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0"
 ADDRESSES = json.dumps({"wallets": [WALLET], "tokens": [USDC]})
+TRANSFERS = {"name": "ethereum", "table": "erc20_transfers", "package": "evm-erc20-transfers", "settings": "chains/ethereum"}
+BALANCES = {"name": "ethereum", "table": "eth_balances", "package": "ethereum-eth-balances"}
 
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
-    """A repo with one stream source and one call source."""
+    """A repo with one stream source, in a package that loads several chains, and one call source."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
-    entries = []
-    for table, env in (("erc20_transfers", "START_BLOCK=100\n"), ("eth_balances", "BLOCK_NUMBER=latest\n")):
-        package = f"ethereum-{table.replace('_', '-')}"
-        entries.append({"name": "ethereum", "table": table, "package": package})
-        folder = tmp_path / "ingestion" / "sources" / package
+    for entry, env in ((TRANSFERS, "START_BLOCK=100\n"), (BALANCES, "BLOCK_NUMBER=latest\n")):
+        folder = tmp_path / "ingestion" / "sources" / entry["package"] / entry.get("settings", "")
         folder.mkdir(parents=True)
         (folder / ".env.example").write_text(env)
         (folder / "addresses.json").write_text(ADDRESSES)
-    (tmp_path / SOURCES_FILE).write_text(json.dumps(entries))
+    (tmp_path / SOURCES_FILE).write_text(json.dumps([TRANSFERS, BALANCES]))
     return tmp_path
 
 
@@ -34,11 +34,11 @@ def test_a_stream_source_is_a_sources_entry_whose_env_example_sets_start_block(r
     assert stream_sources(repo) == ["ethereum.erc20_transfers"]
 
 
-@pytest.mark.parametrize("source, table", [(e.name, e.table) for e in read_sources((REPO_ROOT / SOURCES_FILE).read_text())])
-def test_the_rule_finds_exactly_the_packages_that_export_a_stream_source(source, table):
-    package = coverage.package(REPO_ROOT, source, table)
+@pytest.mark.parametrize("entry", read_sources((REPO_ROOT / SOURCES_FILE).read_text()), ids=lambda e: f"{e.name}.{e.table}")
+def test_the_rule_finds_exactly_the_packages_that_export_a_stream_source(entry):
+    package = REPO_ROOT / "ingestion" / "sources" / entry.package
     exports_stream = "StreamSource<" in (package / "src" / "source.ts").read_text()
-    assert (f"{source}.{table}" in stream_sources(REPO_ROOT)) == exports_stream
+    assert (f"{entry.name}.{entry.table}" in stream_sources(REPO_ROOT)) == exports_stream
 
 
 def test_the_repo_has_a_stream_source():
@@ -47,23 +47,43 @@ def test_the_repo_has_a_stream_source():
 
 def test_start_block_comes_from_env_else_env_example(repo, monkeypatch):
     monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
-    folder = repo / "ingestion" / "sources" / "ethereum-erc20-transfers"
+    folder = repo / "ingestion" / "sources" / "evm-erc20-transfers/chains/ethereum"
 
     def start():
         read = coverage.read(repo, "ethereum.erc20_transfers")
         return read.start_block, read.start_block_file
 
-    assert start() == (100, "ingestion/sources/ethereum-erc20-transfers/.env.example")
+    assert start() == (100, "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example")
     (folder / ".env").write_text("LOG_LEVEL=debug\n")
-    assert start() == (100, "ingestion/sources/ethereum-erc20-transfers/.env.example")
+    assert start() == (100, "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example")
     (folder / ".env").write_text("START_BLOCK=250\n")
-    assert start() == (250, "ingestion/sources/ethereum-erc20-transfers/.env")
+    assert start() == (250, "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env")
+
+
+def test_each_chain_of_an_evm_package_reads_its_own_folder(repo, monkeypatch):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
+    arbitrum = {**TRANSFERS, "name": "arbitrum", "settings": "chains/arbitrum"}
+    (repo / SOURCES_FILE).write_text(json.dumps([arbitrum, TRANSFERS]))
+    folder = repo / "ingestion" / "sources" / "evm-erc20-transfers" / "chains" / "arbitrum"
+    folder.mkdir(parents=True)
+    (folder / ".env.example").write_text("START_BLOCK=500\n")
+    (folder / "addresses.json").write_text(json.dumps({"tokens": [UNI]}))
+
+    read = coverage.read(repo, "arbitrum.erc20_transfers")
+    assert (read.raw_table, read.start_block, read.start_block_file, read.filter) == (
+        "raw.arbitrum_erc20_transfers",
+        500,
+        "ingestion/sources/evm-erc20-transfers/chains/arbitrum/.env.example",
+        {"tokens": [UNI]},
+    )
+    assert coverage.read(repo, "ethereum.erc20_transfers").start_block == 100
+    assert stream_sources(repo) == ["arbitrum.erc20_transfers", "ethereum.erc20_transfers"]
 
 
 def test_a_start_block_that_is_not_a_number_is_bad_input(repo, monkeypatch):
     monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
-    (repo / "ingestion" / "sources" / "ethereum-erc20-transfers" / ".env").write_text("START_BLOCK=latest\n")
-    with pytest.raises(BadInput, match="START_BLOCK in ingestion/sources/ethereum-erc20-transfers/.env must be"):
+    (repo / "ingestion" / "sources" / "evm-erc20-transfers/chains/ethereum" / ".env").write_text("START_BLOCK=latest\n")
+    with pytest.raises(BadInput, match="START_BLOCK in ingestion/sources/evm-erc20-transfers/chains/ethereum/.env must be"):
         coverage.read(repo, "ethereum.erc20_transfers")
 
 
@@ -82,7 +102,7 @@ def test_prints_each_stream_source_with_its_blocks_and_filter(repo, monkeypatch,
             "source": "ethereum.erc20_transfers",
             "raw_table": "raw.ethereum_erc20_transfers",
             "start_block": 100,
-            "start_block_file": "ingestion/sources/ethereum-erc20-transfers/.env.example",
+            "start_block_file": "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example",
             "cursor": 180,
             "filter": {"wallets": [WALLET], "tokens": [USDC]},
             "covered": [100, 180],

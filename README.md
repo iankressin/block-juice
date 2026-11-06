@@ -12,12 +12,12 @@ Five sources read wallet balances: ETH, ERC-20 tokens, SOL, SPL tokens and BTC. 
 
 Each chain reaches `latest_balances` through one model in `transformation/models/intermediate/balances/`, `int_<chain>_balances`, which puts the chain's rows in the shape the mart reads: `chain`, `wallet`, `asset_type`, `asset`, `block_number` and `balance`, with no null balance. The mart only stacks these models and keeps each wallet's latest reading of each asset. To add a chain, add its model, one `union all` branch in `latest_balances.sql`, and the chain to the mart's `accepted_values`.
 
-A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it reads every Transfer of the tokens in its `addresses.json` into or out of its wallets, from `START_BLOCK` to Portal's finalized head, and each run resumes where the last one stopped. The `transfers` pipeline builds `analytics.erc20_transfers` from it, one row per transfer, in the token's base units. Three more stream sources, `ethereum-uniswap-v2`, `-v3` and `-v4`, load the pool creations and Swaps of Uniswap pools that trade the tokens in their `addresses.json`, each version in its own raw table, with the transactions they came from as records of their own. v2 and v3 follow their factory's pools with Pipes' factory pattern, which keeps the pools it found in `factory.sqlite` in each package. The `dex` pipeline builds `analytics.dex_trades` from them, one row per trade, with each version's sign rule applied in its own intermediate model.
+A sixth source, `evm-erc20-transfers`, is a stream source that loads ERC-20 transfers on any EVM chain. Each run reads its chain from `CHAIN`, which Dagster sets from the source's entry in `ingestion/sources.json`, and that chain's `PORTAL_URL`, `START_BLOCK` and `addresses.json` from `chains/<chain>/` in the package. Through Pipes it reads every Transfer of the chain's tokens, or with `wallets` listed only those into or out of the wallets, from `START_BLOCK` to Portal's finalized head, and each run resumes where the last one stopped. Each chain loads into `raw.<chain>_erc20_transfers` with a cursor of its own; Ethereum, Arbitrum and Base are set up. The `transfers` pipeline builds `analytics.erc20_transfers` from them, one row per transfer, with a `chain` column, in the token's base units. Three more stream sources, `ethereum-uniswap-v2`, `-v3` and `-v4`, load the pool creations and Swaps of Uniswap pools that trade the tokens in their `addresses.json`, each version in its own raw table, with the transactions they came from as records of their own. v2 and v3 follow their factory's pools with Pipes' factory pattern, which keeps the pools it found in `factory.sqlite` in each package. The `dex` pipeline builds `analytics.dex_trades` from them, one row per trade, with each version's sign rule applied in its own intermediate model. A state source, `evm-address-code`, reads each address's code with `eth_getCode` on any EVM chain, laid out like `evm-erc20-transfers`: `chains/<chain>/` holds the chain's `EVM_RPC_URL` and the `addresses.json` to read. The `labels` pipeline builds `analytics.address_labels` from it and the exchange labels in `transformation/seeds/cex_addresses.csv`, one row per address per chain, with `kind` set to exchange, contract or eoa.
 
 ```
 .
 ├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
-├── answers/<slug>/             # one answer per question: question.yaml, answer.json, answer.md, results/
+├── answers/<slug>/             # one answer per question, kept out of git: question.yaml, answer.json, answer.md, results/
 ├── catalog/protocols/<name>/   # contracts, events and ABIs of a protocol, proven on real logs
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
 ├── .env.example                # settings shared by all three tools
@@ -92,7 +92,8 @@ Each layer also runs alone, with the env vars loaded:
 ```sh
 (cd ingestion/sources/ethereum-eth-balances && pnpm ingest)
 (cd ingestion/sources/ethereum-erc20-balances && pnpm ingest)
-(cd ingestion/sources/ethereum-erc20-transfers && pnpm ingest)
+(cd ingestion/sources/evm-erc20-transfers && CHAIN=ethereum pnpm ingest)
+(cd ingestion/sources/evm-address-code && CHAIN=arbitrum pnpm ingest)
 (cd ingestion/sources/solana-sol-balances && pnpm ingest)
 (cd ingestion/sources/solana-spl-balances && pnpm ingest)
 (cd ingestion/sources/bitcoin-btc-balances && pnpm ingest)
@@ -167,6 +168,8 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 The dbt source name and table name must match the `name` and `table` the source exports. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them. A test names any pair that drifts.
 
+To load ERC-20 transfers on another EVM chain, extend `evm-erc20-transfers` instead of copying it: add `chains/<chain>/` with a `.env.example` that sets `PORTAL_URL` and `START_BLOCK` and an `addresses.json` with `tokens`, run `pnpm generate-sources` in `ingestion/`, add `transformation/models/staging/<chain>/` like `staging/base/`, and add an `int_<chain>_erc20_transfers` branch to the `erc20_transfers` mart. The generator calls the package's `forChain(chain)` once per folder in `chains/` and records that folder as the entry's `settings` in `sources.json`, where `bj coverage` and `bj doctor` find it; Dagster passes the chain to the run as `CHAIN`. `evm-address-code` takes a new chain the same way, with `EVM_RPC_URL` in its `chains/<chain>/.env.example`.
+
 A call source makes calls, such as RPC reads at one block, and its `src/source.ts` exports a `Source`. Before its first run, check that:
 
 - The `Source` has a zod `call` schema. Each run parses its pending dead letters with it, and a dead letter whose call no longer parses is parked for a person.
@@ -175,7 +178,7 @@ A call source makes calls, such as RPC reads at one block, and its `src/source.t
 - `addresses.json` loads inside `extract`, not at import, so a bad file fails the run and `runSource` logs why.
 - `name` and `table` match the dbt source and table and the `SOURCES` entry, as above.
 
-A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls; scaffold one with `--like ethereum-erc20-transfers` or one of the `ethereum-uniswap-v*` packages. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. A stream source has no calls, so it has no dead letters: an error, from Portal or from the warehouse, fails the run, nothing from the batch it was writing commits, and the next run resumes after the last batch that did. To read a stream source again from its start, delete its row from `raw._sync`, whose `id` is `<source>_<table>`.
+A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls; scaffold one with `--like` one of the `ethereum-uniswap-v*` packages or `arbitrum-token-bridge`. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. A stream source has no calls, so it has no dead letters: an error, from Portal or from the warehouse, fails the run, nothing from the batch it was writing commits, and the next run resumes after the last batch that did. To read a stream source again from its start, delete its row from `raw._sync`, whose `id` is `<source>_<table>`.
 
 ## Add a pipeline
 

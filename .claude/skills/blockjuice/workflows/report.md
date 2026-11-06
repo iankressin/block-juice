@@ -20,7 +20,7 @@ A report reads marts only. These exist:
 | Mart | Pipeline | One row is |
 |---|---|---|
 | `latest_balances` | `balances` | A wallet's latest balance of one asset on one chain, in base units. State: it answers "now", and `block_number` says at which block. |
-| `erc20_transfers` | `transfers` | One ERC-20 transfer into or out of a tracked Ethereum wallet. History, from `ethereum.erc20_transfers`. |
+| `erc20_transfers` | `transfers` | One ERC-20 transfer on Ethereum, Arbitrum or Base, named in its `chain` column: into or out of a tracked wallet, or of a tracked token on a chain that tracks no wallets. History, from `<chain>.erc20_transfers`. |
 | `dex_trades` | `dex` | One Uniswap v2, v3 or v4 trade on Ethereum, in each token's base units, without prices. History, from `ethereum.uniswap_v2`, `ethereum.uniswap_v3` and `ethereum.uniswap_v4`. |
 
 A question these cannot answer, such as a past balance, a token price or a chain no mart covers, is not a report yet. Say which mart or source is missing and what step 2 of [answer.md](answer.md) would build, and wait for a go. Never fill the gap with data from outside the warehouse.

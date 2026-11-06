@@ -36,6 +36,8 @@ const childEvents = events(poolAbi);
 const env = z
   .object({
     PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/ethereum-mainnet"),
+    // Sent with every Portal request when set. Without one, the public Portal answers at its anonymous limits.
+    PORTAL_API_KEY: z.string().optional(),
     // The first block of pool creations. A pool created before START_BLOCK still trades after it.
     POOLS_START_BLOCK: z.coerce.number().int().nonnegative().default(FACTORY_DEPLOYED_BLOCK),
     // The first block of Swaps. Later runs resume after the cursor Pipes keeps in the warehouse.
@@ -90,7 +92,7 @@ export const ethereumUniswapV3: StreamSource<FactorySourceEnv> = {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
     const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
-    const portal = portalClient(env.PORTAL_URL);
+    const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
     const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
     const storeIsNew = !existsSync(env.FACTORY_DB);
     // The factories wait for the store, which opens, and so creates its file, only once the check in

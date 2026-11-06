@@ -1,5 +1,5 @@
 {
-  "name": "@ingestion/ethereum-erc20-transfers",
+  "name": "@ingestion/arbitrum-token-bridge",
   "private": true,
   "type": "module",
   "imports": {

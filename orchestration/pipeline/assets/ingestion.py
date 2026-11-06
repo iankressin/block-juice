@@ -62,7 +62,8 @@ def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
             ["pnpm", "--silent", "ingest"],
             cwd=package_dir(source, table),
             # The source writes the run id into ops.ingestion_runs, next to the dbt results of the same run.
-            env={**os.environ, "DAGSTER_RUN_ID": context.run_id},
+            # CHAIN tells a package that loads several chains which one this asset is.
+            env={**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source},
             capture_output=True,
             text=True,
         )
