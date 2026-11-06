@@ -1,7 +1,5 @@
--- Every move of the token between an L2 and Ethereum in its windows through each chain's own bridge,
--- oldest first: the L2 address and its kind, the Ethereum address on the other side, and, when the move
--- pairs with one into or out of another L2 through Ethereum (bridge_pairs), that move's chain, L2 address
--- and time. Bridge moves name the token by its Ethereum address, var('token').ethereum.
+-- Only moves through each chain's own bridge. The other_* columns come from bridge_pairs, which infers a
+-- pair from the same Ethereum address and amount.
 with moves as (
     select b.*, l.kind as l2_kind
     from ({{ token_bridge_transfers() }}) as b

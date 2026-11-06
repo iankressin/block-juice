@@ -15,15 +15,28 @@ models:
 unit_tests:
   - name: an_arbitrum_withdrawal_goes_from_the_l2_user_to_ethereum
     description: >-
-      The UNI proof withdrawal and deposit of catalog/protocols/arbitrum-token-bridge/NOTES.md, through the
-      L2 ERC20 gateway, and a deposit through another gateway with distinct addresses on each side. The
-      same event from a contract that is no gateway is left out.
+      A UNI withdrawal and deposit read on Portal, whose two addresses are the same, and a deposit with
+      distinct addresses on each side.
     model: int_arbitrum_token_bridge_transfers
     given:
       - input: ref('stg_arbitrum__token_bridge')
         rows:
           - {id: "512419364:106", event: WithdrawalInitiated, contract: "0x09e9222e96e7b4ae2a407b98d48e330053351eee", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", to_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "940072965341185501539"}
           - {id: "511075363:3", event: DepositFinalized, contract: "0x09e9222e96e7b4ae2a407b98d48e330053351eee", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", to_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "230535619012808833421"}
+          - {id: "1:1", event: DepositFinalized, contract: "0x09e9222e96e7b4ae2a407b98d48e330053351eee", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x00000000000000000000000000000000000000cc", to_address: "0x00000000000000000000000000000000000000aa", amount: 1}
+      - input: ref('arbitrum_token_gateways')
+        rows:
+          - {address: "0x09e9222e96e7b4ae2a407b98d48e330053351eee", name: L2 ERC20 gateway}
+    expect:
+      rows:
+        - {id: "512419364:106", direction: to_ethereum, l2_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", ethereum_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "940072965341185501539"}
+        - {id: "511075363:3", direction: from_ethereum, l2_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", ethereum_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "230535619012808833421"}
+        - {id: "1:1", direction: from_ethereum, l2_address: "0x00000000000000000000000000000000000000aa", ethereum_address: "0x00000000000000000000000000000000000000cc", amount: 1}
+  - name: only_gateway_logs_become_arbitrum_bridge_moves
+    model: int_arbitrum_token_bridge_transfers
+    given:
+      - input: ref('stg_arbitrum__token_bridge')
+        rows:
           - {id: "1:1", event: DepositFinalized, contract: "0x096760f208390250649e3e8763348e783aef5562", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x00000000000000000000000000000000000000cc", to_address: "0x00000000000000000000000000000000000000aa", amount: 1}
           - {id: "2:1", event: DepositFinalized, contract: "0x00000000000000000000000000000000000000ee", l1_token: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", from_address: "0x00000000000000000000000000000000000000cc", to_address: "0x00000000000000000000000000000000000000aa", amount: 5}
       - input: ref('arbitrum_token_gateways')
@@ -32,11 +45,9 @@ unit_tests:
           - {address: "0x096760f208390250649e3e8763348e783aef5562", name: L2 Arb-Custom gateway}
     expect:
       rows:
-        - {id: "512419364:106", direction: to_ethereum, l2_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", ethereum_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "940072965341185501539"}
-        - {id: "511075363:3", direction: from_ethereum, l2_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", ethereum_address: "0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675", amount: "230535619012808833421"}
-        - {id: "1:1", direction: from_ethereum, l2_address: "0x00000000000000000000000000000000000000aa", ethereum_address: "0x00000000000000000000000000000000000000cc", amount: 1}
+        - {id: "1:1"}
   - name: a_base_deposit_goes_from_ethereum_to_the_l2_user
-    description: The UNI proof deposit and withdrawal of catalog/protocols/op-standard-bridge/NOTES.md.
+    description: A UNI deposit and withdrawal read on Portal.
     model: int_base_op_standard_bridge_transfers
     given:
       - input: ref('stg_base__op_standard_bridge')

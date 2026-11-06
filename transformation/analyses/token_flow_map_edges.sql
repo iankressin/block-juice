@@ -1,8 +1,3 @@
--- The edges of the token's entity graph in its windows, largest amount first: from one entity to another,
--- per chain and category, with each end's group. An exchange's addresses and deposit addresses are one
--- entity, named for the exchange; a mint or burn's other end is bridge:<chain>. A withdrawal from one L2
--- inside its window that pairs with a deposit into the other through Ethereum (bridge_pairs) is an edge
--- across chains, such as arbitrum>base. Moves between an exchange's own addresses are left out.
 with classified as (
     {{ classified_transfers() }}
 ),

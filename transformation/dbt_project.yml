@@ -11,8 +11,8 @@ analysis-paths: ["analyses"]
 
 clean-targets: ["target", "dbt_packages"]
 
-# The token the token_* analyses follow: its Ethereum address, its decimals, and on each L2 its address
-# and the blocks to read. Pass another with --vars '{token: {...}}' to follow that token instead.
+# The token the token_* analyses follow. To follow another, load its transfers, bridge moves and address
+# code, then pass it with --vars '{token: {...}}'.
 vars:
   token:
     ethereum: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"

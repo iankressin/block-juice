@@ -1,6 +1,5 @@
--- Each contract and every address that sent it the token or got the token from it in the token's windows,
--- largest amount first. Only transfers whose category is contract: a contract's transfers with an
--- exchange count as exchange transfers. When both sides are contracts, each shows as the other's counterparty.
+-- Only transfers whose category is contract: a contract's transfers with an exchange count as exchange
+-- transfers.
 with classified as (
     {{ classified_transfers() }}
 ),

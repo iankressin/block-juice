@@ -1,4 +1,3 @@
-{#- The ERC-20 transfers of the token in var('token'), each chain's inside that chain's blocks. -#}
 {%- macro token_transfers() %}
     {%- for w in var('token').windows %}
     select chain, id, block_number, block_timestamp, tx_hash, from_address, to_address, value
@@ -12,8 +11,6 @@
     {%- endfor %}
 {%- endmacro %}
 
-{#- The bridge moves of the token in var('token'), by its Ethereum address, each chain's inside that
-    chain's blocks. -#}
 {%- macro token_bridge_transfers() %}
     select *
     from {{ ref('bridge_transfers') }}
@@ -26,5 +23,4 @@
         )
 {%- endmacro %}
 
-{#- One whole token in base units, as numeric: divide a base-unit amount by it. -#}
 {%- macro token_unit() %}power(10::numeric, {{ var('token').decimals }}){% endmacro %}

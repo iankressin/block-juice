@@ -1,5 +1,3 @@
--- How many addresses that are no exchange took the token out of one exchange and paid it into a different
--- one in the token's windows. token_flow_map_cross_exchange lists them.
 with classified as (
     {{ classified_transfers() }}
 ),

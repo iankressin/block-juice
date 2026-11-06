@@ -1,7 +1,4 @@
--- Every pair of EOAs that sent the token from one to the other in its windows, largest amount first: on
--- the same chain, and across chains, when a withdrawal from one L2 inside its window pairs with a deposit
--- into the other through Ethereum (bridge_pairs) and both L2 ends are EOAs. chain names the route of a
--- cross-chain pair, such as arbitrum>base. EIP-7702 delegated EOAs count as EOAs.
+-- EIP-7702 delegated EOAs count as EOAs.
 with classified as (
     {{ classified_transfers() }}
 ),

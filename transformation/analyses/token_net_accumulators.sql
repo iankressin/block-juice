@@ -1,5 +1,3 @@
--- The address that gained the most of the token in its windows, all chains together: the amount received
--- minus the amount sent, the zero address left out. token_net_accumulators_by_wallet ranks every address.
 with transfers as (
     {{ token_transfers() }}
 ),

@@ -1,6 +1,3 @@
--- Every address that is no exchange yet got the token from one exchange and sent it to a different
--- exchange in the token's windows, largest amount first: which exchanges it took from and paid into, and
--- how much. Exchange addresses and their deposit addresses count as the exchange.
 with classified as (
     {{ classified_transfers() }}
 ),

@@ -1,5 +1,3 @@
--- The token's transfers in its windows by category and chain: transfers, amount, and how many addresses
--- sent and received. The categories are those of macros/classified_transfers.sql.
 with classified as (
     {{ classified_transfers() }}
 )
