@@ -13,6 +13,12 @@
   },
   {
     "name": "arbitrum",
+    "table": "erc20_metadata",
+    "package": "evm-erc20-metadata",
+    "settings": "chains/arbitrum"
+  },
+  {
+    "name": "arbitrum",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
     "settings": "chains/arbitrum"
@@ -32,6 +38,12 @@
     "name": "base",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
+    "settings": "chains/base"
+  },
+  {
+    "name": "base",
+    "table": "erc20_metadata",
+    "package": "evm-erc20-metadata",
     "settings": "chains/base"
   },
   {
@@ -71,6 +83,12 @@
     "name": "ethereum",
     "table": "erc20_balances",
     "package": "evm-erc20-balances",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
+    "table": "erc20_metadata",
+    "package": "evm-erc20-metadata",
     "settings": "chains/ethereum"
   },
   {

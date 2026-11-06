@@ -40,3 +40,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: erc20_metadata
+        identifier: ethereum_erc20_metadata
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

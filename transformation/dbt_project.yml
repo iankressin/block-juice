@@ -44,5 +44,8 @@ models:
         +materialized: view
       prices:
         +materialized: view
+      # Views, so each chain's metadata readings show up as their own step in Dagster.
+      tokens:
+        +materialized: view
     marts:
       +materialized: table
