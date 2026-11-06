@@ -59,6 +59,12 @@ def _coverage(args: argparse.Namespace) -> int:
     return coverage.run(REPO_ROOT, args.source)
 
 
+def _doctor(args: argparse.Namespace) -> int:
+    from pipeline.cli import doctor
+
+    return doctor.run(REPO_ROOT, args.copy_env)
+
+
 def _new_source(args: argparse.Namespace) -> int:
     from pipeline.cli import new_source
 
@@ -127,6 +133,19 @@ def parser() -> argparse.ArgumentParser:
     )
     coverage.add_argument("source", metavar="<source>.<table>", nargs="?")
     coverage.set_defaults(run=_coverage)
+
+    doctor = commands.add_parser(
+        "doctor",
+        help="check the local setup: env files and keys, ports, the warehouse, eRPC, Dshackle, tool versions",
+        description="Checks that .env and each source package's .env exist and set every key their .env.example "
+        "requires, that the compose ports are open, that the warehouse answers, that eRPC and Dshackle report "
+        "healthy, and that node, pnpm and uv match mise.toml. Prints one PASS, WARN or FAIL line per check and "
+        "names keys without their values. Exits 1 when a check failed.",
+    )
+    doctor.add_argument(
+        "--copy-env", action="store_true", help="copy .env.example to .env in each source package that has none"
+    )
+    doctor.set_defaults(run=_doctor)
 
     new_source = commands.add_parser(
         "new-source",
