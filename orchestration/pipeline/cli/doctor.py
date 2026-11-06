@@ -131,8 +131,8 @@ def check_chain_env(repo_root: Path, folder: Path) -> Check:
 
 def check_envs(repo_root: Path, copy: bool) -> list[Check]:
     """The root .env, then the .env of every package in sources.json, and of each chain in a package
-    that loads several chains. --copy-env copies a package's .env.example to its missing .env; the root
-    .env is the first step of the README and stays by hand."""
+    that loads several chains. With copy, a package's missing .env is copied from its .env.example, but
+    the root .env never is: bj install copies that one itself."""
     checks = [check_env(repo_root, repo_root, ROOT_OPTIONAL_KEYS, FAIL, False)]
     entries = read_sources((repo_root / SOURCES_FILE).read_text())
     for package in dict.fromkeys(entry.package for entry in entries):

@@ -65,6 +65,12 @@ def _doctor(args: argparse.Namespace) -> int:
     return doctor.run(REPO_ROOT, args.copy_env)
 
 
+def _install(args: argparse.Namespace) -> int:
+    from pipeline.cli import install
+
+    return install.run(REPO_ROOT)
+
+
 def _new_source(args: argparse.Namespace) -> int:
     from pipeline.cli import new_source
 
@@ -146,6 +152,16 @@ def parser() -> argparse.ArgumentParser:
         "--copy-env", action="store_true", help="copy .env.example to .env in each source package that has none"
     )
     doctor.set_defaults(run=_doctor)
+
+    install = commands.add_parser(
+        "install",
+        help="set up a checkout: the .env files, the pnpm packages, the dbt manifest; starts nothing",
+        description="Copies .env.example to .env at the root and in each source package that has none, and "
+        "checks each .env as bj doctor does. Then runs pnpm install --frozen-lockfile in ingestion/ and dbt "
+        "parse, which writes transformation/target/manifest.json. Never overwrites an .env, and is safe to run "
+        "again. Exits 2 when pnpm is missing, and 1 when an .env lacks a required key or pnpm fails.",
+    )
+    install.set_defaults(run=_install)
 
     new_source = commands.add_parser(
         "new-source",
