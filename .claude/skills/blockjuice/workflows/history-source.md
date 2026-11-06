@@ -41,7 +41,7 @@ When a source already reads the right events:
    uv run --project orchestration bj new-source ethereum pancakeswap_v3 --like ethereum-uniswap-v3
    ```
 
-   That makes the package `ethereum-pancakeswap-v3` and the raw table `raw.ethereum_pancakeswap_v3`. A factory copy changes only the constants at the top of `src/source.ts` (the factory's address and deploy block, its creation event, the argument that holds the child's address, the child's event, the two ABI imports), and the events its test encodes. `bj new-source` keeps the old export name, so rename it in `src/source.ts`, `src/index.ts` and the test.
+   That makes the package `ethereum-pancakeswap-v3` and the raw table `raw.ethereum_pancakeswap_v3`. A factory copy changes only the constants at the top of `src/source.ts` (the factory's address and deploy block, its creation event, the argument that holds the child's address, the child's event, the two ABI imports), and the events its test encodes. `bj new-source` sets `name` and `table` in `src/source.ts` and regenerates `ingestion/sources.json` from them, but keeps the old export name, so rename it in `src/source.ts`, `src/index.ts` and the test.
 
 4. Edit the copied `src/source.ts`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is one item as Portal returns it, a log with its ABI-decoded arguments, or a transaction the logs came from, keyed by its hash. Give each record a `kind`, `log` or `transaction`, and never copy a transaction's fields into a log.
    - Read `[START_BLOCK, finalizedHead(portal)]` through `portalClient`, so each run ends at Portal's finalized head and no fork reaches the warehouse. An optional `END_BLOCK` stops a check window short of the head.
