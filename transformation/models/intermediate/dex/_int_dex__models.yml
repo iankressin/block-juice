@@ -3,19 +3,202 @@ version: 2
 models:
   - name: int_ethereum_uniswap_v2_trades
     description: Uniswap v2 trades on Ethereum in the shape dex_trades reads.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: id
+        data_type: text
+        description: The Swap log's key from the raw table, so a rerun replaces it instead of adding another.
         data_tests: [unique, not_null]
+      - name: chain
+        data_type: text
+        description: Which chain the trade was on.
+      - name: protocol
+        data_type: text
+        description: Which DEX the pool belongs to.
+      - name: version
+        data_type: text
+        description: Which version of the protocol the pool runs.
+      - name: pool
+        data_type: text
+        description: The pool's address, or its id in v4.
+        data_tests: [not_null]
+      - name: block_number
+        data_type: bigint
+        description: The block the Swap was in.
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: tx_hash
+        data_type: text
+        description: The transaction the Swap was in.
+        data_tests: [not_null]
+      - name: log_index
+        data_type: integer
+        description: The Swap's position in that block's logs.
+      - name: tx_from
+        data_type: text
+        description: The address that signed the transaction.
+        data_tests: [not_null]
+      - name: sender
+        data_type: text
+        description: The pool's own sender field, often a router.
+      - name: recipient
+        data_type: text
+        description: The pool's own to field, often a router.
+      - name: hooks
+        data_type: text
+        description: The pool's hooks contract in v4; null in v2 and v3.
+      - name: token_bought
+        data_type: text
+        description: The token the swapper received. 0x0000000000000000000000000000000000000000 is native ETH.
+        data_tests: [not_null]
+      - name: amount_bought
+        data_type: numeric
+        description: How much of token_bought the swapper received, in its base units.
+        data_tests: [not_null]
+      - name: token_sold
+        data_type: text
+        description: The token the swapper paid. 0x0000000000000000000000000000000000000000 is native ETH.
+        data_tests: [not_null]
+      - name: amount_sold
+        data_type: numeric
+        description: How much of token_sold the swapper paid, in its base units.
+        data_tests: [not_null]
   - name: int_ethereum_uniswap_v3_trades
     description: Uniswap v3 trades on Ethereum in the shape dex_trades reads.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: id
+        data_type: text
+        description: The Swap log's key from the raw table, so a rerun replaces it instead of adding another.
         data_tests: [unique, not_null]
+      - name: chain
+        data_type: text
+        description: Which chain the trade was on.
+      - name: protocol
+        data_type: text
+        description: Which DEX the pool belongs to.
+      - name: version
+        data_type: text
+        description: Which version of the protocol the pool runs.
+      - name: pool
+        data_type: text
+        description: The pool's address, or its id in v4.
+        data_tests: [not_null]
+      - name: block_number
+        data_type: bigint
+        description: The block the Swap was in.
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: tx_hash
+        data_type: text
+        description: The transaction the Swap was in.
+        data_tests: [not_null]
+      - name: log_index
+        data_type: integer
+        description: The Swap's position in that block's logs.
+      - name: tx_from
+        data_type: text
+        description: The address that signed the transaction.
+        data_tests: [not_null]
+      - name: sender
+        data_type: text
+        description: The pool's own sender field, often a router.
+      - name: recipient
+        data_type: text
+        description: The pool's own recipient field, often a router.
+      - name: hooks
+        data_type: text
+        description: The pool's hooks contract in v4; null in v2 and v3.
+      - name: token_bought
+        data_type: text
+        description: The token the swapper received. 0x0000000000000000000000000000000000000000 is native ETH.
+        data_tests: [not_null]
+      - name: amount_bought
+        data_type: numeric
+        description: How much of token_bought the swapper received, in its base units.
+        data_tests: [not_null]
+      - name: token_sold
+        data_type: text
+        description: The token the swapper paid. 0x0000000000000000000000000000000000000000 is native ETH.
+        data_tests: [not_null]
+      - name: amount_sold
+        data_type: numeric
+        description: How much of token_sold the swapper paid, in its base units.
+        data_tests: [not_null]
   - name: int_ethereum_uniswap_v4_trades
     description: Uniswap v4 trades on Ethereum in the shape dex_trades reads.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: id
+        data_type: text
+        description: The Swap log's key from the raw table, so a rerun replaces it instead of adding another.
         data_tests: [unique, not_null]
+      - name: chain
+        data_type: text
+        description: Which chain the trade was on.
+      - name: protocol
+        data_type: text
+        description: Which DEX the pool belongs to.
+      - name: version
+        data_type: text
+        description: Which version of the protocol the pool runs.
+      - name: pool
+        data_type: text
+        description: The pool's address, or its id in v4.
+        data_tests: [not_null]
+      - name: block_number
+        data_type: bigint
+        description: The block the Swap was in.
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: tx_hash
+        data_type: text
+        description: The transaction the Swap was in.
+        data_tests: [not_null]
+      - name: log_index
+        data_type: integer
+        description: The Swap's position in that block's logs.
+      - name: tx_from
+        data_type: text
+        description: The address that signed the transaction.
+        data_tests: [not_null]
+      - name: sender
+        data_type: text
+        description: The pool's own sender field, often a router.
+      - name: recipient
+        data_type: text
+        description: Always null. v4 has no recipient, so the output goes wherever the sender later takes it.
+      - name: hooks
+        data_type: text
+        description: The pool's hooks contract in v4; null in v2 and v3.
+      - name: token_bought
+        data_type: text
+        description: The token the swapper received. 0x0000000000000000000000000000000000000000 is native ETH.
+        data_tests: [not_null]
+      - name: amount_bought
+        data_type: numeric
+        description: How much of token_bought the swapper received, in its base units.
+        data_tests: [not_null]
+      - name: token_sold
+        data_type: text
+        description: The token the swapper paid. 0x0000000000000000000000000000000000000000 is native ETH.
+        data_tests: [not_null]
+      - name: amount_sold
+        data_type: numeric
+        description: How much of token_sold the swapper paid, in its base units.
+        data_tests: [not_null]
 
 # Each version's rules, tested on the proof logs in catalog/protocols/uniswap/NOTES.md. Rows marked
 # "made up" are not on chain; they show a case no proof log has.
