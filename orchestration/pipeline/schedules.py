@@ -9,6 +9,7 @@ PIPELINES = {
     "dex": "0 6 * * *",
     "labels": "0 6 * * *",
     "bridges": "0 6 * * *",
+    "prices": "0 6 * * *",
 }
 
 jobs = [
