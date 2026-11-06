@@ -12,7 +12,7 @@ uv run --project orchestration bj new-source <source> <table> --like <package>
 
 `<source>` is the chain, such as `ethereum`, `<table>` the raw table, such as `pancakeswap_v3`, and `<package>` the folder under `ingestion/sources/` to copy. The command:
 
-- copies the package to `ingestion/sources/<source>-<table>/` (underscores become hyphens) and sets `name` and `table` in its `src/source.ts`, so it exports the new pair and fills `raw.<source>_<table>`;
+- copies the package to `ingestion/sources/<source>-<table>/` (underscores become hyphens) and sets `name` and `table` in its `src/source.ts`, so it exports the new pair and fills `raw.<source>_<table>`. A copy of an `evm-*` package is `evm-<table>/` instead, with only `chains/<source>/`, and only its `table` changes, since `forChain(chain)` names each source for its chain;
 - adds the table to `transformation/models/staging/<source>/_<source>__sources.yml`, writing the file for a new source, and writes `stg_<source>__<table>.sql`, which selects `id`, `data` and `_loaded_at`;
 - runs `pnpm install` and then `pnpm generate-sources` in `ingestion/`. That rewrites `ingestion/sources.json`, the list of the `name` and `table` every package exports, which Dagster builds its `SOURCES` from. Nothing lists the sources by hand.
 

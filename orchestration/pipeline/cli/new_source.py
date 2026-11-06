@@ -25,6 +25,9 @@ class Plan:
     template: Path
     package: Path
     files: dict[Path, str]
+    # For a template that loads several chains: the template's chain folder to copy, and the new
+    # package's folder for the requested chain. The new package gets no other chain.
+    chain: tuple[Path, Path] | None = None
 
 
 def package_name(source: str, table: str) -> str:
@@ -87,15 +90,23 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
     old = [entry for entry in entries if entry.package == like]
     if not old:
         raise BadInput(f"{like} is in no entry of {SOURCES_FILE}, so it is not a source to copy")
-    if old[0].settings:
+    old_source, old_table = old[0].name, old[0].table
+    several_chains = bool(old[0].settings)
+    if several_chains and table == old_table:
         raise BadInput(
-            f"{like} loads one table on several chains; for a new chain, add chains/<chain>/ to it "
+            f"{like} already loads {table} on several chains; for {source}, add chains/{source}/ to it "
             "and run `pnpm generate-sources` in ingestion/"
         )
-    old_source, old_table = old[0].name, old[0].table
     if any((entry.name, entry.table) == (source, table) for entry in entries):
         raise BadInput(f"({source!r}, {table!r}) is already in {SOURCES_FILE}")
-    package = sources_root / package_name(source, table)
+    if several_chains:
+        # A package that loads several chains is named for what it loads, such as evm-uniswap-v3.
+        prefix = like.removesuffix(f"-{old_table.replace('_', '-')}")
+        if prefix == like:
+            raise BadInput(f"{like} does not end with its table, {old_table}, so the new package cannot be named after it")
+        package = sources_root / f"{prefix}-{table.replace('_', '-')}"
+    else:
+        package = sources_root / package_name(source, table)
     if package.exists():
         raise BadInput(f"{package.relative_to(repo_root)} already exists")
 
@@ -103,7 +114,15 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
     for needed in (source_ts, template / "package.json"):
         if not needed.is_file():
             raise BadInput(f"{needed.relative_to(repo_root)} is missing, so {like} cannot be copied")
-    renamed = replace_once(source_ts.read_text(), f'name: "{old_source}"', f'name: "{source}"', source_ts)
+    renamed = source_ts.read_text()
+    chain = None
+    if several_chains:
+        # The source is named for its chain by forChain(chain), so only the table is renamed. The new
+        # chain's folder starts as a copy of the template's, of the same chain when it has one.
+        own = template / "chains" / source
+        chain = (own if own.is_dir() else old[0].folder(repo_root), package / "chains" / source)
+    else:
+        renamed = replace_once(renamed, f'name: "{old_source}"', f'name: "{source}"', source_ts)
     renamed = replace_once(renamed, f'table: "{old_table}"', f'table: "{table}"', source_ts)
     package_json = json.loads((template / "package.json").read_text())
     package_json["name"] = f"@ingestion/{package.name}"
@@ -132,6 +151,7 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
             sources_yml: yml,
             model: staging_model(source, table),
         },
+        chain=chain,
     )
 
 
@@ -152,15 +172,22 @@ def run(repo_root: Path, source: str, table: str, like: str) -> int:
     planned = plan(repo_root, source, table, like)
     existed = {path for path in planned.files if path.exists()}
     # A SQLite file is a source's local state, such as the pools Pipes' factory pattern found.
-    local = shutil.ignore_patterns("node_modules", ".env", "*.sqlite*")
-    shutil.copytree(planned.template, planned.package, ignore=local)
+    local = ("node_modules", ".env", "*.sqlite*")
+    shutil.copytree(planned.template, planned.package, ignore=shutil.ignore_patterns(*local, "chains"))
+    if planned.chain:
+        shutil.copytree(*planned.chain, ignore=shutil.ignore_patterns(*local))
     for path, text in planned.files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
     package = planned.package.relative_to(repo_root)
+    inputs = (planned.chain[1] if planned.chain else planned.package).relative_to(repo_root)
+    # The template had no folder for this chain, so the new one holds another chain's settings.
+    borrowed = planned.chain and planned.chain[0].name != source
     model = f"transformation/models/staging/{source}/stg_{source}__{table}.sql"
     print(f"created {package}/ (a copy of {like})")
+    if borrowed:
+        print(f"created {inputs}/ (a copy of {planned.chain[0].relative_to(repo_root)}/)")
     for path in planned.files:
         print(f"{'changed' if path in existed else 'created'} {path.relative_to(repo_root)}")
 
@@ -176,8 +203,9 @@ def run(repo_root: Path, source: str, table: str, like: str) -> int:
     print(f"changed {SOURCES_FILE}")
     print(
         "\nNext steps:\n"
-        f"1. Edit the copied code in {package}/src/ and {package}/addresses.json to read the new data.\n"
-        f"2. Shape {model}: turn `data` into the columns you need.\n"
+        f"1. Edit the copied code in {package}/src/ and {inputs}/addresses.json to read the new data.\n"
+        + (f"   Set {inputs}/.env.example for {source}: it holds another chain's settings.\n" if borrowed else "")
+        + f"2. Shape {model}: turn `data` into the columns you need.\n"
         "3. By hand, read the new source from a mart in transformation/models/marts/<pipeline>/: follow "
         "`## Adding a chain` in transformation/README.md. bj new-source does not touch marts.\n"
         "4. By hand, make sure a scheduled pipeline builds that mart: PIPELINES in orchestration/pipeline/schedules.py."

@@ -23,37 +23,38 @@ When a source already reads the right events:
   truncate raw.<chain>_<table>;
   ```
 
-  For a factory source, also delete `factory.sqlite` in its package, or the reload keeps the old pools.
+  For a factory source, also delete `chains/<chain>/factory.sqlite` in its package, or the reload keeps the old pools.
 
 ## A new history source
 
 1. Find the events in the protocol's catalog entry, `catalog/protocols/<name>/`. With no entry, follow [explore-protocol.md](explore-protocol.md) first.
 2. Estimate the load before you build: count the matching logs over a few thousand blocks of the window with the Portal MCP (`portal_evm_query_logs`), scale it, and call it an estimate, since a thin sample can be far off. Put it in front of the user with the definitions, per [answer.md](answer.md). Never write a script to count, and never count the whole window: the estimate exists so the user can decide on the full load.
-3. Build one source per protocol version, each with its own raw table, per [../references/layers.md](../references/layers.md). A question over Uniswap v2, v3 and v4 needs three sources: `ethereum-uniswap-v2`, `ethereum-uniswap-v3` and `ethereum-uniswap-v4`. Copy the source closest in shape:
+3. Build one source per protocol version, each with its own raw table, per [../references/layers.md](../references/layers.md). A question over Uniswap v2, v3 and v4 needs three sources: `evm-uniswap-v2`, `evm-uniswap-v3` and `evm-uniswap-v4`. Copy the source closest in shape:
 
    | Contracts | Copy |
    |---|---|
    | Tokens, for their Transfers | Nothing: add the chain's folder to `evm-erc20-transfers`, as the README's Add a source says |
+   | A protocol version already loaded on another chain | Nothing: add the chain's folder to its `evm-*` package, and the chain's factory to `src/source.ts`, as the README's Add a source says |
    | Known contracts, such as gateways | `arbitrum-token-bridge` |
-   | Contracts a factory creates, such as pools | `ethereum-uniswap-v3` |
-   | One contract that names its children by id, such as the v4 PoolManager | `ethereum-uniswap-v4` |
+   | Contracts a factory creates, such as pools | `evm-uniswap-v3` |
+   | One contract that names its children by id, such as the v4 PoolManager | `evm-uniswap-v4` |
 
    ```sh
-   uv run --project orchestration bj new-source ethereum pancakeswap_v3 --like ethereum-uniswap-v3
+   uv run --project orchestration bj new-source ethereum pancakeswap_v3 --like evm-uniswap-v3
    ```
 
-   That makes the package `ethereum-pancakeswap-v3` and the raw table `raw.ethereum_pancakeswap_v3`. A factory copy changes only the constants at the top of `src/source.ts` (the factory's address and deploy block, its creation event, the argument that holds the child's address, the child's event, the two ABI imports), and the events its test encodes. `bj new-source` sets `name` and `table` in `src/source.ts` and regenerates `ingestion/sources.json` from them, but keeps the old export name, so rename it in `src/source.ts`, `src/index.ts` and the test.
+   That makes the package `evm-pancakeswap-v3`, with one chain folder, `chains/ethereum/`, and the raw table `raw.ethereum_pancakeswap_v3`. A factory copy changes only the constants at the top of `src/source.ts` (each chain's factory address and deploy block in `FACTORIES`, its creation event, the argument that holds the child's address, the child's event, the two ABI imports), and the events its test encodes. `bj new-source` sets `table` in `src/source.ts` and regenerates `ingestion/sources.json`. `forChain(chain)` names each source for its chain, so there is no export to rename, but the error it throws for a chain missing from `FACTORIES` still names Uniswap.
 
 4. Edit the copied `src/source.ts`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is one item as Portal returns it, a log with its ABI-decoded arguments, or a transaction the logs came from, keyed by its hash. Give each record a `kind`, `log` or `transaction`, and never copy a transaction's fields into a log.
    - Read `[START_BLOCK, finalizedHead(portal)]` through `portalClient`, so each run ends at Portal's finalized head and no fork reaches the warehouse. An optional `END_BLOCK` stops a check window short of the head.
    - Key a log by `<block>:<logIndex>` and a transaction by `tx:<hash>`, so a rerun or an overlap writes the same row. Write only the transactions of the logs you write: Portal returns the transactions of every log it matched, including the ones a factory filter drops.
    - One `evmEventDecoder` per filter, since Pipes refuses two filters on the same event in one decoder.
-   - For contracts a factory creates, such as Uniswap pools, follow the children with Pipes' factory pattern inside the stream. Never read another source's raw table to find them. A factory source has two start blocks: `POOLS_START_BLOCK` for the creation events, at the token's first pool or the factory's deployment, and `START_BLOCK` for the children's events. Pipes keeps the children it found in `factory.sqlite` next to the package, which git ignores.
-   - Put addresses in `addresses.json`, and set `START_BLOCK` in `.env.example` to the window's first block or the contract's deployment block.
+   - For contracts a factory creates, such as Uniswap pools, follow the children with Pipes' factory pattern inside the stream. Never read another source's raw table to find them. A factory source has two start blocks: `POOLS_START_BLOCK` for the creation events, at the token's first pool or the factory's deployment, and `START_BLOCK` for the children's events. Pipes keeps the children it found in `chains/<chain>/factory.sqlite`, which git ignores.
+   - Put addresses in `addresses.json`, and set `START_BLOCK` in `.env.example`, both in `chains/<chain>/` for an `evm-*` package, to the window's first block or the contract's deployment block.
    - Leave out sign rules, joins, buy or sell, units and prices. They go in dbt.
 5. Cast the fields in staging, one view per raw table and kind of record, per [../references/layers.md](../references/layers.md). Put each version's rules from the catalog's `NOTES.md` in that version's intermediate model, with a dbt unit test per rule built from a proof log. A mart that needs every version unions those models. Add the mart in a pipeline ([new-pipeline.md](new-pipeline.md)), with `unique` and `not_null` tests on the id.
 6. When a view function returns the value the events rebuild, add a reconciliation test like `transformation/tests/erc20_transfers_match_balances.sql`. It reads what the source has loaded from `var('coverage')`, which `bj answer` passes, and compares the rebuilt value with state readings inside the loaded blocks.
-7. Check it on a short window first, in schemas of its own so no check cursor lands in `raw`. In the package's `.env`, set `RAW_SCHEMA` to a check schema such as `raw_dex_check`, and `START_BLOCK` and `END_BLOCK` a few thousand blocks apart. Run it, then build its models with the check schemas set in the shell:
+7. Check it on a short window first, in schemas of its own so no check cursor lands in `raw`. In the package's `.env`, set `RAW_SCHEMA` to a check schema such as `raw_dex_check`. Set `START_BLOCK` and `END_BLOCK` a few thousand blocks apart, in `chains/<chain>/.env` for an `evm-*` package: the chain's settings load first and win over the package's `.env`. Run it, then build its models with the check schemas set in the shell:
 
    ```sh
    set -a && . ./.env && set +a && cd transformation && RAW_SCHEMA=raw_dex_check DBT_SCHEMA=analytics_dex_check uv run --project ../orchestration dbt build --select +path:models/marts/<pipeline>

@@ -31,9 +31,9 @@ PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 #   RPC_BATCH_SIZE     ingestion/lib/src/evm/env.ts: 100
 #   RPC_MAX_CONCURRENCY ingestion/lib/src/evm/env.ts: 16
 #   PORTAL_URL         ingestion/sources/*/src/source.ts: the public Portal
-#   POOLS_START_BLOCK  ingestion/sources/ethereum-uniswap-*/src/source.ts: the factory's deploy block
-#   END_BLOCK          ingestion/sources/ethereum-uniswap-*/src/source.ts: unset reads to the head
-#   FACTORY_DB         ingestion/sources/ethereum-uniswap-*/src/source.ts: factory.sqlite
+#   POOLS_START_BLOCK  ingestion/sources/evm-uniswap-*/src/source.ts: the factory's deploy block
+#   END_BLOCK          ingestion/sources/evm-uniswap-*/src/source.ts: unset reads to the head
+#   FACTORY_DB         ingestion/sources/evm-uniswap-*/src/source.ts: chains/<chain>/factory.sqlite
 OPTIONAL_KEYS = frozenset(
     {
         "PUSHGATEWAY_URL",
