@@ -21,7 +21,7 @@ export type BlockNumber = z.infer<typeof blockNumber>;
 
 export const evmEnv = z.object({
   BLOCK_NUMBER: blockNumber,
-  ERPC_URL: z.url(),
+  EVM_RPC_URL: z.url(),
   RPC_BATCH_SIZE: z.coerce.number().int().positive().default(100),
 });
 

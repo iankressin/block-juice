@@ -52,6 +52,8 @@ export interface Source<E, C> extends SourceBase<E> {
  * A source that reads blocks through a Pipes stream. runSource pipes it into the warehouse,
  * where Pipes keeps its cursor, so each run resumes after the last block the one before loaded.
  * The stream must end: give its range a `to`, such as Portal's finalized head at the start.
+ * It reports no failed calls and uses no dead letters: an error fails the run, and the next
+ * run resumes after the last batch that committed.
  */
 export interface StreamSource<E> extends SourceBase<E> {
   /** About this many blocks a run (it ends on the batch that passes it), so a long backfill spreads over several runs. 1,000,000 by default. */

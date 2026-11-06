@@ -48,7 +48,7 @@ def repo(tmp_path, pnpm):
     template = tmp_path / "ingestion" / "sources" / TEMPLATE
     shutil.copytree(REPO_ROOT / "ingestion" / "sources" / TEMPLATE, template, ignore=shutil.ignore_patterns("node_modules", ".env"))
     (template / "node_modules" / "viem").mkdir(parents=True)
-    (template / ".env").write_text("ERPC_URL=http://secret\n")
+    (template / ".env").write_text("EVM_RPC_URL=http://secret\n")
     (template / "factory.sqlite").write_bytes(b"pools of another source")
     shutil.copytree(REPO_ROOT / "transformation" / "models" / "staging", tmp_path / "transformation" / "models" / "staging")
     shutil.copy(REPO_ROOT / SOURCES_FILE, tmp_path / SOURCES_FILE)

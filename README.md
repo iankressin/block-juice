@@ -81,6 +81,8 @@ set -a && source .env && set +a
 cd orchestration && uv run dagster dev
 ```
 
+`uv run --project orchestration bj doctor` checks the setup: the env files and their keys, the ports, the warehouse, eRPC and Dshackle, and the tool versions.
+
 Open http://localhost:3000 and materialize all assets.
 
 In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Code for one chain comes from that chain's subpath: `import { connect } from "@ingestion/lib/evm"`. Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
@@ -120,6 +122,7 @@ uv run --project orchestration bj --help
 |---|---|
 | `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
 | `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
+| `bj doctor [--copy-env]` | Checks the local setup: `.env` and each source's `.env` against their `.env.example` (keys by name, never values), the compose ports, the warehouse, the eRPC and Dshackle health endpoints, and the tool versions `mise.toml` pins. `--copy-env` copies `.env.example` to each source `.env` that is missing. Exits 1 when a check failed. |
 | `bj coverage [<source>.<table>]` | Prints the blocks each history source has loaded: `START_BLOCK` to the cursor Pipes keeps in `raw._sync`, and the addresses it read. |
 | `bj check <slug> <name> <passed\|failed> <detail>` | Records a check the agent ran itself, such as a cross-check against Portal, in `answer.json`. Exits 1 when it failed. |
 | `bj blocks <chain> <from> [<to>]` | Turns UTC times into the first and last block of the window, read from SQD Portal for eleven EVM chains, including Ethereum, Arbitrum and Base. An unknown chain name prints the list. |
@@ -138,13 +141,15 @@ uv run --project orchestration bj --help
 
 A source run ends before Prometheus could scrape it, so each run pushes its result to the Pushgateway at `PUSHGATEWAY_URL`, and Prometheus scrapes that. The result covers whether the run succeeded, when it finished, how long it took, the records it wrote, its failed calls and the dead letters it retried, labelled by source and table. It also counts the dead letters left waiting, as `ingestion_dead_letters` with `state` set to `pending` (retried next run) or `parked` (failed too often or no longer matches the source's call schema, waits for a person). With `PUSHGATEWAY_URL` unset, a run pushes nothing.
 
+`infra/prometheus/alerts.yml` holds the alert rules: a failed source run, no successful run for over 25h, parked dead letters, a scrape target down, eRPC upstream and network error rates, and Dshackle with no available upstream. Prometheus evaluates them and shows them at http://localhost:9090/alerts; Grafana lists the same rules under Alerting, and its built-in alerting on :3001 is where notifications get set up in v1, rather than a separate Alertmanager. `docker compose ps` shows Dshackle as healthy once its `/health` endpoint answers. eRPC's image has no shell to run a check from, so it has no compose healthcheck; from the host, `curl -i http://localhost:4000/healthcheck` answers 200 while an upstream is up.
+
 Prometheus keeps only each source's latest result, so the history of every run lives in the warehouse, in the `ops` schema that `infra/postgres/ops.sql` creates:
 
 - `ops.ingestion_runs` holds one row per source run. `runSource` writes it, with the error when the run failed and the time spent writing to the warehouse.
 - `ops.dbt_invocations` and `ops.dbt_node_runs` hold each dbt build and each model and test in it. The Dagster dbt asset writes them from `run_results.json`, so a `dbt build` run by hand is not recorded.
 - `ops.pipeline_runs` is a view with one row per Dagster run. Dagster passes its run id to each source as `DAGSTER_RUN_ID`, which ties the ingestion rows to the dbt rows of the same run.
 
-Grafana reads the warehouse as `monitor`, a role that can read everything and change nothing. The warehouse loads `pg_stat_statements` for the query panels. The eRPC panels count only sources whose `ERPC_URL` points at eRPC.
+Grafana reads the warehouse as `monitor`, a role that can read everything and change nothing. The warehouse loads `pg_stat_statements` for the query panels. The eRPC panels count only sources whose `EVM_RPC_URL` or `SOLANA_RPC_URL` points at eRPC.
 
 To change a dashboard, edit `infra/grafana/build_dashboards.py`, run it, then check every query with `python3 infra/grafana/check_dashboards.py`.
 
@@ -162,7 +167,15 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 The dbt source name and table name must match the `name` and `table` the source exports. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them. A test names any pair that drifts.
 
-A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. To read a stream source again from its start, delete its rows from `raw._sync`, whose `id` is `<source>_<table>`.
+A call source makes calls, such as RPC reads at one block, and its `src/source.ts` exports a `Source`. Before its first run, check that:
+
+- The `Source` has a zod `call` schema. Each run parses its pending dead letters with it, and a dead letter whose call no longer parses is parked for a person.
+- A failed call's `id` is the `callId` of the record the call would have produced. A record with that `callId` clears the dead letter. `settleCalls` in `lib/` keys both from one id function.
+- `extract(env, retry)` makes the retried calls next to the new ones, as `[...newCalls, ...retry]`. A failed call does not fail the run: the records that did arrive are written, and the failed calls wait as dead letters for the next run. A call that fails five runs in a row is parked.
+- `addresses.json` loads inside `extract`, not at import, so a bad file fails the run and `runSource` logs why.
+- `name` and `table` match the dbt source and table and the `SOURCES` entry, as above.
+
+A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls; scaffold one with `--like ethereum-erc20-transfers` or one of the `ethereum-uniswap-v*` packages. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. A stream source has no calls, so it has no dead letters: an error, from Portal or from the warehouse, fails the run, nothing from the batch it was writing commits, and the next run resumes after the last batch that did. To read a stream source again from its start, delete its row from `raw._sync`, whose `id` is `<source>_<table>`.
 
 ## Add a pipeline
 

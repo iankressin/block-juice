@@ -6,7 +6,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
-const env = { ERPC_URL: "http://127.0.0.1:1" };
+const env = { SOLANA_RPC_URL: "http://127.0.0.1:1" };
 
 /** This package's source, imported from a copy of the package whose addresses.json holds `json`. */
 async function sourceWith(t: TestContext, json: string) {
