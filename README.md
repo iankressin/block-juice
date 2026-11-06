@@ -29,7 +29,7 @@ When something breaks, you can see it. `bj doctor` checks your env and services 
 | DEX activity | Uniswap v2/v3/v4 → `analytics.dex_trades` |
 | Address labels | Code + exchange seeds → `analytics.address_labels` |
 | How it runs | TypeScript extract/load → dbt → Dagster, plus Docker for the warehouse, eRPC, Dshackle and monitoring |
-| How you drive it | `bj` CLI (`doctor`, `run`, `answer`, `report`, `new-source`, …) and the blockjuice skill |
+| How you drive it | `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`, …) and the blockjuice skill |
 
 The code is ordinary software engineering: typed sources, tests, schedules and docs a teammate can follow. [docs/architecture.md](docs/architecture.md) has the details.
 
@@ -37,21 +37,34 @@ The code is ordinary software engineering: typed sources, tests, schedules and d
 
 You need Node 24 and [pnpm](https://pnpm.io) (both pinned in `mise.toml`), [uv](https://docs.astral.sh/uv/) and Docker.
 
+First, set up the checkout:
+
 ```sh
-cp .env.example .env
-docker compose up -d
-(cd ingestion && pnpm install)
-(cd orchestration && uv sync)
-uv run --project orchestration bj doctor
-set -a && source .env && set +a
-cd orchestration && uv run dagster dev
+uv run --project orchestration bj install
 ```
 
-Open http://localhost:3000 and materialize the assets you need. Then ask a question with `/bj`, or read [Ask a question](docs/architecture.md#ask-a-question) to see what the skill does and the `bj` commands behind it. If something looks wrong, run `bj doctor` before anything else.
+It copies each missing `.env` from its `.env.example`, installs the Node packages in `ingestion/` and runs `dbt parse`. It never overwrites an `.env` and starts nothing. `uv run` installs the Python packages before `bj` runs.
+
+Then start everything:
+
+```sh
+uv run --project orchestration bj dev
+```
+
+`bj dev` does four things, in order:
+
+1. Runs `bj install` again, which is safe to repeat.
+2. Starts the Docker stack with `docker compose up -d`: the Postgres warehouse, eRPC, Dshackle, Prometheus, the Pushgateway and Grafana. It returns once the warehouse is set up.
+3. Runs the `bj doctor` checks and stops if any of them fails.
+4. Starts `dagster dev` in `orchestration/`, with `.env` loaded, at http://localhost:3000.
+
+It stops at once if port 3000 is taken, since that usually means Dagster is already running. Ctrl-C stops Dagster and leaves the stack running. `docker compose down` stops the stack.
+
+When Dagster is up, open http://localhost:3000 and materialize the assets you need. Then ask a question with `/bj`, or read [Ask a question](docs/architecture.md#ask-a-question) to see what the skill does and the `bj` commands behind it. If something looks wrong, run `bj doctor` before anything else.
 
 ## How you use it
 
-1. Set up the stack once: `docker compose`, `bj doctor`, the Dagster UI.
+1. Set up once with `bj install`, start the stack and Dagster with `bj dev`, then open the Dagster UI.
 2. Point sources at the wallets and tokens you care about, in each source's `addresses.json`. A source that covers several chains keeps one per chain under `chains/<chain>/`.
 3. Materialize a pipeline (balances, transfers, dex or labels) on a schedule you choose.
 4. Ask the business question in Claude Code. You get an answer folder with its checks, and a report if you want one.

@@ -59,10 +59,22 @@ def _coverage(args: argparse.Namespace) -> int:
     return coverage.run(REPO_ROOT, args.source)
 
 
+def _dev(args: argparse.Namespace) -> int:
+    from pipeline.cli import dev
+
+    return dev.run(REPO_ROOT)
+
+
 def _doctor(args: argparse.Namespace) -> int:
     from pipeline.cli import doctor
 
     return doctor.run(REPO_ROOT, args.copy_env)
+
+
+def _install(args: argparse.Namespace) -> int:
+    from pipeline.cli import install
+
+    return install.run(REPO_ROOT)
 
 
 def _new_source(args: argparse.Namespace) -> int:
@@ -134,6 +146,16 @@ def parser() -> argparse.ArgumentParser:
     coverage.add_argument("source", metavar="<source>.<table>", nargs="?")
     coverage.set_defaults(run=_coverage)
 
+    dev = commands.add_parser(
+        "dev",
+        help="bj install, then start the compose stack, check it, and run dagster dev",
+        description="Runs bj install, then docker compose up -d, which returns once warehouse-init has set up "
+        "the warehouse. Then runs the checks of bj doctor, less Dagster's port, and replaces bj with dagster dev in "
+        "orchestration/, so Ctrl-C stops Dagster. Exits 2 when port 3000 is in use or docker or pnpm is missing, "
+        "and 1 when a step or a check failed, without starting Dagster.",
+    )
+    dev.set_defaults(run=_dev)
+
     doctor = commands.add_parser(
         "doctor",
         help="check the local setup: env files and keys, ports, the warehouse, eRPC, Dshackle, tool versions",
@@ -146,6 +168,16 @@ def parser() -> argparse.ArgumentParser:
         "--copy-env", action="store_true", help="copy .env.example to .env in each source package that has none"
     )
     doctor.set_defaults(run=_doctor)
+
+    install = commands.add_parser(
+        "install",
+        help="set up a checkout: the .env files, the pnpm packages, the dbt manifest; starts nothing",
+        description="Copies .env.example to .env at the root and in each source package that has none, and "
+        "checks each .env as bj doctor does. Then runs pnpm install --frozen-lockfile in ingestion/ and dbt "
+        "parse, which writes transformation/target/manifest.json. Never overwrites an .env, and is safe to run "
+        "again. Exits 2 when pnpm is missing, and 1 when an .env lacks a required key or pnpm fails.",
+    )
+    install.set_defaults(run=_install)
 
     new_source = commands.add_parser(
         "new-source",
