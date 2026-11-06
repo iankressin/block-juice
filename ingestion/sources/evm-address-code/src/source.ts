@@ -1,4 +1,4 @@
-import { settleCalls, type Source } from "@ingestion/lib";
+import { readJson, settleCalls, type Source } from "@ingestion/lib";
 import {
   address,
   connect,
@@ -47,7 +47,7 @@ export const forChain = (chain: string): Source<EvmEnv, CodeCall> => ({
   call: codeCallSchema,
   async *extract(env, retry) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: list } = await import(`../chains/${chain}/addresses.json`, { with: { type: "json" } });
+    const list = readJson(`chains/${chain}/addresses.json`);
     const addresses = validateEthAddressList(list.addresses);
     const { client, block } = await connect(env);
     yield await fetchCode(client, [...codeCallsAt(block, addresses), ...retry]);

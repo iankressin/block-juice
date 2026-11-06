@@ -3,6 +3,7 @@ import {
   finalizedHead,
   logger,
   portalClient,
+  readJson,
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
@@ -103,7 +104,7 @@ export const forChain = (chain: string): StreamSource<PoolManagerSourceEnv> => {
     env: envFor(chain, poolManager.deployedBlock),
     async stream(env) {
       // Read inside the run, not at import, so runSource reports a bad addresses.json.
-      const { default: addresses } = await import(`../chains/${chain}/addresses.json`, { with: { type: "json" } });
+      const addresses = readJson(`chains/${chain}/addresses.json`);
       const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
       const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
       const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));

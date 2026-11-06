@@ -1,4 +1,4 @@
-import type { Source } from "@ingestion/lib";
+import { readJson, type Source } from "@ingestion/lib";
 import { connect, evmEnv, validateEthAddressList, type EvmEnv } from "@ingestion/lib/evm";
 import * as z from "zod";
 import {
@@ -23,7 +23,7 @@ export const forChain = (chain: string): Source<EvmEnv, BalanceCall> => ({
   call: balanceCallSchema,
   async *extract(env, retry) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import(`../chains/${chain}/addresses.json`, { with: { type: "json" } });
+    const addresses = readJson(`chains/${chain}/addresses.json`);
     const wallets = validateEthAddressList(addresses.wallets);
     const { client, block } = await connect(env);
     yield await fetchBalances(client, [...balanceCallsAt(block, wallets), ...retry]);

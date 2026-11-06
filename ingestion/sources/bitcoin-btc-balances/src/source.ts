@@ -1,4 +1,4 @@
-import type { Source } from "@ingestion/lib";
+import { readJson, type Source } from "@ingestion/lib";
 import {
   bitcoinEnv,
   createBitcoinClient,
@@ -21,7 +21,7 @@ export const bitcoinBtcBalances: Source<BitcoinEnv, BalanceCall> = {
   call: balanceCallSchema,
   async *extract(env, retry) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import("../addresses.json", { with: { type: "json" } });
+    const addresses = readJson("addresses.json");
     const wallets = validateBitcoinAddressList(addresses.wallets);
     const client = createBitcoinClient(env.DSHACKLE_URL);
     yield await fetchBalances(client, [...balanceCalls(wallets), ...retry]);
