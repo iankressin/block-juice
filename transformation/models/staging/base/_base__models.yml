@@ -30,3 +30,21 @@ models:
                 values: [ERC20BridgeInitiated, ERC20BridgeFinalized]
       - name: amount
         data_tests: [not_null]
+  - name: stg_base__chainlink_price_feeds
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: answer
+        data_tests: [not_null]
+      - name: aggregator
+        description: >-
+          An aggregator that is not in the chainlink_feeds seed is a new one in addresses.json, which needs
+          a row there, or its rounds drop out of oracle_prices.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('chainlink_feeds')
+                field: aggregator
+              config:
+                severity: warn

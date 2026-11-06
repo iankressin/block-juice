@@ -42,5 +42,7 @@ models:
       # Views, so each bridge's rows show up as their own step in Dagster.
       bridges:
         +materialized: view
+      prices:
+        +materialized: view
     marts:
       +materialized: table
