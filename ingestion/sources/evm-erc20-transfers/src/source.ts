@@ -2,6 +2,7 @@ import {
   finalizedHead,
   logger,
   portalClient,
+  readJson,
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
@@ -65,7 +66,7 @@ export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const { default: addresses } = await import(`../chains/${chain}/addresses.json`, { with: { type: "json" } });
+    const addresses = readJson(`chains/${chain}/addresses.json`);
     const tokens = validateEthAddressList(addresses.tokens);
     if (addresses.wallets?.length === 0) {
       throw new Error(`chains/${chain}/addresses.json lists no wallets; leave the key out to read every transfer`);

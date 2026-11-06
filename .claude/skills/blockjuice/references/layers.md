@@ -6,7 +6,7 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 
 `ingestion/sources/<package>/`, in TypeScript.
 
-- One source and one raw table per contract system: one version of one protocol on one chain, such as Uniswap v3 on Ethereum. Never load two versions or two protocols into one table, even when their events look alike, since each version's schema and rules change on their own. Name the package `<chain>-<protocol>-<version>`, such as `ethereum-uniswap-v3`.
+- One source and one raw table per contract system: one version of one protocol on one chain, such as Uniswap v3 on Ethereum. Never load two versions or two protocols into one table, even when their events look alike, since each version's schema and rules change on their own. Name the package `evm-<protocol>-<version>`, such as `evm-uniswap-v3`, with one folder per chain in its `chains/`: each chain is a source of its own and loads `raw.<chain>_<protocol>_<version>`. A protocol that lives on one chain is named for that chain, such as `arbitrum-token-bridge`.
 - Fetch data as the chain returns it. Each record is one item Portal or the RPC returns: a log with its ABI-decoded arguments, a transaction, a trace, or a state call's result at a pinned block.
 - Never combine items in a source. When the models need a log's transaction, such as its `tx.from`, write the transactions as records of their own, keyed by hash, and join them in dbt.
 - Decide what to fetch, and only that: the block range, the contracts, the events, filters on indexed parameters, and the children a factory creates through Pipes' factory pattern.

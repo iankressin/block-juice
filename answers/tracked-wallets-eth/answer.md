@@ -2,7 +2,7 @@ The three tracked wallets hold **3055.159790 ETH** between them.
 
 ## How it was counted
 
-- **Tracked wallets** are the three wallets in `ingestion/sources/ethereum-eth-balances/addresses.json`.
+- **Tracked wallets** are the three wallets in `ingestion/sources/evm-eth-balances/chains/ethereum/addresses.json`.
 - **Right now** is each wallet's latest ETH balance reading, at Ethereum block 26342618.
 - Each balance is `eth_getBalance` at that block, summed in wei and divided by 10^18.
 

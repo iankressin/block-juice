@@ -31,9 +31,9 @@ PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 #   RPC_BATCH_SIZE     ingestion/lib/src/evm/env.ts: 100
 #   RPC_MAX_CONCURRENCY ingestion/lib/src/evm/env.ts: 16
 #   PORTAL_URL         ingestion/sources/*/src/source.ts: the public Portal
-#   POOLS_START_BLOCK  ingestion/sources/ethereum-uniswap-*/src/source.ts: the factory's deploy block
-#   END_BLOCK          ingestion/sources/ethereum-uniswap-*/src/source.ts: unset reads to the head
-#   FACTORY_DB         ingestion/sources/ethereum-uniswap-*/src/source.ts: factory.sqlite
+#   POOLS_START_BLOCK  ingestion/sources/evm-uniswap-*/src/source.ts: the factory's deploy block
+#   END_BLOCK          ingestion/sources/evm-uniswap-*/src/source.ts: unset reads to the head
+#   FACTORY_DB         ingestion/sources/evm-uniswap-*/src/source.ts: chains/<chain>/factory.sqlite
 OPTIONAL_KEYS = frozenset(
     {
         "PUSHGATEWAY_URL",
@@ -114,7 +114,7 @@ def check_env(repo_root: Path, folder: Path, optional: frozenset[str], missing_s
 
 
 def check_chain_env(repo_root: Path, folder: Path) -> Check:
-    """One line for a chain's .env in a package that loads several chains. The package's src/index.ts
+    """One line for a chain's .env in a package that loads several chains. loadEnv in ingestion/lib
     loads the chain's .env.example beneath its .env, so the .env may be missing or set only the keys it
     changes. It fails only when it leaves empty a key the .env.example sets."""
     env, example = folder / ".env", folder / ".env.example"
