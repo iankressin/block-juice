@@ -2,7 +2,7 @@
 -- Only transfers whose category is contract: a contract's transfers with an exchange count as exchange
 -- transfers.
 with classified as (
-    {{ classified_transfers() }}
+    {{ token_transfers(ref('classified_transfers')) }}
 ),
 
 legs as (

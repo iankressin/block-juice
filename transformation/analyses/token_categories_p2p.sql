@@ -3,7 +3,7 @@
 -- route of a cross-chain pair, such as arbitrum>base.
 -- EIP-7702 delegated EOAs count as EOAs.
 with classified as (
-    {{ classified_transfers() }}
+    {{ token_transfers(ref('classified_transfers')) }}
 ),
 
 same_chain as (
