@@ -130,7 +130,7 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       }
 
       /** Writes the records, clears the dead letters they answer, and queues the new failures. */
-      const write = async (q: Query, { records, failed }: Batch) => {
+      const write = async (q: Query, { records, failed, succeededCallIds = [] }: Batch) => {
         // Postgres rejects an upsert that touches the same id twice, so keep the last one.
         for (const part of chunk(uniqueBy(records, (r) => r.id), CHUNK_SIZE)) {
           await q.query(
@@ -140,10 +140,11 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
             [toJson(part)],
           );
         }
-        if (records.length > 0) {
+        const successfulCalls = [...new Set([...records.map((r) => r.callId), ...succeededCallIds])];
+        if (successfulCalls.length > 0) {
           await q.query(`delete from ${deadLetters} where source_table = $1 and id = any($2::text[])`, [
             sourceTable,
-            records.map((r) => r.callId),
+            successfulCalls,
           ]);
         }
         for (const part of chunk(uniqueBy(failed, (f) => f.id), CHUNK_SIZE)) {

@@ -216,6 +216,21 @@ test("loads every closed candle from START_TIME to now, 300 a call, oldest first
   );
 });
 
+test("a successful window with no closed candles reports its call id", async (t) => {
+  const url = await fakeCoinbase(t, { markets: { "UNI-USD": [] } });
+  const source = await sourceWith(t, uniTokens);
+
+  const batches = await run(source, envAt(url));
+
+  assert.deepEqual(batches, [
+    {
+      records: [],
+      failed: [],
+      succeededCallIds: [`UNI-USD:1h:${START}`],
+    },
+  ]);
+});
+
 test("START_TIME inside a candle starts the windows at that candle, so each request stays within 300", async (t) => {
   const requests: string[] = [];
   const url = await fakeCoinbase(t, { markets: { "UNI-USD": hourly(START, 5) }, requests });

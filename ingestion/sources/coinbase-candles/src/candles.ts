@@ -158,10 +158,12 @@ export async function fetchWindows(
       });
     }),
   );
-  const batch: Batch<CandleCall> = { records: [], failed: [] };
+  const succeededCallIds: string[] = [];
+  const batch: Batch<CandleCall> = { records: [], failed: [], succeededCallIds };
   calls.forEach((call, i) => {
     const outcome = outcomes[i]!;
     if (outcome.status === "fulfilled") {
+      succeededCallIds.push(callId(call));
       batch.records.push(...outcome.value.map((candle) => record(call, candle)));
     } else {
       batch.failed.push({ id: callId(call), call, error: describeError(outcome.reason) });
