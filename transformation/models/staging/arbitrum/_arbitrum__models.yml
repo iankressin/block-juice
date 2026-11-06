@@ -30,3 +30,14 @@ models:
                 values: [WithdrawalInitiated, DepositFinalized]
       - name: amount
         data_tests: [not_null]
+      - name: contract
+        description: >-
+          The contract that emitted the log. One that is not in the arbitrum_token_gateways seed is a new
+          gateway, which needs a row there, or a contract that imitates the events.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('arbitrum_token_gateways')
+                field: address
+              config:
+                severity: warn

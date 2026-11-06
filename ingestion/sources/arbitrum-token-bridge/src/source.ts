@@ -51,7 +51,8 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
  * The query names no contract: the gateway router gives each token a gateway, the standard one unless
  * the token has its own, and every L2 gateway emits these two events. A withdrawal's token is not
  * indexed, so the query cannot filter it; dbt keeps the tokens it needs. Any contract can emit an event
- * with the same signature, so each record keeps the contract that emitted it.
+ * with the same signature, so each record keeps the contract that emitted it, and dbt keeps only the
+ * gateways in transformation/seeds/arbitrum_token_gateways.csv.
  */
 export const source: StreamSource<TokenBridgeEnv> = {
   name: "arbitrum",

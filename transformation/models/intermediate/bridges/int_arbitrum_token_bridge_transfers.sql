@@ -2,6 +2,7 @@
 -- catalog/protocols/arbitrum-token-bridge/NOTES.md. A WithdrawalInitiated sends the token from the L2
 -- user `_from` to the Ethereum address `_to`; a DepositFinalized brings it from the Ethereum address
 -- `_from` to the L2 user `_to`. The events name the Ethereum token only, so l2_token is null.
+-- Only the gateways in the arbitrum_token_gateways seed count: any contract can emit these events.
 select
     id,
     'arbitrum' as chain,
@@ -16,3 +17,4 @@ select
     tx_hash,
     log_index
 from {{ ref('stg_arbitrum__token_bridge') }}
+where contract in (select address from {{ ref('arbitrum_token_gateways') }})

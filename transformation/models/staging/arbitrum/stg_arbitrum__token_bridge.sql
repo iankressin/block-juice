@@ -1,5 +1,6 @@
--- One log of Arbitrum's L2 Arb-Custom Gateway, as the arbitrum-token-bridge source loaded it. Field
--- meanings are in catalog/protocols/arbitrum-token-bridge/NOTES.md. amount is in the token's base units.
+-- One WithdrawalInitiated or DepositFinalized log as the arbitrum-token-bridge source loaded it, from any
+-- contract: every L2 gateway emits both, and so can any other contract. Field meanings are in
+-- catalog/protocols/arbitrum-token-bridge/NOTES.md. amount is in the token's base units.
 select
     id,
     data ->> 'event' as event,
