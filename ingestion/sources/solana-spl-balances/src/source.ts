@@ -26,7 +26,7 @@ export const solanaSplBalances: Source<SolanaEnv, BalanceCall> = {
     const mints = validateSolanaAddressList(addresses.mints);
     // The free RPCs that serve getTokenAccountsByOwner allow about 2 calls a second
     // between them; sent all at once, most calls are refused.
-    const rpc = createSolanaClient(env.ERPC_URL, { maxConcurrency: 2 });
+    const rpc = createSolanaClient(env.SOLANA_RPC_URL, { maxConcurrency: 2 });
     yield await fetchBalances(rpc, [...balanceCalls(wallets, mints), ...retry]);
   },
 };

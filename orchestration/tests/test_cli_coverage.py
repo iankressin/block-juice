@@ -5,26 +5,28 @@ import pytest
 
 from pipeline.cli import BadInput, coverage, main
 from pipeline.cli.coverage import Coverage, stream_sources
-from pipeline.cli.new_source import SOURCES_FILE, read_sources
+from pipeline.sources import SOURCES_FILE, read_sources
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
 USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 UNI = "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0"
 ADDRESSES = json.dumps({"wallets": [WALLET], "tokens": [USDC]})
+TRANSFERS = {"name": "ethereum", "table": "erc20_transfers", "package": "evm-erc20-transfers", "settings": "chains/ethereum"}
+BALANCES = {"name": "ethereum", "table": "eth_balances", "package": "ethereum-eth-balances"}
 
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
-    """A repo with one stream source and one call source."""
+    """A repo with one stream source, in a package that loads several chains, and one call source."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
-    (tmp_path / SOURCES_FILE).write_text('SOURCES = [("ethereum", "erc20_transfers"), ("ethereum", "eth_balances")]\n')
-    for package, env in (("evm-erc20-transfers/chains/ethereum", "START_BLOCK=100\n"), ("ethereum-eth-balances", "BLOCK_NUMBER=latest\n")):
-        folder = tmp_path / "ingestion" / "sources" / package
+    for entry, env in ((TRANSFERS, "START_BLOCK=100\n"), (BALANCES, "BLOCK_NUMBER=latest\n")):
+        folder = tmp_path / "ingestion" / "sources" / entry["package"] / entry.get("settings", "")
         folder.mkdir(parents=True)
         (folder / ".env.example").write_text(env)
         (folder / "addresses.json").write_text(ADDRESSES)
+    (tmp_path / SOURCES_FILE).write_text(json.dumps([TRANSFERS, BALANCES]))
     return tmp_path
 
 
@@ -32,11 +34,11 @@ def test_a_stream_source_is_a_sources_entry_whose_env_example_sets_start_block(r
     assert stream_sources(repo) == ["ethereum.erc20_transfers"]
 
 
-@pytest.mark.parametrize("source, table", read_sources((REPO_ROOT / SOURCES_FILE).read_text())[0])
-def test_the_rule_finds_exactly_the_packages_that_export_a_stream_source(source, table):
-    package = coverage.package(REPO_ROOT, source, table)
+@pytest.mark.parametrize("entry", read_sources((REPO_ROOT / SOURCES_FILE).read_text()), ids=lambda e: f"{e.name}.{e.table}")
+def test_the_rule_finds_exactly_the_packages_that_export_a_stream_source(entry):
+    package = REPO_ROOT / "ingestion" / "sources" / entry.package
     exports_stream = "StreamSource<" in (package / "src" / "source.ts").read_text()
-    assert (f"{source}.{table}" in stream_sources(REPO_ROOT)) == exports_stream
+    assert (f"{entry.name}.{entry.table}" in stream_sources(REPO_ROOT)) == exports_stream
 
 
 def test_the_repo_has_a_stream_source():
@@ -60,7 +62,8 @@ def test_start_block_comes_from_env_else_env_example(repo, monkeypatch):
 
 def test_each_chain_of_an_evm_package_reads_its_own_folder(repo, monkeypatch):
     monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
-    (repo / SOURCES_FILE).write_text('SOURCES = [("ethereum", "erc20_transfers"), ("arbitrum", "erc20_transfers")]\n')
+    arbitrum = {**TRANSFERS, "name": "arbitrum", "settings": "chains/arbitrum"}
+    (repo / SOURCES_FILE).write_text(json.dumps([arbitrum, TRANSFERS]))
     folder = repo / "ingestion" / "sources" / "evm-erc20-transfers" / "chains" / "arbitrum"
     folder.mkdir(parents=True)
     (folder / ".env.example").write_text("START_BLOCK=500\n")
@@ -74,7 +77,7 @@ def test_each_chain_of_an_evm_package_reads_its_own_folder(repo, monkeypatch):
         {"tokens": [UNI]},
     )
     assert coverage.read(repo, "ethereum.erc20_transfers").start_block == 100
-    assert stream_sources(repo) == ["ethereum.erc20_transfers", "arbitrum.erc20_transfers"]
+    assert stream_sources(repo) == ["arbitrum.erc20_transfers", "ethereum.erc20_transfers"]
 
 
 def test_a_start_block_that_is_not_a_number_is_bad_input(repo, monkeypatch):

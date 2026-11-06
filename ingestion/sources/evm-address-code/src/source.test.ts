@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { createEvmClient } from "@ingestion/lib/evm";
-import { addressCode, codeCallsAt, fetchCode } from "#src/source.ts";
+import { forChain, codeCallsAt, fetchCode } from "#src/source.ts";
 
 const contract = "0x00000000000000000000000000000000000000aa";
 const wallet = "0x00000000000000000000000000000000000000bb";
@@ -53,7 +53,7 @@ test("each address's code is recorded at the call's block, and an address with n
 });
 
 test("each chain loads into a table of its own", () => {
-  assert.equal(addressCode("arbitrum").name, "arbitrum", "runSource writes to raw.arbitrum_address_code");
-  assert.equal(addressCode("arbitrum").table, "address_code");
-  assert.throws(() => addressCode("Arbitrum One"), /chain name/);
+  assert.equal(forChain("arbitrum").name, "arbitrum", "runSource writes to raw.arbitrum_address_code");
+  assert.equal(forChain("arbitrum").table, "address_code");
+  assert.throws(() => forChain("Arbitrum One"), /chain name/);
 });

@@ -59,7 +59,7 @@ const toRecord = (t: DecodedEvent<ReturnType<typeof Transfer.decode>>): RawRecor
  * two of them is in both outputs, under the same id, so the warehouse keeps one row. Without
  * `wallets`, every transfer of the tokens.
  */
-export const erc20Transfers = (chain: string): StreamSource<TransfersEnv> => ({
+export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
   name: chainName.parse(chain),
   table: "erc20_transfers",
   env,

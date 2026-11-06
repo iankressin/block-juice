@@ -21,7 +21,7 @@ export type BlockNumber = z.infer<typeof blockNumber>;
 
 export const evmEnv = z.object({
   BLOCK_NUMBER: blockNumber,
-  ERPC_URL: z.url(),
+  EVM_RPC_URL: z.url(),
   RPC_BATCH_SIZE: z.coerce.number().int().positive().default(100),
   // Most HTTP requests in flight at once. Public RPCs time out or answer 429 well below the default.
   RPC_MAX_CONCURRENCY: z.coerce.number().int().positive().default(16),

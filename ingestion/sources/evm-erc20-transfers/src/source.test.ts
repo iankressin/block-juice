@@ -6,7 +6,7 @@ import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import { erc20Abi, type Hex } from "viem";
 import arbitrum from "../chains/arbitrum/addresses.json" with { type: "json" };
 import ethereum from "../chains/ethereum/addresses.json" with { type: "json" };
-import { erc20Transfers } from "#src/source.ts";
+import { forChain } from "#src/source.ts";
 
 const [binance, coinbase] = ethereum.wallets.map((a) => a.toLowerCase() as Hex);
 const [usdc] = ethereum.tokens.map((a) => a.toLowerCase() as Hex);
@@ -35,7 +35,7 @@ const ethereumLogs = [
 ];
 
 async function records(chain: string, url: string, startBlock: number) {
-  const stream = await erc20Transfers(chain).stream({ PORTAL_URL: url, START_BLOCK: startBlock });
+  const stream = await forChain(chain).stream({ PORTAL_URL: url, START_BLOCK: startBlock });
   const read: RawRecord[] = [];
   for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
   return read.map(({ id, data }) => ({ id, block: data.block_number, from: data.from, to: data.to, value: data.value }));
@@ -75,7 +75,7 @@ test("a chain whose addresses.json lists no wallets reads every transfer of its 
 });
 
 test("each chain loads into a table of its own", () => {
-  assert.equal(erc20Transfers("base").name, "base", "runSource writes to raw.base_erc20_transfers");
-  assert.equal(erc20Transfers("base").table, "erc20_transfers");
-  assert.throws(() => erc20Transfers("Base Mainnet"), /chain name/);
+  assert.equal(forChain("base").name, "base", "runSource writes to raw.base_erc20_transfers");
+  assert.equal(forChain("base").table, "erc20_transfers");
+  assert.throws(() => forChain("Base Mainnet"), /chain name/);
 });

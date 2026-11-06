@@ -40,7 +40,7 @@ export const fetchCode = (client: EvmClient, calls: readonly CodeCall[]) =>
  * failed in earlier runs, at their own blocks. The source is named for its chain, so each chain
  * loads into raw.<chain>_address_code.
  */
-export const addressCode = (chain: string): Source<EvmEnv, CodeCall> => ({
+export const forChain = (chain: string): Source<EvmEnv, CodeCall> => ({
   name: chainName.parse(chain),
   table: "address_code",
   env: evmEnv,

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "arbitrum",
+    "table": "address_code",
+    "package": "evm-address-code",
+    "settings": "chains/arbitrum"
+  },
+  {
+    "name": "arbitrum",
+    "table": "erc20_transfers",
+    "package": "evm-erc20-transfers",
+    "settings": "chains/arbitrum"
+  },
+  {
+    "name": "arbitrum",
+    "table": "token_bridge",
+    "package": "arbitrum-token-bridge"
+  },
+  {
+    "name": "base",
+    "table": "address_code",
+    "package": "evm-address-code",
+    "settings": "chains/base"
+  },
+  {
+    "name": "base",
+    "table": "erc20_transfers",
+    "package": "evm-erc20-transfers",
+    "settings": "chains/base"
+  },
+  {
+    "name": "base",
+    "table": "op_standard_bridge",
+    "package": "base-op-standard-bridge"
+  },
+  {
+    "name": "bitcoin",
+    "table": "btc_balances",
+    "package": "bitcoin-btc-balances"
+  },
+  {
+    "name": "ethereum",
+    "table": "erc20_balances",
+    "package": "ethereum-erc20-balances"
+  },
+  {
+    "name": "ethereum",
+    "table": "erc20_transfers",
+    "package": "evm-erc20-transfers",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
+    "table": "eth_balances",
+    "package": "ethereum-eth-balances"
+  },
+  {
+    "name": "ethereum",
+    "table": "uniswap_v2",
+    "package": "ethereum-uniswap-v2"
+  },
+  {
+    "name": "ethereum",
+    "table": "uniswap_v3",
+    "package": "ethereum-uniswap-v3"
+  },
+  {
+    "name": "ethereum",
+    "table": "uniswap_v4",
+    "package": "ethereum-uniswap-v4"
+  },
+  {
+    "name": "solana",
+    "table": "sol_balances",
+    "package": "solana-sol-balances"
+  },
+  {
+    "name": "solana",
+    "table": "spl_balances",
+    "package": "solana-spl-balances"
+  }
+]

@@ -12,7 +12,7 @@ Five sources read wallet balances: ETH, ERC-20 tokens, SOL, SPL tokens and BTC. 
 
 Each chain reaches `latest_balances` through one model in `transformation/models/intermediate/balances/`, `int_<chain>_balances`, which puts the chain's rows in the shape the mart reads: `chain`, `wallet`, `asset_type`, `asset`, `block_number` and `balance`, with no null balance. The mart only stacks these models and keeps each wallet's latest reading of each asset. To add a chain, add its model, one `union all` branch in `latest_balances.sql`, and the chain to the mart's `accepted_values`.
 
-A sixth source, `evm-erc20-transfers`, is a stream source that loads ERC-20 transfers on any EVM chain. Each run reads its chain from `CHAIN`, which Dagster sets from the `SOURCES` entry, and that chain's `PORTAL_URL`, `START_BLOCK` and `addresses.json` from `chains/<chain>/` in the package. Through Pipes it reads every Transfer of the chain's tokens, or with `wallets` listed only those into or out of the wallets, from `START_BLOCK` to Portal's finalized head, and each run resumes where the last one stopped. Each chain loads into `raw.<chain>_erc20_transfers` with a cursor of its own; Ethereum, Arbitrum and Base are set up. The `transfers` pipeline builds `analytics.erc20_transfers` from them, one row per transfer, with a `chain` column, in the token's base units. Three more stream sources, `ethereum-uniswap-v2`, `-v3` and `-v4`, load the pool creations and Swaps of Uniswap pools that trade the tokens in their `addresses.json`, each version in its own raw table, with the transactions they came from as records of their own. v2 and v3 follow their factory's pools with Pipes' factory pattern, which keeps the pools it found in `factory.sqlite` in each package. The `dex` pipeline builds `analytics.dex_trades` from them, one row per trade, with each version's sign rule applied in its own intermediate model. A state source, `evm-address-code`, reads each address's code with `eth_getCode` on any EVM chain, laid out like `evm-erc20-transfers`: `chains/<chain>/` holds the chain's `ERPC_URL` and the `addresses.json` to read. The `labels` pipeline builds `analytics.address_labels` from it and the exchange labels in `transformation/seeds/cex_addresses.csv`, one row per address per chain, with `kind` set to exchange, contract or eoa.
+A sixth source, `evm-erc20-transfers`, is a stream source that loads ERC-20 transfers on any EVM chain. Each run reads its chain from `CHAIN`, which Dagster sets from the source's entry in `ingestion/sources.json`, and that chain's `PORTAL_URL`, `START_BLOCK` and `addresses.json` from `chains/<chain>/` in the package. Through Pipes it reads every Transfer of the chain's tokens, or with `wallets` listed only those into or out of the wallets, from `START_BLOCK` to Portal's finalized head, and each run resumes where the last one stopped. Each chain loads into `raw.<chain>_erc20_transfers` with a cursor of its own; Ethereum, Arbitrum and Base are set up. The `transfers` pipeline builds `analytics.erc20_transfers` from them, one row per transfer, with a `chain` column, in the token's base units. Three more stream sources, `ethereum-uniswap-v2`, `-v3` and `-v4`, load the pool creations and Swaps of Uniswap pools that trade the tokens in their `addresses.json`, each version in its own raw table, with the transactions they came from as records of their own. v2 and v3 follow their factory's pools with Pipes' factory pattern, which keeps the pools it found in `factory.sqlite` in each package. The `dex` pipeline builds `analytics.dex_trades` from them, one row per trade, with each version's sign rule applied in its own intermediate model. A state source, `evm-address-code`, reads each address's code with `eth_getCode` on any EVM chain, laid out like `evm-erc20-transfers`: `chains/<chain>/` holds the chain's `EVM_RPC_URL` and the `addresses.json` to read. The `labels` pipeline builds `analytics.address_labels` from it and the exchange labels in `transformation/seeds/cex_addresses.csv`, one row per address per chain, with `kind` set to exchange, contract or eoa.
 
 ```
 .
@@ -24,6 +24,7 @@ A sixth source, `evm-erc20-transfers`, is a stream source that loads ERC-20 tran
 ├── ingestion/                  # pnpm workspace
 │   ├── pnpm-workspace.yaml
 │   ├── tsconfig.json           # one typecheck for every package
+│   ├── sources.json            # every source's exported name and table; `pnpm generate-sources` writes it
 │   ├── lib/                    # @ingestion/lib: shared by all sources
 │   │   └── src/
 │   │       ├── index.ts        # public API for any chain
@@ -80,6 +81,8 @@ set -a && source .env && set +a
 cd orchestration && uv run dagster dev
 ```
 
+`uv run --project orchestration bj doctor` checks the setup: the env files and their keys, the ports, the warehouse, eRPC and Dshackle, and the tool versions.
+
 Open http://localhost:3000 and materialize all assets.
 
 In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Code for one chain comes from that chain's subpath: `import { connect } from "@ingestion/lib/evm"`. Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
@@ -120,6 +123,7 @@ uv run --project orchestration bj --help
 |---|---|
 | `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
 | `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
+| `bj doctor [--copy-env]` | Checks the local setup: `.env` and each source's `.env` against their `.env.example` (keys by name, never values), the compose ports, the warehouse, the eRPC and Dshackle health endpoints, and the tool versions `mise.toml` pins. `--copy-env` copies `.env.example` to each source `.env` that is missing. Exits 1 when a check failed. |
 | `bj coverage [<source>.<table>]` | Prints the blocks each history source has loaded: `START_BLOCK` to the cursor Pipes keeps in `raw._sync`, and the addresses it read. |
 | `bj check <slug> <name> <passed\|failed> <detail>` | Records a check the agent ran itself, such as a cross-check against Portal, in `answer.json`. Exits 1 when it failed. |
 | `bj blocks <chain> <from> [<to>]` | Turns UTC times into the first and last block of the window, read from SQD Portal for eleven EVM chains, including Ethereum, Arbitrum and Base. An unknown chain name prints the list. |
@@ -138,13 +142,15 @@ uv run --project orchestration bj --help
 
 A source run ends before Prometheus could scrape it, so each run pushes its result to the Pushgateway at `PUSHGATEWAY_URL`, and Prometheus scrapes that. The result covers whether the run succeeded, when it finished, how long it took, the records it wrote, its failed calls and the dead letters it retried, labelled by source and table. It also counts the dead letters left waiting, as `ingestion_dead_letters` with `state` set to `pending` (retried next run) or `parked` (failed too often or no longer matches the source's call schema, waits for a person). With `PUSHGATEWAY_URL` unset, a run pushes nothing.
 
+`infra/prometheus/alerts.yml` holds the alert rules: a failed source run, no successful run for over 25h, parked dead letters, a scrape target down, eRPC upstream and network error rates, and Dshackle with no available upstream. Prometheus evaluates them and shows them at http://localhost:9090/alerts; Grafana lists the same rules under Alerting, and its built-in alerting on :3001 is where notifications get set up in v1, rather than a separate Alertmanager. `docker compose ps` shows Dshackle as healthy once its `/health` endpoint answers. eRPC's image has no shell to run a check from, so it has no compose healthcheck; from the host, `curl -i http://localhost:4000/healthcheck` answers 200 while an upstream is up.
+
 Prometheus keeps only each source's latest result, so the history of every run lives in the warehouse, in the `ops` schema that `infra/postgres/ops.sql` creates:
 
 - `ops.ingestion_runs` holds one row per source run. `runSource` writes it, with the error when the run failed and the time spent writing to the warehouse.
 - `ops.dbt_invocations` and `ops.dbt_node_runs` hold each dbt build and each model and test in it. The Dagster dbt asset writes them from `run_results.json`, so a `dbt build` run by hand is not recorded.
 - `ops.pipeline_runs` is a view with one row per Dagster run. Dagster passes its run id to each source as `DAGSTER_RUN_ID`, which ties the ingestion rows to the dbt rows of the same run.
 
-Grafana reads the warehouse as `monitor`, a role that can read everything and change nothing. The warehouse loads `pg_stat_statements` for the query panels. The eRPC panels count only sources whose `ERPC_URL` points at eRPC.
+Grafana reads the warehouse as `monitor`, a role that can read everything and change nothing. The warehouse loads `pg_stat_statements` for the query panels. The eRPC panels count only sources whose `EVM_RPC_URL` or `SOLANA_RPC_URL` points at eRPC.
 
 To change a dashboard, edit `infra/grafana/build_dashboards.py`, run it, then check every query with `python3 infra/grafana/check_dashboards.py`.
 
@@ -154,17 +160,25 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 ## Add a source
 
-`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. Then edit the copied `src/`, `addresses.json` and the staging stub. By hand:
+`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. Then edit the copied `src/`, `addresses.json` and the staging stub. Reading the source from a mart, and scheduling that mart in `PIPELINES`, stay hand steps: see Add a pipeline, and `## Adding a chain` in `transformation/README.md`. By hand:
 
 1. Copy `ingestion/sources/ethereum-eth-balances/` to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`. A chain's env, addresses and client go in `lib/src/<chain>/`. Its `index.ts` lists what sources may use, and `lib/package.json` exports that file as `@ingestion/lib/<chain>`.
 2. Add `transformation/models/staging/<source>/` with a sources yml and the `stg_` models.
-3. Add `(source, table)` to `SOURCES` in `orchestration/pipeline/assets/ingestion.py`.
+3. Run `pnpm generate-sources` in `ingestion/`. It rewrites `ingestion/sources.json`, the list of the `name` and `table` every package exports from `src/source.ts`, with the package's folder. Dagster builds its `SOURCES` from that file, so nothing lists the sources by hand, and the orchestration tests fail while the file is stale.
 
-The source name and table name must match across all three. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them.
+The dbt source name and table name must match the `name` and `table` the source exports. Dagster keys each dbt source as `[source, table]`, and the ingestion asset uses the same key, so Dagster links them. A test names any pair that drifts.
 
-To load ERC-20 transfers on another EVM chain, extend `evm-erc20-transfers` instead of copying it: add `chains/<chain>/` with a `.env.example` that sets `PORTAL_URL` and `START_BLOCK` and an `addresses.json` with `tokens`, add `(<chain>, erc20_transfers)` to `SOURCES`, add `transformation/models/staging/<chain>/` like `staging/base/`, and add an `int_<chain>_erc20_transfers` branch to the `erc20_transfers` mart. `EVM_PACKAGES` in `orchestration/pipeline/cli/new_source.py` maps each such table to its package; `evm-address-code` takes a new chain the same way, with `ERPC_URL` in its `chains/<chain>/.env.example`.
+To load ERC-20 transfers on another EVM chain, extend `evm-erc20-transfers` instead of copying it: add `chains/<chain>/` with a `.env.example` that sets `PORTAL_URL` and `START_BLOCK` and an `addresses.json` with `tokens`, run `pnpm generate-sources` in `ingestion/`, add `transformation/models/staging/<chain>/` like `staging/base/`, and add an `int_<chain>_erc20_transfers` branch to the `erc20_transfers` mart. The generator calls the package's `forChain(chain)` once per folder in `chains/` and records that folder as the entry's `settings` in `sources.json`, where `bj coverage` and `bj doctor` find it; Dagster passes the chain to the run as `CHAIN`. `evm-address-code` takes a new chain the same way, with `EVM_RPC_URL` in its `chains/<chain>/.env.example`.
 
-A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. To read a stream source again from its start, delete its rows from `raw._sync`, whose `id` is `<source>_<table>`.
+A call source makes calls, such as RPC reads at one block, and its `src/source.ts` exports a `Source`. Before its first run, check that:
+
+- The `Source` has a zod `call` schema. Each run parses its pending dead letters with it, and a dead letter whose call no longer parses is parked for a person.
+- A failed call's `id` is the `callId` of the record the call would have produced. A record with that `callId` clears the dead letter. `settleCalls` in `lib/` keys both from one id function.
+- `extract(env, retry)` makes the retried calls next to the new ones, as `[...newCalls, ...retry]`. A failed call does not fail the run: the records that did arrive are written, and the failed calls wait as dead letters for the next run. A call that fails five runs in a row is parked.
+- `addresses.json` loads inside `extract`, not at import, so a bad file fails the run and `runSource` logs why.
+- `name` and `table` match the dbt source and table and the `SOURCES` entry, as above.
+
+A stream source reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/pipes-sdk) stream instead of making calls; scaffold one with `--like` one of the `ethereum-uniswap-v*` packages or `arbitrum-token-bridge`. Its `src/source.ts` exports a `StreamSource`, whose `stream(env)` returns the stream. Map the stream's outputs to records with `.pipe()`, and end its range at `finalizedHead(portalClient(url))` so each run ends. `runSource` pipes the stream into the warehouse, where Pipes keeps the source's cursor in `raw._sync` and saves it in the same transaction as the batch's records. Each run resumes after the cursor and reads at most `maxBlocksPerRun` blocks, plus the rest of the batch that passes it. A stream source has no calls, so it has no dead letters: an error, from Portal or from the warehouse, fails the run, nothing from the batch it was writing commits, and the next run resumes after the last batch that did. To read a stream source again from its start, delete its row from `raw._sync`, whose `id` is `<source>_<table>`.
 
 ## Add a pipeline
 

@@ -1,6 +1,6 @@
 # Add or extend a history source
 
-A history source is a Pipes stream source. It reads events over a range of blocks from SQD Portal, and each run resumes after the last block it saved. `ingestion/sources/ethereum-erc20-transfers/` is the pattern: every Transfer of the tokens in its `addresses.json` into or out of its wallets, from `START_BLOCK` on.
+A history source is a Pipes stream source. It reads events over a range of blocks from SQD Portal, and each run resumes after the last block it saved. `ingestion/sources/evm-erc20-transfers/` is the pattern: on each chain in its `chains/`, every Transfer of the tokens in that chain's `addresses.json`, into or out of its wallets when it lists any, from the chain's `START_BLOCK` on.
 
 ## What a history source has loaded
 
@@ -33,7 +33,8 @@ When a source already reads the right events:
 
    | Contracts | Copy |
    |---|---|
-   | Known contracts, such as tokens | `ethereum-erc20-transfers` |
+   | Tokens, for their Transfers | Nothing: add the chain's folder to `evm-erc20-transfers`, as the README's Add a source says |
+   | Known contracts, such as gateways | `arbitrum-token-bridge` |
    | Contracts a factory creates, such as pools | `ethereum-uniswap-v3` |
    | One contract that names its children by id, such as the v4 PoolManager | `ethereum-uniswap-v4` |
 
@@ -41,7 +42,7 @@ When a source already reads the right events:
    uv run --project orchestration bj new-source ethereum pancakeswap_v3 --like ethereum-uniswap-v3
    ```
 
-   That makes the package `ethereum-pancakeswap-v3` and the raw table `raw.ethereum_pancakeswap_v3`. A factory copy changes only the constants at the top of `src/source.ts` (the factory's address and deploy block, its creation event, the argument that holds the child's address, the child's event, the two ABI imports), and the events its test encodes. `bj new-source` keeps the old export name, so rename it in `src/source.ts`, `src/index.ts` and the test.
+   That makes the package `ethereum-pancakeswap-v3` and the raw table `raw.ethereum_pancakeswap_v3`. A factory copy changes only the constants at the top of `src/source.ts` (the factory's address and deploy block, its creation event, the argument that holds the child's address, the child's event, the two ABI imports), and the events its test encodes. `bj new-source` sets `name` and `table` in `src/source.ts` and regenerates `ingestion/sources.json` from them, but keeps the old export name, so rename it in `src/source.ts`, `src/index.ts` and the test.
 
 4. Edit the copied `src/source.ts`. It extracts and loads only, per [../references/layers.md](../references/layers.md): each record is one item as Portal returns it, a log with its ABI-decoded arguments, or a transaction the logs came from, keyed by its hash. Give each record a `kind`, `log` or `transaction`, and never copy a transaction's fields into a log.
    - Read `[START_BLOCK, finalizedHead(portal)]` through `portalClient`, so each run ends at Portal's finalized head and no fork reaches the warehouse. An optional `END_BLOCK` stops a check window short of the head.
