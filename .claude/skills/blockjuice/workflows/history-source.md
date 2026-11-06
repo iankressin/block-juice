@@ -33,7 +33,7 @@ When a source already reads the right events:
 
    | Contracts | Copy |
    |---|---|
-   | Tokens, for their Transfers | Nothing: add the chain's folder to `evm-erc20-transfers`, as the README's Add a source says |
+   | Tokens, for their Transfers | Nothing: add the chain's folder to `evm-erc20-transfers`, as [docs/architecture.md](../../../../docs/architecture.md#add-a-source) describes |
    | Known contracts, such as gateways | `arbitrum-token-bridge` |
    | Contracts a factory creates, such as pools | `ethereum-uniswap-v3` |
    | One contract that names its children by id, such as the v4 PoolManager | `ethereum-uniswap-v4` |
