@@ -25,7 +25,7 @@ Never stand in state reads for history ([references/choosing-the-data.md](refere
 
 ## Commands
 
-Run commands from the repo root. The stack must be up (`docker compose up -d`), and `.env` must exist (`cp .env.example .env`). `bj run` also needs `pnpm install` in `ingestion/`, once per checkout.
+Run commands from the repo root. On a fresh checkout, run `uv run --project orchestration bj install` once: it copies the `.env` files, installs the pnpm packages `bj run` needs and writes the dbt manifest, and starts nothing. The stack must be up (`docker compose up -d`). `bj dev` also sets up and starts the stack, but then runs Dagster in the foreground, so leave it to the user.
 
 - `uv run --project orchestration bj <command>` runs every mechanical step. It reads `.env` itself. `bj --help` lists the commands.
 - dbt and Dagster read settings from the environment, so start each such command with `set -a && . ./.env && set +a &&`.
