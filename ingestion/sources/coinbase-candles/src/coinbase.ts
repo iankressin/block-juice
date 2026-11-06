@@ -77,6 +77,7 @@ export function createCoinbaseClient(url: string, clock: Clock) {
     const request = new URL(path, url);
     for (const [key, value] of Object.entries(query)) request.searchParams.set(key, value);
     for (let attempt = 0; ; attempt++) {
+      lastChunkAt = clock.now();
       const response = await fetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (response.ok) return response.json();
       const error = await coinbaseError(response);
