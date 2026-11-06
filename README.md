@@ -48,7 +48,8 @@ A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it
 │       ├── staging/<source>/   # sources yml + stg_ models, one folder per source
 │       ├── intermediate/<pipeline>/
 │       └── marts/<pipeline>/   # a pipeline's output tables, one folder per pipeline
-├── infra/                      # the Postgres warehouse, eRPC, Dshackle and monitoring
+├── infra/                      # the Postgres warehouse, eRPC, Dshackle, Dagster and monitoring
+│   ├── dagster/Dockerfile      # one image for Dagster, the sources and dbt
 │   ├── postgres/init.sql       # eRPC database and monitor role, then runs ops.sql
 │   ├── postgres/ops.sql        # the ops run log, plain SQL so tests can load it
 │   ├── prometheus/
@@ -69,11 +70,29 @@ A sixth source, `ethereum-erc20-transfers`, is a stream source. Through Pipes it
 
 ## Run it locally
 
-Needs Node 24 and [pnpm](https://pnpm.io), which `mise.toml` pins (`mise install` sets up both), [uv](https://docs.astral.sh/uv/) and Docker.
+Needs Docker.
 
 ```sh
 cp .env.example .env
 docker compose up -d
+```
+
+Open http://localhost:3000 and materialize all assets.
+
+Each source reads its own settings, such as `BLOCK_NUMBER` or `EVM_RPC_URL`, from the `.env` in its folder. The image copies each source's `.env`, or its `.env.example` when it has none. In the `dagster` container, `infra/docker-compose.yml` sets the warehouse, the schemas, the Pushgateway, Dshackle and the Solana RPC for every source, and these win over the source's `.env`.
+
+The image holds the code and each source's `.env`, so rebuild it after changing either:
+
+```sh
+docker compose up -d --build dagster
+```
+
+A source's `.env` can hold an RPC key, so keep the image on your machine. Don't push it to a registry.
+
+To iterate faster, run Dagster on the host instead. This needs Node 24 and [pnpm](https://pnpm.io), which `mise.toml` pins (`mise install` sets up both), and [uv](https://docs.astral.sh/uv/). Stop the container first, since both use port 3000:
+
+```sh
+docker compose stop dagster
 (cd ingestion && pnpm install)
 (cd orchestration && uv sync)
 
@@ -82,8 +101,6 @@ cd orchestration && uv run dagster dev
 ```
 
 `uv run --project orchestration bj doctor` checks the setup: the env files and their keys, the ports, the warehouse, eRPC and Dshackle, and the tool versions.
-
-Open http://localhost:3000 and materialize all assets.
 
 In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Code for one chain comes from that chain's subpath: `import { connect } from "@ingestion/lib/evm"`. Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
 

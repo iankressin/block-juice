@@ -1,0 +1,13 @@
+.git
+**/.claude
+**/node_modules
+orchestration/.venv
+orchestration/.dagster_home
+transformation/target
+transformation/logs
+transformation/.user.yml
+**/__pycache__
+**/.pytest_cache
+
+# Only the root .env: compose passes its values. Each source's .env goes into the image.
+.env

@@ -140,8 +140,48 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Runs the ingestion sources and dbt. The image holds the code and each source's .env, so
+  # rebuild it after changing either: docker compose up -d --build dagster
+  dagster:
+    build:
+      context: ..
+      dockerfile: infra/dagster/Dockerfile
+    init: true
+    # Each source's .env supplies its own settings. These mean the same for every source, and
+    # win over the .env.
+    environment:
+      WAREHOUSE_HOST: warehouse
+      WAREHOUSE_PORT: 5432
+      WAREHOUSE_USER: ${WAREHOUSE_USER:-elt}
+      WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-elt}
+      WAREHOUSE_DB: ${WAREHOUSE_DB:-warehouse}
+      RAW_SCHEMA: ${RAW_SCHEMA:-raw}
+      DBT_SCHEMA: ${DBT_SCHEMA:-analytics}
+      PUSHGATEWAY_URL: http://pushgateway:9091
+      DSHACKLE_URL: http://dshackle:8545/bitcoin
+      SOLANA_RPC_URL: http://erpc:4000/main/solana
+      # EVM_RPC_URL comes from each EVM source's .env. If it ever points at eRPC, set it here
+      # as http://erpc:4000/main/evm/1: localhost in this container is not the host.
+      DAGSTER_HOME: /dagster_home
+    volumes:
+      - dagster-home:/dagster_home
+    ports:
+      # The UI has no login and can launch runs, so it binds to 127.0.0.1.
+      - "127.0.0.1:${DAGSTER_PORT:-3000}:3000"
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+      erpc:
+        condition: service_started
+      dshackle:
+        condition: service_started
+      pushgateway:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   warehouse-data:
   pushgateway-data:
   prometheus-data:
   grafana-data:
+  dagster-home:
