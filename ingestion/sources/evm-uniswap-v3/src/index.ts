@@ -1,13 +1,6 @@
 import { runSource } from "@ingestion/lib";
-import { config } from "dotenv";
 import { chainName, forChain } from "#src/source.ts";
 
-// Dagster sets CHAIN to the chain of the asset it runs; by hand, run `CHAIN=arbitrum pnpm ingest`.
-// It is read before any .env, so a stale CHAIN in a file cannot point a run at the wrong table.
-const chain = chainName.parse(process.env.CHAIN);
-
-// The chain's own settings load first, so they win over the shared .env that runSource reads next.
-// A value already in the environment wins over both.
-config({ path: [`chains/${chain}/.env`, `chains/${chain}/.env.example`], quiet: true });
-
-await runSource(forChain(chain));
+// Dagster sets CHAIN to the chain of the asset it runs; by hand, run `CHAIN=arbitrum pnpm ingest`. The
+// run reads that chain's settings from chains/<chain>/, which win over the package's .env.
+await runSource(forChain(chainName.parse(process.env.CHAIN)));

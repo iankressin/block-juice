@@ -114,7 +114,7 @@ def check_env(repo_root: Path, folder: Path, optional: frozenset[str], missing_s
 
 
 def check_chain_env(repo_root: Path, folder: Path) -> Check:
-    """One line for a chain's .env in a package that loads several chains. The package's src/index.ts
+    """One line for a chain's .env in a package that loads several chains. loadEnv in ingestion/lib
     loads the chain's .env.example beneath its .env, so the .env may be missing or set only the keys it
     changes. It fails only when it leaves empty a key the .env.example sets."""
     env, example = folder / ".env", folder / ".env.example"
