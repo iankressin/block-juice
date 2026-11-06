@@ -1,5 +1,7 @@
 # BlockJuice
 
+![BlockJuice, a blockchain data ELT framework](docs/images/bj-banner-2.png)
+
 A self-hosted ELT framework and warehouse for blockchain data. You can trace any number it gives you back to raw rows, and rebuild it.
 
 If you advise funds, treasuries or protocol teams, you know where on-chain work gets awkward. Explorers are fine for a quick look. Shared analytics platforms work until you need to own the query, the join or how long the data is kept.
