@@ -10,7 +10,7 @@ The point isn’t another indexer to babysit. It’s a readable pipeline a consu
 
 **You keep the data.** Raw rows, marts, run logs, and answer artifacts stay in the warehouse and repo you operate. No “export from the SaaS” step when diligence asks how a number was built.
 
-**You ask in plain language, get a checked answer.** Open the repo in Claude Code and use `/bj <question>`. The skill maps the question onto marts (or builds what’s missing), runs analyses through the `bj` CLI, writes `answers/<slug>/` with the value, checks, and method — then optional PDF, spreadsheet, or Google Doc. The path from question → warehouse → shareable report is the product UX, not a side script.
+**You ask in plain language, get a checked answer.** The [skill that ships with the repo](#the-skill-that-ships-with-it) (`/bj <question>`) maps the ask onto marts (or builds what’s missing), runs analyses through the `bj` CLI, writes `answers/<slug>/` with the value, checks, and method — then optional PDF, spreadsheet, or Google Doc. Question → warehouse → shareable report is the product UX, not a side script.
 
 **You extend without inventing a platform.** Need another wallet list, another EVM chain, another protocol? Copy a source with `bj new-source`, regenerate `sources.json`, follow the chain-add pattern in dbt, schedule a pipeline. Call sources and stream sources are named in the [glossary](GLOSSARY.md); dead letters and cursors are already in the shared library. The framework absorbs the boring glue so you spend time on the question.
 
@@ -51,9 +51,35 @@ Open http://localhost:3000, materialize what you need, then ask a question with 
 2. **Point sources at the wallets and tokens that matter** (`addresses.json`, chain folders for multi-chain packages).
 3. **Materialize a pipeline** (balances, transfers, dex, labels) on a schedule you own.
 4. **Ask the business question** in Claude Code; get an answer folder with checks and an optional report.
-5. **When the brief changes**, add a source or a chain — don’t rebuild extraction from scratch.
+5. **When the brief changes**, add a source, a chain, or [your own pipeline](#add-your-own-pipeline) — or let the [skill](#the-skill-that-ships-with-it) walk you through it.
 
 That’s the UX bar: a consultant should feel oriented in an afternoon, not after a week of folklore.
+
+
+## The skill that ships with it
+
+BlockJuice includes a Claude Code skill at `.claude/skills/blockjuice/` (slash commands `/bj` and `/blockjuice`).
+
+It is how a consultant drives the stack without memorizing every folder:
+
+- **Answer a question** — scopes the ask, finds or builds the marts, writes a dbt analysis, runs checks, and leaves `answers/<slug>/` (`question.yaml`, `answer.json`, `answer.md`, `results/`).
+- **Report** — turns that answer into XLSX, PDF, Word, or a Google Doc via `bj report`, from **your** warehouse rows.
+- **New state or history source** — walks the call-source / stream-source path when the data isn’t loaded yet.
+- **New pipeline** — when you need a reusable mart that no schedule builds yet.
+- **Explore a protocol** — writes `catalog/protocols/<name>/` from real logs before you invent SQL.
+
+Mechanical steps go through the `bj` CLI so the same checks run for a human or an agent. Sovereignty stays obvious: answers and reports are files and warehouse tables you own, not a rented dashboard. Start at `.claude/skills/blockjuice/SKILL.md`.
+
+## Add your own pipeline
+
+A **pipeline** is a mart folder plus everything it reads (sources and models), run as one Dagster job on its own cron.
+
+1. Add mart models under `transformation/models/marts/<pipeline>/`, and any models only that pipeline needs under `transformation/models/intermediate/<pipeline>/`. Staging stays per source under `staging/<source>/`.
+2. Register the name and schedule in `PIPELINES` in `orchestration/pipeline/schedules.py`.
+3. If you need new raw data first, add a source (`bj new-source …`, see [Add a source](docs/architecture.md#add-a-source)), then point the mart at its staging models.
+4. Materialize once in Dagster (or `bj run <pipeline>`), confirm tests pass, and let the schedule take it from there.
+
+Orchestration tests fail if an asset isn’t on any scheduled pipeline — that keeps “we built it but nobody runs it” from shipping. Full steps: [architecture — Add a pipeline](docs/architecture.md#add-a-pipeline). The skill’s new-pipeline workflow follows the same path.
 
 ## Docs
 
