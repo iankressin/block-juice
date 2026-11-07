@@ -7,6 +7,7 @@ export type Clock = { now(): number; sleep(ms: number): Promise<void> };
 
 export const systemClock: Clock = { now: () => Date.now(), sleep: (ms) => setTimeout(ms) };
 
+// The API's endpoints, limits and fields, each checked on real replies: catalog/vendors/coinbase/.
 // Coinbase allows 10 public requests a second per IP, with short bursts above that, and answers
 // HTTP 429 beyond it. It sends no header with the count used, so the client paces itself: one chunk
 // of requests a second, and a request that gets 429 waits and tries again.
