@@ -1,0 +1,43 @@
+# Site-wide settings. Copy comes from the templates; facts come from the repo.
+name: BlockJuice
+tagline: A self-hosted ELT framework and warehouse for blockchain data. Every number traces back to raw rows, and you can rebuild it.
+# Where the site is served from. The GitHub Pages workflow overrides it with --base-url.
+base_url: https://iankressin.github.io/block-juice
+repo: https://github.com/iankressin/block-juice
+nav:
+  - { label: Home, href: index.html }
+  - { label: Analysis, href: analysis/index.html }
+  - { label: Changelog, href: changelog/index.html }
+  - { label: GitHub, href: https://github.com/iankressin/block-juice }
+
+# The marts table on the landing page. `marts` must exist under
+# transformation/models/marts/, the build fails otherwise.
+ships:
+  - need: Point-in-time balances
+    what: ETH, ERC-20, SOL, SPL, BTC
+    marts: [latest_balances]
+  - need: Transfer history
+    what: ERC-20 on Ethereum, Arbitrum, Base, with each side labelled
+    marts: [erc20_transfers, classified_transfers]
+  - need: DEX activity
+    what: Uniswap v2, v3 and v4 trades
+    marts: [dex_trades]
+  - need: Bridges
+    what: Arbitrum token bridge and OP standard bridge transfers
+    marts: [bridge_transfers, bridge_pairs]
+  - need: Address labels
+    what: "Code reads plus exchange seeds: exchange, contract or EOA"
+    marts: [address_labels]
+  - need: Token metadata
+    what: Name, symbol and decimals on Ethereum, Arbitrum, Base
+    marts: [tokens]
+  - need: Token prices
+    what: Binance and Coinbase candles; Chainlink rounds on Ethereum, Arbitrum, Base
+    marts: [token_prices, oracle_prices]
+
+# Protocols named on the contents panel, in the order of catalog/protocols/.
+protocol_names:
+  arbitrum-token-bridge: Arbitrum token bridge
+  chainlink: Chainlink
+  op-standard-bridge: OP standard bridge
+  uniswap: Uniswap

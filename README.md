@@ -107,6 +107,7 @@ Orchestration tests fail if an asset belongs to no scheduled pipeline, so nothin
 | [GLOSSARY.md](GLOSSARY.md) | Terms: source, stream source, call, record, batch, run, dead letter |
 | [transformation/README.md](transformation/README.md) | dbt models, and adding a chain to balances |
 | `.claude/skills/blockjuice/` | The skill's workflows, from question to report |
+| [website/README.md](website/README.md) | The public site: landing page, analysis posts built from `answers/`, and the changelog |
 
 ## Status
 

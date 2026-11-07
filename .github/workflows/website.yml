@@ -1,0 +1,52 @@
+# Builds the website and publishes it to GitHub Pages on every push to main
+# that touches the site, the answers it renders, or the repo facts it counts.
+# Enable Pages for the repository once (Settings > Pages > Source: GitHub Actions).
+name: website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "answers/**"
+      - "ingestion/sources/**"
+      - "transformation/models/marts/**"
+      - "orchestration/pipeline/schedules.py"
+      - "catalog/protocols/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Test
+        run: uv run --project website pytest -q website/tests
+      - name: Build
+        run: uv run --project website website/build.py --base-url "${{ steps.pages.outputs.base_url }}"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -1,0 +1,11 @@
+# A hand-written post. Delete this folder once a real answer covers the question.
+title: >-
+  Where does UNI trade on Ethereum? Uniswap v4 is taking share
+date: 2026-11-07
+sample: true
+chains: [ethereum]
+marts: [dex_trades, token_prices, oracle_prices]
+value: 22% → 32%
+window: 4 weeks ending 2026-11-02
+summary: >-
+  Four weeks of Uniswap v2, v3 and v4 trades of UNI, with Binance and Chainlink prices beside them. Shows the format of a market post; the figures are placeholders until a run is attached.

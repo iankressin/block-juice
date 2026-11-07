@@ -21,3 +21,7 @@ __pycache__/
 
 # answers: what the skill and bj answer write for each question stays local
 answers/
+
+# website: built output and its venv
+website/dist/
+website/.venv/

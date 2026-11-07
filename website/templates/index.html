@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block head %}
+<style>
+  .hero { padding-block: 3.5rem 4rem; }
+  .hero .wrap { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr); gap: 2rem 3rem; align-items: center; }
+  .hero .copy { display: grid; gap: 1.4rem; }
+  .hero .copy .lede { max-width: 52ch; }
+  .hero .actions { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-top: 0.4rem; }
+  .hero .art { display: flex; justify-content: center; }
+  .hero .art img { width: min(100%, 420px); height: auto; filter: drop-shadow(0 18px 0 rgba(64, 16, 32, 0.08)); }
+  @media (max-width: 760px) { .hero .wrap { grid-template-columns: 1fr; } .hero .art img { width: min(70%, 300px); } .hero .art { order: -1; } }
+  .why { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 700px) { .why { grid-template-columns: 1fr; } }
+  .ships { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+  @media (max-width: 860px) { .ships { grid-template-columns: 1fr; } }
+  .ship { min-width: 560px; }
+  .ship th:first-child, .ship td:first-child { width: 30%; }
+  .facts { border: 2px solid var(--rule-strong); border-radius: 6px; padding: 0.8rem 0.9rem 0.9rem; background: var(--card); display: grid; gap: 0; }
+  .facts .t { font-family: var(--font-display); font-size: 2rem; line-height: 1; padding-bottom: 0.35rem; border-bottom: 8px solid var(--rule-strong); }
+  .facts .serve { font-size: 0.9rem; padding: 0.4rem 0 0.35rem; border-bottom: 4px solid var(--rule-strong); display: grid; gap: 0.1rem; }
+  .facts .row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.4rem 0; border-bottom: 1px solid var(--rule); font-size: 0.98rem; }
+  .facts .row.sub { padding-left: 1rem; color: var(--fg-2); font-size: 0.92rem; }
+  .facts .row .n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .facts .row:last-of-type { border-bottom: 4px solid var(--rule-strong); }
+  .facts .foot { font-size: 0.8rem; color: var(--fg-2); padding-top: 0.5rem; line-height: 1.4; }
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 1.25rem 1rem; }
+  .flow .step { display: grid; gap: 0.35rem; align-content: start; position: relative; padding-top: 1.1rem; }
+  .flow .step::before { content: ""; position: absolute; top: 0; left: 0; right: -1rem; height: 2px; background: var(--rule-strong); }
+  .flow .step:last-child::before { right: 0; }
+  .flow .step::after { content: ""; position: absolute; top: -6px; left: 0; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--rule-strong); }
+  .flow .step .k { font-family: var(--font-display); font-size: 1.25rem; line-height: 1.1; }
+  .flow .step small { color: var(--fg-2); font-size: 0.92rem; line-height: 1.4; }
+  .flow .step .tool { font-family: var(--font-mono); font-size: 0.76rem; color: var(--teal); }
+  .quick { display: grid; gap: 1.5rem 2.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; }
+  .quick ol { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.55rem; max-width: var(--measure); }
+  .quick li::marker { font-weight: 700; color: var(--orange); }
+  .quick pre { border-radius: 14px; }
+  .quick pre .p { color: var(--accent); }
+  .latest { display: grid; }
+  .latest a { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem 1.5rem; padding: 1.3rem 0; border-top: 1px solid var(--rule); text-decoration: none; align-items: start; }
+  .latest a:first-child { border-top: 2px solid var(--rule-strong); }
+  .latest a:last-child { border-bottom: 2px solid var(--rule-strong); }
+  .latest h3 { font-size: 1.35rem; }
+  .latest .muted { max-width: var(--measure); }
+  .latest .value { font-family: var(--font-display); font-size: 1.6rem; color: var(--orange); font-variant-numeric: tabular-nums; text-align: right; line-height: 1; white-space: nowrap; }
+  .latest a:hover h3 { color: var(--orange); }
+  @media (max-width: 560px) { .latest a { grid-template-columns: 1fr; } .latest .value { text-align: left; } }
+</style>
+{% endblock %}
+{% block main %}
+<header class="hero dots">
+  <div class="wrap">
+    <div class="copy">
+      <p class="eyebrow">Self-hosted ELT for chain data</p>
+      <h1>Blockchain data you can trace back to the raw rows.</h1>
+      <p class="lede">{{ site.name }} is a self-hosted ELT framework and warehouse. It loads chain data into your Postgres, transforms it with dbt and schedules the work with Dagster. Every number it gives you can be rebuilt, and shown to the client who asked for it.</p>
+      <div class="actions">
+        <a class="btn" href="#quick-start">Quick start</a>
+        <a class="btn ghost" href="analysis/index.html">Read an analysis</a>
+      </div>
+    </div>
+    <div class="art">
+      <img src="static/mascot.png" width="670" height="680" alt="A smiling block pours juice into a glass.">
+    </div>
+  </div>
+</header>
+
+<section class="section" id="why">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Why</p>
+      <h2>Built for people who have to show their work</h2>
+      <p class="lede">If you advise funds, treasuries or protocol teams, you know where on-chain work gets awkward. Explorers are fine for a quick look. Shared analytics platforms work until you need to own the query, the join or how long the data is kept.</p>
+    </div>
+    <div class="ruled why">
+      <div>
+        <h3>You keep the data</h3>
+        <p>Raw rows, marts, run logs and answers live in a warehouse and repo you run. When an auditor or a client asks how a number was built, you show them the model and the run that produced it.</p>
+      </div>
+      <div>
+        <h3>You ask in plain language</h3>
+        <p>The Claude Code skill (<code>/bj &lt;question&gt;</code>) maps a question onto marts, builds any that are missing, runs the checks and writes an answer folder with the value and the method. From there it can make a PDF, a spreadsheet or a Google Doc.</p>
+      </div>
+      <div>
+        <h3>Coverage is a copied source</h3>
+        <p>Another wallet list, EVM chain or protocol is <code>bj new-source</code>, a chain in dbt and a schedule. The shared library already handles cursors and dead letters, so your time goes to the question.</p>
+      </div>
+      <div>
+        <h3>When it breaks, you can see it</h3>
+        <p><code>bj doctor</code> checks your env and services before you start debugging. Grafana and the <code>ops.*</code> run log show ingestion and dbt side by side. Failed calls are kept as dead letters, not dropped.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section band" id="what">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What ships</p>
+      <h2>Marts you can query today</h2>
+      <p class="lede">Each mart holds one kind of fact for every chain and asset it covers, built for many questions rather than one.</p>
+    </div>
+    <div class="ships">
+      <aside class="facts" aria-label="Contents of one warehouse">
+        <div class="t">Contents</div>
+        <div class="serve"><span>Serving size <b>1 warehouse</b> (Postgres)</span><span>Servings per repo <b>{{ facts.pipelines | length }} pipelines</b>, {{ facts.schedule }}</span></div>
+        <div class="row"><b>Chains</b><span class="n">{{ facts.chains | length }}</span></div>
+        <div class="row sub"><span>{{ facts.chains | map('capitalize') | join(', ') }}</span></div>
+        <div class="row"><b>Sources</b><span class="n">{{ facts.sources | length }}</span></div>
+        <div class="row sub"><span>Call sources</span><span class="n">{{ facts.call_sources | length }}</span></div>
+        <div class="row sub"><span>Stream sources</span><span class="n">{{ facts.stream_sources | length }}</span></div>
+        <div class="row"><b>Marts</b><span class="n">{{ facts.marts | length }}</span></div>
+        <div class="row"><b>Protocols catalogued</b><span class="n">{{ facts.protocols | length }}</span></div>
+        <div class="row sub"><span>{% for p in facts.protocols %}{{ site.protocol_names.get(p, p) }}{% if not loop.last %}, {% endif %}{% endfor %}</span></div>
+        <div class="foot">Counted from the repo at build time. Every value traces to raw rows in <code>raw.*</code>; rebuild any of it with <code>bj run &lt;pipeline&gt;</code>.</div>
+      </aside>
+      <div class="table-wrap">
+        <table class="ship">
+          <thead><tr><th>You need</th><th>What ships</th><th>Mart</th></tr></thead>
+          <tbody>
+            {% for row in site.ships %}
+            <tr><td>{{ row.need }}</td><td>{{ row.what }}</td><td>{% for m in row.marts %}<code>{{ m }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="muted" style="margin-top:1rem; font-size:0.95rem">All marts live in the <code>analytics</code> schema. The <code>bj</code> CLI (<code>dev</code>, <code>doctor</code>, <code>run</code>, <code>answer</code>, <code>report</code>, <code>new-source</code>) and the blockjuice skill drive the rest.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">How it runs</p>
+      <h2>Ordinary software engineering, end to end</h2>
+      <p class="lede">A TypeScript source writes raw rows into <code>raw.&lt;source&gt;_&lt;table&gt;</code>. dbt reads them as sources and builds staging views and marts in <code>analytics</code>. Dagster runs both as one asset graph, one pipeline per mart folder, on a cron you choose.</p>
+    </div>
+    <div class="flow" role="list">
+      <div class="step" role="listitem"><span class="k">Chains and APIs</span><small>RPC through eRPC and Dshackle, SQD Portal streams, Binance and Coinbase</small></div>
+      <div class="step" role="listitem"><span class="k">Sources</span><small>Typed packages that read one kind of data and fill one raw table</small><span class="tool">ingestion/ · TypeScript</span></div>
+      <div class="step" role="listitem"><span class="k">Warehouse</span><small>Raw tables, cursors, dead letters and the run log</small><span class="tool">Postgres</span></div>
+      <div class="step" role="listitem"><span class="k">Models</span><small>Staging per source, intermediates per pipeline, marts with tests</small><span class="tool">transformation/ · dbt</span></div>
+      <div class="step" role="listitem"><span class="k">Schedules</span><small>One job per pipeline, every asset owned by a schedule</small><span class="tool">orchestration/ · Dagster</span></div>
+      <div class="step" role="listitem"><span class="k">Answers</span><small>question.yaml, answer.json, answer.md and results/, then a report</small><span class="tool">answers/ · bj answer</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section band" id="quick-start">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Quick start</p>
+      <h2>Running in an afternoon</h2>
+      <p class="lede">You need Node 24 and pnpm (both pinned in <code>mise.toml</code>), uv and Docker.</p>
+    </div>
+    <div class="quick">
+      <pre><code><span class="c"># set up the checkout: copies .env files, installs packages, parses dbt</span>
+<span class="p">$</span> uv run --project orchestration bj install
+
+<span class="c"># start the warehouse, eRPC, Dshackle, monitoring and Dagster</span>
+<span class="p">$</span> uv run --project orchestration bj dev
+
+<span class="c"># then, in Claude Code</span>
+<span class="p">&gt;</span> /bj How much ETH do the tracked wallets hold right now?</code></pre>
+      <ol>
+        <li>Set up once with <code>bj install</code>, start the stack with <code>bj dev</code>, then open the Dagster UI at <code>localhost:3000</code>.</li>
+        <li>Point sources at the wallets and tokens you care about, in each source's <code>addresses.json</code>.</li>
+        <li>Materialize a pipeline ({{ facts.pipelines.keys() | join(', ') }}) on a schedule you choose.</li>
+        <li>Ask the business question in Claude Code. You get an answer folder with its checks, and a report if you want one.</li>
+        <li>When the brief changes, add a source, a chain or your own pipeline. The skill walks you through each.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="latest">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Latest</p>
+      <h2>From the warehouse</h2>
+      <p class="lede">Analysis posts are answer folders turned into pages. Each one shows the value, how it was counted and the run that produced it.</p>
+    </div>
+    <div class="latest">
+      {% for post in posts[:3] %}
+      <a href="{{ post.href }}">
+        <div><p class="eyebrow">Analysis · {{ post.date }}{% for c in post.chains %} · {{ c | capitalize }}{% endfor %}{% if post.sample %} · sample{% endif %}</p><h3>{{ post.title }}</h3><p class="muted">{{ post.summary | safe }}</p></div>
+        <span class="value tnum">{{ post.value_display }}{% if post.unit %} {{ post.unit }}{% endif %}</span>
+      </a>
+      {% endfor %}
+      {% set latest = (changelog | selectattr('date') | list)[0] %}
+      <a href="changelog/index.html">
+        <div><p class="eyebrow">Changelog · {{ latest.date }}</p><h3>{{ latest.headline }}</h3><p class="muted">{{ latest.summary | safe }}</p></div>
+        <span class="value tnum">{{ latest.entries | length }} PRs</span>
+      </a>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Changelog · {{ site.name }}{% endblock %}
+{% block description %}What changed in {{ site.name }}, by day, with a link to each pull request.{% endblock %}
+{% block head %}
+<style>
+  .intro { padding-block: 3rem 1.5rem; display: grid; gap: 1rem; }
+</style>
+{% endblock %}
+{% block main %}
+<div class="wrap">
+  <header class="intro">
+    <p class="eyebrow">Changelog</p>
+    <h1>What changed, by day</h1>
+    <p class="lede">{{ site.name }} has no version numbers yet: the framework is the repository, and <code>main</code> is what you run. Each entry links to the pull request that landed it.</p>
+    <div class="legend-kinds">
+      <span class="kind added chip">Added</span><span class="kind changed chip">Changed</span><span class="kind fixed chip">Fixed</span><span class="kind docs chip">Docs</span>
+    </div>
+  </header>
+  {% for release in changelog %}
+  <section class="release">
+    <div class="when"><span class="date">{{ release.date or release.title }}</span><span class="count">{{ release.label }}</span></div>
+    <ul>
+      {% for e in release.entries %}
+      <li><span class="kind {{ e.kind }}">{{ e.kind | capitalize }}</span><p>{{ e.text | safe }}{% if e.pr %}<a class="pr" href="{{ site.repo }}/pull/{{ e.pr }}">#{{ e.pr }}</a>{% endif %}</p></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block footer_note %}Entries follow the pull requests on <code>main</code>. <a href="{{ site.repo }}/pulls?q=is%3Apr+is%3Amerged">Merged pull requests</a>.{% endblock %}

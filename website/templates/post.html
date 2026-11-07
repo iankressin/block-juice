@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} · {{ site.name }}{% endblock %}
+{% block description %}{{ post.summary | striptags }}{% endblock %}
+{% block head %}
+<meta property="article:published_time" content="{{ post.date }}">
+<style>
+  .charts { display: grid; gap: 1.25rem; }
+  .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .crosshair { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .dot { stroke: var(--card); stroke-width: 2; }
+</style>
+{% endblock %}
+{% block main %}
+<article class="wrap article">
+  <header class="head">
+    <div class="chips">{% if post.sample %}<span class="chip orange">Sample post</span>{% else %}<span class="chip teal">From the warehouse</span>{% endif %}{% for c in post.chains %}<span class="chip">{{ c | capitalize }}</span>{% endfor %}{% for m in post.marts %}<span class="chip">{{ m }}</span>{% endfor %}</div>
+    <h1>{{ post.title }}</h1>
+    <div class="meta">
+      {% if post.asked %}<span>Asked {{ post.asked }}</span>{% endif %}
+      {% if post.answered_at %}<span>Answered {{ post.answered_at | replace('T', ' ') | replace('Z', ' UTC') }}</span>{% elif post.date %}<span>Published {{ post.date }}</span>{% endif %}
+      {% if post.window %}<span>Window: {{ post.window }}</span>{% endif %}
+      <span>Answer <code>{{ post.slug }}</code></span>
+    </div>
+    {% if post.sample %}
+    <div class="notice">
+      <strong>Sample figures</strong>
+      <p>This post shows the format of a market post built from the warehouse. The numbers are placeholders, not a run against a warehouse. When an answer folder is attached, the charts, tables and provenance are filled from its <code>results/</code>.</p>
+    </div>
+    {% endif %}
+    {% if post.value %}
+    <div class="hero-number"><span class="value">{{ post.value }}{% if post.unit %} {{ post.unit }}{% endif %}</span>{% if post.window %}<span class="unit">{{ post.window }}</span>{% endif %}</div>
+    {% endif %}
+    {% if post.summary and not post.sample %}<p class="lede">{{ post.summary | safe }}</p>{% endif %}
+  </header>
+
+  <div class="body">
+    {% for chart in post.charts %}
+    <div class="chart" aria-label="{{ chart.title }}">
+      <span class="title">{{ chart.title }}</span>
+      <div class="hbars" style="--sw: var(--s1)">
+        {% for bar in chart.bars %}
+        <div class="row"><span class="name" title="{{ bar.full }}">{{ bar.label }}</span><span class="track"><span class="fill" style="width: {{ '%.1f' % (bar.pct * 0.72) }}%"></span><span class="val">{{ bar.display }}</span></span></div>
+        {% endfor %}
+        <div class="row"><span></span><span class="scale"><span>0</span><span>{{ chart.top }} {{ chart.value_col | upper if chart.value_col | length <= 4 else chart.value_col }}</span></span></div>
+      </div>
+    </div>
+    {% endfor %}
+
+    {{ post.body_html | safe }}
+
+    {% if post.checks or post.inputs or post.provenance %}
+    <h2>Checks and provenance</h2>
+    <p>What <code>bj answer</code> verified before this answer shipped, and the run it came from.</p>
+    {% if post.checks %}
+    <ul class="checks">
+      {% for check in post.checks %}
+      <li class="check {{ check.status }}"><span class="status">{{ check.status }}</span><span><strong>{{ check.name | replace('_', ' ') }}</strong> <span class="muted">{{ check.detail }}</span></span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if post.inputs %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Raw table</th><th>Last run finished</th><th class="num">Records</th><th class="num">Dead letters</th></tr></thead>
+        <tbody>
+          {% for i in post.inputs %}
+          <tr><td><code>{{ i.source }}</code></td><td><code>{{ i.raw_table }}</code></td><td class="mono">{{ (i.last_run.finished_at or '')[:19] | replace('T', ' ') }}</td><td class="num">{{ i.last_run.records_written }}</td><td class="num">{{ i.dead_letters.pending }} pending, {{ i.dead_letters.parked }} parked</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if post.provenance %}
+    <div class="provenance">
+      {% if post.provenance.git_sha %}<div class="item"><span class="k">Repo commit</span><span class="v"><a href="{{ site.repo }}/commit/{{ post.provenance.git_sha }}">{{ post.provenance.git_sha[:12] }}</a>{% if post.provenance.git_dirty %} (dirty){% endif %}</span></div>{% endif %}
+      {% if post.provenance.dbt_version %}<div class="item"><span class="k">dbt</span><span class="v">{{ post.provenance.dbt_version }}</span></div>{% endif %}
+      <div class="item"><span class="k">Answer folder</span><span class="v">{{ post.source_dir }}</span></div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if post.results %}
+    <h2>Reproduce it</h2>
+    <details class="repro" open>
+      <summary>The analyses behind the numbers</summary>
+      <pre><code>{% for r in post.results %}<span class="c">-- transformation/analyses/{{ r.analysis }}.sql</span>
+{{ r.sql }}
+
+{% endfor %}<span class="c"># rerun the answer against your warehouse</span>
+uv run --project orchestration bj answer {{ post.slug }}</code></pre>
+    </details>
+    {% if post.question_yaml %}
+    <details class="repro">
+      <summary>question.yaml</summary>
+      <pre><code>{{ post.question_yaml }}</code></pre>
+    </details>
+    {% endif %}
+    {% for r in post.results if r.rows %}
+    <details class="repro">
+      <summary>{{ r.path }} · {{ r.rows | length }} row{{ 's' if r.rows | length != 1 }}</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>{% for c in r.columns %}<th{% if r.numeric.get(c) %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for row in r.rows %}<tr>{% for c in r.columns %}<td{% if r.numeric.get(c) %} class="num"{% endif %}>{% if r.numeric.get(c) %}{{ row[c] }}{% else %}<code>{{ row[c] }}</code>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        </table>
+      </div>
+    </details>
+    {% endfor %}
+    {% endif %}
+  </div>
+</article>
+{% endblock %}
+{% block footer_note %}Generated from <code>{{ post.source_dir }}</code>. <a href="index.html">All analysis</a>.{% endblock %}
+{% block scripts %}{% if post.sample %}<script src="../static/sample-charts.js"></script>{% endif %}{% endblock %}

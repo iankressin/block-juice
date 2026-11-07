@@ -1,0 +1,87 @@
+    <p class="lede">Most UNI still changes hands in v3 pools, but v4's share of the token's on-chain volume rose over the window, from a fifth to nearly a third, with one dip in the week of Oct 20. v2 held steady at a little over a tenth. Across the window, the Binance close and the Chainlink UNI/USD feed stayed within half a percent of each other every day, so either is a usable price for valuing these trades.</p>
+
+    <h2>How it was counted</h2>
+    <ul>
+      <li><strong>UNI traded</strong> is the UNI side of every Swap in <code>analytics.dex_trades</code> on Ethereum, whichever side it was on, in UNI (18 decimals).</li>
+      <li><strong>Version</strong> is the pool's Uniswap version, v2, v3 or v4, as the source that loaded it recorded.</li>
+      <li><strong>Weeks</strong> are Monday to Sunday UTC, turned into Ethereum block ranges with <code>bj blocks</code>.</li>
+      <li><strong>Price</strong> is the Binance UNIUSDT daily close from <code>analytics.token_prices</code>, beside the last Chainlink UNI/USD round of each day from <code>analytics.oracle_prices</code>.</li>
+    </ul>
+
+    <div class="charts">
+      <div class="chart" id="bars">
+        <span class="title">UNI traded by Uniswap version, Ethereum</span>
+        <p class="subtitle">Millions of UNI per week. Sample figures.</p>
+        <div class="legend"><span style="--sw: var(--s1)">v2</span><span style="--sw: var(--s2)">v3</span><span style="--sw: var(--s3)">v4</span></div>
+        <svg viewBox="0 0 640 300" role="img" aria-label="Grouped bars of UNI traded per week by Uniswap v2, v3 and v4"></svg>
+        <div class="tip" hidden></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Week of</th><th class="num">v2 (M UNI)</th><th class="num">v3 (M UNI)</th><th class="num">v4 (M UNI)</th><th class="num">Total</th><th class="num">v4 share</th></tr></thead>
+          <tbody id="bars-table"></tbody>
+        </table>
+      </div>
+
+      <div class="chart" id="lines">
+        <span class="title">UNI price, Binance close and Chainlink round</span>
+        <p class="subtitle">USD per UNI, daily. The two series sit on top of each other. Sample figures.</p>
+        <div class="legend"><span style="--sw: var(--s1)">Binance UNIUSDT close</span><span style="--sw: var(--s2)">Chainlink UNI/USD, last round of the day</span></div>
+        <svg viewBox="0 0 640 260" role="img" aria-label="Line chart of the daily UNI price from Binance and from the Chainlink oracle"></svg>
+        <div class="tip" hidden></div>
+      </div>
+    </div>
+
+    <h2>The data</h2>
+    <p>Trades come from the three Uniswap stream sources, which read pool creations and Swaps of pools that trade UNI through SQD Portal, up to Portal's finalized head. Prices come from the <code>binance-candles</code> call source and the <code>evm-chainlink-price-feeds</code> stream source. The provenance block is filled by <code>bj answer</code> from the run log.</p>
+    <div class="provenance">
+      <div class="item"><span class="k">Marts</span><span class="v">dex_trades, token_prices, oracle_prices</span></div>
+      <div class="item"><span class="k">Sources last loaded</span><span class="v">pending run</span></div>
+      <div class="item"><span class="k">dbt tests upstream</span><span class="v">pending run</span></div>
+      <div class="item"><span class="k">Dead letters</span><span class="v">pending run</span></div>
+    </div>
+
+    <h2>Caveats</h2>
+    <ul>
+      <li>Only pools whose tokens are listed in each version's <code>addresses.json</code> are loaded. A UNI pool against an unlisted token is not counted.</li>
+      <li>Volume is counted in UNI, not USD, so a week with a higher price is not inflated. Multiply by the daily close to get dollars.</li>
+      <li>Trades routed through an aggregator show up once per pool they touch, like any other Swap.</li>
+    </ul>
+
+    <h2>Reproduce it</h2>
+    <details class="repro" open>
+      <summary>The analyses behind the charts</summary>
+      <pre><code><span class="c">-- transformation/analyses/uni_traded_by_version.sql</span>
+<span class="c">-- :start and :end come from `bj blocks ethereum 2026-10-06 2026-11-02`</span>
+select
+    version,
+    round(sum(case when token_bought = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+                   then amount_bought else amount_sold end) / 1e18 / 1e6, 2) as uni_millions
+from "warehouse"."analytics"."dex_trades"
+where chain = 'ethereum'
+  and protocol = 'uniswap'
+  and block_number between :start and :end
+group by version
+order by version
+
+<span class="c">-- transformation/analyses/uni_price_binance_vs_chainlink.sql</span>
+with binance as (
+    select date_trunc('day', close_time) as day, close
+    from "warehouse"."analytics"."token_prices"
+    where exchange = 'binance' and token = 'UNI' and quote = 'USDT' and interval = '1d'
+),
+chainlink as (
+    select distinct on (date_trunc('day', block_timestamp))
+        date_trunc('day', block_timestamp) as day, price
+    from "warehouse"."analytics"."oracle_prices"
+    where chain = 'ethereum' and feed = 'UNI / USD'
+    order by date_trunc('day', block_timestamp), block_timestamp desc
+)
+select b.day, b.close as binance_close, c.price as chainlink_price
+from binance b join chainlink c using (day)
+order by b.day
+
+<span class="c"># build the answer folder against your warehouse</span>
+uv run --project orchestration bj answer uni-dex-venues</code></pre>
+    </details>

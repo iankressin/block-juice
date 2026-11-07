@@ -1,0 +1,133 @@
+# The changelog, newest first. `text` is HTML. `pr` links to the pull request.
+# Kinds: added, changed, fixed, docs. A release without a date is the roadmap.
+- date: 2026-11-06
+  headline: >-
+    Token metadata, Coinbase candles and Chainlink feeds
+  summary: >-
+    Nineteen pull requests in one day: the <code>tokens</code> and <code>prices</code> pipelines, <code>bj install</code> and <code>bj dev</code>, and EVM sources that load any chain.
+  entries:
+    - kind: added
+      pr: 21
+      text: >-
+        The <code>evm-erc20-metadata</code> source reads each token's name, symbol and decimals on any EVM chain, and the <code>tokens</code> pipeline builds <code>analytics.tokens</code> from it. Old tokens that answer in <code>bytes32</code> are read too.
+    - kind: added
+      pr: 22
+      text: >-
+        The <code>coinbase-candles</code> source loads candles from Coinbase Exchange, laid out like <code>binance-candles</code>. <code>analytics.token_prices</code> now unions both exchanges.
+    - kind: changed
+      pr: 20
+      text: >-
+        <code>bj new-source</code> can copy <code>evm-erc20-transfers</code>, so a new stream source starts from a working one.
+    - kind: added
+      pr: 18
+      text: >-
+        The <code>evm-chainlink-price-feeds</code> source loads Chainlink rounds on Ethereum, Arbitrum and Base. The <code>prices</code> pipeline builds <code>analytics.oracle_prices</code>, and a warn test flags feeds that fell silent for two heartbeats.
+    - kind: changed
+      pr: 19
+      text: >-
+        <code>base-op-standard-bridge</code> became <code>evm-op-standard-bridge</code>, so it can load any OP-stack chain from a <code>chains/&lt;chain&gt;/</code> folder.
+    - kind: added
+      pr: 17
+      text: >-
+        The <code>binance-candles</code> source and the <code>prices</code> pipeline. <code>analytics.token_prices</code> holds one row per candle of a token against its quote asset.
+    - kind: changed
+      pr: 16
+      text: >-
+        <code>classified_transfers</code> is now a mart in the <code>transfers</code> pipeline. It labels each side of a transfer as exchange, deposit address, contract, EOA or bridge, and gives the transfer a category.
+    - kind: added
+      pr: 15
+      text: >-
+        <code>bj install</code> sets up a fresh checkout and <code>bj dev</code> starts the Docker stack, runs the doctor checks and starts Dagster, in one line.
+    - kind: changed
+      pr: 14
+      text: >-
+        The Ethereum sources became <code>evm-*</code> packages that load any EVM chain. Each chain keeps its own RPC URL, start block and <code>addresses.json</code> under <code>chains/&lt;chain&gt;/</code>.
+    - kind: docs
+      pr: 13
+      text: >-
+        A public README and <code>docs/architecture.md</code>: what ships, the quick start, the data flow and how to add a source or a pipeline.
+    - kind: added
+      pr: 4
+      text: >-
+        The transfers pipeline follows any token on Arbitrum and Base, set up for UNI.
+    - kind: changed
+      pr: 11
+      text: >-
+        The skill's new-pipeline workflow was refreshed and a schedule-jobs workflow added, so <code>/bj schedule &lt;pipeline&gt; &lt;cron&gt;</code> changes when a pipeline runs.
+    - kind: added
+      pr: 12
+      text: >-
+        <code>bj doctor</code> runs preflight checks on the env files, the warehouse, the RPC gateways and the tools before you start debugging.
+    - kind: docs
+      pr: 8
+      text: >-
+        The call-source checklist and how a stream source fails and resumes.
+    - kind: changed
+      pr: 10
+      text: >-
+        <code>ingestion/sources.json</code> is generated from the packages, and Dagster builds its ingestion assets from it. A source cannot ship without an asset.
+    - kind: added
+      pr: 9
+      text: >-
+        A Dshackle healthcheck and Prometheus alert rules for the RPC gateways.
+    - kind: changed
+      pr: 7
+      text: >-
+        The report workflow now covers the whole path from a question to a shareable XLSX, PDF, Word or Google Doc, with rows from your warehouse.
+    - kind: fixed
+      pr: 6
+      text: >-
+        Contracts on the Uniswap trade intermediates, so a malformed Swap fails the build instead of reaching <code>dex_trades</code>.
+    - kind: changed
+      pr: 5
+      text: >-
+        <code>ERPC_URL</code> was renamed to <code>EVM_RPC_URL</code>, beside <code>SOLANA_RPC_URL</code>. Update your <code>.env</code>.
+- date: 2026-11-05
+  headline: >-
+    Balance contracts and implementation plans
+  summary: >-
+    Each chain's balance shape is checked by a contract, Ethereum addresses are lowercased in staging, and the implementation plans landed.
+  entries:
+    - kind: docs
+      pr: 3
+      text: >-
+        Implementation plans for the ranked backlog: quality gate, transform, skills and reports, ingestion and orchestration.
+    - kind: fixed
+      pr: 2
+      text: >-
+        Ethereum addresses are lowercased in staging, so joins across sources match.
+    - kind: changed
+      pr: 1
+      text: >-
+        Each chain's balance shape is checked by a contract before it reaches <code>latest_balances</code>, and the mart is documented.
+- date: 2026-11-04
+  label: Foundation
+  headline: >-
+    The dex pipeline and the protocol catalog
+  summary: >-
+    Uniswap v2, v3 and v4 sources, <code>analytics.dex_trades</code>, <code>bj blocks</code> and the protocol catalog.
+  entries:
+    - kind: added
+      text: >-
+        The <code>dex</code> pipeline: <code>analytics.dex_trades</code> from Uniswap v2, v3 and v4, one row per trade, with each version's sign rule in its own intermediate model.
+    - kind: added
+      text: >-
+        Stream sources for Uniswap v2, v3 and v4 that load pool creations and Swaps of pools trading a token list, each version in its own raw table.
+    - kind: added
+      text: >-
+        <code>bj blocks</code> turns a date range into block ranges for any EVM chain in SQD Portal's registry, and <code>question.yaml</code> carries a block range per chain.
+    - kind: added
+      text: >-
+        A protocol catalog under <code>catalog/protocols/</code>: contracts, events and ABIs proven on real logs before anyone writes SQL.
+    - kind: docs
+      text: >-
+        The skill says what each ELT layer does, and asks for an address the repo does not hold instead of guessing one.
+- title: Next
+  label: In progress
+  entries:
+    - kind: changed
+      text: >-
+        Thinner packaging for customer apps. The parts analysts touch, the <code>name</code> and <code>table</code> of a source, mart shapes and the <code>bj</code> CLI, stay the same.
+    - kind: added
+      text: >-
+        This website, built from the repo: analysis posts from answer folders, the contents panel counted at build time, and this changelog.

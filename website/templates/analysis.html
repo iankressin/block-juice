@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Analysis · {{ site.name }}{% endblock %}
+{% block description %}Analysis posts built from {{ site.name }} answer folders. Each post shows the value, how it was counted and the run that produced it.{% endblock %}
+{% block head %}
+<style>
+  .intro { padding-block: 3rem 2rem; display: grid; gap: 1rem; }
+  .how { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); margin-bottom: 2.5rem; }
+  .how .card h3 { font-size: 1.15rem; }
+</style>
+{% endblock %}
+{% block main %}
+<div class="wrap">
+  <header class="intro">
+    <p class="eyebrow">Analysis</p>
+    <h1>Posts you can rerun</h1>
+    <p class="lede">Every post here starts as an answer folder in the repo: a question, the marts it reads, the dbt analyses that select the result, and the checks that ran before it shipped. The page is the <code>answer.md</code> with its charts, provenance and SQL attached.</p>
+  </header>
+  <div class="grid how">
+    <div class="card"><h3>One question</h3><p class="muted"><code>question.yaml</code> pins the definitions and the window: a chain, a block or a range.</p></div>
+    <div class="card"><h3>One or more analyses</h3><p class="muted">dbt analyses select the result from marts. The first row and column can be the value.</p></div>
+    <div class="card"><h3>Checks before it ships</h3><p class="muted"><code>bj answer</code> runs the tests upstream of the analyses and counts the dead letters of every input.</p></div>
+    <div class="card"><h3>A file you own</h3><p class="muted"><code>answer.json</code>, <code>answer.md</code> and <code>results/*.csv</code>, then a PDF, a spreadsheet or a Google Doc.</p></div>
+  </div>
+  <section class="post-list" aria-label="Posts">
+    {% for post in posts %}
+    <a class="post" href="{{ post.slug }}.html">
+      <div>
+        <div class="chips">{% if post.sample %}<span class="chip orange">Sample post</span>{% else %}<span class="chip teal">From the warehouse</span>{% endif %}{% for c in post.chains %}<span class="chip">{{ c | capitalize }}</span>{% endfor %}{% for m in post.marts %}<span class="chip">{{ m }}</span>{% endfor %}</div>
+        <h3>{{ post.title }}</h3>
+        <p class="summary">{{ post.summary | safe }}</p>
+        <p class="muted">{{ post.date }}{% if post.window %} · {{ post.window }}{% endif %}</p>
+      </div>
+      <div class="value tnum">{{ post.value_display }}<small>{{ post.unit or ('sample' if post.sample else '') }}</small></div>
+    </a>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}
+{% block footer_note %}Posts are generated from <code>answers/&lt;slug&gt;/</code>. Ask a new question with <code>/bj</code>.{% endblock %}
