@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BlockJuice</title>
+<meta name="description" content="A self-hosted ELT framework and warehouse for blockchain data. Every number traces back to raw rows, and you can rebuild it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,400&family=Albert+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+  .hero { padding-block: 4rem 3rem; display: grid; gap: 1.5rem; }
+  .hero h1 { max-width: 20ch; }
+  .hero .standfirst { max-width: 58ch; }
+  .steps { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.5rem; max-width: var(--measure); }
+  .steps li::marker { font-family: var(--font-mono); color: var(--fg-2); font-size: 0.9rem; }
+  .latest { display: grid; border-top: 1px solid var(--rule-strong); }
+  .latest a { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; gap: 0.3rem 2rem; padding: 1.1rem 0; border-bottom: 1px solid var(--rule); color: var(--fg); text-decoration: none; }
+  .latest a > * { min-width: 0; }
+  .latest a:hover h3 { color: var(--teal); }
+  .latest .date { font-family: var(--font-mono); font-size: 0.82rem; color: var(--fg-2); padding-top: 0.25rem; }
+  .latest h3 { font-size: 1.2rem; }
+  .latest .value { font-family: var(--font-display); font-weight: 300; font-size: 1.5rem; text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  @media (max-width: 700px) { .latest a { grid-template-columns: 1fr; } .latest .value { text-align: left; } }
+</style>
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a class="wordmark" href="index.html">BlockJuice</a>
+    <ul>
+      <li><a href="index.html" aria-current="page">Home</a></li>
+      <li><a href="analysis/index.html">Analysis</a></li>
+      <li><a href="changelog/index.html">Changelog</a></li>
+      <li><a href="https://github.com/iankressin/block-juice">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap">
+  <header class="hero">
+    <p class="eyebrow">A self-hosted ELT framework and warehouse for blockchain data</p>
+    <h1>Every number traces back to raw rows, and you can rebuild it.</h1>
+    <p class="standfirst">BlockJuice loads chain data into your Postgres, transforms it with dbt and schedules the work with Dagster. Balances, transfers, trades, prices and labels sit next to the rest of your data, under keys and policies you set.</p>
+    <div class="actions">
+      <a class="btn primary" href="#quick-start">Quick start</a>
+      <a class="btn" href="analysis/index.html">Read the analysis</a>
+    </div>
+  </header>
+
+  <div class="page" style="padding-top:0">
+    <div class="main">
+      <p class="eyebrow">Contents</p>
+      <ol class="contents">
+        <li><a href="#why">Why it exists</a><span class="muted">Who it is for</span></li>
+        <li><a href="#what">What ships</a><span class="muted">The marts</span></li>
+        <li><a href="#how">How it runs</a><span class="muted">Sources, dbt, Dagster</span></li>
+        <li><a href="#quick-start">Quick start</a><span class="muted">An afternoon</span></li>
+        <li><a href="#latest">Latest</a><span class="muted">Analysis and changes</span></li>
+      </ol>
+    </div>
+    <aside class="aside">
+      <div class="note"><span class="k">Status</span><p>BlockJuice is in active development. For now the framework is this repository: clone it, fill in <code>.env</code> and run your own warehouse.</p></div>
+    </aside>
+  </div>
+
+  <section class="section" id="why">
+    <div class="row">
+      <div class="section-head">
+        <p class="eyebrow">1 · Why</p>
+        <h2>Built for people who have to show their work</h2>
+        <p class="lede">If you advise funds, treasuries or protocol teams, you know where on-chain work gets awkward. Explorers are fine for a quick look. Shared analytics platforms work until you need to own the query, the join or how long the data is kept.</p>
+      </div>
+      <div class="note"><span class="k">In one line</span><p>The result is a pipeline an analyst can read, change and hand to a client. Every step is in the repo for anyone to check.</p></div>
+    </div>
+    <div class="pairs">
+      <div class="pair"><h3>You keep the data</h3><p>Raw rows, marts, run logs and answers live in a warehouse and repo you run. When an auditor or a client asks how a number was built, you show them the model and the run that produced it.</p></div>
+      <div class="pair"><h3>You ask in plain language</h3><p>The Claude Code skill (<code>/bj &lt;question&gt;</code>) maps a question onto marts, builds any that are missing, runs the checks and writes an answer folder with the value and the method. From there it can make a PDF, a spreadsheet or a Google Doc.</p></div>
+      <div class="pair"><h3>Coverage is a copied source</h3><p>Another wallet list, EVM chain or protocol is <code>bj new-source</code>, a chain in dbt and a schedule. The shared library already handles cursors and dead letters, so your time goes to the question.</p></div>
+      <div class="pair"><h3>When it breaks, you can see it</h3><p><code>bj doctor</code> checks your env and services before you start debugging. Grafana and the <code>ops.*</code> run log show ingestion and dbt side by side. Failed calls are kept as dead letters, not dropped.</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="what">
+    <div class="row">
+      <div class="section-head">
+        <p class="eyebrow">2 · What ships</p>
+        <h2>Marts you can query today</h2>
+        <p class="lede">Each mart holds one kind of fact for every chain and asset it covers, built for many questions rather than one.</p>
+      </div>
+      <div class="note"><span class="k">Term</span><p><b>Mart.</b> A dbt model that holds one kind of fact for every chain and asset it covers. Avoid: report table, output.</p></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>You need</th><th>What ships</th><th>Mart</th></tr></thead>
+        <tbody>
+          <tr><td>Point-in-time balances</td><td>ETH, ERC-20, SOL, SPL, BTC</td><td><code>analytics.latest_balances</code></td></tr>
+          <tr><td>Transfer history</td><td>ERC-20 on Ethereum, Arbitrum, Base, with each side labelled</td><td><code>analytics.erc20_transfers</code>, <code>analytics.classified_transfers</code></td></tr>
+          <tr><td>DEX activity</td><td>Uniswap v2, v3 and v4 trades</td><td><code>analytics.dex_trades</code></td></tr>
+          <tr><td>Address labels</td><td>Code reads plus exchange seeds: exchange, contract or EOA</td><td><code>analytics.address_labels</code></td></tr>
+          <tr><td>Token metadata</td><td>Name, symbol and decimals on Ethereum, Arbitrum, Base</td><td><code>analytics.tokens</code></td></tr>
+          <tr><td>Token prices</td><td>Binance and Coinbase candles; Chainlink rounds on Ethereum, Arbitrum, Base</td><td><code>analytics.token_prices</code>, <code>analytics.oracle_prices</code></td></tr>
+          <tr><td>How it runs</td><td>TypeScript extract and load, dbt, Dagster, plus Docker for the warehouse, eRPC, Dshackle and monitoring</td><td></td></tr>
+          <tr><td>How you drive it</td><td>The <code>bj</code> CLI (<code>dev</code>, <code>doctor</code>, <code>run</code>, <code>answer</code>, <code>report</code>, <code>new-source</code>) and the blockjuice skill</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="row">
+      <div class="section-head">
+        <p class="eyebrow">3 · How it runs</p>
+        <h2>Ordinary software engineering, end to end</h2>
+        <p class="lede">A TypeScript source writes raw rows into <code>raw.&lt;source&gt;_&lt;table&gt;</code>. dbt reads them as sources and builds staging views and marts in <code>analytics</code>. Dagster runs both as one asset graph, one pipeline per mart folder, on a cron you choose.</p>
+      </div>
+      <div class="note"><span class="k">Term</span><p><b>Pipeline.</b> The marts in one <code>models/marts/&lt;pipeline&gt;/</code> folder and everything upstream of them, run as one Dagster job on one schedule.</p></div>
+    </div>
+    <div class="pairs">
+      <div class="pair"><h3>Chains and APIs</h3><p>RPC through eRPC and Dshackle, SQD Portal streams, Binance and Coinbase.</p></div>
+      <div class="pair"><h3>Sources</h3><p>Typed packages that read one kind of data and fill one raw table.<span class="tool">ingestion/ · TypeScript</span></p></div>
+      <div class="pair"><h3>Warehouse</h3><p>Raw tables, cursors, dead letters and the run log.<span class="tool">Postgres</span></p></div>
+      <div class="pair"><h3>Models</h3><p>Staging per source, intermediates per pipeline, marts with tests.<span class="tool">transformation/ · dbt</span></p></div>
+      <div class="pair"><h3>Schedules</h3><p>One job per pipeline, every asset owned by a schedule.<span class="tool">orchestration/ · Dagster</span></p></div>
+      <div class="pair"><h3>Answers</h3><p>question.yaml, answer.json, answer.md and results/, then a report.<span class="tool">answers/ · bj answer</span></p></div>
+    </div>
+  </section>
+
+  <section class="section" id="quick-start">
+    <div class="row">
+      <div class="section-head">
+        <p class="eyebrow">4 · Quick start</p>
+        <h2>Running in an afternoon</h2>
+        <p class="lede">You need Node 24 and pnpm (both pinned in <code>mise.toml</code>), uv and Docker.</p>
+      </div>
+      <div class="note"><span class="k">Safe to repeat</span><p><code>bj install</code> never overwrites an <code>.env</code> and starts nothing. <code>bj dev</code> runs it again before starting the stack.</p></div>
+    </div>
+    <div class="row">
+      <pre><code><span class="c"># set up the checkout: copies .env files, installs packages, parses dbt</span>
+uv run --project orchestration bj install
+
+<span class="c"># start the warehouse, eRPC, Dshackle, monitoring and Dagster</span>
+uv run --project orchestration bj dev
+
+<span class="c"># then, in Claude Code</span>
+/bj How much ETH do the tracked wallets hold right now?</code></pre>
+      <div class="note"><span class="k">Then</span><p>Open the Dagster UI at <code>localhost:3000</code> and materialize the assets you need. If something looks wrong, run <code>bj doctor</code> before anything else.</p></div>
+    </div>
+    <ol class="steps">
+      <li>Set up once with <code>bj install</code>, start the stack with <code>bj dev</code>, then open the Dagster UI.</li>
+      <li>Point sources at the wallets and tokens you care about, in each source's <code>addresses.json</code>.</li>
+      <li>Materialize a pipeline (balances, transfers, dex, labels, prices, tokens) on a schedule you choose.</li>
+      <li>Ask the business question in Claude Code. You get an answer folder with its checks, and a report if you want one.</li>
+      <li>When the brief changes, add a source, a chain or your own pipeline. The skill walks you through each.</li>
+    </ol>
+  </section>
+
+  <section class="section" id="latest">
+    <div class="row">
+      <div class="section-head">
+        <p class="eyebrow">5 · Latest</p>
+        <h2>From the warehouse</h2>
+        <p class="lede">Analysis posts are answer folders turned into pages. Each one shows the value, how it was counted and the run that produced it.</p>
+      </div>
+      <div class="note"><span class="k">Changelog</span><p>Nineteen pull requests landed on 2026-11-06: the <code>tokens</code> and <code>prices</code> pipelines, <code>bj install</code> and <code>bj dev</code>, and EVM sources that load any chain. <a href="changelog/index.html">Read the changelog</a>.</p></div>
+    </div>
+    <div class="latest">
+      <a href="analysis/uni-dex-venues.html"><span class="date">2026-11-07</span><span><h3>Where does UNI trade on Ethereum? Uniswap v4 is taking share</h3><span class="muted">Sample post · Ethereum</span></span><span class="value">22% → 32%</span></a>
+      <a href="analysis/tracked-wallets-sol.html"><span class="date">2026-11-04</span><span><h3>How much SOL do the tracked wallets hold right now?</h3><span class="muted">Solana · latest_balances</span></span><span class="value">9,318,316.47 SOL</span></a>
+      <a href="analysis/tracked-wallets-eth.html"><span class="date">2026-11-04</span><span><h3>How much ETH do the tracked wallets hold right now?</h3><span class="muted">Ethereum · latest_balances</span></span><span class="value">3,055.16 ETH</span></a>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <span>BlockJuice. The framework is the repository.</span>
+    <span><a href="https://github.com/iankressin/block-juice">GitHub</a> · <a href="https://github.com/iankressin/block-juice/blob/main/docs/architecture.md">Architecture</a> · <a href="https://github.com/iankressin/block-juice/blob/main/GLOSSARY.md">Glossary</a></span>
+  </div>
+</footer>
+</body>
+</html>

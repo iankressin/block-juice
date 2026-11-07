@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tracked wallets: SOL · BlockJuice</title>
+<meta name="description" content="How much SOL the three tracked wallets hold, read from analytics.latest_balances at slot 465371069.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,400&family=Albert+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a class="wordmark" href="../index.html">BlockJuice</a>
+    <ul>
+      <li><a href="../index.html">Home</a></li>
+      <li><a href="index.html" aria-current="page">Analysis</a></li>
+      <li><a href="../changelog/index.html">Changelog</a></li>
+      <li><a href="https://github.com/iankressin/block-juice">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap page article">
+  <header class="head main">
+    <p class="chips"><span>From the warehouse</span><span>Solana</span><span class="mono">latest_balances</span></p>
+    <h1>How much SOL do the tracked wallets hold right now?</h1>
+    <div class="meta"><span>Asked 2026-11-04</span><span>Answered 2026-11-04</span><span>Answer <code>tracked-wallets-sol</code></span></div>
+    <div class="headline"><span class="value">9318316.473172448</span><span class="unit">SOL across three wallets, at slot 465371069</span></div>
+  </header>
+  <aside class="aside">
+    <div class="note"><span class="k">Definitions</span>
+      <p><b>Tracked wallets.</b> The three wallets in <code>ingestion/sources/solana-sol-balances/addresses.json</code>.</p>
+      <p><b>SOL.</b> Native SOL only. SPL tokens, including wrapped SOL, are not counted.</p>
+      <p><b>Right now.</b> Each wallet's latest SOL balance reading, at Solana slot 465371069.</p>
+    </div>
+  </aside>
+
+  <div class="main">
+    <h2><span class="n">1</span>How it was counted</h2>
+    <ul class="list">
+      <li><strong>Tracked wallets</strong> are the three wallets in <code>ingestion/sources/solana-sol-balances/addresses.json</code>.</li>
+      <li><strong>SOL</strong> is native SOL only. SPL tokens, including wrapped SOL, are not counted.</li>
+      <li><strong>Right now</strong> is each wallet's latest SOL balance reading, at Solana slot 465371069.</li>
+      <li>Each balance is read from the chain, summed in lamports and divided by 10<sup>9</sup>.</li>
+    </ul>
+  </div>
+  <aside class="aside"></aside>
+
+  <div class="figure main">
+    <div class="chart" aria-label="SOL per wallet">
+      <span class="title">SOL per wallet</span>
+      <div class="hbars" style="--sw: var(--s1)">
+        <div class="row2"><span class="name">9WzD…AWWM</span><span class="track"><span class="fill" style="width: 72%"></span><span class="val">9,300,003.23</span></span></div>
+        <div class="row2"><span class="name">H8sM…3WjS</span><span class="track"><span class="fill" style="width: 0.2%"></span><span class="val">16,965.40</span></span></div>
+        <div class="row2"><span class="name">86xC…2MMY</span><span class="track"><span class="fill" style="width: 0.1%"></span><span class="val">1,347.85</span></span></div>
+        <div class="row2"><span></span><span class="scale"><span>0</span><span>9,300,003 SOL</span></span></div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Wallet</th><th class="num">Slot</th><th class="num">SOL</th></tr></thead>
+        <tbody>
+          <tr><td><code>9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM</code></td><td class="num">465371069</td><td class="num">9300003.228029947</td></tr>
+          <tr><td><code>H8sMJSCQxfKiFTCfDR3DUMLPwcRbM61LGFJ8N4dK3WjS</code></td><td class="num">465371069</td><td class="num">16965.396150800</td></tr>
+          <tr><td><code>86xCnPeV69n6t3DnyGvkKobf9FdN2H9oiVDdaMpo2MMY</code></td><td class="num">465371069</td><td class="num">1347.848991701</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <aside class="aside">
+    <div class="note"><p class="caption"><b>Figure 1.</b> SOL held by each tracked wallet at slot 465371069. One wallet holds 99.8% of the total. <code>results/tracked_wallets_sol_by_wallet.csv</code> has each balance in lamports.</p></div>
+  </aside>
+
+  <div class="main">
+    <h2><span class="n">2</span>The data</h2>
+    <p>The balances come from <code>analytics.latest_balances</code>. The Solana SOL balances source last loaded at 2026-11-04T19:18:41Z. All 54 dbt tests upstream of the analyses passed, and no input has dead letters.</p>
+  </div>
+  <aside class="aside">
+    <div class="note"><span class="k">Provenance</span>
+      <span class="k">Mart</span><span class="v">analytics.latest_balances</span>
+      <span class="k">Source last loaded</span><span class="v">2026-11-04T19:18:41Z</span>
+      <span class="k">dbt tests upstream</span><span class="v">54 passed, 0 failed</span>
+      <span class="k">Dead letters</span><span class="v">0 pending, 0 parked</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <h2><span class="n">3</span>Caveats</h2>
+    <ul class="list">
+      <li>Staked SOL is not counted. Only the wallets' liquid balance is.</li>
+      <li>A Solana RPC serves only current state, so each run adds a new reading keyed by the slot it read. <code>block_number</code> in the mart is the slot.</li>
+      <li><code>results/tracked_wallets_sol_by_wallet.csv</code> has each balance in lamports.</li>
+    </ul>
+  </div>
+  <aside class="aside"></aside>
+
+  <div class="main">
+    <h2><span class="n">4</span>Reproduce it</h2>
+    <details class="repro" open>
+      <summary>The analyses behind the numbers</summary>
+      <pre><code><span class="c">-- transformation/analyses/tracked_wallets_sol.sql</span>
+select round(sum(balance) / 1e9, 9) as sol
+from "warehouse"."analytics"."latest_balances"
+where chain = 'solana' and asset_type = 'native'
+
+<span class="c">-- transformation/analyses/tracked_wallets_sol_by_wallet.sql</span>
+select
+    wallet,
+    block_number,
+    round(balance / 1e9, 9) as sol,
+    balance as lamports
+from "warehouse"."analytics"."latest_balances"
+where chain = 'solana' and asset_type = 'native'
+order by balance desc</code></pre>
+    </details>
+  </div>
+  <aside class="aside">
+    <div class="note"><span class="k">Rerun against your warehouse</span><span class="v">uv run --project orchestration bj answer tracked-wallets-sol</span></div>
+  </aside>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <span>Generated from <code>answers/tracked-wallets-sol/</code>.</span>
+    <span><a href="index.html">All analysis</a> · <a href="https://github.com/iankressin/block-juice">GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>
