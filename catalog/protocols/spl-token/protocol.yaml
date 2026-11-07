@@ -1,0 +1,67 @@
+name: spl-token
+# Solana's SPL Token program. Every SPL mint that runs on this program, Tether's USD₮ among them, moves
+# through the same instructions, so a source reads the program's instructions for the mints its
+# addresses.json lists. Token-2022 is a different program and is not covered here.
+docs:
+  - https://github.com/solana-program/token/blob/main/interface/src/instruction.rs
+  - https://tether.to/en/supported-protocols/
+chains:
+  solana:
+    programs:
+      token:
+        address: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+        source: >-
+          Program id of every token balance Portal returns for the mints below, as preProgramId and
+          postProgramId.
+    mints:
+      tether_usd:
+        address: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB
+        decimals: 6
+        source: >-
+          Address from Tether's supported-protocols page, Solana section. Decimals from Portal's
+          token balances (preDecimals and postDecimals) on every record checked in NOTES.md.
+# One byte of instruction data names the instruction. Accounts are listed in the order the program
+# reads them. Amounts are u64 little-endian right after the discriminator.
+instructions:
+  initializeAccount:
+    discriminator: 1
+    accounts: [account, mint, owner, rent]
+  transfer:
+    discriminator: 3
+    accounts: [source, destination, authority, signers...]
+    data: [amount]
+  setAuthority:
+    discriminator: 6
+    accounts: [owned, owner, signers...]
+    data: [authority_type, new_authority]
+  mintTo:
+    discriminator: 7
+    accounts: [mint, account, mint_authority, signers...]
+    data: [amount]
+  burn:
+    discriminator: 8
+    accounts: [account, mint, authority, signers...]
+    data: [amount]
+  closeAccount:
+    discriminator: 9
+    accounts: [account, destination, owner, signers...]
+  transferChecked:
+    discriminator: 12
+    accounts: [source, mint, destination, authority, signers...]
+    data: [amount, decimals]
+  mintToChecked:
+    discriminator: 14
+    accounts: [mint, account, mint_authority, signers...]
+    data: [amount, decimals]
+  burnChecked:
+    discriminator: 15
+    accounts: [account, mint, authority, signers...]
+    data: [amount, decimals]
+  initializeAccount2:
+    discriminator: 16
+    accounts: [account, mint, rent]
+    data: [owner]
+  initializeAccount3:
+    discriminator: 18
+    accounts: [account, mint]
+    data: [owner]

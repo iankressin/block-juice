@@ -1,0 +1,71 @@
+name: tether-token
+# Tether's TetherToken contract, which issues USD₮ on Ethereum and on TRON. The two deployments share
+# event names and topic0s but not their ABIs: the TRON contract indexes the address in
+# DestroyedBlackFunds, AddedBlackList and RemovedBlackList, and the Ethereum contract does not.
+docs:
+  - https://tether.to/en/supported-protocols/
+  - https://raw.githubusercontent.com/tethercoin/USDT/main/TetherToken.sol
+  - https://developers.tron.network/reference/getcontract
+  - https://developers.tron.network/reference/triggerconstantcontract
+chains:
+  ethereum:
+    contracts:
+      token:
+        address: "0xdac17f958d2ee523a2206206994597c13d831ec7"
+        deployed_block: 4634748
+        source: >-
+          Address from Tether's supported-protocols page. Deploy block from eth_getCode over an
+          archive RPC: empty at 4634747, code at 4634748.
+    abi: abis/tether-token-ethereum.json
+  tron:
+    contracts:
+      token:
+        address: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+        hex: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c"
+        deployed_block: null
+        source: >-
+          Address from Tether's supported-protocols page. TronGrid wallet/getcontract names the
+          contract TetherToken, deployed by THPvaUhoh2Qn2y9THCZML3H815hhFhn5YC, and returns the
+          ABI in abis/tether-token-tron.json. The deploy block was not checked; the earliest log
+          Portal holds is in NOTES.md.
+    abi: abis/tether-token-tron.json
+events:
+  Transfer:
+    signature: "event Transfer(address indexed from, address indexed to, uint256 value)"
+    topic0: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+  Issue:
+    signature: "event Issue(uint256 amount)"
+    topic0: "0xcb8241adb0c3fdb35b70c24ce35c5eb0c17af7431c99f827d44a445ca624176a"
+  Redeem:
+    signature: "event Redeem(uint256 amount)"
+    topic0: "0x702d5967f45f6513a38ffc42d6ba9bf230bd40e8f53b16363c7eb4fd2deb9a44"
+  DestroyedBlackFunds:
+    signature:
+      ethereum: "event DestroyedBlackFunds(address _blackListedUser, uint256 _balance)"
+      tron: "event DestroyedBlackFunds(address indexed _blackListedUser, uint256 _balance)"
+    topic0: "0x61e6e66b0d6339b2980aecc6ccc0039736791f0ccde9ed512e789a7fbdd698c6"
+  AddedBlackList:
+    signature:
+      ethereum: "event AddedBlackList(address _user)"
+      tron: "event AddedBlackList(address indexed _user)"
+    topic0: "0x42e160154868087d6bfdc0ca23d96a1c1cfa32f1b72ba9ba27b69b98a0d819dc"
+  RemovedBlackList:
+    signature:
+      ethereum: "event RemovedBlackList(address _user)"
+      tron: "event RemovedBlackList(address indexed _user)"
+    topic0: "0xd7e9ec6e6ecd65492dce6bf513cd6867560d49544421d0783ddf06e76c24470c"
+  Params:
+    signature: "event Params(uint256 feeBasisPoints, uint256 maxFee)"
+    topic0: "0xb044a1e409eac5c48e5af22d4af52670dd1a99059537a78b31b48c6500a6354e"
+  Deprecate:
+    signature: "event Deprecate(address newAddress)"
+    topic0: "0xcc358699805e9a8b7f77b522628c7cb9abd07d9efb86b6fb616af1609036a99e"
+  Pause:
+    signature: "event Pause()"
+    topic0: "0x6985a02210a168e66602d3235cb6db0e70f92b3ba4d376a33c0f3d9434bff625"
+  Unpause:
+    signature: "event Unpause()"
+    topic0: "0x7805862f689e2f13df9f062ff482ad3ad112aca9e0847911ed832e158c525b33"
+  Approval:
+    signature: "event Approval(address indexed owner, address indexed spender, uint256 value)"
+    topic0: "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"
