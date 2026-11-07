@@ -1,0 +1,122 @@
+name: coinbase
+scope: >-
+  Coinbase Exchange market data from its public REST API: the candles of a product such as UNI-USD,
+  which coinbase-candles loads into raw.coinbase_candles. Covers the public host, its rate limit, and
+  the endpoints that a source or a check calls. Leaves out the authenticated trading and account
+  endpoints, the WebSocket and FIX APIs, and Coinbase's other APIs (Advanced Trade, International
+  Exchange, the retail app).
+docs:
+  - https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-candles
+  - https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-single-product
+  - https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-trades
+  - https://docs.cdp.coinbase.com/exchange/rest-api/rate-limits
+  - https://docs.cdp.coinbase.com/exchange/rest-api/pagination
+  - https://docs.cdp.coinbase.com/exchange/rest-api/requests
+sources:
+  - ingestion/sources/coinbase-candles
+api:
+  base_url: https://api.exchange.coinbase.com
+  auth: none
+  role: >-
+    Coinbase Exchange's REST API. Its product and market-data endpoints are public: the OpenAPI spec
+    marks candles, products and trades with security: [].
+  source: The servers entry of the OpenAPI spec on each endpoint's page.
+  times: >-
+    Candle times are Unix seconds in UTC. Requests take start and end as ISO 8601 timestamps.
+    Trade times are ISO 8601 with microseconds, such as 2026-11-07T18:00:15.232641Z.
+  caching: >-
+    Cloudflare caches replies: on 2026-11-07 each carried cache-control: public, max-age=300,
+    must-revalidate, with age and cf-cache-status headers. A reply can be up to 5 minutes old.
+    NOTES.md says what that does to a candle that has just closed.
+limits:
+  public:
+    limit: 10 requests a second, bursts up to 15
+    counted_by: IP
+    header: none. No reply on 2026-11-07 carried the count used.
+    source: >-
+      The rate-limits page: "Public endpoints are throttled by IP". It describes a lazy-fill token
+      bucket whose size is the burst and whose refill rate is the limit.
+  on_exceed: >-
+    HTTP 429. coinbase-candles sends one chunk of requests a second, and a request that gets a 429
+    waits 1 s, then 2 s, before its window becomes a dead letter.
+endpoints:
+  candles:
+    use: source
+    method: GET
+    path: /products/{product_id}/candles
+    params:
+      product_id: required, in the path. Base and quote with a hyphen, such as UNI-USD.
+      granularity: The candle length in seconds, one of 60, 300, 900, 3600, 21600 or 86400.
+      start: ISO 8601. The first bucket start the reply may hold, inclusive. Ignored without end.
+      end: ISO 8601. The last bucket start the reply may hold, inclusive. Ignored without start.
+    max_rows: >-
+      300. Coinbase refuses a range where (end − start) / granularity is above 300, rather than cut it.
+      Without start and end it returns the latest candles: 350 of them on 2026-11-07.
+    order: newest first
+    source: >-
+      The get-product-candles page. Inclusive ends, the count rule, the default of 350 and the order
+      are from replies on 2026-11-07 (NOTES.md).
+    reply: an array of candles, each an array of 6 numbers
+    fields:
+      time: {at: 0, type: integer, unit: Unix seconds, note: the bucket's start. coinbase-candles stores it as open_time in Unix ms.}
+      low: {at: 1, type: number, unit: quote currency per base currency}
+      high: {at: 2, type: number, unit: quote currency per base currency}
+      open: {at: 3, type: number, unit: quote currency per base currency}
+      close: {at: 4, type: number, unit: quote currency per base currency}
+      volume: {at: 5, type: number, unit: base currency}
+    id: >-
+      product_id, granularity and time. coinbase-candles keys raw.coinbase_candles by
+      <product_id>:<interval>:<open_time in ms>, with the interval named as Binance names it (1h for 3600).
+  product:
+    use: check
+    method: GET
+    path: /products/{product_id}
+    role: >-
+      Whether Coinbase lists the product and whether it trades. status is online, offline, internal or
+      delisted; trading_disabled and cancel_only say more. coinbase-candles reads it before any candle:
+      an unknown product fails the run, and one that is not online, or has trading disabled, gets a warning.
+    fields:
+      id: {example: UNI-USD}
+      base_currency: {example: UNI}
+      quote_currency: {example: USD}
+      status: {values: [online, offline, internal, delisted]}
+      trading_disabled: {type: boolean}
+    source: The get-single-product page (apiProduct and apiProductStatusEnum in its OpenAPI spec).
+  trades:
+    use: proof
+    method: GET
+    path: /products/{product_id}/trades
+    params:
+      limit: optional. Default 1000, most 1000.
+      after: optional. The cursor from the CB-AFTER header, for the next page of older trades.
+      before: optional. The cursor from the CB-BEFORE header, for newer trades.
+    order: newest first
+    role: >-
+      The product's trades, one row each, with trade_id, price, size, side and time. Paging back from
+      the newest with after reaches any hour, so a candle can be rebuilt from its trades. NOTES.md's
+      proof table does that.
+    fields:
+      trade_id: {type: integer}
+      price: {type: decimal string}
+      size: {type: decimal string, unit: base currency}
+      side: {values: [buy, sell], note: the maker's side. buy means the taker sold.}
+      time: {type: ISO 8601}
+    source: The get-product-trades and pagination pages.
+errors:
+  "404":
+    body: '{"message":"NotFound"}'
+    meaning: >-
+      Coinbase lists no such product, from candles and from product alike. coinbase-candles fails the
+      run and names the token, so tokens.json can be fixed.
+  "400 Unsupported granularity":
+    body: '{"message":"Unsupported granularity"}'
+    meaning: granularity is not one of the six. coinbase-candles only sends the six, from CANDLE_INTERVAL.
+  "400 range":
+    body: '{"message":"granularity too small for the requested time range. Count of aggregations requested exceeds 300"}'
+    meaning: The range holds more than 300 candles. Split it.
+  "429":
+    meaning: Over the rate limit. Wait and send again.
+markets:
+  config: ingestion/sources/coinbase-candles/tokens.json
+  product_id: base currency, a hyphen, quote currency, such as UNI-USD
+  loaded: [BTC-USD, ETH-USD, UNI-USD]

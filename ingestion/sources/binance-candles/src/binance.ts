@@ -7,6 +7,7 @@ export type Clock = { now(): number; sleep(ms: number): Promise<void> };
 
 export const systemClock: Clock = { now: () => Date.now(), sleep: (ms) => setTimeout(ms) };
 
+// The API's endpoints, limits and fields, each checked on real replies: catalog/vendors/binance/.
 // Binance allows 6000 request weight a minute per IP and resets the count when a minute starts.
 const WEIGHT_BUDGET = 5000;
 const MINUTE_MS = 60_000;

@@ -1,0 +1,129 @@
+name: binance
+scope: >-
+  Binance spot market data from its public REST API: the candles (Binance calls them klines) of a
+  spot market such as UNIUSDT, which binance-candles loads into raw.binance_candles. Covers the
+  market-data-only host, its request-weight limit, and the endpoints that a source or a check calls.
+  Leaves out trading, account and WebSocket APIs, and Binance's futures and options markets.
+docs:
+  - https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md
+  - https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md
+  - https://github.com/binance/binance-spot-api-docs/blob/master/errors.md
+  - https://github.com/binance/binance-spot-api-docs/blob/master/enums.md
+sources:
+  - ingestion/sources/binance-candles
+api:
+  base_url: https://data-api.binance.vision
+  auth: none
+  role: >-
+    Binance's host for public market data. It needs no API key and serves the market-data endpoints
+    of the spot REST API, klines, aggTrades and exchangeInfo among them.
+  source: >-
+    rest-api.md, General API Information: "For APIs that only send public market data, please use the
+    base endpoint https://data-api.binance.vision". market_data_only.md lists the endpoints it serves.
+  times: >-
+    Every time in a request or a reply is Unix milliseconds in UTC (rest-api.md). Klines are cut in UTC
+    unless a request sends timeZone. binance-candles never sends it.
+  caching: >-
+    None. Every reply on 2026-11-07 carried cache-control: no-cache, no-store, must-revalidate.
+limits:
+  request_weight:
+    limit: 6000
+    per: 1 minute
+    counted_by: IP, for every client behind that IP
+    header: x-mbx-used-weight-1m
+    source: >-
+      rateLimits in GET /api/v3/exchangeInfo on 2026-11-07 (REQUEST_WEIGHT, MINUTE, 1, 6000). The header
+      is in rest-api.md, IP Limits.
+  on_exceed: >-
+    HTTP 429 with Retry-After in seconds. An IP that keeps sending after 429s is banned with HTTP 418,
+    for 2 minutes to 3 days, longer for repeat offenders (rest-api.md, IP Limits). binance-candles waits
+    for the next minute once the header passes 5000, and stops the run on a 418.
+endpoints:
+  klines:
+    use: source
+    method: GET
+    path: /api/v3/klines
+    weight: 2
+    params:
+      symbol: required. The market, base asset then quote asset with nothing between, such as UNIUSDT.
+      interval: required. 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w or 1M. Case-sensitive.
+      startTime: optional. Unix ms. The reply holds candles that open at or after it.
+      endTime: optional. Unix ms. The reply holds no candle that opens after it.
+      timeZone: optional. Hours from UTC that the candles are cut in. Default 0.
+      limit: optional. Default 500, most 1000. A larger value gets 1000, not an error.
+    order: oldest first
+    source: >-
+      rest-api.md, Kline/Candlestick data. The clamp of limit is from a reply on 2026-11-07: limit=1001
+      returned 1000 candles.
+    reply: an array of candles, each an array of 12 values
+    fields:
+      open_time: {at: 0, type: integer, unit: Unix ms}
+      open: {at: 1, type: decimal string, unit: quote asset per base asset}
+      high: {at: 2, type: decimal string, unit: quote asset per base asset}
+      low: {at: 3, type: decimal string, unit: quote asset per base asset}
+      close: {at: 4, type: decimal string, unit: quote asset per base asset}
+      volume: {at: 5, type: decimal string, unit: base asset}
+      close_time: {at: 6, type: integer, unit: Unix ms}
+      quote_volume: {at: 7, type: decimal string, unit: quote asset}
+      trades: {at: 8, type: integer}
+      taker_buy_base_volume: {at: 9, type: decimal string, unit: base asset}
+      taker_buy_quote_volume: {at: 10, type: decimal string, unit: quote asset}
+      ignore: {at: 11, type: string, note: Binance marks it "Ignore". It was "0" in every reply.}
+    id: >-
+      symbol, interval and open_time. rest-api.md: "Klines are uniquely identified by their open time."
+      binance-candles keys raw.binance_candles by <symbol>:<interval>:<open_time>.
+  exchangeInfo:
+    use: check
+    method: GET
+    path: /api/v3/exchangeInfo
+    weight: 20
+    params:
+      symbol: optional. One market. An unknown one gets -1121.
+    role: >-
+      A market's status (TRADING, END_OF_DAY, HALT, BREAK or CANCEL_ONLY in enums.md), its base and
+      quote asset, and the IP rate limits. binance-candles does not call it: it checks a market with a
+      one-candle klines request instead, which weighs 2 instead of 20.
+    source: rest-api.md, Exchange information.
+  aggTrades:
+    use: proof
+    method: GET
+    path: /api/v3/aggTrades
+    weight: 4
+    params:
+      symbol: required.
+      fromId: optional. First aggregate trade id, inclusive.
+      startTime: optional. Unix ms, inclusive.
+      endTime: optional. Unix ms, inclusive.
+      limit: optional. Default 500, most 1000.
+    role: >-
+      The market's trades, with fills of one taker order at one price merged into one row. Each row
+      carries the range of trade ids it merged (f to l), so the trades of an hour can be counted and a
+      candle rebuilt from them. NOTES.md's proof table does that.
+    fields:
+      aggregate_trade_id: {key: a}
+      price: {key: p, type: decimal string}
+      quantity: {key: q, type: decimal string, unit: base asset}
+      first_trade_id: {key: f}
+      last_trade_id: {key: l}
+      time: {key: T, unit: Unix ms}
+      buyer_is_maker: {key: m, note: false means the taker bought}
+    source: rest-api.md, Compressed/Aggregate trades list.
+errors:
+  "-1121":
+    http: 400
+    body: '{"code":-1121,"msg":"Invalid symbol."}'
+    meaning: >-
+      Binance lists no such market. binance-candles fails the run and names the token, so tokens.json
+      can be fixed.
+  "-1120":
+    http: 400
+    body: '{"code":-1120,"msg":"Invalid interval."}'
+    meaning: The interval is not one Binance offers. binance-candles checks CANDLE_INTERVAL before any request.
+  "429":
+    meaning: Over the weight limit. Wait Retry-After seconds.
+  "418":
+    meaning: The IP is banned. More requests lengthen the ban.
+markets:
+  config: ingestion/sources/binance-candles/tokens.json
+  symbol: base asset + quote asset, such as UNIUSDT for UNI against USDT
+  loaded: [BTCUSDT, ETHUSDT, UNIUSDT]

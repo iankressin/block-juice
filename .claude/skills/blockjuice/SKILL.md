@@ -21,7 +21,7 @@ Pick the workflow for the request and read it:
 | A reusable mart that no pipeline builds yet | [workflows/new-pipeline.md](workflows/new-pipeline.md) |
 | Change when a pipeline runs | [workflows/schedule-jobs.md](workflows/schedule-jobs.md) |
 
-Never stand in state reads for history ([references/choosing-the-data.md](references/choosing-the-data.md)). A protocol with no entry in `catalog/protocols/` gets one first: [workflows/explore-protocol.md](workflows/explore-protocol.md).
+Never stand in state reads for history ([references/choosing-the-data.md](references/choosing-the-data.md)). A protocol with no entry in `catalog/protocols/` gets one first: [workflows/explore-protocol.md](workflows/explore-protocol.md). An off-chain API, such as an exchange's candles, gets an entry in `catalog/vendors/` before a source calls it; `catalog/vendors/binance/` is the example to copy.
 
 ## Commands
 
