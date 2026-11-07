@@ -1,8 +1,7 @@
 /* BlockJuice — a printed juice label.
    Light: the banner's cream paper with plum ink; mustard and orange are the
    only loud colours, teal is the quiet one for links and data.
-   Dark: the banner's teal circle becomes the ground, a diner sign at night;
-   cream ink, the same mustard and orange, and the logo's plum swapped for cream.
+   One look only, light: the page is a printed label and stays that way in every theme.
    Type: Lilita One only for the few big words and the headline numbers
    (it sits next to the hand lettering without imitating it), Bricolage
    Grotesque for everything people read, IBM Plex Mono for anything that came
@@ -27,32 +26,12 @@
   --s1: #d4832a;
   --s2: #1f9a94;
   --s3: #c9542c;
-  --logo-light: inline-block;
-  --logo-dark: none;
   --font-display: "Lilita One", "Cooper Black", "Arial Rounded MT Bold", sans-serif;
   --font-text: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
   --measure: 62ch;
   --wrap: 1120px;
   color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0f2a29; --bg-2: #0b2322; --card: #143634; --fg: #f3e6cd; --fg-2: #b6cdc6;
-    --rule: #275753; --rule-strong: #f3e6cd; --accent: #f0a030; --accent-ink: #401020; --orange: #f5793a;
-    --teal: #7fd3c7; --code-bg: #0a1f1e; --code-fg: #f3e6cd; --code-c: #8fb3ac; --dot: rgba(243, 230, 205, 0.10);
-    --s1: #c67f2c; --s2: #27aa9d; --s3: #d6613a;
-    --logo-light: none; --logo-dark: inline-block;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0f2a29; --bg-2: #0b2322; --card: #143634; --fg: #f3e6cd; --fg-2: #b6cdc6;
-  --rule: #275753; --rule-strong: #f3e6cd; --accent: #f0a030; --accent-ink: #401020; --orange: #f5793a;
-  --teal: #7fd3c7; --code-bg: #0a1f1e; --code-fg: #f3e6cd; --code-c: #8fb3ac; --dot: rgba(243, 230, 205, 0.10);
-  --s1: #c67f2c; --s2: #27aa9d; --s3: #d6613a;
-  --logo-light: none; --logo-dark: inline-block;
-  color-scheme: dark;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -71,8 +50,6 @@ body::after {
   content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.045; mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body::after { mix-blend-mode: screen; opacity: 0.05; } }
-:root[data-theme="dark"] body::after { mix-blend-mode: screen; opacity: 0.05; }
 img, svg { max-width: 100%; height: auto; }
 a { color: inherit; text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 a:hover { text-decoration-color: var(--orange); }
@@ -108,8 +85,6 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .nav .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; padding-block: 0.6rem; flex-wrap: wrap; }
 .logo { display: inline-flex; align-items: center; line-height: 0; }
 .logo img { height: 62px; width: auto; }
-.logo .light { display: var(--logo-light); }
-.logo .dark { display: var(--logo-dark); }
 .nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.25rem 1.6rem; flex-wrap: wrap; font-weight: 600; font-size: 1.02rem; font-variation-settings: "opsz" 20; }
 .nav a:not(.logo) { text-decoration: none; padding: 0.35rem 0; position: relative; }
 .nav a:not(.logo)::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 2px; background: transparent; }

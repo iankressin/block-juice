@@ -14,7 +14,7 @@ No build step. Open `index.html` in a browser, or serve the folder:
 python3 -m http.server --directory website/01-juice-label 8080
 ```
 
-Fonts load from Google Fonts; everything else is in `assets/`: the stylesheet, the banner, and the logo and mascot cut out of it (`logo.png`, `logo-dark.png` with the plum swapped for cream, `mascot.png`).
+Fonts load from Google Fonts; everything else is in `assets/`: the stylesheet, the banner, and the logo and mascot cut out of it (`logo.png`, `mascot.png`). The site has one light look and no dark mode.
 
 ## Posts
 
