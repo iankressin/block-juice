@@ -3,190 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>BlockJuice</title>
-<meta name="description" content="A self-hosted ELT framework and warehouse for blockchain data. Every number traces back to raw rows, and you can rebuild it.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Oswald:wght@500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="assets/site.css">
+<title>BlockJuice website prototypes</title>
 <style>
-  .hero { padding-block: 2.5rem 3.5rem; }
-  .hero .banner { border: 3px solid var(--fg); border-radius: 18px; box-shadow: 6px 6px 0 var(--fg); display: block; width: 100%; background: #f6ecd9; }
-  .hero .copy { display: grid; gap: 1.25rem; margin-top: 2.5rem; }
-  .hero .actions { display: flex; gap: 0.9rem; flex-wrap: wrap; }
-  .hero .tagline { font-size: 1.3rem; line-height: 1.45; }
-  .why { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
-  .why .card h3 { color: var(--orange); }
-  .quick { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; }
-  .quick ol { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.5rem; max-width: var(--measure); }
-  .quick .steps { display: grid; gap: 1rem; }
-  .teasers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
-  .teasers .card .value { font-family: var(--font-display); font-size: 1.8rem; color: var(--orange); font-variant-numeric: tabular-nums; line-height: 1; }
-  .ship th:first-child, .ship td:first-child { width: 32%; }
+  :root { --bg: #f7f6f2; --fg: #1f1a1c; --fg-2: #6a6064; --rule: #d9d4cc; --card: #ffffff; --accent: #e8a33d; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16131a; --fg: #efe9e2; --fg-2: #b3a9ae; --rule: #3a323a; --card: #211c25; --accent: #e9a24a; color-scheme: dark; } }
+  :root[data-theme="dark"] { --bg: #16131a; --fg: #efe9e2; --fg-2: #b3a9ae; --rule: #3a323a; --card: #211c25; --accent: #e9a24a; color-scheme: dark; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin-inline: auto; padding-block: 3rem; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 1.5rem; }
+  h1 { margin: 0; font-size: 2rem; line-height: 1.1; }
+  p { margin: 0; max-width: 64ch; color: var(--fg-2); }
+  .list { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+  .list > * { min-width: 0; }
+  a.card { display: grid; gap: 0.5rem; padding: 1.25rem; background: var(--card); border: 1px solid var(--rule); border-radius: 10px; text-decoration: none; color: inherit; }
+  a.card:hover { border-color: var(--accent); }
+  a.card .n { font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-2); }
+  a.card strong { font-size: 1.25rem; }
+  a.card span { color: var(--fg-2); font-size: 0.95rem; }
+  a.card .pages { font-size: 0.85rem; color: var(--fg); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
-<nav class="nav" aria-label="Main">
-  <div class="wrap">
-    <a class="wordmark" href="index.html" aria-label="BlockJuice home"><span class="b">Block</span><span class="j">Juice</span></a>
-    <ul>
-      <li><a href="index.html" aria-current="page">Home</a></li>
-      <li><a href="analysis/index.html">Analysis</a></li>
-      <li><a href="changelog/index.html">Changelog</a></li>
-      <li><a href="https://github.com/iankressin/block-juice">GitHub</a></li>
-    </ul>
+<main>
+  <h1>BlockJuice website prototypes</h1>
+  <p>Three directions for the public site. Each has a landing page, an analysis section with the same three posts, and a changelog. Pick one to open.</p>
+  <div class="list">
+    <a class="card" href="01-juice-label/index.html">
+      <span class="n">Prototype 1</span>
+      <strong>Juice label</strong>
+      <span>The banner's retro print look. Cream paper, plum ink, mustard and orange, chunky display type.</span>
+      <span class="pages">Landing · Analysis · Changelog</span>
+    </a>
+    <a class="card" href="02-console/index.html">
+      <span class="n">Prototype 2</span>
+      <strong>Console</strong>
+      <span>A warehouse operator's console, dark first. Monospace data, flat panels, a left rail, a terminal transcript as the hero.</span>
+      <span class="pages">Landing · Analysis · Changelog</span>
+    </a>
+    <a class="card" href="03-research-desk/index.html">
+      <span class="n">Prototype 3</span>
+      <strong>Research desk</strong>
+      <span>A quiet research publication. Paper white, ink navy, serif display, margin notes for definitions and provenance.</span>
+      <span class="pages">Landing · Analysis · Changelog</span>
+    </a>
   </div>
-</nav>
-
-<header class="hero dots">
-  <div class="wrap">
-    <img class="banner" src="assets/bj-banner.png" width="2172" height="724" alt="BlockJuice: a smiling block pours juice into a glass. Blockchain data ELT framework.">
-    <div class="copy">
-      <p class="eyebrow">Self-hosted ELT for chain data</p>
-      <h1>Every number traces back to raw rows. And you can rebuild it.</h1>
-      <p class="tagline">BlockJuice loads chain data into your Postgres, transforms it with dbt and schedules the work with Dagster. Balances, transfers, trades, prices and labels sit next to the rest of your data, under keys and policies you set.</p>
-      <div class="actions">
-        <a class="btn" href="#quick-start">Quick start</a>
-        <a class="btn ghost" href="analysis/index.html">Read an analysis</a>
-      </div>
-    </div>
-  </div>
-</header>
-
-<section class="section" id="why">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Why</p>
-      <h2>Built for people who have to show their work</h2>
-      <p class="lede">If you advise funds, treasuries or protocol teams, you know where on-chain work gets awkward. Explorers are fine for a quick look. Shared analytics platforms work until you need to own the query, the join or how long the data is kept.</p>
-    </div>
-    <div class="grid why">
-      <div class="card">
-        <h3>You keep the data</h3>
-        <p>Raw rows, marts, run logs and answers live in a warehouse and repo you run. When an auditor or a client asks how a number was built, you show them the model and the run that produced it.</p>
-      </div>
-      <div class="card">
-        <h3>You ask in plain language</h3>
-        <p>The Claude Code skill (<code>/bj &lt;question&gt;</code>) maps a question onto marts, builds any that are missing, runs the checks and writes an answer folder with the value and the method. From there it can make a PDF, a spreadsheet or a Google Doc.</p>
-      </div>
-      <div class="card">
-        <h3>Coverage is a copied source</h3>
-        <p>Another wallet list, EVM chain or protocol is <code>bj new-source</code>, a chain in dbt and a schedule. The shared library already handles cursors and dead letters, so your time goes to the question.</p>
-      </div>
-      <div class="card">
-        <h3>When it breaks, you can see it</h3>
-        <p><code>bj doctor</code> checks your env and services before you start debugging. Grafana and the <code>ops.*</code> run log show ingestion and dbt side by side. Failed calls are kept as dead letters, not dropped.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section band" id="what">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">What ships</p>
-      <h2>Marts you can query today</h2>
-      <p class="lede">Each mart holds one kind of fact for every chain and asset it covers, built for many questions rather than one.</p>
-    </div>
-    <div class="table-wrap">
-      <table class="ship">
-        <thead><tr><th>You need</th><th>What ships</th><th>Mart</th></tr></thead>
-        <tbody>
-          <tr><td>Point-in-time balances</td><td>ETH, ERC-20, SOL, SPL, BTC</td><td><code>analytics.latest_balances</code></td></tr>
-          <tr><td>Transfer history</td><td>ERC-20 on Ethereum, Arbitrum, Base, with each side labelled</td><td><code>analytics.erc20_transfers</code>, <code>analytics.classified_transfers</code></td></tr>
-          <tr><td>DEX activity</td><td>Uniswap v2, v3 and v4 trades</td><td><code>analytics.dex_trades</code></td></tr>
-          <tr><td>Address labels</td><td>Code reads plus exchange seeds: exchange, contract or EOA</td><td><code>analytics.address_labels</code></td></tr>
-          <tr><td>Token metadata</td><td>Name, symbol and decimals on Ethereum, Arbitrum, Base</td><td><code>analytics.tokens</code></td></tr>
-          <tr><td>Token prices</td><td>Binance and Coinbase candles; Chainlink rounds on Ethereum, Arbitrum, Base</td><td><code>analytics.token_prices</code>, <code>analytics.oracle_prices</code></td></tr>
-          <tr><td>How it runs</td><td>TypeScript extract and load, dbt, Dagster, plus Docker for the warehouse, eRPC, Dshackle and monitoring</td><td></td></tr>
-          <tr><td>How you drive it</td><td>The <code>bj</code> CLI (<code>dev</code>, <code>doctor</code>, <code>run</code>, <code>answer</code>, <code>report</code>, <code>new-source</code>) and the blockjuice skill</td><td></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="how">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">How it runs</p>
-      <h2>Ordinary software engineering, end to end</h2>
-      <p class="lede">A TypeScript source writes raw rows into <code>raw.&lt;source&gt;_&lt;table&gt;</code>. dbt reads them as sources and builds staging views and marts in <code>analytics</code>. Dagster runs both as one asset graph, one pipeline per mart folder, on a cron you choose.</p>
-    </div>
-    <div class="flow" role="list">
-      <div class="step" role="listitem"><strong>Chains and APIs</strong><small>RPC through eRPC and Dshackle, SQD Portal streams, Binance and Coinbase</small></div>
-      <div class="step" role="listitem"><strong>Sources</strong><small>Typed packages that read one kind of data and fill one raw table</small><span class="tool">ingestion/ · TypeScript</span></div>
-      <div class="step" role="listitem"><strong>Warehouse</strong><small>Raw tables, cursors, dead letters and the run log</small><span class="tool">Postgres</span></div>
-      <div class="step" role="listitem"><strong>Models</strong><small>Staging per source, intermediates per pipeline, marts with tests</small><span class="tool">transformation/ · dbt</span></div>
-      <div class="step" role="listitem"><strong>Schedules</strong><small>One job per pipeline, every asset owned by a schedule</small><span class="tool">orchestration/ · Dagster</span></div>
-      <div class="step" role="listitem"><strong>Answers</strong><small>question.yaml, answer.json, answer.md and results/, then a report</small><span class="tool">answers/ · bj answer</span></div>
-    </div>
-  </div>
-</section>
-
-<section class="section band dots" id="quick-start">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Quick start</p>
-      <h2>Running in an afternoon</h2>
-      <p class="lede">You need Node 24 and pnpm (both pinned in <code>mise.toml</code>), uv and Docker.</p>
-    </div>
-    <div class="quick">
-      <div class="steps">
-        <pre><code><span class="c"># set up the checkout: copies .env files, installs packages, parses dbt</span>
-uv run --project orchestration bj install
-
-<span class="c"># start the warehouse, eRPC, Dshackle, monitoring and Dagster</span>
-uv run --project orchestration bj dev
-
-<span class="c"># then, in Claude Code</span>
-/bj How much ETH do the tracked wallets hold right now?</code></pre>
-      </div>
-      <ol>
-        <li>Set up once with <code>bj install</code>, start the stack with <code>bj dev</code>, then open the Dagster UI at <code>localhost:3000</code>.</li>
-        <li>Point sources at the wallets and tokens you care about, in each source's <code>addresses.json</code>.</li>
-        <li>Materialize a pipeline (balances, transfers, dex, labels, prices, tokens) on a schedule you choose.</li>
-        <li>Ask the business question in Claude Code. You get an answer folder with its checks, and a report if you want one.</li>
-        <li>When the brief changes, add a source, a chain or your own pipeline. The skill walks you through each.</li>
-      </ol>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="latest">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Latest</p>
-      <h2>From the warehouse</h2>
-      <p class="lede">Analysis posts are answer folders turned into pages. Each one shows the value, how it was counted and the run that produced it.</p>
-    </div>
-    <div class="grid teasers">
-      <a class="card link" href="analysis/tracked-wallets-eth.html">
-        <p class="eyebrow">Analysis · 2026-11-04 · Ethereum</p>
-        <h3>How much ETH do the tracked wallets hold?</h3>
-        <p class="value tnum">3,055.16 ETH</p>
-        <p class="muted">Three wallets, native ETH only, read at block 26342618 from <code>latest_balances</code>.</p>
-      </a>
-      <a class="card link" href="analysis/tracked-wallets-sol.html">
-        <p class="eyebrow">Analysis · 2026-11-04 · Solana</p>
-        <h3>How much SOL do the tracked wallets hold?</h3>
-        <p class="value tnum">9,318,316.47 SOL</p>
-        <p class="muted">Liquid SOL at slot 465371069. Staked SOL and wrapped SOL are not counted.</p>
-      </a>
-      <a class="card link" href="changelog/index.html">
-        <p class="eyebrow">Changelog · 2026-11-06</p>
-        <h3>Token metadata, Coinbase candles and Chainlink feeds</h3>
-        <p class="muted">Nineteen pull requests landed in one day: the <code>tokens</code> and <code>prices</code> pipelines, <code>bj install</code> and <code>bj dev</code>, and EVM sources that load any chain.</p>
-      </a>
-    </div>
-  </div>
-</section>
-
-<footer class="footer">
-  <div class="wrap">
-    <span>BlockJuice is in active development. The framework is the repository: clone it, fill in <code>.env</code> and run your own warehouse.</span>
-    <span><a href="https://github.com/iankressin/block-juice">GitHub</a> · <a href="https://github.com/iankressin/block-juice/blob/main/docs/architecture.md">Architecture</a> · <a href="https://github.com/iankressin/block-juice/blob/main/GLOSSARY.md">Glossary</a></span>
-  </div>
-</footer>
+</main>
 </body>
 </html>
