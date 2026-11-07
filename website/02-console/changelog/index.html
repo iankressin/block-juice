@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Changelog · BlockJuice</title>
+<meta name="description" content="What changed in BlockJuice, by day, with the commit and a link to each pull request.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <a class="wordmark" href="../index.html">blockjuice</a>
+    <nav aria-label="Main"><ul><li><a href="../index.html">Home</a></li><li><a href="../analysis/index.html">Analysis</a></li><li><a href="../changelog/index.html" aria-current="page">Changelog</a></li><li><a href="https://github.com/iankressin/block-juice">GitHub</a></li></ul></nav>
+    <div class="status" aria-label="Warehouse status">
+      <div class="row"><span><span class="dot"></span>warehouse</span><b>up</b></div>
+      <div class="row"><span>sources</span><b>16</b></div>
+      <div class="row"><span>pipelines</span><b>7</b></div>
+      <div class="row"><span>marts</span><b>9</b></div>
+      <div class="row"><span>schedule</span><b>06:00 UTC</b></div>
+    </div>
+  </aside>
+  <header class="topbar">
+    <div class="inner">
+      <a class="wordmark" href="../index.html">blockjuice</a>
+      <nav aria-label="Main"><ul><li><a href="../index.html">Home</a></li><li><a href="../analysis/index.html">Analysis</a></li><li><a href="../changelog/index.html" aria-current="page">Changelog</a></li><li><a href="https://github.com/iankressin/block-juice">GitHub</a></li></ul></nav>
+    </div>
+  </header>
+  <main class="main">
+
+<section class="section">
+  <div class="section-head">
+    <span class="label">changelog</span>
+    <h1>What changed, by day</h1>
+    <p class="lede">BlockJuice has no version numbers yet: the framework is the repository, and <code>main</code> is what you run. Each entry carries its commit and links to the pull request that landed it.</p>
+    <div class="tags"><span class="tag kind added">Added</span><span class="tag kind changed">Changed</span><span class="tag kind fixed">Fixed</span><span class="tag kind docs">Docs</span></div>
+  </div>
+  <div class="panel">
+    <div class="head"><b>git log --oneline main</b><span>27 entries · newest first</span></div>
+    <div class="body">
+      <div class="log">
+        <div class="day">
+    <div class="label"><span>2026-11-06</span><span>19 pull requests</span></div>
+    <ul><li><span class="hash">c8b72ae</span><span class="kind added">Added</span><p>The <code>evm-erc20-metadata</code> source reads each token's name, symbol and decimals on any EVM chain, and the <code>tokens</code> pipeline builds <code>analytics.tokens</code> from it. Old tokens that answer in <code>bytes32</code> are read too.<a class="pr" href="https://github.com/iankressin/block-juice/pull/21">#21</a></p></li><li><span class="hash">6e6afa2</span><span class="kind added">Added</span><p>The <code>coinbase-candles</code> source loads candles from Coinbase Exchange, laid out like <code>binance-candles</code>. <code>analytics.token_prices</code> now unions both exchanges.<a class="pr" href="https://github.com/iankressin/block-juice/pull/22">#22</a></p></li><li><span class="hash">70b6bac</span><span class="kind changed">Changed</span><p><code>bj new-source</code> can copy <code>evm-erc20-transfers</code>, so a new stream source starts from a working one.<a class="pr" href="https://github.com/iankressin/block-juice/pull/20">#20</a></p></li><li><span class="hash">9c4cdb6</span><span class="kind added">Added</span><p>The <code>evm-chainlink-price-feeds</code> source loads Chainlink rounds on Ethereum, Arbitrum and Base. The <code>prices</code> pipeline builds <code>analytics.oracle_prices</code>, and a warn test flags feeds that fell silent for two heartbeats.<a class="pr" href="https://github.com/iankressin/block-juice/pull/18">#18</a></p></li><li><span class="hash">14c7e7b</span><span class="kind changed">Changed</span><p><code>base-op-standard-bridge</code> became <code>evm-op-standard-bridge</code>, so it can load any OP-stack chain from a <code>chains/&lt;chain&gt;/</code> folder.<a class="pr" href="https://github.com/iankressin/block-juice/pull/19">#19</a></p></li><li><span class="hash">f01884b</span><span class="kind added">Added</span><p>The <code>binance-candles</code> source and the <code>prices</code> pipeline. <code>analytics.token_prices</code> holds one row per candle of a token against its quote asset.<a class="pr" href="https://github.com/iankressin/block-juice/pull/17">#17</a></p></li><li><span class="hash">0808ed3</span><span class="kind changed">Changed</span><p><code>classified_transfers</code> is now a mart in the <code>transfers</code> pipeline. It labels each side of a transfer as exchange, deposit address, contract, EOA or bridge, and gives the transfer a category.<a class="pr" href="https://github.com/iankressin/block-juice/pull/16">#16</a></p></li><li><span class="hash">3d7cd62</span><span class="kind added">Added</span><p><code>bj install</code> sets up a fresh checkout and <code>bj dev</code> starts the Docker stack, runs the doctor checks and starts Dagster, in one line.<a class="pr" href="https://github.com/iankressin/block-juice/pull/15">#15</a></p></li><li><span class="hash">f6ff42c</span><span class="kind changed">Changed</span><p>The Ethereum sources became <code>evm-*</code> packages that load any EVM chain. Each chain keeps its own RPC URL, start block and <code>addresses.json</code> under <code>chains/&lt;chain&gt;/</code>.<a class="pr" href="https://github.com/iankressin/block-juice/pull/14">#14</a></p></li><li><span class="hash">41f5cdc</span><span class="kind docs">Docs</span><p>A public README and <code>docs/architecture.md</code>: what ships, the quick start, the data flow and how to add a source or a pipeline.<a class="pr" href="https://github.com/iankressin/block-juice/pull/13">#13</a></p></li><li><span class="hash">0f0d9f9</span><span class="kind added">Added</span><p>The transfers pipeline follows any token on Arbitrum and Base, set up for UNI.<a class="pr" href="https://github.com/iankressin/block-juice/pull/4">#4</a></p></li><li><span class="hash">21d22fc</span><span class="kind changed">Changed</span><p>The skill's new-pipeline workflow was refreshed and a schedule-jobs workflow added, so <code>/bj schedule &lt;pipeline&gt; &lt;cron&gt;</code> changes when a pipeline runs.<a class="pr" href="https://github.com/iankressin/block-juice/pull/11">#11</a></p></li><li><span class="hash">18f168e</span><span class="kind added">Added</span><p><code>bj doctor</code> runs preflight checks on the env files, the warehouse, the RPC gateways and the tools before you start debugging.<a class="pr" href="https://github.com/iankressin/block-juice/pull/12">#12</a></p></li><li><span class="hash">a4ff00c</span><span class="kind docs">Docs</span><p>The call-source checklist and how a stream source fails and resumes.<a class="pr" href="https://github.com/iankressin/block-juice/pull/8">#8</a></p></li><li><span class="hash">429df3d</span><span class="kind changed">Changed</span><p><code>ingestion/sources.json</code> is generated from the packages, and Dagster builds its ingestion assets from it. A source cannot ship without an asset.<a class="pr" href="https://github.com/iankressin/block-juice/pull/10">#10</a></p></li><li><span class="hash">250818f</span><span class="kind added">Added</span><p>A Dshackle healthcheck and Prometheus alert rules for the RPC gateways.<a class="pr" href="https://github.com/iankressin/block-juice/pull/9">#9</a></p></li><li><span class="hash">13b4376</span><span class="kind changed">Changed</span><p>The report workflow now covers the whole path from a question to a shareable XLSX, PDF, Word or Google Doc, with rows from your warehouse.<a class="pr" href="https://github.com/iankressin/block-juice/pull/7">#7</a></p></li><li><span class="hash">0b1b98c</span><span class="kind fixed">Fixed</span><p>Contracts on the Uniswap trade intermediates, so a malformed Swap fails the build instead of reaching <code>dex_trades</code>.<a class="pr" href="https://github.com/iankressin/block-juice/pull/6">#6</a></p></li><li><span class="hash">f9b0192</span><span class="kind changed">Changed</span><p><code>ERPC_URL</code> was renamed to <code>EVM_RPC_URL</code>, beside <code>SOLANA_RPC_URL</code>. Update your <code>.env</code>.<a class="pr" href="https://github.com/iankressin/block-juice/pull/5">#5</a></p></li></ul>
+  </div><div class="day">
+    <div class="label"><span>2026-11-05</span><span>3 pull requests</span></div>
+    <ul><li><span class="hash">7813733</span><span class="kind docs">Docs</span><p>Implementation plans for the ranked backlog: quality gate, transform, skills and reports, ingestion and orchestration.<a class="pr" href="https://github.com/iankressin/block-juice/pull/3">#3</a></p></li><li><span class="hash">b725e6b</span><span class="kind fixed">Fixed</span><p>Ethereum addresses are lowercased in staging, so joins across sources match.<a class="pr" href="https://github.com/iankressin/block-juice/pull/2">#2</a></p></li><li><span class="hash">dfc259b</span><span class="kind changed">Changed</span><p>Each chain's balance shape is checked by a contract before it reaches <code>latest_balances</code>, and the mart is documented.<a class="pr" href="https://github.com/iankressin/block-juice/pull/1">#1</a></p></li></ul>
+  </div><div class="day">
+    <div class="label"><span>2026-11-04</span><span>foundation</span></div>
+    <ul><li><span class="hash">21cb33a</span><span class="kind added">Added</span><p>The <code>dex</code> pipeline: <code>analytics.dex_trades</code> from Uniswap v2, v3 and v4, one row per trade, with each version's sign rule in its own intermediate model.</p></li><li><span class="hash">9bf693c</span><span class="kind added">Added</span><p>Stream sources for Uniswap v2, v3 and v4 that load pool creations and Swaps of pools trading a token list, each version in its own raw table.</p></li><li><span class="hash">4b91e50</span><span class="kind added">Added</span><p><code>bj blocks</code> turns a date range into block ranges for any EVM chain in SQD Portal's registry, and <code>question.yaml</code> carries a block range per chain.</p></li><li><span class="hash">59f0eea</span><span class="kind added">Added</span><p>A protocol catalog under <code>catalog/protocols/</code>: contracts, events and ABIs proven on real logs before anyone writes SQL.</p></li><li><span class="hash">c92f516</span><span class="kind docs">Docs</span><p>The skill says what each ELT layer does, and asks for an address the repo does not hold instead of guessing one.</p></li></ul>
+  </div>
+        <div class="day">
+          <div class="label"><span>next</span><span>in progress</span></div>
+          <ul>
+            <li><span class="hash">·······</span><span class="kind changed">Changed</span><p>Thinner packaging for customer apps. The parts analysts touch, the <code>name</code> and <code>table</code> of a source, mart shapes and the <code>bj</code> CLI, stay the same.</p></li>
+            <li><span class="hash">·······</span><span class="kind added">Added</span><p>This website: a landing page, analysis posts generated from answer folders, and this changelog.</p></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<footer class="footer">
+  <span>Entries follow the pull requests on main.</span>
+  <span><a href="https://github.com/iankressin/block-juice/pulls?q=is%3Apr+is%3Amerged">Merged pull requests</a> · <a href="https://github.com/iankressin/block-juice">GitHub</a></span>
+</footer>
+
+  </main>
+</div>
+
+</body>
+</html>
