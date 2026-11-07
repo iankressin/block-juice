@@ -33,6 +33,7 @@ A call source, `evm-erc20-metadata`, reads each token's `name()`, `symbol()` and
 ```
 .
 ├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
+├── .github/workflows/ci.yml    # CI: typecheck and tests per layer, dbt against a throwaway Postgres, compose config
 ├── answers/<slug>/             # one answer per question, kept out of git: question.yaml, answer.json, answer.md, results/
 ├── catalog/protocols/<name>/   # contracts, events and ABIs of a protocol, proven on real logs
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
@@ -121,6 +122,8 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd transformation && ../orchestration/.venv/bin/dbt build)
 (cd orchestration && uv run pytest)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same checks on every push to `main` and every pull request, one job per layer: `pnpm typecheck` and every package's tests in `ingestion/`, `dbt parse`, `dbt seed` and `dbt compile` against a throwaway Postgres 16, `uv run pytest` in `orchestration/`, and `docker compose config`. It loads `.env.example` as its environment, so the example values must keep pointing at a warehouse on `localhost:5432` with the user, password and database the Postgres service creates. It never reaches a chain, an RPC or Portal.
 
 ## Ask a question
 

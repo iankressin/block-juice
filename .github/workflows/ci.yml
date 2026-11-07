@@ -1,0 +1,126 @@
+# Runs the same checks `bj install` and the docs describe, one job per layer, on every push to main and
+# every pull request. Nothing here reaches a chain, an RPC or Portal: the ingestion tests fake their
+# upstreams, dbt runs against a throwaway Postgres, and the orchestration tests fake pnpm, docker and dbt.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch cancels the run still going for the previous one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # mise.toml pins the same major for local work. pnpm comes from `packageManager` in ingestion/package.json.
+  NODE_VERSION: "24"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  # The TypeScript extract/load layer: one typecheck for every package, then each package's tests.
+  ingestion:
+    name: Ingestion (typecheck and tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingestion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ingestion/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: ingestion/pnpm-lock.yaml
+
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck every package
+        run: pnpm typecheck
+
+      - name: Test every package
+        run: pnpm --recursive --workspace-concurrency=1 test
+
+  # The dbt project and the Dagster code. dbt parses, seeds and compiles against a throwaway Postgres, which
+  # also lets the warehouse tests run instead of skipping. pytest needs the ingestion packages installed,
+  # because test_sources_json regenerates ingestion/sources.json with pnpm.
+  transformation-and-orchestration:
+    name: Transformation and orchestration (dbt and pytest)
+    runs-on: ubuntu-latest
+    services:
+      warehouse:
+        image: postgres:16
+        env:
+          POSTGRES_USER: elt
+          POSTGRES_PASSWORD: elt
+          POSTGRES_DB: warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elt -d warehouse"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ingestion/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: ingestion/pnpm-lock.yaml
+
+      - name: Install ingestion packages
+        run: pnpm install --frozen-lockfile
+        working-directory: ingestion
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: orchestration/uv.lock
+
+      - name: Install Python packages
+        run: uv sync --locked
+        working-directory: orchestration
+
+      # dbt and the tests read the root settings from the environment, as docs/architecture.md says. The
+      # example values point at the Postgres service above, so nothing else needs an .env.
+      - name: Load .env.example into the environment
+        run: grep -E '^[A-Z_]+=' .env.example >> "$GITHUB_ENV"
+
+      - name: dbt parse, seed and compile
+        run: |
+          uv run --project ../orchestration dbt parse
+          uv run --project ../orchestration dbt seed --quiet
+          uv run --project ../orchestration dbt compile --quiet
+        working-directory: transformation
+
+      - name: pytest
+        run: uv run pytest
+        working-directory: orchestration
+
+  # The Docker stack: every compose file still parses with the defaults from infra/docker-compose.yml.
+  infra:
+    name: Infra (compose config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate the compose files
+        run: docker compose config --quiet
