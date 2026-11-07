@@ -1,0 +1,152 @@
+[
+  {
+    "type": "event",
+    "name": "Transfer",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "from",
+        "type": "address",
+        "indexed": true
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Approval",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true
+      },
+      {
+        "name": "spender",
+        "type": "address",
+        "indexed": true
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Issue",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Redeem",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Deprecate",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "newAddress",
+        "type": "address",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Params",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "feeBasisPoints",
+        "type": "uint256",
+        "indexed": false
+      },
+      {
+        "name": "maxFee",
+        "type": "uint256",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "Pause",
+    "anonymous": false,
+    "inputs": []
+  },
+  {
+    "type": "event",
+    "name": "Unpause",
+    "anonymous": false,
+    "inputs": []
+  },
+  {
+    "type": "event",
+    "name": "DestroyedBlackFunds",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "_blackListedUser",
+        "type": "address",
+        "indexed": false
+      },
+      {
+        "name": "_balance",
+        "type": "uint256",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "AddedBlackList",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "_user",
+        "type": "address",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "RemovedBlackList",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "_user",
+        "type": "address",
+        "indexed": false
+      }
+    ]
+  }
+]
