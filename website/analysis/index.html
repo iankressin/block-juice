@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Analysis · BlockJuice</title>
+<meta name="description" content="Market analysis posts built from BlockJuice answer folders. Each post shows the value, how it was counted and the run that produced it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Oswald:wght@500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+<style>
+  .intro { padding-block: 3rem 2rem; display: grid; gap: 1rem; }
+  .how { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); margin-bottom: 2.5rem; }
+  .how .card { box-shadow: none; }
+  .how .card h3 { font-size: 1.15rem; }
+</style>
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a class="wordmark" href="../index.html" aria-label="BlockJuice home"><span class="b">Block</span><span class="j">Juice</span></a>
+    <ul>
+      <li><a href="../index.html">Home</a></li>
+      <li><a href="index.html" aria-current="page">Analysis</a></li>
+      <li><a href="../changelog/index.html">Changelog</a></li>
+      <li><a href="https://github.com/iankressin/block-juice">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap">
+  <header class="intro">
+    <p class="eyebrow">Analysis</p>
+    <h1>Posts you can rerun</h1>
+    <p class="lede">Every post here starts as an answer folder in the repo: a question, the marts it reads, the dbt analyses that select the result, and the checks that ran before it shipped. The page is the <code>answer.md</code> with its charts, provenance and SQL attached.</p>
+  </header>
+
+  <div class="grid how">
+    <div class="card"><h3>One question</h3><p class="muted"><code>question.yaml</code> pins the definitions and the window: a chain, a block or a range.</p></div>
+    <div class="card"><h3>One or more analyses</h3><p class="muted">dbt analyses select the result from marts. The first row and column can be the value.</p></div>
+    <div class="card"><h3>Checks before it ships</h3><p class="muted"><code>bj answer</code> runs the tests upstream of the analyses and counts the dead letters of every input.</p></div>
+    <div class="card"><h3>A file you own</h3><p class="muted"><code>answer.json</code>, <code>answer.md</code> and <code>results/*.csv</code>, then a PDF, a spreadsheet or a Google Doc.</p></div>
+  </div>
+
+  <section class="post-list" aria-label="Posts">
+    <a class="post" href="uni-dex-venues.html">
+      <div>
+        <div class="chips"><span class="chip orange">Sample post</span><span class="chip">Ethereum</span><span class="chip">dex_trades</span><span class="chip">token_prices</span><span class="chip">oracle_prices</span></div>
+        <h3>Where does UNI trade on Ethereum? Uniswap v4 is taking share</h3>
+        <p class="summary">Four weeks of Uniswap v2, v3 and v4 trades of UNI, with Binance and Chainlink prices beside them. Shows the format of a market post; the figures are placeholders until a run is attached.</p>
+        <p class="muted">2026-11-07 · 4 weeks ending 2026-11-02</p>
+      </div>
+      <div class="value tnum">32%<small>v4 share, latest week</small></div>
+    </a>
+    <a class="post" href="tracked-wallets-sol.html">
+      <div>
+        <div class="chips"><span class="chip teal">From the warehouse</span><span class="chip">Solana</span><span class="chip">latest_balances</span></div>
+        <h3>How much SOL do the tracked wallets hold right now?</h3>
+        <p class="summary">Three tracked Solana wallets, native SOL only, at slot 465371069. Staked and wrapped SOL are not counted.</p>
+        <p class="muted">2026-11-04 · slot 465371069</p>
+      </div>
+      <div class="value tnum">9,318,316.47<small>SOL</small></div>
+    </a>
+    <a class="post" href="tracked-wallets-eth.html">
+      <div>
+        <div class="chips"><span class="chip teal">From the warehouse</span><span class="chip">Ethereum</span><span class="chip">latest_balances</span></div>
+        <h3>How much ETH do the tracked wallets hold right now?</h3>
+        <p class="summary">Three tracked Ethereum wallets, native ETH only, at block 26342618. ERC-20 tokens such as WETH are not counted.</p>
+        <p class="muted">2026-11-04 · block 26342618</p>
+      </div>
+      <div class="value tnum">3,055.16<small>ETH</small></div>
+    </a>
+  </section>
+</main>
+
+<footer class="footer" style="margin-top:3rem">
+  <div class="wrap">
+    <span>Posts are generated from <code>answers/&lt;slug&gt;/</code>. Ask a new question with <code>/bj</code>.</span>
+    <span><a href="https://github.com/iankressin/block-juice">GitHub</a> · <a href="https://github.com/iankressin/block-juice/blob/main/docs/architecture.md">Architecture</a></span>
+  </div>
+</footer>
+</body>
+</html>
