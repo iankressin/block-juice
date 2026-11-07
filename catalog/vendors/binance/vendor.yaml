@@ -21,8 +21,10 @@ api:
     rest-api.md, General API Information: "For APIs that only send public market data, please use the
     base endpoint https://data-api.binance.vision". market_data_only.md lists the endpoints it serves.
   times: >-
-    Every time in a request or a reply is Unix milliseconds in UTC (rest-api.md). Klines are cut in UTC
-    unless a request sends timeZone. binance-candles never sends it.
+    Response timestamps are Unix milliseconds in UTC by default; X-MBX-TIME-UNIT: MICROSECOND switches
+    them to microseconds. Request timestamps accept either unit (rest-api.md, General API Information).
+    binance-candles sends and expects milliseconds. Klines are cut in UTC unless a request sends timeZone;
+    binance-candles never sends it.
   caching: >-
     None. Every reply on 2026-11-07 carried cache-control: no-cache, no-store, must-revalidate.
 limits:

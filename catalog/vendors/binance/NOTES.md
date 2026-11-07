@@ -43,7 +43,7 @@ Prices and volumes are decimal strings with 8 decimals, such as `"7.10700000"`. 
 
 - Binance allows 6000 request weight a minute per IP. `klines` weighs 2, `aggTrades` 4 and `exchangeInfo` 20.
 - The count is the IP's, not the client's. Two `klines` calls one after the other from this session read 30 and then 234 in `x-mbx-used-weight-1m`, because other clients shared the IP. Read the header after each reply rather than counting your own requests. `binance-candles` does that.
-- Over the limit, Binance answers HTTP 429 with `Retry-After` in seconds. An IP that keeps sending is banned with HTTP 418, for 2 minutes to 3 days, and longer for repeat offenders. A ban is the only error that stops a `binance-candles` run, since more requests lengthen it.
+- Over the limit, Binance answers HTTP 429 with `Retry-After` in seconds. An IP that keeps sending is banned with HTTP 418, for 2 minutes to 3 days, and longer for repeat offenders. While fetching windows, a ban is the only error that stops a `binance-candles` run, since more requests lengthen it.
 - `limit` above 1000 is cut to 1000, not refused: `limit=1001` returned 1000 candles. A client that asks for more and expects an error gets a short reply instead.
 
 ## Traps
