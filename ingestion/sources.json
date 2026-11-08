@@ -130,5 +130,10 @@
     "name": "solana",
     "table": "spl_balances",
     "package": "solana-spl-balances"
+  },
+  {
+    "name": "tron",
+    "table": "tether_token",
+    "package": "tron-tether-token"
   }
 ]
