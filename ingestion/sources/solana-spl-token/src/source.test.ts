@@ -65,7 +65,13 @@ function balance(txIndex: number, account: string, mint: string, pre: Side, post
   };
 }
 
-const call = (txIndex: number, address: number[], programId: string, accounts: string[], bytes: string) => ({
+const call = (
+  txIndex: number,
+  address: number[],
+  programId: string,
+  accounts: string[],
+  bytes: string,
+) => ({
   transactionIndex: txIndex,
   instructionAddress: address,
   programId,
@@ -78,8 +84,8 @@ const transferChecked = (amount: bigint) => data(12, ...u64(amount), 6);
 const initializeAccount3 = data(18, ...addressBytes(owner));
 
 // Transaction 0 pays alice to bob through a router and directly. Transaction 1 fails. Transaction 2
-// routes carol's payment through an account made, used and closed inside it, so Portal has no balance
-// for that account.
+// routes carol's payment through an account made, used and closed inside it, so Portal has no
+// balance for that account.
 const busy = {
   header: { number: SLOT, hash: base58.decode(filled(SLOT, 32)), timestamp: 1794009600 },
   transactions: [
@@ -113,16 +119,21 @@ const busy = {
   ],
 };
 const empty = (slot: number) => ({
-  header: { number: slot, hash: base58.decode(filled(slot, 32)), timestamp: 1794009599 + slot - 99 },
+  header: { number: slot, hash: base58.decode(filled(slot, 32)), timestamp: 1794009500 + slot },
 });
 
 async function portal(t: TestContext) {
-  const mock = await mockPortal({ blocks: [empty(SLOT - 1), busy, empty(SLOT + 1)], kind: "solana" });
+  const blocks = [empty(SLOT - 1), busy, empty(SLOT + 1)];
+  const mock = await mockPortal({ blocks, kind: "solana" });
   t.after(() => mock.close());
   return mock.url;
 }
 
-const env = (url: string): SplTokenEnv => ({ PORTAL_URL: url, START_BLOCK: SLOT - 1, END_BLOCK: SLOT + 1 });
+const env = (url: string): SplTokenEnv => ({
+  PORTAL_URL: url,
+  START_BLOCK: SLOT - 1,
+  END_BLOCK: SLOT + 1,
+});
 
 /** Writes `json` to an addresses.json of its own and returns its path. */
 async function addressesFile(t: TestContext, json: unknown) {
@@ -137,7 +148,9 @@ async function addressesFile(t: TestContext, json: unknown) {
 async function records(t: TestContext): Promise<RawRecord[]> {
   const stream = await solanaSplToken.stream(env(await portal(t)));
   const read: RawRecord[] = [];
-  for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
+  for await (const { data } of stream) {
+    read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
+  }
   return read;
 }
 
@@ -161,7 +174,7 @@ test("every slot becomes a block record, with its hash and time", async (t) => {
   });
 });
 
-test("records are keyed by their place in the chain, and inner and outer instructions differ", async (t) => {
+test("records are keyed by place in the chain; inner and outer instructions differ", async (t) => {
   const read = await records(t);
   assert.ok(read.every((r) => r.callId === r.id), "a stream record answers no call but its own");
   assert.deepEqual(
@@ -184,7 +197,7 @@ test("records are keyed by their place in the chain, and inner and outer instruc
       "100:2:2",
       "100:2:3",
     ],
-    "no other mint's balance, no other program's instruction, no SPL Token instruction of another mint",
+    "no other mint's balance or SPL Token instruction, and no other program's instruction",
   );
 });
 
@@ -218,7 +231,8 @@ test("a transaction, a balance and an instruction carry the fields the models re
     pre_program_id: null,
     post_program_id: TOKEN,
   });
-  assert.equal(byId(read, `bal:100:0:${alice}`).pre_amount, "9007199254740993", "past 2^53, as text");
+  const large = byId(read, `bal:100:0:${alice}`).pre_amount;
+  assert.equal(large, "9007199254740993", "past 2^53, as text");
   assert.deepEqual(byId(read, "100:0:2"), {
     kind: "instruction",
     slot: SLOT,
@@ -235,7 +249,7 @@ test("a transaction, a balance and an instruction carry the fields the models re
   });
 });
 
-test("a failed transaction is written with its error, and its instructions as not committed", async (t) => {
+test("a failed transaction is written with its error, instructions not committed", async (t) => {
   const read = await records(t);
   assert.deepEqual(byId(read, `tx:${failed}`).err, { InstructionError: [0, { Custom: 1 }] });
   assert.equal(byId(read, "100:1:0").is_committed, false);
@@ -243,7 +257,7 @@ test("a failed transaction is written with its error, and its instructions as no
   assert.equal(unchanged.pre_amount, unchanged.post_amount);
 });
 
-test("an account made and closed inside a transaction keeps every instruction that touches it", async (t) => {
+test("an account made and closed in a transaction keeps every instruction on it", async (t) => {
   const read = await records(t);
   assert.equal(byId(read, "100:2:0.3").instruction, "initializeAccount3");
   assert.deepEqual(byId(read, "100:2:3").named_accounts, {
@@ -279,12 +293,15 @@ test("addresses.json lists mints only, as Solana addresses", async (t) => {
   assert.deepEqual(readMints("addresses.json"), [MINT], "the package's own file names the mint");
 });
 
-test("an END_BLOCK that was skipped is refused, since Pipes would ask Portal for it without end", async (t) => {
+test("a skipped END_BLOCK is refused: Pipes would ask Portal for it without end", async (t) => {
   // A Portal whose head is slot 200 and whose next block from slot 101 on is 102.
   const server = createServer(async (req, res) => {
     for await (const _ of req);
-    res.setHeader("content-type", req.url === "/finalized-head" ? "application/json" : "application/jsonl");
-    if (req.url === "/finalized-head") return res.end(JSON.stringify({ number: 200, hash: "Head" }));
+    if (req.url === "/finalized-head") {
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ number: 200, hash: "Head" }));
+    }
+    res.setHeader("content-type", "application/jsonl");
     res.end(JSON.stringify({ header: { number: 102 } }));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -302,6 +319,7 @@ test("an END_BLOCK that was skipped is refused, since Pipes would ask Portal for
 test("the source loads raw.solana_spl_token, and END_BLOCK before START_BLOCK is refused", () => {
   assert.equal(solanaSplToken.name, "solana");
   assert.equal(solanaSplToken.table, "spl_token");
-  const parsed = solanaSplToken.env.safeParse({ PORTAL_URL: "http://127.0.0.1:1", START_BLOCK: "10", END_BLOCK: "9" });
+  const backwards = { PORTAL_URL: "http://127.0.0.1:1", START_BLOCK: "10", END_BLOCK: "9" };
+  const parsed = solanaSplToken.env.safeParse(backwards);
   assert.equal(parsed.success, false);
 });
