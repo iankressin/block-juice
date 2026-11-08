@@ -74,13 +74,12 @@ def test_transfer_share_reads_each_chain_through_its_own_models():
     graph = defs.resolve_asset_graph()
     chains = {"ethereum": "tether_token", "tron": "tether_token", "solana": "spl_token"}
     movements = {dg.AssetKey(f"int_{chain}_{table}_movements") for chain, table in chains.items()}
-    boundaries = {dg.AssetKey(f"int_{chain}_day_boundaries") for chain in chains}
-    assert graph.get(dg.AssetKey("token_movements")).parent_keys == (
-        movements | boundaries | {dg.AssetKey("entity_labels")}
-    )
-    # The status model also reads each source's load and supply checks, through models the spec leaves open.
-    assert graph.get(dg.AssetKey("transfer_share_stage_status")).parent_keys >= (
-        boundaries | {dg.AssetKey("token_movements")}
+    day_checks = {dg.AssetKey(f"int_{chain}_{table}_day_checks") for chain, table in chains.items()}
+    days = dg.AssetKey("int_transfer_share_days")
+    assert graph.get(days).parent_keys == {dg.AssetKey(f"int_{chain}_day_boundaries") for chain in chains}
+    assert graph.get(dg.AssetKey("token_movements")).parent_keys == movements | {days, dg.AssetKey("entity_labels")}
+    assert graph.get(dg.AssetKey("transfer_share_stage_status")).parent_keys == (
+        day_checks | {days, dg.AssetKey("token_movements")}
     )
     for published in ("transfer_share_stage_daily", "transfer_share"):
         assert graph.get(dg.AssetKey(published)).parent_keys == {dg.AssetKey("transfer_share_stage_status")}
