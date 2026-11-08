@@ -25,7 +25,7 @@ Decode each chain's logs with its own ABI file. Copying the Ethereum ABI onto TR
 
 The two chains differ in how `issue` shows up:
 
-- On Ethereum, `issue`, `redeem` and `destroyBlackFunds` emit only their own event, as `TetherToken.sol` reads. A reader that takes supply changes from zero-address Transfers misses all three.
+- On Ethereum, `issue`, `redeem` and `destroyBlackFunds` emit only their own event, as `TetherToken.sol` reads and proof rows 1, 9 and 10 show. A reader that takes supply changes from zero-address Transfers misses all three.
 - On TRON, `issue` emits `Issue(amount)` and then `Transfer(zero address, owner, amount)` in the same transaction (proof row 7). Counting both counts the issuance twice. `destroyBlackFunds` emits only `DestroyedBlackFunds` (proof row 3).
 
 So a supply event and a zero-address Transfer of the same amount in the same transaction are one movement. When the pair exists, the Transfer row carries the movement, since it names the account, and the supply event is not counted again. When there is no pair, the supply event is the movement.
@@ -74,8 +74,13 @@ An Ethereum log exists only in a successful transaction. On TRON, Portal returns
 | 6 | TRON | Transfer | 87806000 | `956e3b1eabad3f790d9a307872027df2f026216b071cb3e82b87f5a46e198234` | tx 17, log 0 | `from` `307a2ce4268229804bb6da26061b2cd6fa8d946c`, `to` `7ee06399c84eb819a7f4a07bc979de303563d9bd` in topics, `value` 560000000 in data; transaction `result` SUCCESS. |
 | 7 | TRON | Issue and its Transfer | 80864600 | `c042590c43d0d6f8b34335707a985e29cd46acea68f1296f2bee5e0185084f5b` | tx 203, logs 1 and 2 | Log 1 is `Issue(1000000000000000)`. Log 2 is `Transfer` from the zero address (`T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb`) to the owner multisig (`TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto`) of the same 1000000000000000. Logs 0 and 3 come from the multisig. |
 | 8 | Ethereum | Transfer to the zero address | 25504335 | `0x3769e5e46f0585ee5b1f843584451662b588710cf0a53356a33453472d45e5e6` | 587 | 65000000 from `0xc7a41d4e631efd28c2b6af3435f61062172b0e7b` to `0x0000000000000000000000000000000000000000`. `totalSupply()` is 92062996230909656 at 25504334 and at 25504335; `balanceOf(0x0)` goes from 1033641401722 to 1033706401722. |
+| 9 | Ethereum | Issue | 22376454 | `0xb85b28370e9a56942347df4a8704b3a4a4faf723aeb12702fe28bdccd15251f5` | 656 | `Issue(1000000000000000)` is the transaction's only token log. `totalSupply()` goes from 72548246174880820 to 73548246174880820, up by the amount. |
+| 10 | Ethereum | Redeem | 22254980 | `0x9a41764e1d05a9d32104d704d36699b846b562ee564c715ffe8f5f67a5d4496b` | 450 | `Redeem(1800000000000000)` is the transaction's only token log. `totalSupply()` goes from 75888082398883907 to 74088082398883907, down by the amount. |
 
 ## Search ranges
 
 - Ethereum, admin events (everything but Transfer and Approval): blocks 26100000 to 26366000.
+- Ethereum, `Issue` and `Redeem`: blocks 22000000 to 22377625, where the scan stopped after four hits.
 - TRON, admin events: blocks 86600000 to 87806000.
+- TRON, `Issue`, `Redeem`, `Params` and `Deprecate`: blocks 80000000 to 84994185. Five `Issue` logs and no `Redeem`, so TRON's `Redeem` shape is unproven. The pipeline handles a Redeem either way: paired with a Transfer to the zero address, or alone.
+- TRON, Transfers to the zero address: blocks 80000000 to 82679692. None found.
