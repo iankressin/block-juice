@@ -1,9 +1,10 @@
 -- One row per market and wallet: every wallet that traded, split, merged, redeemed or converted in a
 -- Polymarket market, with its PnL. Amounts are pUSD, open_shares outcome tokens.
--- Rules, from the plan's Decision 5:
+-- Rules, from the plan's Decision 5 and progress R32:
 --   net_cash_usdc is the sum of the ledger's usdc_delta, so it is after fees.
---   The wallet holds none of a token when its last move of it zeroed the position (a redemption that
---   burns the whole balance); otherwise it holds the sum of shares_delta, with nulls as 0.
+--   The wallet holds the sum of shares_delta, nulls as 0, over its moves of a token after its last move
+--   that zeroed the position (a redemption that burns the whole balance): 0 when that move is the last,
+--   and every move when none zeroed.
 --   A token's mark is its payout fraction once the market resolved, else the close of its last candle.
 --   position_value_usdc is the sum of shares held times mark. A token held with no mark leaves it, and
 --   pnl_usdc, null; a token no longer held counts 0 with or without a mark.
@@ -30,17 +31,28 @@ last_closes as (
     order by token_id, minute desc
 ),
 
+-- Each move of a token, with its (block, log index) and that of the wallet's last zeroing move of the
+-- token.
+token_moves as (
+    select
+        condition_id,
+        wallet,
+        token_id,
+        shares_delta,
+        array[block_number, log_index] as moved_at,
+        max(case when zeroes_position then array[block_number, log_index] end)
+            over (partition by condition_id, wallet, token_id) as zeroed_at
+    from ledger
+    where token_id is not null
+),
+
 holdings as (
     select
         condition_id,
         wallet,
         token_id,
-        case
-            when (array_agg(zeroes_position order by block_number desc, log_index desc))[1] then 0
-            else coalesce(sum(shares_delta), 0)
-        end as shares_held
-    from ledger
-    where token_id is not null
+        coalesce(sum(shares_delta) filter (where zeroed_at is null or moved_at > zeroed_at), 0) as shares_held
+    from token_moves
     group by condition_id, wallet, token_id
 ),
 

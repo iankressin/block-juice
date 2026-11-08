@@ -256,6 +256,31 @@ models:
         description: True when the row leaves the wallet with none of the token, whatever it held.
         data_tests: [not_null]
 
+  - name: int_polygon_polymarket_ctf_conditions
+    description: >-
+      One row per condition ConditionalTokens prepared in the window, from its ConditionPreparation log,
+      and whether the sources hold its whole history. A condition prepared before the window has no row.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: condition_id
+        data_type: text
+        description: The prepared condition.
+        data_tests: [unique, not_null]
+      - name: prepared_block
+        data_type: bigint
+        description: The block of the ConditionPreparation log.
+      - name: prepared_at
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: history_complete
+        data_type: boolean
+        description: >-
+          True when prepared_block is at or after the coverage start, the greatest of the two Polygon
+          Polymarket raw tables' lowest blocks; false while either table is empty.
+        data_tests: [not_null]
+
 unit_tests:
   - name: fills_of_a_buy_against_a_sell
     description: Proof row 1. The maker sells 5.106383 shares for 4.8 pUSD; the taker order buys them.
@@ -1175,3 +1200,51 @@ unit_tests:
         - {id: "96926000:405", version: ctf_exchange_v2, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 405, kind: trade, wallet: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", shares_delta: "5.106383", usdc_delta: "-4.820160", fee_usdc: "0.020160", zeroes_position: false}
         - {id: "96926000:186:41287610969363719107459411223386631508601770194539193912125168116668852892247", version: ctf, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x60485e0d4a6db9515a97dfa70983fe9cf0a70235a09af56162f8ede853755914", log_index: 186, kind: merge, wallet: "0x758dac51ba3cc9a246a79787da9df11c5f425d9e", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: "41287610969363719107459411223386631508601770194539193912125168116668852892247", shares_delta: "-16.555556", usdc_delta: null, fee_usdc: null, zeroes_position: false}
         - {id: "96926000:186:cash", version: ctf, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x60485e0d4a6db9515a97dfa70983fe9cf0a70235a09af56162f8ede853755914", log_index: 186, kind: merge, wallet: "0x758dac51ba3cc9a246a79787da9df11c5f425d9e", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: null, shares_delta: null, usdc_delta: "16.555556", fee_usdc: null, zeroes_position: false}
+
+  - name: markets_prepared_before_coverage_are_incomplete
+    description: >-
+      The coverage start is the greater of the two raw tables' lowest blocks: the made-up ConditionPreparation
+      at 96900000 in the CTF table, and proof row 3's fill at 96926007 in the exchange table. Proof row 19's
+      condition (Gamma market 6826443) was prepared at 96926007, the coverage start itself, so it is
+      complete. The made-up condition prepared at 96900000 is not, though it is the CTF table's first block.
+      Proof row 20's ConditionResolution prepares nothing and gives no row.
+    model: int_polygon_polymarket_ctf_conditions
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: &coverage_ctf |
+          select * from (values
+              ('96900000:1', 'ctf.ConditionPreparation', 96900000::bigint, '2026-11-07 12:44:16+00'::timestamptz, 1,
+                  null::text, '0xaa', null::text, null::text),
+              ('96926001:668', 'ctf.ConditionResolution', 96926001, '2026-11-07 23:34:18+00', 668,
+                  '0xaf8b825dd4bf314a70cda0a6b989a4e166a8f03d2c6f67ddd704b98315f3c7b7',
+                  '0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac', '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296', null),
+              ('96926007:1235', 'ctf.ConditionPreparation', 96926007, '2026-11-07 23:34:27+00', 1235,
+                  '0x4810bb0ec5850b073b08dc9d3765197020b43fd19a3a01d3a58cbfd9d820fd5b',
+                  '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a', '0x65070be91477460d8a7aeeb94ef92fe056c2f2a7',
+                  '0x082008a8e82194cdcbade3048ec3c123c8011e5bfe9b1db52f93e42eac1f9e5f')
+          ) as l(id, event, block_number, block_timestamp, log_index, tx_hash, condition_id, oracle, question_id)
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2')
+        rows:
+          - {id: "96926007:659", event: ctf_exchange_v2.OrderFilled, block_number: 96926007, log_index: 659}
+    expect:
+      rows:
+        - {condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", prepared_block: 96926007, prepared_at: "2026-11-07 23:34:27+00", history_complete: true}
+        - {condition_id: "0xaa", prepared_block: 96900000, prepared_at: "2026-11-07 12:44:16+00", history_complete: false}
+
+  - name: markets_are_incomplete_while_a_raw_table_is_empty
+    description: >-
+      The rows of markets_prepared_before_coverage_are_incomplete with no exchange fills loaded. The
+      coverage start is then unknown, so proof row 19's condition, prepared in the CTF table's window, is
+      not complete. Postgres' greatest() would skip the empty table's null and call it complete.
+    model: int_polygon_polymarket_ctf_conditions
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: *coverage_ctf
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2')
+        rows: []
+    expect:
+      rows:
+        - {condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", prepared_block: 96926007, prepared_at: "2026-11-07 23:34:27+00", history_complete: false}
+        - {condition_id: "0xaa", prepared_block: 96900000, prepared_at: "2026-11-07 12:44:16+00", history_complete: false}
