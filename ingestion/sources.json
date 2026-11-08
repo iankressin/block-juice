@@ -122,6 +122,11 @@
     "settings": "chains/ethereum"
   },
   {
+    "name": "polygon",
+    "table": "polymarket_ctf",
+    "package": "polygon-polymarket-ctf"
+  },
+  {
     "name": "solana",
     "table": "sol_balances",
     "package": "solana-sol-balances"
