@@ -132,6 +132,11 @@
     "package": "polygon-polymarket-ctf-exchange-v2"
   },
   {
+    "name": "polymarket",
+    "table": "markets",
+    "package": "polymarket-markets"
+  },
+  {
     "name": "solana",
     "table": "sol_balances",
     "package": "solana-sol-balances"
