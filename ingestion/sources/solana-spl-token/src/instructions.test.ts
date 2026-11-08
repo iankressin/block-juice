@@ -127,7 +127,11 @@ test("a Batch that does not parse is not unpacked", () => {
   const four = [source, destination, owner, signer];
   const transfer = [3, ...AMOUNT];
   assert.equal(unpackBatch(four, data(3, ...AMOUNT)), null, "not a Batch");
-  assert.equal(unpackBatch(four, data(255, 3, 9, ...transfer)), null, "an account left over");
+  assert.deepEqual(
+    unpackBatch(four, data(255, 3, 9, ...transfer)),
+    [{ accounts: [source, destination, owner], data: data(...transfer) }],
+    "an account left over is ignored, as the program ignores it",
+  );
   assert.equal(
     unpackBatch(four, data(255, 5, 9, ...transfer)),
     null,

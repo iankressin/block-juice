@@ -128,8 +128,10 @@ const base58Text = getBase58Decoder();
 
 /**
  * The instructions a Batch packs, in the order it runs them, or null when the data is not a Batch
- * or does not parse: a count or length past the end, an empty instruction, a Batch inside a Batch,
- * or accounts left over. Each packed instruction's data is base58, as Portal sends an instruction's.
+ * or does not parse: a count or length past the end, an empty instruction, or a Batch inside a
+ * Batch. Accounts left after the last packed instruction are ignored, as the program ignores them
+ * (pinocchio/program/src/processor/batch.rs stops when the data runs out). Each packed
+ * instruction's data is base58, as Portal sends an instruction's.
  */
 export function unpackBatch(accounts: readonly string[], data: string): PackedInstruction[] | null {
   const bytes = Uint8Array.from(base58.encode(data));
@@ -154,8 +156,9 @@ export function unpackBatch(accounts: readonly string[], data: string): PackedIn
     account += count;
     offset = start + length;
   }
-  if (account !== accounts.length || packed.length === 0) return null;
+  if (packed.length === 0) return null;
   assert.equal(offset, bytes.length);
+  assert.ok(account <= accounts.length);
   return packed;
 }
 
