@@ -141,6 +141,11 @@
   },
   {
     "name": "solana",
+    "table": "block_headers",
+    "package": "solana-block-headers"
+  },
+  {
+    "name": "solana",
     "table": "sol_balances",
     "package": "solana-sol-balances"
   },
@@ -148,6 +153,11 @@
     "name": "solana",
     "table": "spl_balances",
     "package": "solana-spl-balances"
+  },
+  {
+    "name": "solana",
+    "table": "spl_token",
+    "package": "solana-spl-token"
   },
   {
     "name": "tron",
