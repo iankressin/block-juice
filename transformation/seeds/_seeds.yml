@@ -120,7 +120,10 @@ seeds:
       catalog/protocols/polymarket/NOTES.md Q4, plus the three CTF Exchange v2 exchanges. The wallet
       ledger drops these contracts' own splits, merges and redemptions: the fills and the adapters' events
       name the real actor. Each exchange in the polygon-polymarket-ctf-exchange-v2 addresses.json, and each
-      adapter in the polygon-polymarket-ctf one, needs a row, or double counts reach the marts.
+      adapter in the polygon-polymarket-ctf one, needs a row, or double counts reach the marts. Two more
+      rows, role collateral, list the tokens that back Polymarket's CTF positions, USDC.e and the
+      NegRiskAdapter's wrapped collateral (protocol.yaml); they act for no one, and the position ledger
+      keeps only ConditionalTokens events on them (NOTES.md Q4).
     config:
       column_types:
         address: text
@@ -131,12 +134,12 @@ seeds:
         description: The contract, lowercase.
         data_tests: [unique, not_null]
       - name: role
-        description: exchange, collateral_adapter, neg_risk_adapter, auto_redeemer or module.
+        description: exchange, collateral_adapter, neg_risk_adapter, auto_redeemer, module or collateral.
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: [exchange, collateral_adapter, neg_risk_adapter, auto_redeemer, module]
+                values: [exchange, collateral_adapter, neg_risk_adapter, auto_redeemer, module, collateral]
       - name: version
         description: The contract system it belongs to, ctf_exchange_v2, ctf or protocol_v2.
         data_tests:

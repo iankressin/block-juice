@@ -140,6 +140,64 @@ models:
           arguments:
             column_name: "condition_id || ':' || outcome_index"
 
+  - name: int_polygon_polymarket_ctf_position_changes
+    description: >-
+      One row per change to a wallet's cash or position from a CTF-era split, merge, redemption or
+      conversion, read from the one event that names the user. Each event gives a cash row (token_id
+      null) and a row per token it moves. A redemption that names no shares has shares_delta null and
+      zeroes_position true: the wallet holds none of that token afterwards. Conditions missing from
+      Gamma are left out.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: id
+        data_type: text
+        description: >-
+          <block>:<logIndex>:<token_id> for a token row, <block>:<logIndex>:cash for a cash row, and
+          <block>:<logIndex>:cash:<condition_id> for a conversion's cash rows, one per NO condition.
+        data_tests: [unique, not_null]
+      - name: version
+        data_type: text
+        description: Always ctf.
+      - name: block_number
+        data_type: bigint
+        description: The block of the event.
+      - name: block_timestamp
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: tx_hash
+        data_type: text
+        description: The transaction of the event.
+      - name: log_index
+        data_type: integer
+        description: The event's position in that block's logs.
+      - name: kind
+        data_type: text
+        description: split, merge, redeem or convert.
+        data_tests: [not_null, accepted_values: {arguments: {values: [split, merge, redeem, convert]}}]
+      - name: wallet
+        data_type: text
+        description: The user, never a Polymarket contract.
+        data_tests: [not_null]
+      - name: condition_id
+        data_type: text
+        description: The condition the row moves; for a conversion's cash, the NO condition it is booked to.
+        data_tests: [not_null]
+      - name: token_id
+        data_type: numeric
+        description: The outcome token moved; null on a cash row.
+      - name: shares_delta
+        data_type: numeric
+        description: Tokens gained, negative when given up; null on a cash row and when the event names no shares.
+      - name: usdc_delta
+        data_type: numeric
+        description: Collateral gained, negative when paid; null on a token row.
+      - name: zeroes_position
+        data_type: boolean
+        description: True when the event leaves the wallet with none of the token, whatever it held.
+        data_tests: [not_null]
+
 unit_tests:
   - name: fills_of_a_buy_against_a_sell
     description: Proof row 1. The maker sells 5.106383 shares for 4.8 pUSD; the taker order buys them.
@@ -276,3 +334,405 @@ unit_tests:
         - {condition_id: "0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3", outcome_index: 1, payout_fraction: "0.00000000000000000000", resolved_block: 95573552, resolved_at: "2026-10-15 12:00:53+00"}
         - {condition_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", outcome_index: 0, payout_fraction: null, resolved_block: 95573553, resolved_at: "2026-10-15 12:00:55+00"}
         - {condition_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", outcome_index: 1, payout_fraction: null, resolved_block: 95573553, resolved_at: "2026-10-15 12:00:55+00"}
+
+  # Task 8. Each staging input lists one JSON object per log, with only the fields that log has; jsonb_to_recordset
+  # ignores the note key, which marks made-up rows. Log fields and token ids come from the proof table and the
+  # Q7 table in catalog/protocols/polymarket/NOTES.md; block times come from Portal.
+
+  - name: splits_by_polymarket_contracts_are_dropped
+    description: >-
+      Proof row 2. The exchange mints both outcomes for a match through ctf_collateral_adapter_v1, so
+      ConditionalTokens' PositionSplit (log 95) names that adapter as stakeholder. The fills hold this
+      flow; the split gives no row.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926000:95", "event": "ctf.PositionSplit", "block_number": 96926000, "log_index": 95, "block_timestamp": "2026-11-07 23:34:16+00", "tx_hash": "0x14fb5757ffc3eed1d302c1db6fe17d9787ef4c309740b87bf4ad7d7e8ada860c", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xada100874d00e3331d00f2007a9c336a65009718", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", "index_sets": [1, 2], "amount": 8710000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 0}
+          - {token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: &no_gamma_markets |
+          select null::text as neg_risk_market_id, null::text as question_id, null::text as condition_id where false
+      - input: ref('polymarket_contracts')
+        rows: &polymarket_contracts
+          - {address: "0xe111180000d2663c0091e4f400237545b87b996b", role: exchange, version: ctf_exchange_v2}
+          - {address: "0xe2222d279d744050d28e00520010520000310f59", role: exchange, version: ctf_exchange_v2}
+          - {address: "0xe2222d002000ba0053cef3375333610f64600036", role: exchange, version: ctf_exchange_v2}
+          - {address: "0xada100874d00e3331d00f2007a9c336a65009718", role: collateral_adapter, version: ctf}
+          - {address: "0xada200001000ef00d07553cee7006808f895c6f1", role: collateral_adapter, version: ctf}
+          - {address: "0xada100db00ca00073811820692005400218fce1f", role: collateral_adapter, version: ctf}
+          - {address: "0xada2005600dec949baf300f4c6120000bdb6eaab", role: collateral_adapter, version: ctf}
+          - {address: "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", role: neg_risk_adapter, version: ctf}
+          - {address: "0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0", role: auto_redeemer, version: ctf}
+          - {address: "0xa1200000d0002264c9a1698e001292d00e1b00af", role: auto_redeemer, version: ctf}
+          - {address: "0x1000008dd9001b968442c1000017eae6e0da00ba", role: module, version: protocol_v2}
+          - {address: "0x200000900045e3b6259600682756002200028933", role: module, version: protocol_v2}
+          - {address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", role: collateral, version: ctf}
+          - {address: "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", role: collateral, version: ctf}
+    expect:
+      rows: []
+
+  - name: a_user_split_buys_both_outcomes
+    description: >-
+      Proof row 4. One split emits ConditionalTokens' PositionSplit (log 206, stakeholder
+      ctf_collateral_adapter) and the adapter's PositionSplit (log 208, initiator the user). Only the
+      adapter's counts: the user pays 150 and gets 150 of each outcome, once.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926001:206", "event": "ctf.PositionSplit", "block_number": 96926001, "log_index": 206, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xada100db00ca00073811820692005400218fce1f", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 150000000},
+              {"id": "96926001:208", "event": "collateral_adapter.PositionSplit", "block_number": 96926001, "log_index": 208, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", "contract": "0xada100db00ca00073811820692005400218fce1f", "initiator": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "amount": 150000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 0}
+          - {token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926001:208:cash", version: "ctf", block_number: 96926001, block_timestamp: "2026-11-07 23:34:18+00", tx_hash: "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", log_index: 208, kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: null, shares_delta: null, usdc_delta: "-150.000000", zeroes_position: false}
+        - {id: "96926001:208:16586642815017495780917469003078506417521356854942357080913034941474823961026", version: "ctf", block_number: 96926001, block_timestamp: "2026-11-07 23:34:18+00", tx_hash: "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", log_index: 208, kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", shares_delta: "150.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:208:110873771272925759008981515223715203606530125973324791599348343811525717421022", version: "ctf", block_number: 96926001, block_timestamp: "2026-11-07 23:34:18+00", tx_hash: "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", log_index: 208, kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", shares_delta: "150.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: a_user_merge_sells_both_outcomes
+    description: >-
+      Proof row 5. One merge emits ConditionalTokens' PositionsMerge (log 273, stakeholder
+      ctf_collateral_adapter) and the adapter's PositionsMerged (log 278, initiator the user). The user
+      gives 161.79 of each outcome and gets 161.79, once.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926001:273", "event": "ctf.PositionsMerge", "block_number": 96926001, "log_index": 273, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0x17c9a2c57c3fffe945c9405ca17304d851581290eec5ff7345e38ab3497dea0a", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xada100db00ca00073811820692005400218fce1f", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", "index_sets": [1, 2], "amount": 161790000},
+              {"id": "96926001:278", "event": "collateral_adapter.PositionsMerged", "block_number": 96926001, "log_index": 278, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0x17c9a2c57c3fffe945c9405ca17304d851581290eec5ff7345e38ab3497dea0a", "contract": "0xada100db00ca00073811820692005400218fce1f", "initiator": "0x228b8d11eba89bf1c554f8879a9293b7106daf4c", "condition_id": "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", "amount": 161790000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "61750656022535280275933155717546092762618608024798437520500264738273888780942", condition_id: "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", outcome_index: 0}
+          - {token_id: "53023045058396958073186638330423845744469110840554209867972848816184217372506", condition_id: "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926001:278:cash", kind: "merge", wallet: "0x228b8d11eba89bf1c554f8879a9293b7106daf4c", condition_id: "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", token_id: null, shares_delta: null, usdc_delta: "161.790000", zeroes_position: false}
+        - {id: "96926001:278:61750656022535280275933155717546092762618608024798437520500264738273888780942", kind: "merge", wallet: "0x228b8d11eba89bf1c554f8879a9293b7106daf4c", condition_id: "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", token_id: "61750656022535280275933155717546092762618608024798437520500264738273888780942", shares_delta: "-161.790000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:278:53023045058396958073186638330423845744469110840554209867972848816184217372506", kind: "merge", wallet: "0x228b8d11eba89bf1c554f8879a9293b7106daf4c", condition_id: "0x54785fb9b8ca54bd747a6c03e9907c84c26a1caf6643715c697eec473f59d6cd", token_id: "53023045058396958073186638330423845744469110840554209867972848816184217372506", shares_delta: "-161.790000", usdc_delta: null, zeroes_position: false}
+
+  - name: a_ctf_redemption_pays_and_zeroes_the_position
+    description: >-
+      Proof row 6. A wallet calls ConditionalTokens itself and redeems index sets [1, 2] for 186.826243.
+      The event names no shares, so both tokens get null shares and zeroes_position true. A made-up
+      redemption that names index set 2 only zeroes the Down token only.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926007:1365", "event": "ctf.PayoutRedemption", "block_number": 96926007, "log_index": 1365, "block_timestamp": "2026-11-07 23:34:27+00", "tx_hash": "0x71119fa6e5180d26b5415f8629cffd21f36c3f35460823f28b8b6e97150ff83e", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", "index_sets": [1, 2], "payout": 186826243},
+              {"note": "Made up: names index set 2 only.", "id": "96926010:1", "event": "ctf.PayoutRedemption", "block_number": 96926010, "log_index": 1, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", "index_sets": [2], "payout": 0}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "39284723459169998998411365159175481706340233833693998886042189216904866222778", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", outcome_index: 0}
+          - {token_id: "103388042094893515803511102993524053613479009483321834681648906358233524788355", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926007:1365:cash", kind: "redeem", wallet: "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", token_id: null, shares_delta: null, usdc_delta: "186.826243", zeroes_position: false}
+        - {id: "96926007:1365:39284723459169998998411365159175481706340233833693998886042189216904866222778", kind: "redeem", wallet: "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", token_id: "39284723459169998998411365159175481706340233833693998886042189216904866222778", shares_delta: null, usdc_delta: null, zeroes_position: true}
+        - {id: "96926007:1365:103388042094893515803511102993524053613479009483321834681648906358233524788355", kind: "redeem", wallet: "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", token_id: "103388042094893515803511102993524053613479009483321834681648906358233524788355", shares_delta: null, usdc_delta: null, zeroes_position: true}
+        - {id: "96926010:1:cash", kind: "redeem", wallet: "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", token_id: null, shares_delta: null, usdc_delta: "0.000000", zeroes_position: false}
+        - {id: "96926010:1:103388042094893515803511102993524053613479009483321834681648906358233524788355", kind: "redeem", wallet: "0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82", condition_id: "0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c", token_id: "103388042094893515803511102993524053613479009483321834681648906358233524788355", shares_delta: null, usdc_delta: null, zeroes_position: true}
+
+  - name: a_neg_risk_redemption_burns_its_amounts
+    description: >-
+      Made up from proof row 7: log 1072 with the user as redeemer, as if the user called the
+      NegRiskAdapter itself. The adapter burns the amounts it names, 0 YES and 24.285715 NO, and pays
+      24.285715; the event names the shares, so zeroes_position stays false.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"note": "Made up: redeemer is the user, not auto_redeemer.", "id": "96926008:1072", "event": "neg_risk.PayoutRedemption", "block_number": 96926008, "log_index": 1072, "block_timestamp": "2026-11-07 23:34:28+00", "tx_hash": "0xf12f6adb5cd1f8edc4f3ef26efd6bc97f7e4cbd6df7072ec6d79e6510d43a084", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "stakeholder": "0xe70c0ad7184d7572008488cb073f6d5e607917c5", "condition_id": "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", "amounts": [0, 24285715], "payout": 24285715}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "95633426929559386414395833072208682015109875747732563458545838665515892852807", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", outcome_index: 0}
+          - {token_id: "23384132564822851946016127677872947910725251513481968219731737373299759246737", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926008:1072:cash", kind: "redeem", wallet: "0xe70c0ad7184d7572008488cb073f6d5e607917c5", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: null, shares_delta: null, usdc_delta: "24.285715", zeroes_position: false}
+        - {id: "96926008:1072:95633426929559386414395833072208682015109875747732563458545838665515892852807", kind: "redeem", wallet: "0xe70c0ad7184d7572008488cb073f6d5e607917c5", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: "95633426929559386414395833072208682015109875747732563458545838665515892852807", shares_delta: "0.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926008:1072:23384132564822851946016127677872947910725251513481968219731737373299759246737", kind: "redeem", wallet: "0xe70c0ad7184d7572008488cb073f6d5e607917c5", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: "23384132564822851946016127677872947910725251513481968219731737373299759246737", shares_delta: "-24.285715", usdc_delta: null, zeroes_position: false}
+
+  - name: an_auto_redemption_pays_and_zeroes_the_position
+    description: >-
+      Proof row 7. auto_redeemer redeems for the user: ConditionalTokens' PayoutRedemption (log 1069)
+      names the NegRiskAdapter, the NegRiskAdapter's (log 1072) names auto_redeemer, and only
+      NegRiskRedemption (log 1078) names the user. It pays 24.285715 once and zeroes both tokens.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926008:1069", "event": "ctf.PayoutRedemption", "block_number": 96926008, "log_index": 1069, "block_timestamp": "2026-11-07 23:34:28+00", "tx_hash": "0xf12f6adb5cd1f8edc4f3ef26efd6bc97f7e4cbd6df7072ec6d79e6510d43a084", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "collateral_token": "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", "index_sets": [1, 2], "payout": 24285715},
+              {"id": "96926008:1072", "event": "neg_risk.PayoutRedemption", "block_number": 96926008, "log_index": 1072, "block_timestamp": "2026-11-07 23:34:28+00", "tx_hash": "0xf12f6adb5cd1f8edc4f3ef26efd6bc97f7e4cbd6df7072ec6d79e6510d43a084", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "stakeholder": "0xa1200000d0002264c9a1698e001292d00e1b00af", "condition_id": "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", "amounts": [0, 24285715], "payout": 24285715},
+              {"id": "96926008:1078", "event": "auto_redeemer.NegRiskRedemption", "block_number": 96926008, "log_index": 1078, "block_timestamp": "2026-11-07 23:34:28+00", "tx_hash": "0xf12f6adb5cd1f8edc4f3ef26efd6bc97f7e4cbd6df7072ec6d79e6510d43a084", "contract": "0xa1200000d0002264c9a1698e001292d00e1b00af", "from_address": "0xe70c0ad7184d7572008488cb073f6d5e607917c5", "condition_id": "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", "payout": 24285715}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "95633426929559386414395833072208682015109875747732563458545838665515892852807", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", outcome_index: 0}
+          - {token_id: "23384132564822851946016127677872947910725251513481968219731737373299759246737", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926008:1078:cash", kind: "redeem", wallet: "0xe70c0ad7184d7572008488cb073f6d5e607917c5", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: null, shares_delta: null, usdc_delta: "24.285715", zeroes_position: false}
+        - {id: "96926008:1078:95633426929559386414395833072208682015109875747732563458545838665515892852807", kind: "redeem", wallet: "0xe70c0ad7184d7572008488cb073f6d5e607917c5", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: "95633426929559386414395833072208682015109875747732563458545838665515892852807", shares_delta: null, usdc_delta: null, zeroes_position: true}
+        - {id: "96926008:1078:23384132564822851946016127677872947910725251513481968219731737373299759246737", kind: "redeem", wallet: "0xe70c0ad7184d7572008488cb073f6d5e607917c5", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: "23384132564822851946016127677872947910725251513481968219731737373299759246737", shares_delta: null, usdc_delta: null, zeroes_position: true}
+
+  - name: a_conversion_burns_no_mints_yes_and_splits_its_cash
+    description: >-
+      Proof row 8. The user converts 5 NO of questions 1-8 (indexSet 510, k = 8) of an 11-question
+      market with feeBips 0, and gets 5 YES of questions 0, 9 and 10 and 7 x 5 = 35 in cash. The cash
+      goes in eight equal rows of 4.375, one per NO condition (Decision 5). The NegRiskAdapter's own
+      splits (logs 178, 181, 184) give no rows. The questions come from Gamma markets
+      6740832-6740842; their ids match NegRiskAdapter.getConditionId and getPositionId.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926001:178", "event": "ctf.PositionSplit", "block_number": 96926001, "log_index": 178, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xf7da1a7814f7860e4f145bfd26a1713371994955723b44438b6496f38e665496", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "collateral_token": "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd", "index_sets": [1, 2], "amount": 5000000},
+              {"id": "96926001:181", "event": "ctf.PositionSplit", "block_number": 96926001, "log_index": 181, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xf7da1a7814f7860e4f145bfd26a1713371994955723b44438b6496f38e665496", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "collateral_token": "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37", "index_sets": [1, 2], "amount": 5000000},
+              {"id": "96926001:184", "event": "ctf.PositionSplit", "block_number": 96926001, "log_index": 184, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xf7da1a7814f7860e4f145bfd26a1713371994955723b44438b6496f38e665496", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "collateral_token": "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2", "index_sets": [1, 2], "amount": 5000000},
+              {"id": "96926001:189", "event": "neg_risk.PositionsConverted", "block_number": 96926001, "log_index": 189, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xf7da1a7814f7860e4f145bfd26a1713371994955723b44438b6496f38e665496", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "stakeholder": "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", "neg_risk_market_id": "0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000", "index_set": 510, "amount": 5000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "41391445723290947929903824132236677981734625609614562856315843204007756160788", condition_id: "0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd", outcome_index: 0}
+          - {token_id: "25549256560926861618697622075876655971438451490681750134163329000025902954439", condition_id: "0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd", outcome_index: 1}
+          - {token_id: "78042621308880223331741333757623284438305942455318131804346528416856870412985", condition_id: "0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c", outcome_index: 0}
+          - {token_id: "28995528023782169747022084777198407916395153769272843768784702628313815091319", condition_id: "0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c", outcome_index: 1}
+          - {token_id: "34567162068623715190240393107076767911854694285873009272949845882711590090885", condition_id: "0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17", outcome_index: 0}
+          - {token_id: "4105180864371409250271921922619826198538499032653454329566782253407484177610", condition_id: "0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17", outcome_index: 1}
+          - {token_id: "14074231346364261680530519463672719877016550806331385669072069767805234097362", condition_id: "0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c", outcome_index: 0}
+          - {token_id: "7903973977575372682786278432279394822102971289485209834301992214766662729703", condition_id: "0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c", outcome_index: 1}
+          - {token_id: "10128983295913356614196721501140570294040965257347608358102118171511387510235", condition_id: "0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8", outcome_index: 0}
+          - {token_id: "37442950145185251152382625382033414755020633606586327896925152119418091591198", condition_id: "0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8", outcome_index: 1}
+          - {token_id: "58499338997489210709986703004565293579184798723513633567501258673442208982305", condition_id: "0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea", outcome_index: 0}
+          - {token_id: "107276923376977350704612225457400649986137283271768377182981633429602658012162", condition_id: "0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea", outcome_index: 1}
+          - {token_id: "41287610969363719107459411223386631508601770194539193912125168116668852892247", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", outcome_index: 0}
+          - {token_id: "96474011050342972358290329561068422052637967427716939576011112699072449248720", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", outcome_index: 1}
+          - {token_id: "34506496392511443043477511535597822895847260775575054156569986724711262600239", condition_id: "0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e", outcome_index: 0}
+          - {token_id: "83061086702966455881479125195218921815664834931727445031181258441993543899804", condition_id: "0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e", outcome_index: 1}
+          - {token_id: "42729674773343051100573024265155628132310511402853907042143963178486797449285", condition_id: "0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2", outcome_index: 0}
+          - {token_id: "20467506189256733675385466999727521365580573537371368243371425181008750207687", condition_id: "0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2", outcome_index: 1}
+          - {token_id: "66089107588933762745609620426914887746258657600044237512192657278350232088610", condition_id: "0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37", outcome_index: 0}
+          - {token_id: "69394107935495528427603445474135956529650992089688626443841663322616439452668", condition_id: "0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37", outcome_index: 1}
+          - {token_id: "529300543011171485944856244338123858112332222682672047078741076444936813424", condition_id: "0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2", outcome_index: 0}
+          - {token_id: "1447888814267433232603288796384365953837084231462709336865422311746481813001", condition_id: "0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: |
+          select * from (values
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff001', '0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff002', '0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff003', '0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff004', '0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff005', '0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff006', '0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff007', '0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff008', '0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff009', '0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37'),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff00a', '0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2')
+          ) as m(neg_risk_market_id, question_id, condition_id)
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926001:189:41391445723290947929903824132236677981734625609614562856315843204007756160788", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd", token_id: "41391445723290947929903824132236677981734625609614562856315843204007756160788", shares_delta: "5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:28995528023782169747022084777198407916395153769272843768784702628313815091319", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c", token_id: "28995528023782169747022084777198407916395153769272843768784702628313815091319", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:4105180864371409250271921922619826198538499032653454329566782253407484177610", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17", token_id: "4105180864371409250271921922619826198538499032653454329566782253407484177610", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:7903973977575372682786278432279394822102971289485209834301992214766662729703", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c", token_id: "7903973977575372682786278432279394822102971289485209834301992214766662729703", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:37442950145185251152382625382033414755020633606586327896925152119418091591198", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8", token_id: "37442950145185251152382625382033414755020633606586327896925152119418091591198", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:107276923376977350704612225457400649986137283271768377182981633429602658012162", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea", token_id: "107276923376977350704612225457400649986137283271768377182981633429602658012162", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:96474011050342972358290329561068422052637967427716939576011112699072449248720", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: "96474011050342972358290329561068422052637967427716939576011112699072449248720", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:83061086702966455881479125195218921815664834931727445031181258441993543899804", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e", token_id: "83061086702966455881479125195218921815664834931727445031181258441993543899804", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:20467506189256733675385466999727521365580573537371368243371425181008750207687", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2", token_id: "20467506189256733675385466999727521365580573537371368243371425181008750207687", shares_delta: "-5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:cash:0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2", token_id: null, shares_delta: null, usdc_delta: "4.375000", zeroes_position: false}
+        - {id: "96926001:189:66089107588933762745609620426914887746258657600044237512192657278350232088610", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37", token_id: "66089107588933762745609620426914887746258657600044237512192657278350232088610", shares_delta: "5.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926001:189:529300543011171485944856244338123858112332222682672047078741076444936813424", kind: "convert", wallet: "0xadcefdd84ffd58d9500c4d03e328b016ef94a482", condition_id: "0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2", token_id: "529300543011171485944856244338123858112332222682672047078741076444936813424", shares_delta: "5.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: a_conversion_pays_out_after_the_fee
+    description: >-
+      Made up on proof row 18's market, whose questions come from QuestionPrepared and
+      ConditionPreparation alone (no Gamma rows). With feeBips 100 (the real log has 0), a direct
+      conversion of 1 NO of questions 0 and 1 pays amountOut = 1 - 1 x 100 / 10000 = 0.99: YES of
+      question 2, and 0.99 cash in two rows of 0.495. An adapter conversion of questions 1 and 2 uses
+      its own amountOut of 1.9, not the fee rule.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"note": "Made up: feeBips 100; the real log has 0.", "id": "96924595:85", "event": "neg_risk.MarketPrepared", "block_number": 96924595, "log_index": 85, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "oracle": "0x661992aebf6becf7ba5abb66f6b0bf62aa7a2e93", "fee_bips": 100},
+              {"id": "96924595:88", "event": "ctf.ConditionPreparation", "block_number": 96924595, "log_index": 88, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "condition_id": "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", "oracle": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500"},
+              {"id": "96924595:89", "event": "neg_risk.QuestionPrepared", "block_number": 96924595, "log_index": 89, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "question_index": 0},
+              {"id": "96924595:92", "event": "ctf.ConditionPreparation", "block_number": 96924595, "log_index": 92, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "condition_id": "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", "oracle": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501"},
+              {"id": "96924595:93", "event": "neg_risk.QuestionPrepared", "block_number": 96924595, "log_index": 93, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501", "question_index": 1},
+              {"id": "96924595:96", "event": "ctf.ConditionPreparation", "block_number": 96924595, "log_index": 96, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "condition_id": "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", "oracle": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608502"},
+              {"id": "96924595:97", "event": "neg_risk.QuestionPrepared", "block_number": 96924595, "log_index": 97, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608502", "question_index": 2},
+              {"note": "Made up.", "id": "96926100:1", "event": "neg_risk.PositionsConverted", "block_number": 96926100, "log_index": 1, "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "stakeholder": "0x00000000000000000000000000000000000000a1", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "index_set": 3, "amount": 1000000},
+              {"note": "Made up.", "id": "96926100:2", "event": "collateral_adapter.PositionsConverted", "block_number": 96926100, "log_index": 2, "contract": "0xada2005600dec949baf300f4c6120000bdb6eaab", "initiator": "0x00000000000000000000000000000000000000b2", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "index_set": 6, "amount": 2000000, "amount_out": 1900000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "8012334622748084164653169005463059428663198137210030745651002890982684086910", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", outcome_index: 0}
+          - {token_id: "10215802001490733933737236082194539027026170729497873704703736982332406798434", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", outcome_index: 1}
+          - {token_id: "95825530362527799605151851146544426628027460907081633667977149088231212180255", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", outcome_index: 0}
+          - {token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", outcome_index: 1}
+          - {token_id: "57841252882656907063025446654114350432407641305100763931597581977133187669609", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", outcome_index: 0}
+          - {token_id: "20005318708283133732984068641252676657784964983272455927377831789922193274176", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926100:1:10215802001490733933737236082194539027026170729497873704703736982332406798434", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: "10215802001490733933737236082194539027026170729497873704703736982332406798434", shares_delta: "-1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:1:cash:0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: null, shares_delta: null, usdc_delta: "0.495000", zeroes_position: false}
+        - {id: "96926100:1:61312451012901262701709173260572556297334903822611497200357532459899112519848", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", shares_delta: "-1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:1:cash:0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: null, shares_delta: null, usdc_delta: "0.495000", zeroes_position: false}
+        - {id: "96926100:1:57841252882656907063025446654114350432407641305100763931597581977133187669609", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", token_id: "57841252882656907063025446654114350432407641305100763931597581977133187669609", shares_delta: "0.990000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:2:8012334622748084164653169005463059428663198137210030745651002890982684086910", kind: "convert", wallet: "0x00000000000000000000000000000000000000b2", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: "8012334622748084164653169005463059428663198137210030745651002890982684086910", shares_delta: "1.900000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:2:61312451012901262701709173260572556297334903822611497200357532459899112519848", kind: "convert", wallet: "0x00000000000000000000000000000000000000b2", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", shares_delta: "-2.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:2:cash:0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", kind: "convert", wallet: "0x00000000000000000000000000000000000000b2", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: null, shares_delta: null, usdc_delta: "0.950000", zeroes_position: false}
+        - {id: "96926100:2:20005318708283133732984068641252676657784964983272455927377831789922193274176", kind: "convert", wallet: "0x00000000000000000000000000000000000000b2", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", token_id: "20005318708283133732984068641252676657784964983272455927377831789922193274176", shares_delta: "-2.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:2:cash:0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", kind: "convert", wallet: "0x00000000000000000000000000000000000000b2", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", token_id: null, shares_delta: null, usdc_delta: "0.950000", zeroes_position: false}
+
+  - name: ctf_rows_off_polymarket_positions_are_dropped
+    description: >-
+      Made up on proof row 4's condition: the user splits on ConditionalTokens directly three times.
+      On pUSD, whose position ids are no Polymarket tokens (Q4), and under a parent collection, the
+      split gives no row. On USDC.e at the top level it counts.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"note": "Made up: pUSD collateral.", "id": "96926020:1", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 1, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000},
+              {"note": "Made up: a parent collection.", "id": "96926020:2", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 2, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x1111111111111111111111111111111111111111111111111111111111111111", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000},
+              {"note": "Made up: the split that counts.", "id": "96926020:3", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 3, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 0}
+          - {token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926020:3:cash", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: null, shares_delta: null, usdc_delta: "-1.000000", zeroes_position: false}
+        - {id: "96926020:3:16586642815017495780917469003078506417521356854942357080913034941474823961026", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926020:3:110873771272925759008981515223715203606530125973324791599348343811525717421022", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: only_single_bit_index_sets_map_to_tokens
+    description: >-
+      Made up: a user splits a three-outcome condition into index sets 1 and 6. Index set 1 is outcome
+      0's token; 6 holds outcomes 1 and 2 together and maps to no token. The cash still counts.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"note": "Made up.", "id": "96926030:1", "event": "ctf.PositionSplit", "block_number": 96926030, "log_index": 1, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "index_sets": [1, 6], "amount": 1000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "11", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", outcome_index: 0}
+          - {token_id: "12", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", outcome_index: 1}
+          - {token_id: "13", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", outcome_index: 2}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926030:1:cash", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", token_id: null, shares_delta: null, usdc_delta: "-1.000000", zeroes_position: false}
+        - {id: "96926030:1:11", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", token_id: "11", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: conditions_missing_from_gamma_drop_out
+    description: >-
+      Proof row 4's split, with Gamma lacking its condition (made up: the outcome tokens are empty).
+      The condition drops out whole, cash included, so no market's flows are half there.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"id": "96926001:206", "event": "ctf.PositionSplit", "block_number": 96926001, "log_index": 206, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xada100db00ca00073811820692005400218fce1f", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 150000000},
+              {"id": "96926001:208", "event": "collateral_adapter.PositionSplit", "block_number": 96926001, "log_index": 208, "block_timestamp": "2026-11-07 23:34:18+00", "tx_hash": "0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215", "contract": "0xada100db00ca00073811820692005400218fce1f", "initiator": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "amount": 150000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: []
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: *no_gamma_markets
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows: []
