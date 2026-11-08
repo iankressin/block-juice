@@ -216,9 +216,10 @@ unit_tests:
 
   - name: outcome_tokens_follow_gamma_order
     description: >-
-      Gamma market 6764951 (Task 1 proof row 2), from a Gamma reply read on 2026-11-08: outcomes
-      ["Up", "Down"] and clobTokenIds in that order. Up is outcome 0 and Down outcome 1, each the other's
-      complement. A placeholder market with no clobTokenIds and a v2 market give no rows.
+      Gamma market 6764951 (Task 1 proof row 2): outcomes ["Up", "Down"] and clobTokenIds in that order.
+      Up is outcome 0 and Down outcome 1, each the other's complement. Event 1328177 comes from the
+      staging test for the same market. A placeholder market with no clobTokenIds and the Protocol V2
+      market 6770019 give no rows. A market with three outcomes has no complement.
     model: int_polymarket_outcome_tokens
     given:
       - input: ref('stg_polymarket__markets')
@@ -227,21 +228,31 @@ unit_tests:
           select '6764951' as market_id, '0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a' as condition_id,
               array['Up', 'Down'] as outcomes,
               array[56491295322642479574009649190264906678337478953962544953766149611910922990327, 103688884060883873727013522652996002941410548793093120456496990699655719191268]::numeric[] as clob_token_ids,
-              -- The single-market Gamma reply holds no events array, so the event is not known here.
-              null::text as event_id, false as neg_risk, 'v1' as protocol_version
+              '1328177' as event_id, false as neg_risk, 'v1' as protocol_version
           union all
           -- Made up: a placeholder neg-risk market has no condition and no tokens.
           select '0', null, array['Yes', 'No'], null::numeric[], null, true, 'v1'
+          union all
+          -- Protocol V2 market 6770019, left out because it is not v1.
+          select '6770019', '0x012022213b0b69c791e46cd2665350ea69000000000000000000000000000000', array['Up', 'Down'],
+              array[509087509928325909252543985009258432142384070580348294089705821985333837824, 509087509928325909252543985009258432142384070580348294089705821985333837825]::numeric[],
+              '1329404', false, 'v2'
+          union all
+          -- Made up: a v1 market with three outcomes.
+          select '1', '0x' || repeat('a', 64), array['A', 'B', 'C'], array[11, 12, 13]::numeric[], '2', false, 'v1'
     expect:
       rows:
-        - {token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 0, outcome: Up, complement_token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", market_id: "6764951", neg_risk: false, protocol: ctf}
-        - {token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 1, outcome: Down, complement_token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", market_id: "6764951", neg_risk: false, protocol: ctf}
+        - {token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 0, outcome: Up, complement_token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", market_id: "6764951", event_id: "1328177", neg_risk: false, protocol: ctf}
+        - {token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 1, outcome: Down, complement_token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", market_id: "6764951", event_id: "1328177", neg_risk: false, protocol: ctf}
+        - {token_id: "11", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", outcome_index: 0, outcome: A, complement_token_id: null, market_id: "1", event_id: "2", neg_risk: false, protocol: ctf}
+        - {token_id: "12", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", outcome_index: 1, outcome: B, complement_token_id: null, market_id: "1", event_id: "2", neg_risk: false, protocol: ctf}
+        - {token_id: "13", condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", outcome_index: 2, outcome: C, complement_token_id: null, market_id: "1", event_id: "2", neg_risk: false, protocol: ctf}
 
   - name: resolved_proof_market_pays_its_winner
     description: >-
       Proof row 9: ctf.ConditionResolution of condition 0x21a7…ade3 at block 95573552, payoutNumerators
       [1, 0]. Gamma's reply for market 5681656 lists the same condition with outcomes ["Up", "Down"] and
-      outcomePrices ["1", "0"], so Up, outcome 0, won. Up pays 1 and Down pays 0.
+      outcomePrices ["1", "0"], so Up, outcome 0, won. Up pays 1 and Down pays 0. A made-up all-zero vector gives null fractions.
     model: int_polygon_polymarket_ctf_resolutions
     given:
       - input: ref('stg_polygon__polymarket_ctf')
@@ -252,10 +263,16 @@ unit_tests:
               '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3' as condition_id,
               array[1, 0]::numeric[] as payout_numerators
           union all
-          -- Made up: a log of another event is left out.
+          -- Made up: a log of another event is left out, even with a payout array.
           select '95573552:699', 'ctf.PositionSplit', 95573552, '2026-10-15 12:00:53+00'::timestamptz, 699,
-              '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3', null::numeric[]
+              '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3', array[1, 1]::numeric[]
+          union all
+          -- Made up: a resolution that pays nothing has no fractions.
+          select '95573553:1', 'ctf.ConditionResolution', 95573553, '2026-10-15 12:00:55+00'::timestamptz, 1,
+              '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', array[0, 0]::numeric[]
     expect:
       rows:
         - {condition_id: "0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3", outcome_index: 0, payout_fraction: "1.00000000000000000000", resolved_block: 95573552, resolved_at: "2026-10-15 12:00:53+00"}
         - {condition_id: "0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3", outcome_index: 1, payout_fraction: "0.00000000000000000000", resolved_block: 95573552, resolved_at: "2026-10-15 12:00:53+00"}
+        - {condition_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", outcome_index: 0, payout_fraction: null, resolved_block: 95573553, resolved_at: "2026-10-15 12:00:55+00"}
+        - {condition_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", outcome_index: 1, payout_fraction: null, resolved_block: 95573553, resolved_at: "2026-10-15 12:00:55+00"}
