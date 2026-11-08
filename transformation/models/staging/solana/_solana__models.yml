@@ -23,3 +23,66 @@ models:
         data_tests: [not_null]
       - name: balance
         data_tests: [not_null]
+  - name: stg_solana__spl_token
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: slot
+        data_tests: [not_null]
+      - name: tx_index
+        data_tests: [not_null]
+      - name: signature
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_solana__spl_token_transactions')
+                field: signature
+      - name: instruction_address
+        data_tests: [not_null]
+      - name: program_id
+        data_tests: [not_null]
+  - name: stg_solana__spl_token_transactions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: signature
+        data_tests: [unique, not_null]
+      - name: tx_index
+        data_tests: [not_null]
+  - name: stg_solana__spl_token_balances
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: signature
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_solana__spl_token_transactions')
+                field: signature
+      - name: account
+        data_tests: [not_null]
+  - name: stg_solana__spl_token_blocks
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: slot
+        data_tests: [unique, not_null]
+  - name: stg_solana__block_headers
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: origin
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [portal, rpc]
+      - name: block_number
+        data_tests: [not_null]
+  - name: stg_solana__block_headers_boundaries
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: midnight
+        data_tests: [unique, not_null]
