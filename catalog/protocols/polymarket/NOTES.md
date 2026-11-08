@@ -269,6 +269,89 @@ Counted over three 2,000-block samples through the Portal stream API, one reques
 
 Within each sample `ctf_exchange_v2` emitted about 80% of the fills and `neg_risk_ctf_exchange_v2` the rest; `neg_risk_ctf_exchange_v2_retired` emitted nothing. The window holds no v1 fill in the samples, as Decision 2 expects. The Nov 7 sample (a Saturday evening) is about 50% busier than the other two, so the totals are rough.
 
+## Check window
+
+On 2026-11-08 the `polymarket` pipeline ran on blocks 96924000–96926999 (2026-11-07 22:44:16 to 23:59:15 UTC), into the schemas `raw_polymarket_check` and `analytics_polymarket_check` of a throwaway warehouse. The Gamma walks started from `GAMMA_END_DATE_FROM` 2026-11-07. The window holds proof rows 1–8 and 10–25, and the Nov 7 sample of the load estimate is its first 2,000 blocks.
+
+### Load
+
+| Source | Rows | Time |
+|---|---|---|
+| `polygon-polymarket-ctf` | 213,258 | 1 min 6 s |
+| `polygon-polymarket-ctf-exchange-v2` | 223,931 | 48 s |
+| `polymarket-markets` (open walks, and closed walks from 2026-11-07) | 346,095 (333,086 v1, 13,009 v2) | 33 min 39 s |
+
+At these rates the full window's 111 million CTF logs and 133 million fills (load estimate above) take about 9.5 and 8 hours. That figure is rough: it scales one short run.
+
+### Raw rows against Portal
+
+Each raw count is the rows of one event key and contract. Each Portal count comes from one Portal stream API request per source over the same blocks and contracts, since the MCP's `summary` counts one page. The MCP gives the same 13 for `MarketPrepared`. Every count is equal.
+
+| Event key | Contract | Raw rows | Portal |
+|---|---|---|---|
+| `ctf.ConditionPreparation` | ConditionalTokens | 7,648 | 7,648 |
+| `ctf.ConditionResolution` | ConditionalTokens | 8,722 | 8,722 |
+| `ctf.PositionSplit` | ConditionalTokens | 66,933 | 66,933 |
+| `ctf.PositionsMerge` | ConditionalTokens | 15,339 | 15,339 |
+| `ctf.PayoutRedemption` | ConditionalTokens | 44,709 | 44,709 |
+| `neg_risk.MarketPrepared` | NegRiskAdapter | 13 | 13 |
+| `neg_risk.QuestionPrepared` | NegRiskAdapter | 243 | 243 |
+| `neg_risk.OutcomeReported` | NegRiskAdapter | 1,436 | 1,436 |
+| `neg_risk.PositionSplit` | NegRiskAdapter | 7,673 | 7,673 |
+| `neg_risk.PositionsMerge` | NegRiskAdapter | 3,382 | 3,382 |
+| `neg_risk.PositionsConverted` | NegRiskAdapter | 484 | 484 |
+| `neg_risk.PayoutRedemption` | NegRiskAdapter | 9,396 | 9,396 |
+| `collateral_adapter.PositionSplit` | `ctf_collateral_adapter` / `neg_risk_ctf_collateral_adapter` | 3,062 / 179 | 3,062 / 179 |
+| `collateral_adapter.PositionsMerged` | the same two | 8,942 / 2,216 | 8,942 / 2,216 |
+| `collateral_adapter.PositionsRedeemed` | the same two | 6,075 / 3,396 | 6,075 / 3,396 |
+| `collateral_adapter.PositionsConverted` | `neg_risk_ctf_collateral_adapter` | 318 | 318 |
+| `auto_redeemer.BinaryRedemption` | `auto_redeemer` / `ctf_auto_redeem` | 16,399 / 722 | 16,399 / 722 |
+| `auto_redeemer.NegRiskRedemption` | the same two | 5,383 / 588 | 5,383 / 588 |
+| CTF source | | 213,258 | 213,258 |
+| `ctf_exchange_v2.OrderFilled` | `ctf_exchange_v2` / `neg_risk_ctf_exchange_v2` / `neg_risk_ctf_exchange_v2_retired` | 188,222 / 35,709 / 0 | 188,222 / 35,709 / 0 |
+
+### dbt build
+
+`dbt build --select +path:models/marts/polymarket` took 2 min 13 s: 160 nodes passed, none warned or failed. The slowest models were `polymarket_markets` (56 s), `int_polygon_polymarket_ctf_position_changes` (46 s), `polymarket_price_candles` (27 s), `polymarket_trades` (24 s), `int_polymarket_wallet_ledger` (21 s) and `polymarket_market_participants` (18 s). The outcome-token tests took 15–23 s each, since each one parses every Gamma row. Rows: 223,931 fills, 145,803 trades, 31,290 candles, 156,982 position changes, 380,584 ledger rows, 333,042 markets and 81,969 participants.
+
+The first build, before `dbt_project.yml` turned nested loops off for the polymarket models, ran the position-changes model for 37 minutes, and I cancelled it. Postgres has no statistics for a value read out of a jsonb column, so it guesses a filter's selectivity. The planner expected 1 conversion (there are 484) and 990 Gamma questions (there are 99,804). It then scanned the 1.6 GB raw Gamma table once per conversion, 4.6 s a scan. With nested loops off, every join is a hash or merge join except the outcome tokens' `unnest`, which stays linear.
+
+What the build shows:
+
+- Fills of a token Gamma lacks (R25): 329 of 223,931 (0.15%), of which 205 are maker fills, on 76 tokens, worth 22,222 pUSD. Gamma lists all 76 tokens, in 39 markets. 36 of those markets closed while the walks ran (`closedTime` 04:54 to 05:19 UTC on 2026-11-08; the walks ran 04:51 to 05:24), and the source missed them in a race. The closed walks for 2026-11-07 onwards ended by 05:06. The open walk, in ascending id, reached ids above 6,000,000 (34 of the 39 markets) only from 05:02 to 05:24. So a market that closed mid-run had left the open list before that walk got to it, and its closed walk had passed its id while it was still open. The next run's closed walks pick them up. The other 3 closed with an `endDate` before 2026-11-07 (2026-05-14 and 2026-11-02), outside every walk (R19).
+- Position changes dropped because Gamma lacks the condition (R25): 1,249 of 50,958 user splits, merges and redemptions (2.5%), on 1,031 conditions. 1,229 are redemptions, and 1,095 of all 1,249 paid 0; the other 154 moved 5,096 pUSD. All but one sit in conditions prepared before the window. Every one of the 484 user conversions books.
+- `open_shares < 0`: 7,884 of 81,969 participant rows, in 3,534 markets. All of those markets were prepared before the window: their wallets got shares before it and sold them in it. The 87 markets below hold none.
+- `pnl_usdc` is null on 4,070 rows, all in unresolved markets: the wallet holds a token that has no candle.
+- `polymarket_resolved_markets_are_zero_sum` passed with no warning, but it checked no market. A market counts as complete only when its `ConditionPreparation` lies in the window. None of the 7,623 markets prepared in the window resolved within its 75 minutes, since 5-minute markets are prepared about a day ahead (row 2's ETH market at block 96868688). So I checked by hand. I took the 872 resolved binary markets whose first ledger row comes 300 or more blocks into the window. Portal shows 166 of them prepared in blocks 96860000–96923999, and 87 of those with no ConditionalTokens split or merge before block 96924000. With no shares before the window, they made no trade before it either, so their whole life lies in the window. In all 87 (3,584 wallet rows, 190,839 pUSD of buys), `sum(pnl_usdc) + sum(fees_usdc)` is exactly 0. In row 2's ETH market, 138 wallets made −29.850420 and paid 29.850420 in fees.
+
+### Prices against CLOB `prices-history`
+
+I took three tokens' `prices-history` with `fidelity=1`, `startTs=1794091440` and `endTs=1794096000`. I compared each point with the last trade at or before it, the own or complement leg as the candles take them, and with the close of the minute that holds the point.
+
+| Token | Market | Trades | Points with a trade before them | Median gap to the last trade | Within 0.01 | Largest gap | Points ending in a half cent |
+|---|---|---|---|---|---|---|---|
+| Invictus Gaming `…214452` | LoL: Invictus Gaming vs Gen.G - Game 2 Winner (row 10) | 2,647 | 74 of 74 | 0.005 | 91% | 0.075 | 57% |
+| Alabama `…201047` | Alabama vs. LSU | 326 | 73 of 74 | 0.005 | 77% | 0.045 | 89% |
+| Up `…990327` | Ethereum Up or Down, Nov 7 6:35–6:40PM ET (row 2) | 142 | 12 of 58 | 0.0125 | 50% | 0.08 | 16% |
+
+Against the minute's close the median gap is also 0.005 (74% within 0.01 for Invictus Gaming, 62% for Alabama). The CLOB plots the midpoint, not the last trade: most of its points end in a half cent, between a bid and an ask one cent apart, while a trade prints at the bid or the ask. Its points are also samples, about one a minute, so a fast move shows up later or not at all. The ETH market first traded at 23:31:10 UTC. Its 46 earlier points all read 0.5, and after its last trade the CLOB still plots 0.0005 to 0.025.
+
+### PnL against Data API `v2/positions`
+
+I took five wallets in row 2's ETH market (condition `0xcf28…c6a`, resolved Down at 23:41:19 UTC), whose whole life lies in the window. `pnl_usdc` equals my own sum over the raw rows, to 6 places, for all five. The Data API figure is the sum of `realized_pnl` over the two outcomes with `status=CLOSED`; `status=OPEN` is empty for each wallet.
+
+| Wallet | What it did | `pnl_usdc` | Data API | Difference | Cause |
+|---|---|---|---|---|---|
+| `0x3bfcd24e25e446d31eb4825b96b1ed515e36a199` | one buy of 8.71 Down at 0.51 (row 2); auto-redeemed | 4.267900 | 4.2679 | 0 | |
+| `0x0ab017457876f72dd704bc3f6298b96135f34dd3` | split 750, 22 sells, merged 696, redeemed | −1.506350 | −1.5064 | 0.00005 | The Data API rounds to 4 places |
+| `0x84be332f78442b50842b316901f00544f0679bcb` | split 0.3, 9 sells with 0.00098 fee, merged 0.21, redeemed 0.09 | 0.020920 | 0.021 | −0.00008 | The Data API shows −0.024 on Up, where the chain gives −0.02408; that matches a fee cut to 0.0009 |
+| `0xae68447c01fc86864fd0e5e58aae986eeb8abf83` | 40 buys on both outcomes; auto-redeemed | −32.014867 | −32.0104 | −0.0045 | Its cost basis is 264.9465; the fills' `makerAmountFilled` add up to 264.951033. Rounding to the tick or to 4 places does not explain it; cause not found |
+| `0xd8f1fbe130e2b33f32633bf568a08b85058e74a9` | 8 buys and 2 sells on both outcomes; auto-redeemed | 9.184100 | 9.1843 | −0.0002 | Rounding: each outcome is 0.0001 higher |
+
+### Transfers the CTF source does not load
+
+In blocks 96925000–96925499 ConditionalTokens emitted 101,488 `TransferSingle` (57,269) and `TransferBatch` (44,219) logs, against 53,314 fills. 5,018 of them move shares between two addresses that are neither zero nor a Polymarket contract (the contracts in `protocol.yaml`, plus the CombinatorialModule), 9.4% of fills. But in 4,894 of those the operator is an exchange: a complementary match sends the shares straight from seller to buyer (row 1, log 401). Each of them sits in a transaction with an `OrderFilled`, which books the trade. The other 124 logs (77 batch, 47 single; the owner sent 72, another operator 52) come from 118 transactions, none with a fill. They are the gap Decision 5 leaves: 0.23% of fills, under 1%.
+
 ## Time window used for checks
 
 Portal (`portal_debug_resolve_time_to_block` with Unix seconds 1790812800) resolves 2026-10-01 00:00:00 UTC to block 94738440, whose timestamp is exactly 2026-10-01 00:00:00 UTC (verified boundary). A binary search on `eth_getBlockByNumber` gives the same: block 94738439 is 1790812799, block 94738440 is 1790812800. The window's first block is 94738440, included.
