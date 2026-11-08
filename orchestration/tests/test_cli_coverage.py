@@ -6,6 +6,7 @@ import pytest
 from pipeline.cli import BadInput, coverage, main
 from pipeline.cli.coverage import Coverage, stream_sources
 from pipeline.sources import SOURCES_FILE, read_sources
+from pipeline.warehouse import Cursor
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
@@ -96,23 +97,24 @@ def coverage_json(repo, monkeypatch, capsys, cursor, *args):
     return json.loads(capsys.readouterr().out)
 
 
-def test_prints_each_stream_source_with_its_blocks_and_filter(repo, monkeypatch, capsys):
-    assert coverage_json(repo, monkeypatch, capsys, 180) == [
+def test_prints_each_stream_source_with_its_blocks_cursor_hash_and_filter(repo, monkeypatch, capsys):
+    assert coverage_json(repo, monkeypatch, capsys, Cursor(180, "0xb4")) == [
         {
             "source": "ethereum.erc20_transfers",
             "raw_table": "raw.ethereum_erc20_transfers",
             "start_block": 100,
             "start_block_file": "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example",
             "cursor": 180,
+            "cursor_hash": "0xb4",
             "filter": {"wallets": [WALLET], "tokens": [USDC]},
             "covered": [100, 180],
         }
     ]
 
 
-def test_covered_is_null_before_the_first_run(repo, monkeypatch, capsys):
+def test_cursor_its_hash_and_covered_are_null_before_the_first_run(repo, monkeypatch, capsys):
     printed = coverage_json(repo, monkeypatch, capsys, None, "ethereum.erc20_transfers")
-    assert (printed["cursor"], printed["covered"]) == (None, None)
+    assert (printed["cursor"], printed["cursor_hash"], printed["covered"]) == (None, None, None)
 
 
 def test_a_source_that_is_not_a_stream_source_exits_2(repo, monkeypatch, capsys):
@@ -121,7 +123,7 @@ def test_a_source_that_is_not_a_stream_source_exits_2(repo, monkeypatch, capsys)
     assert "'ethereum.eth_balances' is not a stream source; stream sources: ethereum.erc20_transfers" in capsys.readouterr().err
 
 
-def loaded(start=100, cursor=180):
+def loaded(start=100, cursor=Cursor(180, "0xb4")):
     return Coverage("ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", start, ".env", cursor,
                     {"wallets": [WALLET], "tokens": [USDC]})
 

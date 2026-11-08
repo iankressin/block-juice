@@ -190,7 +190,7 @@ def coverage_check(
     details, passed = [], True
     for i in inputs:
         loaded = coverages[i.source]
-        span = f"loaded {loaded.start_block}-{loaded.cursor}" if loaded.cursor is not None else "nothing loaded"
+        span = f"loaded {loaded.start_block}-{loaded.cursor.number}" if loaded.cursor is not None else "nothing loaded"
         window = blocks.get(i.chain)
         gaps = loaded.gaps(window, i.filter) if window else [f"window.blocks has no blocks for {i.chain}"]
         passed = passed and not gaps

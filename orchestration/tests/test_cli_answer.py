@@ -26,6 +26,7 @@ from pipeline.cli.answer import (
 )
 from pipeline.cli.coverage import Coverage
 from pipeline.cli.question import SourceInput, load_question
+from pipeline.warehouse import Cursor
 
 WEI = Decimal(131322925334691899062636)
 ETH = Input("ethereum", "eth_balances", "raw.ethereum_eth_balances")
@@ -33,7 +34,10 @@ SOL = Input("solana", "sol_balances", "raw.solana_sol_balances")
 TRANSFERS = "ethereum.erc20_transfers"
 WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60"
 USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-LOADED = Coverage("ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", 180, {"wallets": [WALLET], "tokens": [USDC]})
+LOADED = Coverage(
+    "ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", Cursor(180, "0xb4"),
+    {"wallets": [WALLET], "tokens": [USDC]},
+)
 
 
 def source(name, table):
@@ -359,7 +363,10 @@ def test_coverage_reports_a_source_that_has_loaded_nothing():
 
 def test_coverage_checks_each_input_against_the_blocks_of_its_chain():
     base = "base.erc20_transfers"
-    loaded = {TRANSFERS: LOADED, base: replace(LOADED, source="base", raw_table="raw.base_erc20_transfers", start_block=5, cursor=9)}
+    loaded = {
+        TRANSFERS: LOADED,
+        base: replace(LOADED, source="base", raw_table="raw.base_erc20_transfers", start_block=5, cursor=Cursor(9, "0x09")),
+    }
     check = answer.coverage_check(
         [SourceInput(TRANSFERS, {}), SourceInput(base, {})], loaded, {"ethereum": (100, 180), "base": (5, 9)}
     )
