@@ -15,12 +15,16 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
+import requests
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
+from dbt_common.invocation import get_invocation_id
 
+from pipeline import portal
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
 from pipeline.cli.coverage import Coverage
 from pipeline.cli.question import Question, SourceInput, load_question
+from pipeline.portal import FinalizedHead
 from pipeline.warehouse import connect, count_dead_letters
 
 # dbt's own logs and usage stats are off: the summary reports what matters, and the stats call the network.
@@ -183,16 +187,22 @@ def stream_inputs(
 
 
 def coverage_check(
-    inputs: Iterable[SourceInput], coverages: dict[str, Coverage], blocks: dict[str, tuple[int, int]]
+    inputs: Iterable[SourceInput],
+    coverages: dict[str, Coverage],
+    blocks: dict[str, tuple[int, int]],
+    heads: dict[str, FinalizedHead],
 ) -> Check:
     """Passed when each stream input's source has loaded every block of the window on its chain, for the
-    addresses its filter names."""
+    addresses its filter names, and nothing past the block Portal calls final."""
     details, passed = [], True
     for i in inputs:
         loaded = coverages[i.source]
         span = f"loaded {loaded.start_block}-{loaded.cursor.number}" if loaded.cursor is not None else "nothing loaded"
         window = blocks.get(i.chain)
         gaps = loaded.gaps(window, i.filter) if window else [f"window.blocks has no blocks for {i.chain}"]
+        head = heads[i.source]
+        if loaded.cursor is not None and loaded.cursor.number > head.number:
+            gaps.append(f"cursor {loaded.cursor.number} is above Portal's finalized head {head.number}")
         passed = passed and not gaps
         details.append(
             f"{i.source} ({span}): {', '.join(gaps)}"
@@ -210,8 +220,11 @@ def answer_document(
     last_runs: dict[Input, LastRun | None],
     checks: Sequence[Check],
     provenance: dict[str, Any],
+    coverages: dict[str, Coverage],
+    heads: dict[str, FinalizedHead],
 ) -> dict[str, Any]:
-    """answer.json, in the key order readers expect."""
+    """answer.json, in the key order readers expect. A stream input also records what its source had
+    loaded, as bj coverage prints it, and Portal's finalized head after that was read."""
     return {
         "question": question.question,
         "slug": question.slug,
@@ -236,6 +249,11 @@ def answer_document(
                 "raw_table": i.raw_table,
                 "last_run": jsonable(asdict(last_runs[i])) if last_runs[i] else None,
                 "dead_letters": {"pending": pending, "parked": parked},
+                **(
+                    {"coverage": coverages[i.name].to_json(), "finalized_head": asdict(heads[i.name])}
+                    if i.name in coverages
+                    else {}
+                ),
             }
             for i, (pending, parked) in dead_letters.items()
         ],
@@ -271,15 +289,28 @@ def compile_analyses(project: Path, names: Sequence[str]) -> tuple[dict, list[st
     return manifest, [analyses[name] for name in names]
 
 
-def run_dbt_tests(project: Path, names: Sequence[str], coverages: dict[str, Coverage]) -> Check:
-    """The dbt tests upstream of the analyses. Tests that reconcile history with state, such as
-    tests/erc20_transfers_match_balances.sql, read what each stream source loaded from var('coverage')."""
+def run_dbt_tests(project: Path, names: Sequence[str], coverages: dict[str, Coverage]) -> tuple[Check, str]:
+    """The dbt tests upstream of the analyses, and the id of their dbt invocation. Tests that reconcile
+    history with state, such as tests/erc20_transfers_match_balances.sql, read what each stream source
+    loaded from var('coverage')."""
     loaded = {name: c.to_json() for name, c in coverages.items()}
     variables = ("--vars", json.dumps({"coverage": loaded})) if loaded else ()
     result = dbt(project, "test", "--select", *(f"+{name}" for name in names), *variables)
     if result.exception is not None:
         raise BadInput(f"dbt test could not run: {dbt_error(result)}")
-    return dbt_tests_check((r.node.name, str(r.status)) for r in result.result.results)
+    # dbt starts each invocation with a new id and keeps it until the next one starts, so this is the
+    # id run_results.json records for these tests.
+    return dbt_tests_check((r.node.name, str(r.status)) for r in result.result.results), get_invocation_id()
+
+
+def finalized_heads(urls: dict[str, str]) -> dict[str, FinalizedHead]:
+    """Portal's finalized head now for each stream source, by name, read once per dataset."""
+    session = requests.Session()
+    try:
+        heads = {url: portal.finalized_head(session, url) for url in sorted(set(urls.values()))}
+    except requests.RequestException as error:
+        raise BadInput(f"could not read Portal's finalized head: {error}") from None
+    return {name: heads[url] for name, url in urls.items()}
 
 
 def last_successful_run(cursor, source: Input) -> LastRun | None:
@@ -356,14 +387,27 @@ def run(repo_root: Path, slug: str) -> int:
     manifest, analysis_ids = compile_analyses(project, question.analyses)
     inputs = upstream_inputs(manifest, analysis_ids)
     streams = stream_inputs(question, inputs, coverage.sources(repo_root), coverage.stream_sources(repo_root))
-    coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
-    tests = run_dbt_tests(project, question.analyses, coverages)
+    names = sorted({i.source for i in streams})
+    urls = {name: coverage.portal_url(repo_root, name) for name in names}
+    coverages = {name: coverage.read(repo_root, name) for name in names}
+    # Read after the cursors: a finalized head only moves forward, so a source that loaded finalized
+    # blocks only never has its cursor above it.
+    heads = finalized_heads(urls)
+    tests, invocation_id = run_dbt_tests(project, question.analyses, coverages)
     results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)
     checks = [tests, dead_letters_check(dead_letters), freshness_check(last_runs)]
     if streams:
-        checks.append(coverage_check(streams, coverages, question.blocks))
+        checks.append(coverage_check(streams, coverages, question.blocks, heads))
     document = answer_document(
-        question, datetime.now(timezone.utc), results, dead_letters, last_runs, checks, provenance(repo_root)
+        question,
+        datetime.now(timezone.utc),
+        results,
+        dead_letters,
+        last_runs,
+        checks,
+        {**provenance(repo_root), "dbt_invocation_id": invocation_id},
+        coverages,
+        heads,
     )
     folder = repo_root / "answers" / slug
     write_answer(folder, results, document)

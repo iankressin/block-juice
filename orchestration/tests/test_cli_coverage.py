@@ -15,6 +15,7 @@ UNI = "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0"
 ADDRESSES = json.dumps({"wallets": [WALLET], "tokens": [USDC]})
 TRANSFERS = {"name": "ethereum", "table": "erc20_transfers", "package": "evm-erc20-transfers", "settings": "chains/ethereum"}
 BALANCES = {"name": "ethereum", "table": "eth_balances", "package": "evm-eth-balances", "settings": "chains/ethereum"}
+ETHEREUM_PORTAL = "https://portal.sqd.dev/datasets/ethereum-mainnet"
 
 
 @pytest.fixture
@@ -22,7 +23,8 @@ def repo(tmp_path, monkeypatch):
     """A repo with one stream source and one call source, each in a package that loads several chains."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
-    for entry, env in ((TRANSFERS, "START_BLOCK=100\n"), (BALANCES, "BLOCK_NUMBER=latest\n")):
+    stream_env = f"PORTAL_URL={ETHEREUM_PORTAL}\nSTART_BLOCK=100\n"
+    for entry, env in ((TRANSFERS, stream_env), (BALANCES, "BLOCK_NUMBER=latest\n")):
         folder = tmp_path / "ingestion" / "sources" / entry["package"] / entry.get("settings", "")
         folder.mkdir(parents=True)
         (folder / ".env.example").write_text(env)
@@ -44,6 +46,23 @@ def test_the_rule_finds_exactly_the_packages_that_export_a_stream_source(entry):
 
 def test_the_repo_has_a_stream_source():
     assert "ethereum.erc20_transfers" in stream_sources(REPO_ROOT)
+
+
+# bj answer reads Portal's finalized head for each stream input from this setting.
+@pytest.mark.parametrize("name", stream_sources(REPO_ROOT))
+def test_every_stream_source_names_its_portal_dataset(name):
+    assert "/datasets/" in coverage.portal_url(REPO_ROOT, name)
+
+
+def test_portal_url_comes_from_env_else_env_example(repo):
+    folder = repo / "ingestion" / "sources" / "evm-erc20-transfers/chains/ethereum"
+    assert coverage.portal_url(repo, "ethereum.erc20_transfers") == ETHEREUM_PORTAL
+    (folder / ".env").write_text("PORTAL_URL=http://localhost:8000/datasets/ethereum-mainnet\n")
+    assert coverage.portal_url(repo, "ethereum.erc20_transfers") == "http://localhost:8000/datasets/ethereum-mainnet"
+    (folder / ".env").unlink()
+    (folder / ".env.example").write_text("START_BLOCK=100\n")
+    with pytest.raises(BadInput, match="chains/ethereum sets no PORTAL_URL in .env or .env.example"):
+        coverage.portal_url(repo, "ethereum.erc20_transfers")
 
 
 def test_start_block_comes_from_env_else_env_example(repo, monkeypatch):

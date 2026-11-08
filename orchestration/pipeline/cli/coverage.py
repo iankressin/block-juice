@@ -94,16 +94,25 @@ def stream_sources(repo_root: Path) -> list[str]:
     ]
 
 
-def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
-    """START_BLOCK as a run reads it, and the file it came from: the folder's .env, else .env.example."""
+def setting(repo_root: Path, folder: Path, key: str) -> tuple[str, str]:
+    """A setting as a run reads it, and the file it came from: the folder's .env, else .env.example."""
     for name in (".env", ".env.example"):
-        value = dotenv_values(folder / name).get("START_BLOCK")
+        value = dotenv_values(folder / name).get(key)
         if value:
-            path = (folder / name).relative_to(repo_root)
-            if not value.isdigit():
-                raise BadInput(f"START_BLOCK in {path} must be a block number, not {value!r}")
-            return int(value), str(path)
-    raise BadInput(f"{folder.relative_to(repo_root)} sets no START_BLOCK in .env or .env.example")
+            return value, str((folder / name).relative_to(repo_root))
+    raise BadInput(f"{folder.relative_to(repo_root)} sets no {key} in .env or .env.example")
+
+
+def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
+    value, path = setting(repo_root, folder, "START_BLOCK")
+    if not value.isdigit():
+        raise BadInput(f"START_BLOCK in {path} must be a block number, not {value!r}")
+    return int(value), path
+
+
+def portal_url(repo_root: Path, name: str) -> str:
+    """The Portal dataset a stream source reads, such as https://portal.sqd.dev/datasets/ethereum-mainnet."""
+    return setting(repo_root, folders(repo_root)[name], "PORTAL_URL")[0]
 
 
 def address_filter(repo_root: Path, folder: Path) -> dict[str, list[str]]:

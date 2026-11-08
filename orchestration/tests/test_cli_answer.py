@@ -7,6 +7,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from fake_portal import FakePortal
 
 from pipeline.cli import REQUIRED_ENV, BadInput, answer, check
 from pipeline.cli.answer import (
@@ -26,6 +27,7 @@ from pipeline.cli.answer import (
 )
 from pipeline.cli.coverage import Coverage
 from pipeline.cli.question import SourceInput, load_question
+from pipeline.portal import FinalizedHead
 from pipeline.warehouse import Cursor
 
 WEI = Decimal(131322925334691899062636)
@@ -38,6 +40,8 @@ LOADED = Coverage(
     "ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", Cursor(180, "0xb4"),
     {"wallets": [WALLET], "tokens": [USDC]},
 )
+ETHEREUM_PORTAL = "https://portal.sqd.dev/datasets/ethereum-mainnet"
+FINAL = FinalizedHead(ETHEREUM_PORTAL, 200, "0xc8")
 
 
 def source(name, table):
@@ -148,17 +152,19 @@ def write_question(root, slug="eth-total", extra=""):
     return folder
 
 
-def document(tmp_path, answered_at):
+def document(tmp_path, answered_at, inputs=(ETH, SOL), coverages=None, heads=None):
     question = load_question(tmp_path, "eth-total")
     finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
     return answer_document(
         question,
         answered_at,
         [Result("eth_total", "select 1", ["total"], [(WEI,)])],
-        {ETH: (0, 0), SOL: (1, 0)},
-        {ETH: LastRun(finished, 12, "run-1"), SOL: None},
+        dict(zip(inputs, [(0, 0), (1, 0)])),
+        dict(zip(inputs, [LastRun(finished, 12, "run-1"), None])),
         [Check("dbt_tests", True, "3 passed")],
-        {"git_sha": "abc", "git_dirty": False, "dbt_version": "1.12.6"},
+        {"git_sha": "abc", "git_dirty": False, "dbt_version": "1.12.6", "dbt_invocation_id": "inv-1"},
+        coverages or {},
+        heads or {},
     )
 
 
@@ -190,6 +196,27 @@ def test_answer_document_has_the_documented_shape(tmp_path):
         },
     ]
     assert doc["checks"] == [{"name": "dbt_tests", "status": "passed", "detail": "3 passed"}]
+    assert doc["provenance"]["dbt_invocation_id"] == "inv-1"
+
+
+def test_a_stream_input_records_what_its_source_loaded_and_portals_finalized_head(tmp_path):
+    write_question(tmp_path)
+    stream = Input("ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers")
+    doc = document(tmp_path, datetime(2026, 11, 4, 19, 0), (stream, ETH), {TRANSFERS: LOADED}, {TRANSFERS: FINAL})
+    first, second = doc["inputs"]
+    assert list(first) == ["source", "raw_table", "last_run", "dead_letters", "coverage", "finalized_head"]
+    assert first["coverage"] == {
+        "source": TRANSFERS,
+        "raw_table": "raw.ethereum_erc20_transfers",
+        "start_block": 100,
+        "start_block_file": ".env",
+        "cursor": 180,
+        "cursor_hash": "0xb4",
+        "filter": {"wallets": [WALLET], "tokens": [USDC]},
+        "covered": [100, 180],
+    }
+    assert first["finalized_head"] == {"portal_url": ETHEREUM_PORTAL, "number": 200, "hash": "0xc8"}
+    assert "coverage" not in second and "finalized_head" not in second
 
 
 def test_rerun_replaces_results_and_changes_only_answered_at(tmp_path):
@@ -220,7 +247,8 @@ def test_an_analysis_dbt_does_not_know_is_bad_input(tmp_path, monkeypatch):
 
 @pytest.fixture
 def offline(monkeypatch):
-    """answer.run with dbt and the warehouse replaced by fixed results."""
+    """answer.run with dbt, the warehouse and Portal replaced by fixed results. Portal's finalized head on
+    the stream source's dataset is block 200 unless a test sets `finalized`."""
     for name in REQUIRED_ENV:
         monkeypatch.setenv(name, "x")
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
@@ -228,13 +256,14 @@ def offline(monkeypatch):
 
     def run_dbt_tests(project, names, coverages):
         dbt_coverages.append(coverages)
-        return Check("dbt_tests", True, "3 passed")
+        return Check("dbt_tests", True, "3 passed"), "inv-1"
 
     monkeypatch.setattr(answer, "run_dbt_tests", run_dbt_tests)
     monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
     monkeypatch.setattr(answer.coverage, "sources", lambda root: [TRANSFERS, "ethereum.eth_balances"])
     monkeypatch.setattr(answer.coverage, "stream_sources", lambda root: [TRANSFERS])
     monkeypatch.setattr(answer.coverage, "read", lambda root, name: {TRANSFERS: LOADED}[name])
+    monkeypatch.setattr(answer.coverage, "portal_url", lambda root, name: {TRANSFERS: ETHEREUM_PORTAL}[name])
     finished = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
 
     def read_warehouse(manifest, analysis_ids, inputs, parked=0):
@@ -244,8 +273,10 @@ def offline(monkeypatch):
             {i: LastRun(finished, 1, None) for i in inputs},
         )
 
-    def use(parked):
+    def use(parked, finalized=200, overloaded=0):
         monkeypatch.setattr(answer, "read_warehouse", lambda *args: read_warehouse(*args, parked=parked))
+        use.portal = FakePortal(list(range(301)), finalized=finalized, overloaded=overloaded)
+        monkeypatch.setattr("pipeline.cli.answer.requests.Session", lambda: use.portal)
 
     use.dbt_coverages = dbt_coverages
     return use
@@ -283,11 +314,12 @@ def test_missing_settings_are_bad_input_before_any_write(tmp_path, offline, monk
 
 @pytest.fixture
 def history(tmp_path, offline, monkeypatch):
-    """Answers a question whose analysis reads the stream source, which loaded blocks 100 to 180."""
-    offline(parked=0)
+    """Answers a question whose analysis reads the stream source, which loaded blocks 100 to 180. Options
+    go to the fake Portal, as in `offline`."""
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.flows"]))
 
-    def ask(window, inputs):
+    def ask(window, inputs, **portal):
+        offline(parked=0, **portal)
         folder = tmp_path / "answers" / "usdc-flows"
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "question.yaml").write_text(f"question: How much USDC moved?\nwindow: {window}\ninputs: {inputs}\n")
@@ -305,6 +337,51 @@ def test_coverage_passes_when_the_source_loaded_the_blocks_and_the_filter(histor
     code, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     assert code == 0
     assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
+
+
+def test_coverage_fails_when_the_cursor_is_above_portals_finalized_head(history, capsys):
+    code, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS, finalized=179)
+    assert code == 1
+    assert checks["coverage"] == (
+        "failed",
+        "ethereum.erc20_transfers (loaded 100-180): cursor 180 is above Portal's finalized head 179",
+    )
+    assert "coverage: FAILED" in capsys.readouterr().out
+
+
+def test_coverage_passes_with_the_cursor_at_portals_finalized_head(history):
+    code, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS, finalized=180)
+    assert (code, checks["coverage"][0]) == (0, "passed")
+
+
+def test_answer_json_records_the_cursor_hash_the_finalized_head_and_the_dbt_invocation(tmp_path, history, offline):
+    history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
+    doc = json.loads((tmp_path / "answers" / "usdc-flows" / "answer.json").read_text())
+    (read,) = doc["inputs"]
+    assert (read["source"], read["coverage"]["cursor"], read["coverage"]["cursor_hash"]) == (TRANSFERS, 180, "0xb4")
+    assert read["finalized_head"] == {"portal_url": ETHEREUM_PORTAL, "number": 200, "hash": f"0x{200:064x}"}
+    assert doc["provenance"] == {"git_sha": "abc", "git_dirty": False, "dbt_version": "x", "dbt_invocation_id": "inv-1"}
+    assert [(dataset, route) for _, dataset, route, _ in offline.portal.requests] == [
+        ("ethereum-mainnet", "finalized-head")
+    ]
+
+
+def test_a_portal_that_stays_busy_is_bad_input_before_any_write(tmp_path, history):
+    with pytest.raises(BadInput, match=f"Portal {ETHEREUM_PORTAL} answered 529"):
+        history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS, overloaded=100)
+    assert not (tmp_path / "answers" / "usdc-flows" / "answer.json").exists()
+
+
+def test_finalized_heads_reads_each_dataset_once(monkeypatch):
+    fake = FakePortal(list(range(11)))
+    monkeypatch.setattr("pipeline.cli.answer.requests.Session", lambda: fake)
+    base = "https://portal.sqd.dev/datasets/base-mainnet"
+    heads = answer.finalized_heads(
+        {TRANSFERS: ETHEREUM_PORTAL, "ethereum.uniswap_v3": ETHEREUM_PORTAL, "base.erc20_transfers": base}
+    )
+    assert heads[TRANSFERS] == heads["ethereum.uniswap_v3"] == FinalizedHead(ETHEREUM_PORTAL, 10, f"0x{10:064x}")
+    assert heads["base.erc20_transfers"] == FinalizedHead(base, 10, f"0x{10:064x}")
+    assert sorted(dataset for _, dataset, _, _ in fake.requests) == ["base-mainnet", "ethereum-mainnet"]
 
 
 def test_bj_check_refuses_the_name_of_every_check_bj_answer_runs(history):
@@ -357,7 +434,9 @@ def test_coverage_fails_naming_a_filter_address_the_source_did_not_load(history)
 
 
 def test_coverage_reports_a_source_that_has_loaded_nothing():
-    check = answer.coverage_check([SourceInput(TRANSFERS, {})], {TRANSFERS: replace(LOADED, cursor=None)}, {"ethereum": (100, 100)})
+    check = answer.coverage_check(
+        [SourceInput(TRANSFERS, {})], {TRANSFERS: replace(LOADED, cursor=None)}, {"ethereum": (100, 100)}, {TRANSFERS: FINAL}
+    )
     assert check == Check("coverage", False, "ethereum.erc20_transfers (nothing loaded): no run has saved a cursor")
 
 
@@ -367,8 +446,19 @@ def test_coverage_checks_each_input_against_the_blocks_of_its_chain():
         TRANSFERS: LOADED,
         base: replace(LOADED, source="base", raw_table="raw.base_erc20_transfers", start_block=5, cursor=Cursor(9, "0x09")),
     }
+    heads = {TRANSFERS: FINAL, base: FinalizedHead("https://portal.sqd.dev/datasets/base-mainnet", 8, "0x08")}
     check = answer.coverage_check(
-        [SourceInput(TRANSFERS, {}), SourceInput(base, {})], loaded, {"ethereum": (100, 180), "base": (5, 9)}
+        [SourceInput(TRANSFERS, {}), SourceInput(base, {})], loaded, {"ethereum": (100, 180), "base": (5, 9)}, heads
+    )
+    assert check == Check(
+        "coverage",
+        False,
+        "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter; "
+        "base.erc20_transfers (loaded 5-9): cursor 9 is above Portal's finalized head 8",
+    )
+    heads[base] = replace(heads[base], number=9)
+    check = answer.coverage_check(
+        [SourceInput(TRANSFERS, {}), SourceInput(base, {})], loaded, {"ethereum": (100, 180), "base": (5, 9)}, heads
     )
     assert check == Check(
         "coverage",

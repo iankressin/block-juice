@@ -104,7 +104,9 @@ def parser() -> argparse.ArgumentParser:
         help="run a question's dbt analyses and check the data behind them",
         description="Reads answers/<slug>/question.yaml, compiles and runs its dbt analyses on the warehouse, "
         "runs the dbt tests upstream of them, checks the dead letters and freshness of every raw table they "
-        "read, and writes answers/<slug>/results/ and answer.json. Exits 1 when a check fails.",
+        "read, and writes answers/<slug>/results/ and answer.json. For each stream input, answer.json also "
+        "holds what bj coverage prints and Portal's finalized head, and coverage fails when the cursor is "
+        "past that head. Exits 1 when a check fails.",
     )
     answer.add_argument("slug")
     answer.set_defaults(run=_answer)
