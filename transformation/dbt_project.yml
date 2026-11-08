@@ -47,5 +47,8 @@ models:
       # Views, so each chain's metadata readings show up as their own step in Dagster.
       tokens:
         +materialized: view
+      # Views, so each exchange version's fills show up as their own step in Dagster.
+      polymarket:
+        +materialized: view
     marts:
       +materialized: table
