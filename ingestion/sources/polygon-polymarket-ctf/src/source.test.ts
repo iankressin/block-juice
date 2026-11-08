@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -160,3 +161,14 @@ for (const key of ["conditional_tokens", "neg_risk_adapter", "collateral_adapter
     await assert.rejects(records(t, listed), new RegExp(key));
   });
 }
+
+test("every exchange and adapter in addresses.json has a row in the polymarket_contracts seed", () => {
+  const seeded = readFileSync(new URL("../../../../transformation/seeds/polymarket_contracts.csv", import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .slice(1)
+    .map((line) => line.split(",")[0]);
+  // conditional_tokens is left out: it holds the positions and is no stakeholder.
+  const listed = [addresses.neg_risk_adapter, ...addresses.collateral_adapters, ...addresses.auto_redeemers];
+  for (const address of listed) assert.ok(seeded.includes(address), `${address} is in addresses.json but not in transformation/seeds/polymarket_contracts.csv`);
+});

@@ -68,6 +68,78 @@ models:
         data_type: numeric
         description: usdc divided by shares.
 
+  - name: int_polymarket_outcome_tokens
+    description: >-
+      One row per outcome token of a Gamma v1 market, which trades on CTF Exchange v1 or v2 and settles
+      in ConditionalTokens. Markets without clobTokenIds are left out. outcome_index counts from 0 in
+      Gamma's clobTokenIds order, which matches the index set 1 << i (catalog Q6). Task 13 adds the
+      Protocol V2 tokens.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: token_id
+        data_type: numeric
+        description: The outcome token's id, a uint256.
+        data_tests: [unique, not_null]
+      - name: condition_id
+        data_type: text
+        description: The condition the token pays on.
+        data_tests: [not_null]
+      - name: outcome_index
+        data_type: integer
+        description: The outcome's place in the payout vector, from 0.
+        data_tests: [not_null]
+      - name: outcome
+        data_type: text
+        description: Gamma's name for the outcome, such as Up or Yes.
+      - name: complement_token_id
+        data_type: numeric
+        description: The other token, when the condition has two outcomes; otherwise null.
+      - name: market_id
+        data_type: text
+        description: Gamma's market id.
+      - name: event_id
+        data_type: text
+        description: Gamma's event id.
+      - name: neg_risk
+        data_type: boolean
+        description: True when the market belongs to a neg-risk event.
+      - name: protocol
+        data_type: text
+        description: ctf for these rows; protocol_v2 once Task 13 adds them.
+
+  - name: int_polygon_polymarket_ctf_resolutions
+    description: >-
+      The payout of each outcome of each condition that ConditionalTokens has resolved, from its
+      ConditionResolution log. Neg-risk conditions resolve through the same event. payout_fraction is the
+      outcome's numerator over the sum of the numerators.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: condition_id
+        data_type: text
+        description: The resolved condition.
+        data_tests: [not_null]
+      - name: outcome_index
+        data_type: integer
+        description: The outcome's place in the payout vector, from 0.
+        data_tests: [not_null]
+      - name: payout_fraction
+        data_type: numeric
+        description: The share of one collateral unit that one token of this outcome redeems for.
+      - name: resolved_block
+        data_type: bigint
+        description: The block of the ConditionResolution log.
+      - name: resolved_at
+        data_type: timestamp with time zone
+        description: When that block was mined.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "condition_id || ':' || outcome_index"
+
 unit_tests:
   - name: fills_of_a_buy_against_a_sell
     description: Proof row 1. The maker sells 5.106383 shares for 4.8 pUSD; the taker order buys them.
@@ -141,3 +213,49 @@ unit_tests:
       rows:
         - {id: "96926000:78", is_taker_order: false, side: buy, price: "0.73000000000000000000"}
         - {id: "96926000:81", is_taker_order: true, side: sell, price: "0.73000000000000000000"}
+
+  - name: outcome_tokens_follow_gamma_order
+    description: >-
+      Gamma market 6764951 (Task 1 proof row 2), from a Gamma reply read on 2026-11-08: outcomes
+      ["Up", "Down"] and clobTokenIds in that order. Up is outcome 0 and Down outcome 1, each the other's
+      complement. A placeholder market with no clobTokenIds and a v2 market give no rows.
+    model: int_polymarket_outcome_tokens
+    given:
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: |
+          select '6764951' as market_id, '0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a' as condition_id,
+              array['Up', 'Down'] as outcomes,
+              array[56491295322642479574009649190264906678337478953962544953766149611910922990327, 103688884060883873727013522652996002941410548793093120456496990699655719191268]::numeric[] as clob_token_ids,
+              -- The single-market Gamma reply holds no events array, so the event is not known here.
+              null::text as event_id, false as neg_risk, 'v1' as protocol_version
+          union all
+          -- Made up: a placeholder neg-risk market has no condition and no tokens.
+          select '0', null, array['Yes', 'No'], null::numeric[], null, true, 'v1'
+    expect:
+      rows:
+        - {token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 0, outcome: Up, complement_token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", market_id: "6764951", neg_risk: false, protocol: ctf}
+        - {token_id: "103688884060883873727013522652996002941410548793093120456496990699655719191268", condition_id: "0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a", outcome_index: 1, outcome: Down, complement_token_id: "56491295322642479574009649190264906678337478953962544953766149611910922990327", market_id: "6764951", neg_risk: false, protocol: ctf}
+
+  - name: resolved_proof_market_pays_its_winner
+    description: >-
+      Proof row 9: ctf.ConditionResolution of condition 0x21a7…ade3 at block 95573552, payoutNumerators
+      [1, 0]. Gamma's reply for market 5681656 lists the same condition with outcomes ["Up", "Down"] and
+      outcomePrices ["1", "0"], so Up, outcome 0, won. Up pays 1 and Down pays 0.
+    model: int_polygon_polymarket_ctf_resolutions
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select '95573552:698' as id, 'ctf.ConditionResolution' as event, 95573552::bigint as block_number,
+              '2026-10-15 12:00:53+00'::timestamptz as block_timestamp, 698 as log_index,
+              '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3' as condition_id,
+              array[1, 0]::numeric[] as payout_numerators
+          union all
+          -- Made up: a log of another event is left out.
+          select '95573552:699', 'ctf.PositionSplit', 95573552, '2026-10-15 12:00:53+00'::timestamptz, 699,
+              '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3', null::numeric[]
+    expect:
+      rows:
+        - {condition_id: "0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3", outcome_index: 0, payout_fraction: "1.00000000000000000000", resolved_block: 95573552, resolved_at: "2026-10-15 12:00:53+00"}
+        - {condition_id: "0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3", outcome_index: 1, payout_fraction: "0.00000000000000000000", resolved_block: 95573552, resolved_at: "2026-10-15 12:00:53+00"}

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -100,4 +101,13 @@ test("an empty exchanges list fails the run", async (t) => {
   await writeFile(join(dir, "addresses.json"), JSON.stringify({ exchanges: [] }));
   process.chdir(dir);
   await assert.rejects(records(t, [filled(exchange)]), /exchanges/);
+});
+
+test("every exchange and adapter in addresses.json has a row in the polymarket_contracts seed", () => {
+  const seeded = readFileSync(new URL("../../../../transformation/seeds/polymarket_contracts.csv", import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .slice(1)
+    .map((line) => line.split(",")[0]);
+  for (const address of addresses.exchanges) assert.ok(seeded.includes(address), `${address} is in addresses.json but not in transformation/seeds/polymarket_contracts.csv`);
 });
