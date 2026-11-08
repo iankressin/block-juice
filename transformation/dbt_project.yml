@@ -50,5 +50,11 @@ models:
       # Views, so each exchange version's fills show up as their own step in Dagster.
       polymarket:
         +materialized: view
+        # Filters on jsonb staging columns keep the default selectivity, so the planner picks nested
+        # loops that go quadratic on real loads; hash joins scale.
+        +pre-hook: "set local enable_nestloop = off"
     marts:
       +materialized: table
+      polymarket:
+        # As for intermediate polymarket models: no nested loops.
+        +pre-hook: "set local enable_nestloop = off"
