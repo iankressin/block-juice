@@ -127,6 +127,11 @@
     "package": "polygon-polymarket-ctf"
   },
   {
+    "name": "polygon",
+    "table": "polymarket_ctf_exchange_v2",
+    "package": "polygon-polymarket-ctf-exchange-v2"
+  },
+  {
     "name": "solana",
     "table": "sol_balances",
     "package": "solana-sol-balances"

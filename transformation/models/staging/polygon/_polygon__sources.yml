@@ -10,3 +10,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: polymarket_ctf_exchange_v2
+        identifier: polygon_polymarket_ctf_exchange_v2
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

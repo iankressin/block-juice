@@ -29,3 +29,30 @@ models:
                   - collateral_adapter.PositionsConverted
                   - auto_redeemer.BinaryRedemption
                   - auto_redeemer.NegRiskRedemption
+
+  - name: stg_polygon__polymarket_ctf_exchange_v2
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: event
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - ctf_exchange_v2.OrderFilled
+      - name: block_number
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: contract
+        data_tests: [not_null]
+      - name: side
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
