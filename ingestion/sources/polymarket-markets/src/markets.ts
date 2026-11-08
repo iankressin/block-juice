@@ -61,7 +61,7 @@ export function walkCalls(from: number, now: number): MarketsWalkCall[] {
   return calls;
 }
 
-type Walk = { call: MarketsWalkCall; cursor: string | undefined };
+type Walk = { call: MarketsWalkCall; cursor: string | undefined; page: number };
 
 /**
  * Walks every call to its last page, `concurrency` walks at once. A round fetches the next page of
@@ -76,7 +76,7 @@ export async function* walkMarkets(
   calls: readonly MarketsWalkCall[],
   { limit, concurrency }: { limit: number; concurrency: number },
 ): AsyncGenerator<Batch<MarketsWalkCall>> {
-  const pending = calls.map((call): Walk => ({ call, cursor: undefined }));
+  const pending = calls.map((call): Walk => ({ call, cursor: undefined, page: 0 }));
   let active: Walk[] = [];
   while (pending.length > 0 || active.length > 0) {
     while (active.length < concurrency && pending.length > 0) active.push(pending.shift()!);
@@ -104,9 +104,13 @@ export async function* walkMarkets(
         return;
       }
       const { markets, nextCursor } = outcome.value;
-      for (const market of markets) records.set(`market:${market.id}`, record(market, id));
-      if (nextCursor === undefined || markets.length === 0) succeededCallIds.push(id);
-      else next.push({ call: walk.call, cursor: nextCursor });
+      const last = nextCursor === undefined || markets.length === 0;
+      // Only the last page's records carry the walk's id. The lib clears a dead letter when a record
+      // carries its id, so an earlier page would clear the letter of a walk that fails later.
+      const recordCallId = last ? id : `${id}#${walk.page}`;
+      for (const market of markets) records.set(`market:${market.id}`, record(market, recordCallId));
+      if (last) succeededCallIds.push(id);
+      else next.push({ call: walk.call, cursor: nextCursor, page: walk.page + 1 });
     });
     batch.records.push(...records.values());
     active = next;

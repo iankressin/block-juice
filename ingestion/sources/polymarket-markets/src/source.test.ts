@@ -122,7 +122,13 @@ test("walks the cursor to the end, one record per market holding the object as s
 
   assert.deepEqual(
     records(batches).map(({ id, callId }) => ({ id, callId })),
-    [1, 2, 3, 4, 5].map((id) => ({ id: `market:${id}`, callId: "markets:v1:open" })),
+    [
+      { id: "market:1", callId: "markets:v1:open#0" },
+      { id: "market:2", callId: "markets:v1:open#0" },
+      { id: "market:3", callId: "markets:v1:open#1" },
+      { id: "market:4", callId: "markets:v1:open#1" },
+      { id: "market:5", callId: "markets:v1:open" },
+    ],
   );
   assert.deepEqual(
     records(batches).map(({ data }) => data),
@@ -190,6 +196,11 @@ test("a failed page fails its walk and the other walks still load", async (t) =>
   assert.deepEqual(failed, [
     { id: "markets:v1:closed:2026-11-07", call: day("2026-11-07"), error: "Gamma answered HTTP 500: internal error" },
   ]);
+  // Its page-1 records carry a page-scoped id, so they cannot clear its dead letter.
+  assert.deepEqual(
+    records(batches).filter(({ id }) => id === "market:11" || id === "market:12").map(({ callId }) => callId),
+    ["markets:v1:closed:2026-11-07#0", "markets:v1:closed:2026-11-07#0"],
+  );
   // The failed walk's call id is not reported as a success.
   assert.ok(!batches.flatMap((batch) => batch.succeededCallIds ?? []).includes("markets:v1:closed:2026-11-07"));
 });
@@ -272,4 +283,42 @@ test("a bad GAMMA_END_DATE_FROM, page size or concurrency is refused", () => {
   assert.equal(env.safeParse({ GAMMA_END_DATE_FROM: "yesterday" }).success, false);
   assert.equal(env.safeParse({ ...ok, GAMMA_PAGE_SIZE: "101" }).success, false);
   assert.equal(env.safeParse({ ...ok, GAMMA_MAX_CONCURRENCY: "21" }).success, false);
+});
+
+test("a walk that ends on an empty page reports its call id as a success", async (t) => {
+  const url = await fakeGamma(t, { walks: { [OPEN]: [[market(1), market(2)], []] } });
+
+  const batches = await run(envAt(url));
+
+  assert.deepEqual(
+    records(batches).map(({ id, callId }) => ({ id, callId })),
+    [
+      { id: "market:1", callId: "markets:v1:open#0" },
+      { id: "market:2", callId: "markets:v1:open#0" },
+    ],
+  );
+  assert.ok(batches.flatMap((batch) => batch.succeededCallIds ?? []).includes("markets:v1:open"));
+});
+
+test("a request that loses its connection is tried again", async (t) => {
+  const events: string[] = [];
+  let drops = 0;
+  const server = createServer((req, res) => {
+    if (drops++ === 0) return void req.socket.destroy();
+    const q = new URL(req.url!, "http://gamma").searchParams;
+    const body = { markets: q.get("version") === "v1" && q.get("closed") === "false" ? [market(1)] : [] };
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const batches = await run(envAt(url, { GAMMA_MAX_CONCURRENCY: 1 }), [], fakeClock(NOW, events));
+
+  assert.deepEqual(batches.flatMap((batch) => batch.failed), []);
+  assert.deepEqual(records(batches).map(({ id }) => id), ["market:1"]);
+  assert.deepEqual(events, ["sleep 1000"]);
 });

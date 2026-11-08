@@ -1,5 +1,5 @@
 import { setTimeout } from "node:timers/promises";
-import { logger } from "@ingestion/lib";
+import { describeError, logger } from "@ingestion/lib";
 import * as z from "zod";
 
 /** Time as the client sees it, so a test can pass a retry's wait at once. */
@@ -9,7 +9,7 @@ export const systemClock: Clock = { now: () => Date.now(), sleep: (ms) => setTim
 
 // The API's endpoints, limits and fields, each checked on real replies: catalog/vendors/polymarket/.
 // Gamma allows 300 requests per 10 seconds on /markets. A request that gets 429 or a 5xx waits
-// and tries again.
+// and tries again, and so does a request that loses its connection or times out.
 const RETRY_WAITS_MS = [1000, 2000, 4000];
 const TIMEOUT_MS = 60_000;
 
@@ -72,12 +72,18 @@ export function createGammaClient(url: string, clock: Clock) {
     const request = new URL(path, url);
     for (const [key, value] of Object.entries(query)) request.searchParams.set(key, value);
     for (let attempt = 0; ; attempt++) {
-      const response = await fetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-      if (response.ok) return response.json();
-      const error = await gammaError(response);
+      let error: Error;
+      try {
+        const response = await fetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+        if (response.ok) return await response.json();
+        error = await gammaError(response);
+      } catch (cause) {
+        // A reset connection, a timeout or a body cut short. A walk lasts many minutes, so these retry too.
+        error = cause instanceof Error ? cause : new Error(String(cause));
+      }
       const waitMs = RETRY_WAITS_MS[attempt];
-      if (!error.retryable || waitMs === undefined) throw error;
-      logger.info({ path, status: error.status, waitMs }, "Gamma failed a request, waiting before trying again");
+      if ((error instanceof GammaError && !error.retryable) || waitMs === undefined) throw error;
+      logger.info({ path, error: describeError(error), waitMs }, "Gamma failed a request, waiting before trying again");
       await clock.sleep(waitMs);
     }
   }
