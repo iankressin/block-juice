@@ -43,7 +43,7 @@ with events (event, family) as (
 -- pairing join below scans the logs once whatever plan Postgres picks, even before it has statistics on a
 -- freshly loaded raw table, when it would otherwise rescan every log for every Transfer.
 supply as materialized (
-    select logs.id, logs.event, logs.tx_hash, logs.value_base, events.family
+    select logs.id, logs.token, logs.event, logs.tx_hash, logs.value_base, events.family
     from {{ logs }} as logs
     inner join events on events.event = logs.event
     where logs.event in ('Issue', 'Redeem')
@@ -57,6 +57,7 @@ candidates as (
     from supply
     inner join {{ logs }} as transfer
         on transfer.tx_hash = supply.tx_hash
+        and transfer.token = supply.token
         and transfer.value_base = supply.value_base
         and case supply.event
             when 'Issue' then transfer.from_address

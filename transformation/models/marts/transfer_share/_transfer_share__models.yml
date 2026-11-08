@@ -347,3 +347,37 @@ unit_tests:
         - {day_utc: "2026-10-08", stage: S3, chain: ethereum, volume_tokens: 300, panel_volume_tokens: 800, share: 0.375}
         - {day_utc: "2026-10-08", stage: S3, chain: tron, volume_tokens: 200, panel_volume_tokens: 800, share: 0.25}
         - {day_utc: "2026-10-08", stage: S3, chain: solana, volume_tokens: 300, panel_volume_tokens: 800, share: 0.375}
+
+  - name: overlapping_label_versions_give_one_row
+    model: token_movements
+    description: >-
+      Made up: two versions of a label for one address, both in force. The movement keeps one row, labeled by
+      the later version, so overlapping versions cannot double its volume.
+    overrides:
+      vars:
+        transfer_share:
+          rule_version: 1
+          panel:
+            - {chain: ethereum, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6}
+            - {chain: tron, token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", decimals: 6}
+            - {chain: solana, token: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", decimals: 6}
+          label_min_confidence: 0.9
+          window: {from: "2026-10-08", to: "2026-11-07"}
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: ethereum, day_utc: "2026-10-08", from_block: 100, to_block: 200, opening_status: pass, closing_status: pass}
+      - input: ref('int_ethereum_tether_token_movements')
+        rows:
+          - {id: "150:1", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xb", owner_self: false}
+      - input: ref('int_tron_tether_token_movements')
+        rows: []
+      - input: ref('int_solana_spl_token_movements')
+        rows: []
+      - input: ref('entity_labels')
+        rows:
+          - {chain: ethereum, address: "0xa", entity: Exchange, role: exchange, url: "https://example.com/a1", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.95, label_version: 1}
+          - {chain: ethereum, address: "0xa", entity: Exchange hot wallet, role: exchange, url: "https://example.com/a2", evidence_date: "2026-10-02", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.95, label_version: 2}
+    expect:
+      rows:
+        - {id: "ethereum:150:1", from_entity: Exchange hot wallet, to_entity: null}

@@ -225,11 +225,16 @@ unit_tests:
           - {id: "80900000:1:1", event: Transfer, block_number: 80900000, tx_hash: "bb01", tx_index: 1, log_index: 1, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value: 5000000}
           - {id: "80900000:1:2", event: Transfer, block_number: 80900000, tx_hash: "bb01", tx_index: 1, log_index: 2, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value: 5000000}
           - {id: "80900001:0:0", event: Transfer, block_number: 80900001, tx_hash: "bb02", tx_index: 0, log_index: 0, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, value: 3000000}
+          # Made up: an Issue beside another contract's zero-address Transfer of the same amount. They are
+          # two tokens, so they do not pair: the Issue stands alone.
+          - {id: "80900002:0:0", event: Issue, block_number: 80900002, tx_hash: "bb03", tx_index: 0, log_index: 0, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, amount: 7000000}
+          - {id: "80900002:0:1", event: Transfer, block_number: 80900002, tx_hash: "bb03", tx_index: 0, log_index: 1, contract: TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value: 7000000}
       - input: ref('stg_tron__tether_token_transactions')
         rows:
           - {hash: "c042590c43d0d6f8b34335707a985e29cd46acea68f1296f2bee5e0185084f5b", result: SUCCESS}
           - {hash: "bb01", result: SUCCESS}
           - {hash: "bb02", result: SUCCESS}
+          - {hash: "bb03", result: SUCCESS}
     expect:
       rows:
         - {id: "80864600:203:2", event: Transfer, family: issuance, changes_supply: true, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value_tokens: 1000000000}
@@ -237,6 +242,8 @@ unit_tests:
         - {id: "80900000:1:1", event: Transfer, family: null, changes_supply: null, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value_tokens: 5}
         - {id: "80900000:1:2", event: Transfer, family: null, changes_supply: null, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value_tokens: 5}
         - {id: "80900001:0:0", event: Transfer, family: transfer, changes_supply: null, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, value_tokens: 3}
+        - {id: "80900002:0:0", event: Issue, family: issuance, changes_supply: true, from_address: null, to_address: null, value_tokens: 7}
+        - {id: "80900002:0:1", event: Transfer, family: transfer, changes_supply: null, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value_tokens: null}
 
   - name: tron_keeps_successful_logs_and_flags_address_self
     model: int_tron_tether_token_movements

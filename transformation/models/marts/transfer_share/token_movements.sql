@@ -22,7 +22,7 @@ with movements as (
 
 -- The label rows that can apply at all. With no confidence threshold set, none can.
 labels as (
-    select chain, address, entity, role, evidence_date, effective_from, effective_to
+    select chain, address, entity, role, evidence_date, effective_from, effective_to, label_version
     from {{ ref('entity_labels') }}
     where {% if min_confidence is none %}false{% else %}confidence >= {{ min_confidence }}{% endif %}
         and url is not null
@@ -55,18 +55,29 @@ labeled as (
         to_label.entity as to_entity,
         to_label.role as to_role
     from placed
-    left join labels as from_label
-        on from_label.chain = placed.chain
-        and from_label.address = placed.from_owner
-        and from_label.evidence_date <= placed.day_utc
-        and from_label.effective_from <= placed.block_timestamp
-        and placed.block_timestamp < coalesce(from_label.effective_to, 'infinity')
-    left join labels as to_label
-        on to_label.chain = placed.chain
-        and to_label.address = placed.to_owner
-        and to_label.evidence_date <= placed.day_utc
-        and to_label.effective_from <= placed.block_timestamp
-        and placed.block_timestamp < coalesce(to_label.effective_to, 'infinity')
+    -- One label a side, the latest version in force, so overlapping versions cannot copy a movement.
+    left join lateral (
+        select labels.entity, labels.role
+        from labels
+        where labels.chain = placed.chain
+            and labels.address = placed.from_owner
+            and labels.evidence_date <= placed.day_utc
+            and labels.effective_from <= placed.block_timestamp
+            and placed.block_timestamp < coalesce(labels.effective_to, 'infinity')
+        order by labels.label_version desc
+        limit 1
+    ) as from_label on true
+    left join lateral (
+        select labels.entity, labels.role
+        from labels
+        where labels.chain = placed.chain
+            and labels.address = placed.to_owner
+            and labels.evidence_date <= placed.day_utc
+            and labels.effective_from <= placed.block_timestamp
+            and placed.block_timestamp < coalesce(labels.effective_to, 'infinity')
+        order by labels.label_version desc
+        limit 1
+    ) as to_label on true
 ),
 
 flagged as (
