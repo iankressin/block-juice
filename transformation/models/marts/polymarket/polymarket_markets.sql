@@ -1,16 +1,18 @@
 -- One row per Polymarket market: each condition of a Gamma v1 market, with Gamma's names, its payouts
 -- once resolved, and whether the sources hold its whole history. payout_fractions are the pUSD one token
 -- of each outcome redeems for, in outcome_index order.
--- prepared_block and history_complete come from int_polygon_polymarket_ctf_conditions. A condition
--- prepared before the window has no row there, so prepared_block is null and it is not complete.
+-- The rows are the conditions of int_polymarket_outcome_tokens (progress R28), with Gamma's names from
+-- int_polymarket_markets. prepared_block and history_complete come from
+-- int_polygon_polymarket_ctf_conditions. A condition prepared before the window has no row there, so
+-- prepared_block is null and it is not complete.
 with markets as (
-    select distinct condition_id, market_id, event_id, neg_risk, protocol
+    select distinct condition_id, protocol
     from {{ ref('int_polymarket_outcome_tokens') }}
 ),
 
 gamma as (
-    select market_id, question, slug, event_title, outcomes, end_date
-    from {{ ref('stg_polymarket__markets') }}
+    select condition_id, market_id, question, slug, event_id, event_title, neg_risk, outcomes, end_date
+    from {{ ref('int_polymarket_markets') }}
 ),
 
 conditions as (
@@ -29,12 +31,12 @@ resolutions as (
 
 select
     m.condition_id,
-    m.market_id,
+    g.market_id,
     g.question,
     g.slug,
-    m.event_id,
+    g.event_id,
     g.event_title,
-    m.neg_risk,
+    g.neg_risk,
     m.protocol,
     g.outcomes,
     g.end_date,
@@ -43,6 +45,6 @@ select
     r.payout_fractions,
     coalesce(c.history_complete, false) as history_complete
 from markets as m
-left join gamma as g on g.market_id = m.market_id
+left join gamma as g on g.condition_id = m.condition_id
 left join conditions as c on c.condition_id = m.condition_id
 left join resolutions as r on r.condition_id = m.condition_id

@@ -351,7 +351,8 @@ unit_tests:
 
   - name: markets_without_a_preparation_are_incomplete
     description: >-
-      Each market takes prepared_block and history_complete from int_polygon_polymarket_ctf_conditions:
+      Each market takes Gamma's names from int_polymarket_markets, and prepared_block and
+      history_complete from int_polygon_polymarket_ctf_conditions:
       proof row 19's market (Gamma 6826443) is complete there, the made-up one is not. Proof row 20's
       neg-risk market (Gamma 6205625) was prepared before the window, so it has no row there and is not
       complete; it resolved NO at 96926001.
@@ -365,18 +366,19 @@ unit_tests:
           - {token_id: 12, condition_id: "0xaa", outcome_index: 1, outcome: "No", market_id: "1", event_id: "2", neg_risk: false, protocol: ctf}
           - {token_id: "18640736824860542941779666116822979171924696138941292601580729605723069794187", condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 0, outcome: "Yes", market_id: "6205625", event_id: "1253279", neg_risk: true, protocol: ctf}
           - {token_id: "6736043638912433007548654670440630247988679940790306631041508691890339229986", condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 1, outcome: "No", market_id: "6205625", event_id: "1253279", neg_risk: true, protocol: ctf}
-      - input: ref('stg_polymarket__markets')
+      - input: ref('int_polymarket_markets')
         format: sql
         rows: |
-          select '6826443' as market_id, 'Jefferson Díaz: Anytime Goalscorer' as question,
-              'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
-              'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
-              array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date
+          select '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id, '6826443' as market_id,
+              'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
+              '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
+              false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date
           union all
-          select '1', 'Made up?', 'made-up', 'Made up', array['Yes', 'No'], '2026-10-31 00:00:00+00'
+          select '0xaa', '1', 'Made up?', 'made-up', '2', 'Made up', false, array['Yes', 'No'], '2026-10-31 00:00:00+00'
           union all
-          select '6205625', 'Exact Score: D.C. United SC 5 - 4 New York City FC?', 'mls-dcu-nyc-2026-11-07-exact-score-5-4',
-              'D.C. United SC vs. New York City FC - Exact Score', array['Yes', 'No'], '2026-11-07 21:00:00+00'
+          select '0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac', '6205625',
+              'Exact Score: D.C. United SC 5 - 4 New York City FC?', 'mls-dcu-nyc-2026-11-07-exact-score-5-4', '1253279',
+              'D.C. United SC vs. New York City FC - Exact Score', true, array['Yes', 'No'], '2026-11-07 21:00:00+00'
       - input: ref('int_polygon_polymarket_ctf_resolutions')
         rows:
           - {condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 0, payout_fraction: 0, resolved_block: 96926001, resolved_at: "2026-11-07 23:34:18+00"}

@@ -256,6 +256,45 @@ models:
         description: True when the row leaves the wallet with none of the token, whatever it held.
         data_tests: [not_null]
 
+  - name: int_polymarket_markets
+    description: >-
+      One row per condition of a Gamma v1 market, with Gamma's names for it. A placeholder market has
+      no condition and gives no row. When Gamma lists one condition in several markets, the market with
+      the lowest id wins.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: condition_id
+        data_type: text
+        description: The market's condition in ConditionalTokens.
+        data_tests: [unique, not_null]
+      - name: market_id
+        data_type: text
+        description: Gamma's market id.
+        data_tests: [not_null]
+      - name: question
+        data_type: text
+        description: Gamma's question.
+      - name: slug
+        data_type: text
+        description: Gamma's slug for the market.
+      - name: event_id
+        data_type: text
+        description: Gamma's event id.
+      - name: event_title
+        data_type: text
+        description: Gamma's title for the event.
+      - name: neg_risk
+        data_type: boolean
+        description: True when the market belongs to a neg-risk event.
+      - name: outcomes
+        data_type: text[]
+        description: Gamma's outcome names, in outcome_index order.
+      - name: end_date
+        data_type: timestamp with time zone
+        description: When Gamma says the market ends.
+
   - name: int_polygon_polymarket_ctf_conditions
     description: >-
       One row per condition ConditionalTokens prepared in the window, from its ConditionPreparation log,
@@ -1248,3 +1287,37 @@ unit_tests:
       rows:
         - {condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", prepared_block: 96926007, prepared_at: "2026-11-07 23:34:27+00", history_complete: false}
         - {condition_id: "0xaa", prepared_block: 96900000, prepared_at: "2026-11-07 12:44:16+00", history_complete: false}
+
+  - name: gamma_markets_give_one_row_per_condition
+    description: >-
+      Gamma market 6826443 (proof row 19's condition) gives its row. A made-up market 10000000 that lists
+      the same condition loses to it: 6826443 is the lower id as a number, though not as text. A
+      made-up placeholder with no condition and Protocol V2 market 6770019 give no row.
+    model: int_polymarket_markets
+    given:
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: |
+          select '6826443' as market_id, '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id,
+              'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
+              '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
+              false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
+              'v1' as protocol_version
+          union all
+          -- Made up: a second market on the same condition.
+          select '10000000', '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a', 'Made up?', 'made-up',
+              '2', 'Made up', false, array['Yes', 'No'], '2026-11-09 00:00:00+00', 'v1'
+          union all
+          -- Made up: a placeholder neg-risk market has no condition.
+          select '0', null, 'Placeholder', 'placeholder', '3', 'Made up', true, array['Yes', 'No'], null, 'v1'
+          union all
+          -- Protocol V2 market 6770019, left out because it is not v1.
+          select '6770019', '0x012022213b0b69c791e46cd2665350ea69000000000000000000000000000000', 'Made up?', 'made-up',
+              '1329404', 'Made up', false, array['Up', 'Down'], null, 'v2'
+    expect:
+      format: sql
+      rows: |
+        select '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id, '6826443' as market_id,
+            'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
+            '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
+            false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date
