@@ -442,11 +442,12 @@ unit_tests:
         - {day_utc: "2026-10-02", check_name: supply_reconciles, passed: true}
         - {day_utc: "2026-10-02", check_name: token_contract_unchanged, passed: false}
 
-  - name: tron_day_checks_fail_on_missing_results_ties_and_zero_transfers
+  - name: tron_day_checks_fail_on_results_ties_and_zero_transfers
     model: int_tron_tether_token_day_checks
     description: >-
-      Made up. On 2026-10-09 a log's transaction has no result, an Issue tied between two Transfers left a
-      movement with no family, and a Transfer to the zero address paired with nothing.
+      Made up. On 2026-10-09 one log's transaction has no result and another's spells it SUCESS, as TRON's
+      own enum does, an Issue tied between two Transfers left a movement with no family, and a Transfer to
+      the zero address paired with nothing.
     given:
       - input: ref('int_transfer_share_days')
         rows:
@@ -461,10 +462,12 @@ unit_tests:
         rows:
           - {block_number: 150, event: Transfer, tx_hash: t1, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
           - {block_number: 250, event: Transfer, tx_hash: t2, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
+          - {block_number: 251, event: Transfer, tx_hash: t3, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
       - input: ref('stg_tron__tether_token_transactions')
         rows:
           - {hash: t1, result: SUCCESS}
           - {hash: t2, result: null}
+          - {hash: t3, result: SUCESS}
       - input: ref('int_tron_tether_token_movements')
         rows:
           - {id: "150:0:0", token: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, block_number: 150, family: transfer, changes_supply: false}
@@ -473,12 +476,12 @@ unit_tests:
     expect:
       rows:
         - {day_utc: "2026-10-08", check_name: source_loaded, passed: true}
-        - {day_utc: "2026-10-08", check_name: results_recorded, passed: true}
+        - {day_utc: "2026-10-08", check_name: results_success, passed: true}
         - {day_utc: "2026-10-08", check_name: supply_events_paired, passed: true}
         - {day_utc: "2026-10-08", check_name: zero_transfers_proved, passed: true}
         - {day_utc: "2026-10-08", check_name: token_contract_unchanged, passed: true}
         - {day_utc: "2026-10-09", check_name: source_loaded, passed: true}
-        - {day_utc: "2026-10-09", check_name: results_recorded, passed: false}
+        - {day_utc: "2026-10-09", check_name: results_success, passed: false}
         - {day_utc: "2026-10-09", check_name: supply_events_paired, passed: false}
         - {day_utc: "2026-10-09", check_name: zero_transfers_proved, passed: false}
         - {day_utc: "2026-10-09", check_name: token_contract_unchanged, passed: true}
