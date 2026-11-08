@@ -274,7 +274,9 @@ chains:
           The Protocol V2 Router (UUPS proxy). Users split, merge, redeem and convert through it: it
           moves the user's pUSD or positions to the module, calls it with the user as recipient, and
           emits its own Router* event naming the user. The module's event names the Router as
-          initiator (proof rows 32–34).
+          initiator (proof rows 32–34). Its combinatorialCollateralReturn runs any list of parlay ops
+          with recipients the caller chooses, the module included, and emits only
+          CombinatorialCollateralReturned(initiator) (proof row 42).
         source: >-
           Router (proxy) in the polymarket-v2-external README; implementation
           0x91fA5E2F12a308A13DefdB6aaF80B71DBe9B7696 (ERC-1967 slot, 2026-11-08), verified on
@@ -315,7 +317,7 @@ chains:
           Protocol V2 CombinatorialModule (UUPS proxy, module id 3). Parlays: a condition whose YES
           pays the product of its legs' payouts (binary or neg-risk V2 positions) and whose NO pays
           the rest. Stores no result; a redemption reads the legs' results. Mints and burns the
-          parlay positions the Exchange trades (proof rows 29, 30, 32–34, 40).
+          parlay positions the Exchange trades (proof rows 29, 30, 32–34, 40–42).
         source: >-
           CombinatorialModule (proxy) in the polymarket-v2-external README; implementation
           0xf96968a44022B17240B42c557693E7C383d2d8a3 (ERC-1967 slot, 2026-11-08), verified on
@@ -535,7 +537,7 @@ events:
     signature: "event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee, bytes32 builder, bytes32 metadata)"
     topic0: "0xd543adfd945773f1a62f74f0ee55a5e3b9b1a28262980ba90b1a89f2ea84d8ee"
     abi: abis/protocol-v2-exchange.json
-    proof_rows: [26, 27, 28, 29, 30, 31]
+    proof_rows: [26, 27, 28, 29, 30, 31, 43]
     fields: >-
       As ctf_exchange_v2.OrderFilled. tokenId is a V2 position id: top byte the module (1 binary, 2
       neg risk, 3 parlay), low byte the outcome (0 = YES or outcomes[0], 1 = NO or outcomes[1]).
@@ -559,17 +561,19 @@ events:
     signature: "event PositionsSplit(address indexed initiator, bytes31 indexed conditionId, address indexed recipient0, address recipient1, uint256 amount)"
     topic0: "0xb6a6b8b17a43b07b9359dd12d304e42077eede9e672f8646144842c8604582a4"
     abi: abis/protocol-v2-module.json
-    proof_rows: [27, 30, 32]
+    proof_rows: [27, 30, 32, 43]
     fields: >-
       amount pUSD became amount of outcome 0 for recipient0 and amount of outcome 1 for recipient1.
-      initiator is the caller (Exchange, Router or a wallet), not always the wallet.
+      initiator is the caller (Exchange, Router or a wallet), not always the wallet. On
+      combinatorial_module the inputs may come from the module's own balance and a recipient may be
+      the module, so a wallet's change needs the PositionManager's transfers (NOTES.md Q8).
   protocol_v2_module.PositionsMerged:
     use: source
     emitted_by: binary_module, neg_risk_module, combinatorial_module
     signature: "event PositionsMerged(address indexed initiator, bytes31 indexed conditionId, address indexed recipient, uint256 amount)"
     topic0: "0xf233f7be4ce81130a78e8eb2fa626497586c56094d27bfec2e196471e9c60301"
     abi: abis/protocol-v2-module.json
-    proof_rows: [28, 33, 40]
+    proof_rows: [28, 33, 41, 42]
     fields: amount of each outcome burned; recipient got amount pUSD.
   protocol_v2_module.PositionRedeemed:
     use: source
@@ -705,7 +709,7 @@ events:
     signature: "event SplitOnCondition(address indexed user, bytes31 indexed parentConditionId, bytes31 childYesConditionId, bytes31 childNoConditionId, address recipient0, address recipient1, uint256 amount)"
     topic0: "0x1a07698f7dd85df4924787e65bad71fa08c54c04700b09c8c648c6e797540202"
     abi: abis/protocol-v2-module.json
-    proof_rows: [40]
+    proof_rows: [41]
   protocol_v2_module.MergedOnCondition:
     use: source
     emitted_by: combinatorial_module
@@ -766,7 +770,7 @@ events:
     signature: "event Wrapped(address indexed user, uint256 underlyingPositionId, uint256 combinatorialPositionId, address recipient, uint256 amount)"
     topic0: "0xee943741871b99130d74367c491afe27aa9324108e10ae51d0a8f9e8cd9f9eff"
     abi: abis/protocol-v2-module.json
-    proof_rows: [40]
+    proof_rows: [40, 41]
     fields: Burns amount of a binary or neg-risk position and mints amount YES of the one-leg parlay over it.
     trap: Not pUSD's Wrapped (different topic0). Filter by emitting address.
   protocol_v2_module.Unwrapped:
@@ -784,7 +788,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.MergedOnCondition:
     use: source
     emitted_by: combinatorial_module
@@ -794,7 +799,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.ConvertedOnEvent:
     use: source
     emitted_by: combinatorial_module
@@ -804,17 +810,20 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.Extracted:
     use: source
     emitted_by: combinatorial_module
     signature: "event Extracted(address indexed user, bytes31 indexed fullConditionId, bytes31 reducedConditionId, bytes31 residualConditionId, uint256 amount)"
     topic0: "0xa9f051bec58e54c1f4912413ddd9f2e0a1518864f1d91c9bc08ebaf89e7f6628"
     abi: abis/protocol-v2-combinatorial-v1.json
+    proof_rows: [42]
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.Injected:
     use: source
     emitted_by: combinatorial_module
@@ -824,7 +833,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.ConvertedToYesBasket:
     use: source
     emitted_by: combinatorial_module
@@ -834,7 +844,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.MergedFromYesBasket:
     use: source
     emitted_by: combinatorial_module
@@ -844,7 +855,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.Compressed:
     use: source
     emitted_by: combinatorial_module
@@ -854,7 +866,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.Wrapped:
     use: source
     emitted_by: combinatorial_module
@@ -864,7 +877,8 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
   protocol_v2_combinatorial_v1.Unwrapped:
     use: source
     emitted_by: combinatorial_module
@@ -874,7 +888,26 @@ events:
     note: >-
       The shape combinatorial_module emitted before block 93452332 (implementations
       0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
-      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2): no recipient fields, the outputs went to user.
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.SplitOnEvent:
+    use: count only
+    emitted_by: combinatorial_module
+    signature: "event SplitOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, uint256 amount)"
+    topic0: "0xa28651a0a46029826e32a3681505bbbc3470dce34495083c5fc801163ce5764f"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      Declared by implementations 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2; none emitted from deploy to block 96943000.
+  protocol_v2_combinatorial_v1.MergedOnEvent:
+    use: count only
+    emitted_by: combinatorial_module
+    signature: "event MergedOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, uint256 amount)"
+    topic0: "0x61934c0c9a86a3603c9b5f41b02f7b589ca08d13bb3a9bb7c7e45bf820637b01"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      Declared by implementations 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2; none emitted from deploy to block 96943000.
   auto_redeemer.Redemption:
     use: source
     emitted_by: auto_redeemer
@@ -916,7 +949,9 @@ events:
     topic0: "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62"
     abi: null
     abi_source: Solady ERC1155 in the Sourcify-verified PositionManager implementation.
-    note: Same topic0 as ctf.TransferSingle. Not loaded; proof rows use it.
+    note: >-
+      Same topic0 as ctf.TransferSingle. Not loaded; proof rows use it. A wallet's parlay changes
+      can only be read from these and position_manager.TransferBatch (NOTES.md Q8).
   position_manager.TransferBatch:
     use: proof only
     emitted_by: position_manager
@@ -949,10 +984,11 @@ abi_sources:
     implementation 0x862f1cff1bd6246a2585e3622137e6f961b34e55. They match the declarations in
     src/exchange/Exchange.sol of polymarket-v2-external at 741f8bbe88, and abis/ctf-exchange-v2.json.
   abis/protocol-v2-combinatorial-v1.json: >-
-    The ten parlay events whose shape changed at block 93452332, from the Sourcify-verified
+    The twelve parlay events whose shape changed at block 93452332, from the Sourcify-verified
     CombinatorialModule implementation 0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2. The earlier
     verified implementations 0xb529b2430d78868422c47934d9d61cc9d0c53dbb and
-    0x03cc063e6f9552e3842136538092134edc8962de declare the same (the first lacks ConvertedOnEvent).
+    0x03cc063e6f9552e3842136538092134edc8962de declare the same (the first lacks ConvertedOnEvent,
+    SplitOnEvent and MergedOnEvent).
   abis/protocol-v2-module.json: >-
     The position, resolution and migration events of the Sourcify-verified NegRiskModule
     implementation 0xc4a3a6492df0d23f9fd1cfcd328dd10dbd5943b6 (17) and the parlay events of the
