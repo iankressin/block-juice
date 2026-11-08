@@ -198,6 +198,64 @@ models:
         description: True when the event leaves the wallet with none of the token, whatever it held.
         data_tests: [not_null]
 
+  - name: int_polymarket_wallet_ledger
+    description: >-
+      One row per change to a wallet's cash or shares in one market: each fill of either order of a
+      match, booked to the order's maker, and each split, merge, redemption and conversion. usdc_delta is
+      cash after fees. A cash row has token_id and shares_delta null; a position change's token row has
+      usdc_delta null. Fills of tokens missing from Gamma are left out.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: id
+        data_type: text
+        description: The fill's id, or the position change's.
+        data_tests: [unique, not_null]
+      - name: version
+        data_type: text
+        description: The version model the row comes from, such as ctf_exchange_v2 or ctf.
+      - name: block_number
+        data_type: bigint
+        description: The block of the log.
+      - name: block_timestamp
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: tx_hash
+        data_type: text
+        description: The transaction of the log.
+      - name: log_index
+        data_type: integer
+        description: The log's position in that block's logs.
+      - name: kind
+        data_type: text
+        description: trade, split, merge, redeem or convert.
+        data_tests: [not_null, accepted_values: {arguments: {values: [trade, split, merge, redeem, convert]}}]
+      - name: wallet
+        data_type: text
+        description: The user. On a trade, the order's maker.
+        data_tests: [not_null]
+      - name: condition_id
+        data_type: text
+        description: The market the row moves.
+        data_tests: [not_null]
+      - name: token_id
+        data_type: numeric
+        description: The outcome token moved; null on a cash row.
+      - name: shares_delta
+        data_type: numeric
+        description: Tokens gained, negative when given up; null on a cash row and when a redemption names no shares.
+      - name: usdc_delta
+        data_type: numeric
+        description: Cash gained, negative when paid, after fees; null on a position change's token row.
+      - name: fee_usdc
+        data_type: numeric
+        description: The fill's fee in pUSD; null on rows that are not trades.
+      - name: zeroes_position
+        data_type: boolean
+        description: True when the row leaves the wallet with none of the token, whatever it held.
+        data_tests: [not_null]
+
 unit_tests:
   - name: fills_of_a_buy_against_a_sell
     description: Proof row 1. The maker sells 5.106383 shares for 4.8 pUSD; the taker order buys them.
@@ -1089,3 +1147,31 @@ unit_tests:
         - {id: "96926004:663:cash:0xb459f132d97c466e80bbf75bb1fb5d79f3c58b5152d21b053a37c7fe35193c65", kind: "convert", wallet: "0xb0c85813a7a4428f1139ff91d3118a92c391fe7f", condition_id: "0xb459f132d97c466e80bbf75bb1fb5d79f3c58b5152d21b053a37c7fe35193c65", token_id: null, shares_delta: null, usdc_delta: "7.500000", zeroes_position: false}
         - {id: "96926004:663:75587352201018941703840052495534189180745889348257786366237086008149118417848", kind: "convert", wallet: "0xb0c85813a7a4428f1139ff91d3118a92c391fe7f", condition_id: "0xa3adf2e8a837830fa1ddc3b852be729e558f8dbc4ea105d08c82bb37065057e5", token_id: "75587352201018941703840052495534189180745889348257786366237086008149118417848", shares_delta: "10.000000", usdc_delta: null, zeroes_position: false}
         - {id: "96926004:663:62194415165030991490627057186897573200390885438350379038996320012202617573425", kind: "convert", wallet: "0xb0c85813a7a4428f1139ff91d3118a92c391fe7f", condition_id: "0x265c5579e1f929eb78611fcaf246c3af766b974c7d3084f71c470f945a21b980", token_id: "62194415165030991490627057186897573200390885438350379038996320012202617573425", shares_delta: "10.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: ledger_books_both_orders_after_fees
+    description: >-
+      Proof row 1, Gamma market 6764891: the maker sells 5.106383 Down for 4.8 pUSD with no fee; the taker
+      order buys them and pays 4.8 + 0.02016. Both fills book their own maker. Proof row 21's merge passes
+      through with no fee. A made-up fill of a token Gamma lacks drops out.
+    model: int_polymarket_wallet_ledger
+    given:
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows:
+          - {id: "96926000:403", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 403, wallet: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", counterparty: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", is_taker_order: false, token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", side: sell, shares: "5.106383", usdc: "4.800000", fee_usdc: "0.000000", price: "0.93999999608333334965"}
+          - {id: "96926000:405", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 405, wallet: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", counterparty: "0xe111180000d2663c0091e4f400237545b87b996b", is_taker_order: true, token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", side: buy, shares: "5.106383", usdc: "4.800000", fee_usdc: "0.020160", price: "0.93999999608333334965"}
+          # Made up: a token Gamma does not list.
+          - {id: "96926000:500", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", log_index: 500, wallet: "0xaa", counterparty: "0xbb", is_taker_order: false, token_id: "1", side: buy, shares: "1.000000", usdc: "0.500000", fee_usdc: "0.000000", price: "0.5"}
+      - input: ref('int_polygon_polymarket_ctf_position_changes')
+        rows:
+          - {id: "96926000:186:41287610969363719107459411223386631508601770194539193912125168116668852892247", version: ctf, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x60485e0d4a6db9515a97dfa70983fe9cf0a70235a09af56162f8ede853755914", log_index: 186, kind: merge, wallet: "0x758dac51ba3cc9a246a79787da9df11c5f425d9e", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: "41287610969363719107459411223386631508601770194539193912125168116668852892247", shares_delta: "-16.555556", usdc_delta: null, zeroes_position: false}
+          - {id: "96926000:186:cash", version: ctf, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x60485e0d4a6db9515a97dfa70983fe9cf0a70235a09af56162f8ede853755914", log_index: 186, kind: merge, wallet: "0x758dac51ba3cc9a246a79787da9df11c5f425d9e", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: null, shares_delta: null, usdc_delta: "16.555556", zeroes_position: false}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 0}
+          - {token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 1}
+    expect:
+      rows:
+        - {id: "96926000:403", version: ctf_exchange_v2, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 403, kind: trade, wallet: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", shares_delta: "-5.106383", usdc_delta: "4.800000", fee_usdc: "0.000000", zeroes_position: false}
+        - {id: "96926000:405", version: ctf_exchange_v2, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 405, kind: trade, wallet: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", shares_delta: "5.106383", usdc_delta: "-4.820160", fee_usdc: "0.020160", zeroes_position: false}
+        - {id: "96926000:186:41287610969363719107459411223386631508601770194539193912125168116668852892247", version: ctf, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x60485e0d4a6db9515a97dfa70983fe9cf0a70235a09af56162f8ede853755914", log_index: 186, kind: merge, wallet: "0x758dac51ba3cc9a246a79787da9df11c5f425d9e", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: "41287610969363719107459411223386631508601770194539193912125168116668852892247", shares_delta: "-16.555556", usdc_delta: null, fee_usdc: null, zeroes_position: false}
+        - {id: "96926000:186:cash", version: ctf, block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x60485e0d4a6db9515a97dfa70983fe9cf0a70235a09af56162f8ede853755914", log_index: 186, kind: merge, wallet: "0x758dac51ba3cc9a246a79787da9df11c5f425d9e", condition_id: "0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5", token_id: null, shares_delta: null, usdc_delta: "16.555556", fee_usdc: null, zeroes_position: false}
