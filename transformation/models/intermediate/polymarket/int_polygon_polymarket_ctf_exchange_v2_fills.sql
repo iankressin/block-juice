@@ -26,7 +26,7 @@ with fills as (
         case when side = 0 then maker_amount_filled else taker_amount_filled end as usdc_base,
         case when side = 0 then taker_amount_filled else maker_amount_filled end as shares_base
     from {{ ref('stg_polygon__polymarket_ctf_exchange_v2') }}
-    where event = 'OrderFilled'
+    where event = 'ctf_exchange_v2.OrderFilled'
 )
 
 select
