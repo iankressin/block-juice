@@ -1,0 +1,17 @@
+version: 2
+
+# Source name + table name must match the ingestion Source's `name` + `table`.
+sources:
+  - name: tron
+    schema: "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    tables:
+      - name: tether_token
+        identifier: tron_tether_token
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: block_headers
+        identifier: tron_block_headers
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

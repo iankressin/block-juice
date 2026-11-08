@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: stg_tron__tether_token
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: event
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Transfer, Issue, Redeem, DestroyedBlackFunds, Deprecate, Params, AddedBlackList, RemovedBlackList, Pause, Unpause]
+      - name: block_number
+        data_tests: [not_null]
+      - name: block_hash
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tron__tether_token_transactions')
+                field: hash
+      - name: tx_index
+        data_tests: [not_null]
+      - name: log_index
+        data_tests: [not_null]
+      - name: contract
+        data_tests: [not_null]
+  - name: stg_tron__tether_token_transactions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: hash
+        data_tests: [unique, not_null]
+  - name: stg_tron__tether_token_blocks
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [unique, not_null]
+  - name: stg_tron__block_headers
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: origin
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [portal, rpc]
+      - name: block_number
+        data_tests: [not_null]
+  - name: stg_tron__block_headers_boundaries
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: midnight
+        data_tests: [unique, not_null]
+
+# TRON's Base58 addresses mix upper and lower case, so an EVM-style lower() in staging names another address.
+unit_tests:
+  - name: tron_staging_keeps_base58_text_byte_for_byte
+    model: stg_tron__tether_token
+    given:
+      - input: source('tron', 'tether_token')
+        rows:
+          # Made up: a Transfer from the user of the DestroyedBlackFunds proof log at block 86646549 (hex
+          # b87e72d3b93c86af842a15c7a695275a316de659, in Base58Check) to the token's own address.
+          - {id: "86646549:40:0", data: '{"kind": "log", "event": "Transfer", "block_number": "86646549", "contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "args": {"from": "TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP", "to": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "value": "5"}}'}
+    expect:
+      rows:
+        - {id: "86646549:40:0", contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}

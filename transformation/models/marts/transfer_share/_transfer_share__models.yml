@@ -1,0 +1,349 @@
+version: 2
+
+models:
+  - name: token_movements
+    description: Every successful movement of a token on a panel chain, with its day, labels and stage flags.
+    columns:
+      - name: id
+        description: "'<chain>:<raw id>', unique across chains."
+        data_tests: [unique, not_null]
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum, tron, solana]
+      - name: family
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [transfer, issuance, destruction]
+      - name: value_base
+        description: Base units. Never summed across chains.
+      - name: value_tokens
+        description: value_base / 10^decimals, exact.
+      - name: boundary_day
+        description: The UTC day whose recorded midnights enclose the block by height, proved or not.
+      - name: day_utc
+        description: >-
+          boundary_day when both of its midnights are proved and the block has a timestamp; null otherwise,
+          which leaves the movement unassigned.
+      - name: from_entity
+        description: The entity of the label that applies to from_owner at this movement, if any.
+      - name: to_entity
+        description: The entity of the label that applies to to_owner at this movement, if any.
+      - name: from_role
+        description: The role of that label.
+      - name: to_role
+        description: The role of that label.
+      - name: in_s1
+        description: S1 counts it. Every classified movement.
+        data_tests: [not_null]
+      - name: in_s2
+        description: S2 counts it. Transfers only.
+        data_tests: [not_null]
+      - name: is_self
+        description: S3's mask. Owner-self, which on Ethereum and TRON is address-self.
+      - name: same_entity
+        description: S4's mask. Both owners carry the same entity label.
+      - name: treasury_touch
+        description: S5's mask. Either owner carries an issuer_treasury label.
+      - name: removed_at_stage
+        description: The one stage, 3, 4 or 5, that drops this transfer, at its first mask. Null when no stage drops it.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [3, 4, 5]
+                quote: false
+      - name: rule_version
+        data_tests: [not_null]
+      - name: built_by_invocation
+        description: The dbt invocation_id that built the row.
+        data_tests: [not_null]
+  - name: transfer_share_stage_status
+    description: Every day, panel chain and stage, with pass, fail or unknown and why.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "day_utc || ':' || chain || ':' || stage"
+    columns:
+      - name: day_utc
+        data_tests: [not_null]
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum, tron, solana]
+      - name: stage
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [S1, S2, S3, S4, S5]
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [pass, fail, unknown]
+      - name: reasons
+        description: The checks that did not pass, by name, or no_boundary_data when unknown. Null on pass.
+      - name: volume_tokens
+        description: The stage's volume in whole tokens.
+      - name: movements
+        description: How many movements the stage counts.
+      - name: removed_tokens
+        description: What S3, S4 or S5 drops from the stage before it. Null at S1 and S2.
+      - name: standalone_removed_tokens
+        description: What S3's, S4's or S5's mask drops from S2 on its own. Null at S1 and S2.
+      - name: account_self_tokens
+        description: The stage's volume whose two sides are the same address or token account.
+      - name: unresolved_owner_tokens
+        description: The stage's volume with a Solana side whose owner is unresolved. Never dropped.
+      - name: labeled_tokens
+        description: The stage's volume with a label on either side.
+      - name: unassigned_tokens
+        description: >-
+          The stage's volume in the day's block range whose block has no timestamp. Shown whatever the status,
+          and null only when the chain has no boundary data for the day.
+      - name: boundary_from_block
+        description: B of the day's midnight.
+      - name: boundary_to_block
+        description: B of the next midnight; the day's last block is this minus one.
+      - name: rule_version
+        data_tests: [not_null]
+      - name: built_by_invocation
+        data_tests: [not_null]
+  - name: transfer_share_stage_daily
+    description: The pass rows of transfer_share_stage_status.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "day_utc || ':' || chain || ':' || stage"
+    columns:
+      - name: chain
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ethereum, tron, solana]
+      - name: stage
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [S1, S2, S3, S4, S5]
+      - name: volume_tokens
+        data_tests: [not_null]
+      - name: unresolved_owner_tokens
+        data_tests: [not_null]
+      - name: rule_version
+        data_tests: [not_null]
+      - name: built_by_invocation
+        data_tests: [not_null]
+  - name: transfer_share
+    description: Each panel chain's share of the panel's volume, per day and stage, on days the whole panel passed.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "day_utc || ':' || stage || ':' || chain"
+    columns:
+      - name: stage
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [S1, S2, S3, S4, S5]
+      - name: chain
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ethereum, tron, solana]
+      - name: share
+        data_tests: [not_null]
+      - name: rule_version
+        data_tests: [not_null]
+      - name: built_by_invocation
+        data_tests: [not_null]
+
+# Every row below is made up: a specification fixture, not an observation.
+unit_tests:
+  - name: day_comes_from_height_between_proved_boundaries
+    model: token_movements
+    description: >-
+      Block 200 opens 2026-10-09 by height, so its movement belongs to that day even with a timestamp of
+      2026-10-08 23:59:59. A day whose closing midnight fails assigns nothing, a block outside every day has no
+      day, and a block with no timestamp stays unassigned inside its day's range.
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: ethereum, day_utc: "2026-10-08", from_block: 100, to_block: 200, opening_status: pass, closing_status: pass}
+          - {chain: ethereum, day_utc: "2026-10-09", from_block: 200, to_block: 300, opening_status: pass, closing_status: pass}
+          - {chain: ethereum, day_utc: "2026-10-10", from_block: 300, to_block: 400, opening_status: pass, closing_status: fail}
+      - input: ref('int_ethereum_tether_token_movements')
+        rows:
+          - {id: "199:0", chain: ethereum, block_number: 199, block_timestamp: "2026-10-08 23:59:47+00", family: transfer}
+          - {id: "200:0", chain: ethereum, block_number: 200, block_timestamp: "2026-10-08 23:59:59+00", family: transfer}
+          - {id: "350:0", chain: ethereum, block_number: 350, block_timestamp: "2026-10-10 12:00:00+00", family: transfer}
+          - {id: "450:0", chain: ethereum, block_number: 450, block_timestamp: "2026-10-11 12:00:00+00", family: transfer}
+          - {id: "150:0", chain: ethereum, block_number: 150, block_timestamp: null, family: transfer}
+      - input: ref('int_tron_tether_token_movements')
+        rows: []
+      - input: ref('int_solana_spl_token_movements')
+        rows: []
+      - input: ref('entity_labels')
+        rows: []
+    expect:
+      rows:
+        - {id: "ethereum:199:0", boundary_day: "2026-10-08", day_utc: "2026-10-08"}
+        - {id: "ethereum:200:0", boundary_day: "2026-10-09", day_utc: "2026-10-09"}
+        - {id: "ethereum:350:0", boundary_day: "2026-10-10", day_utc: null}
+        - {id: "ethereum:450:0", boundary_day: null, day_utc: null}
+        - {id: "ethereum:150:0", boundary_day: "2026-10-08", day_utc: null}
+
+  - name: labels_apply_only_when_dated_and_in_force
+    model: token_movements
+    description: >-
+      With a threshold of 0.9, a label applies only when its evidence is dated on or before the movement's day
+      and [effective_from, effective_to) holds the block time. Evidence dated after the movement, an interval
+      that starts after it or ends at it, and a confidence under the threshold are each ignored. A transfer is
+      removed once, at its first mask.
+    overrides:
+      vars:
+        transfer_share:
+          rule_version: 1
+          panel:
+            - {chain: ethereum, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6}
+            - {chain: tron, token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", decimals: 6}
+            - {chain: solana, token: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", decimals: 6}
+          label_min_confidence: 0.9
+          window: {from: "2026-10-08", to: "2026-11-07"}
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: ethereum, day_utc: "2026-10-08", from_block: 100, to_block: 200, opening_status: pass, closing_status: pass}
+      - input: ref('int_ethereum_tether_token_movements')
+        rows:
+          - {id: "150:1", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xb", owner_self: false}
+          - {id: "150:2", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xc", owner_self: false}
+          - {id: "150:3", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xd", owner_self: false}
+          - {id: "150:4", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xh", owner_self: false}
+          - {id: "150:5", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xe", owner_self: false}
+          - {id: "150:6", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xf", to_owner: "0xt", owner_self: false}
+          - {id: "150:7", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xa", owner_self: true}
+          - {id: "150:8", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: issuance, from_owner: null, to_owner: "0xt", owner_self: false}
+      - input: ref('int_tron_tether_token_movements')
+        rows: []
+      - input: ref('int_solana_spl_token_movements')
+        rows: []
+      - input: ref('entity_labels')
+        rows:
+          - {chain: ethereum, address: "0xa", entity: Exchange, role: exchange, url: "https://example.com/a", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.95, label_version: 1}
+          # Evidence dated the day after the movement.
+          - {chain: ethereum, address: "0xb", entity: Exchange, role: exchange, url: "https://example.com/b", evidence_date: "2026-10-09", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.95, label_version: 1}
+          # In force only from an hour after the movement.
+          - {chain: ethereum, address: "0xc", entity: Exchange, role: exchange, url: "https://example.com/c", evidence_date: "2026-10-01", effective_from: "2026-10-08 13:00:00+00", effective_to: null, confidence: 0.95, label_version: 1}
+          # Under the threshold.
+          - {chain: ethereum, address: "0xd", entity: Exchange, role: exchange, url: "https://example.com/d", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.5, label_version: 1}
+          # Out of force at the movement's block time.
+          - {chain: ethereum, address: "0xh", entity: Exchange, role: exchange, url: "https://example.com/h", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: "2026-10-08 12:00:00+00", confidence: 0.95, label_version: 1}
+          - {chain: ethereum, address: "0xe", entity: Exchange, role: exchange, url: "https://example.com/e", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.95, label_version: 1}
+          - {chain: ethereum, address: "0xt", entity: Issuer, role: issuer_treasury, url: "https://example.com/t", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 0.95, label_version: 1}
+    expect:
+      rows:
+        - {id: "ethereum:150:1", from_entity: Exchange, to_entity: null, same_entity: false, treasury_touch: false, removed_at_stage: null}
+        - {id: "ethereum:150:2", from_entity: Exchange, to_entity: null, same_entity: false, treasury_touch: false, removed_at_stage: null}
+        - {id: "ethereum:150:3", from_entity: Exchange, to_entity: null, same_entity: false, treasury_touch: false, removed_at_stage: null}
+        - {id: "ethereum:150:4", from_entity: Exchange, to_entity: null, same_entity: false, treasury_touch: false, removed_at_stage: null}
+        - {id: "ethereum:150:5", from_entity: Exchange, to_entity: Exchange, same_entity: true, treasury_touch: false, removed_at_stage: 4}
+        - {id: "ethereum:150:6", from_entity: null, to_entity: Issuer, same_entity: false, treasury_touch: true, removed_at_stage: 5}
+        - {id: "ethereum:150:7", from_entity: Exchange, to_entity: Exchange, same_entity: true, treasury_touch: false, removed_at_stage: 3}
+        - {id: "ethereum:150:8", from_entity: null, to_entity: Issuer, same_entity: false, treasury_touch: true, removed_at_stage: null}
+
+  - name: no_label_applies_while_the_threshold_is_unset
+    model: token_movements
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: ethereum, day_utc: "2026-10-08", from_block: 100, to_block: 200, opening_status: pass, closing_status: pass}
+      - input: ref('int_ethereum_tether_token_movements')
+        rows:
+          - {id: "150:5", chain: ethereum, block_number: 150, block_timestamp: "2026-10-08 12:00:00+00", family: transfer, from_owner: "0xa", to_owner: "0xe", owner_self: false}
+      - input: ref('int_tron_tether_token_movements')
+        rows: []
+      - input: ref('int_solana_spl_token_movements')
+        rows: []
+      - input: ref('entity_labels')
+        rows:
+          - {chain: ethereum, address: "0xa", entity: Exchange, role: exchange, url: "https://example.com/a", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 1, label_version: 1}
+          - {chain: ethereum, address: "0xe", entity: Exchange, role: exchange, url: "https://example.com/e", evidence_date: "2026-10-01", effective_from: "2026-01-01 00:00:00+00", effective_to: null, confidence: 1, label_version: 1}
+    expect:
+      rows:
+        - {id: "ethereum:150:5", from_entity: null, to_entity: null, same_entity: false, removed_at_stage: null}
+
+  - name: unassigned_slot_fails_its_day_and_no_boundaries_is_unknown
+    model: transfer_share_stage_status
+    overrides:
+      vars:
+        transfer_share:
+          rule_version: 1
+          panel:
+            - {chain: ethereum, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6}
+            - {chain: solana, token: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", decimals: 6}
+          label_min_confidence: null
+          window: {from: "2026-10-08", to: "2026-11-07"}
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: solana, day_utc: "2026-10-08", from_block: 1000, to_block: 2000, opening_status: pass, closing_status: pass}
+      - input: ref('token_movements')
+        rows:
+          - {id: "solana:1500:0:0", chain: solana, token: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, block_number: 1500, block_timestamp: null, family: transfer, changes_supply: false, value_base: 7000000, decimals: 6, value_tokens: 7, owner_status: resolved, account_self: false, boundary_day: "2026-10-08", day_utc: null, in_s1: true, in_s2: true, is_self: false, same_entity: false, treasury_touch: false, removed_at_stage: null}
+      - input: ref('int_ethereum_tether_token_day_checks')
+        rows: []
+      - input: ref('int_tron_tether_token_day_checks')
+        rows: []
+      - input: ref('int_solana_spl_token_day_checks')
+        rows:
+          - {chain: solana, day_utc: "2026-10-08", check_name: source_loaded, passed: true}
+          - {chain: solana, day_utc: "2026-10-08", check_name: transactions_reconcile, passed: true}
+    expect:
+      rows:
+        - {chain: ethereum, stage: S1, status: unknown, reasons: no_boundary_data, volume_tokens: null, unassigned_tokens: null}
+        - {chain: ethereum, stage: S2, status: unknown, reasons: no_boundary_data, volume_tokens: null, unassigned_tokens: null}
+        - {chain: ethereum, stage: S3, status: unknown, reasons: no_boundary_data, volume_tokens: null, unassigned_tokens: null}
+        - {chain: ethereum, stage: S4, status: unknown, reasons: no_boundary_data, volume_tokens: null, unassigned_tokens: null}
+        - {chain: ethereum, stage: S5, status: unknown, reasons: no_boundary_data, volume_tokens: null, unassigned_tokens: null}
+        - {chain: solana, stage: S1, status: fail, reasons: movements_have_time, volume_tokens: null, unassigned_tokens: 7}
+        - {chain: solana, stage: S2, status: fail, reasons: movements_have_time, volume_tokens: null, unassigned_tokens: 7}
+        - {chain: solana, stage: S3, status: fail, reasons: movements_have_time, volume_tokens: null, unassigned_tokens: 7}
+        - {chain: solana, stage: S4, status: fail, reasons: movements_have_time, volume_tokens: null, unassigned_tokens: 7}
+        - {chain: solana, stage: S5, status: fail, reasons: movements_have_time, volume_tokens: null, unassigned_tokens: 7}
+
+  - name: cumulative_volume_cannot_rise_while_share_can
+    model: transfer_share
+    description: >-
+      From S2 to S3 TRON's volume stays at 200 while the other chains lose self transfers, so TRON's share
+      rises from 0.2 to 0.25. On 2026-10-09 Solana is unknown, so no chain gets a share, not even a two-chain
+      one. On 2026-10-10 the panel moved nothing, and a zero denominator gives no row.
+    given:
+      - input: ref('transfer_share_stage_status')
+        rows:
+          - {day_utc: "2026-10-08", stage: S2, chain: ethereum, status: pass, volume_tokens: 400, rule_version: 1}
+          - {day_utc: "2026-10-08", stage: S2, chain: tron, status: pass, volume_tokens: 200, rule_version: 1}
+          - {day_utc: "2026-10-08", stage: S2, chain: solana, status: pass, volume_tokens: 400, rule_version: 1}
+          - {day_utc: "2026-10-08", stage: S3, chain: ethereum, status: pass, volume_tokens: 300, rule_version: 1}
+          - {day_utc: "2026-10-08", stage: S3, chain: tron, status: pass, volume_tokens: 200, rule_version: 1}
+          - {day_utc: "2026-10-08", stage: S3, chain: solana, status: pass, volume_tokens: 300, rule_version: 1}
+          - {day_utc: "2026-10-09", stage: S2, chain: ethereum, status: pass, volume_tokens: 10, rule_version: 1}
+          - {day_utc: "2026-10-09", stage: S2, chain: tron, status: pass, volume_tokens: 10, rule_version: 1}
+          - {day_utc: "2026-10-09", stage: S2, chain: solana, status: unknown, volume_tokens: null, rule_version: 1}
+          - {day_utc: "2026-10-10", stage: S2, chain: ethereum, status: pass, volume_tokens: 0, rule_version: 1}
+          - {day_utc: "2026-10-10", stage: S2, chain: tron, status: pass, volume_tokens: 0, rule_version: 1}
+          - {day_utc: "2026-10-10", stage: S2, chain: solana, status: pass, volume_tokens: 0, rule_version: 1}
+    expect:
+      rows:
+        - {day_utc: "2026-10-08", stage: S2, chain: ethereum, volume_tokens: 400, panel_volume_tokens: 1000, share: 0.4}
+        - {day_utc: "2026-10-08", stage: S2, chain: tron, volume_tokens: 200, panel_volume_tokens: 1000, share: 0.2}
+        - {day_utc: "2026-10-08", stage: S2, chain: solana, volume_tokens: 400, panel_volume_tokens: 1000, share: 0.4}
+        - {day_utc: "2026-10-08", stage: S3, chain: ethereum, volume_tokens: 300, panel_volume_tokens: 800, share: 0.375}
+        - {day_utc: "2026-10-08", stage: S3, chain: tron, volume_tokens: 200, panel_volume_tokens: 800, share: 0.25}
+        - {day_utc: "2026-10-08", stage: S3, chain: solana, volume_tokens: 300, panel_volume_tokens: 800, share: 0.375}

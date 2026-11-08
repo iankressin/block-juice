@@ -45,3 +45,18 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: tether_token
+        identifier: ethereum_tether_token
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: block_headers
+        identifier: ethereum_block_headers
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: erc20_supply
+        identifier: ethereum_erc20_supply
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

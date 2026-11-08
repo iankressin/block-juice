@@ -142,3 +142,64 @@ models:
         description: Null when symbol() reverted or returned nothing at that block.
       - name: decimals
         description: Null when decimals() reverted or returned nothing at that block, since ERC-20 makes it optional. Never assume 18.
+  - name: stg_ethereum__tether_token
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: event
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Transfer, Issue, Redeem, DestroyedBlackFunds, Deprecate, Params, AddedBlackList, RemovedBlackList, Pause, Unpause]
+      - name: block_number
+        data_tests: [not_null]
+      - name: block_hash
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ethereum__tether_token_transactions')
+                field: hash
+      - name: log_index
+        data_tests: [not_null]
+      - name: contract
+        data_tests: [not_null]
+  - name: stg_ethereum__tether_token_transactions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: hash
+        data_tests: [unique, not_null]
+  - name: stg_ethereum__tether_token_blocks
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [unique, not_null]
+  - name: stg_ethereum__block_headers
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: origin
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [portal, rpc]
+      - name: block_number
+        data_tests: [not_null]
+  - name: stg_ethereum__block_headers_boundaries
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: midnight
+        data_tests: [unique, not_null]
+  - name: stg_ethereum__erc20_supply
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: token
+        data_tests: [not_null]

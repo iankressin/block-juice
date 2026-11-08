@@ -61,6 +61,54 @@ seeds:
           - accepted_values:
               arguments:
                 values: [arbitrum, base]
+  - name: entity_labels
+    description: >-
+      Dated entity labels that the transfer_share stages read: S4 drops a transfer whose two owners carry the
+      same entity, and S5 one that touches a row whose role is issuer_treasury. One row per label version of
+      an owner: an Ethereum address in lowercase, a TRON Base58 address or a Solana token-account owner, the
+      last two byte for byte. A row applies to a movement only when its confidence is at or above
+      var('transfer_share').label_min_confidence, its evidence is dated on or before the movement's day, and
+      [effective_from, effective_to) holds the movement's block time; an empty effective_to is open-ended.
+      No row yet: the threshold and who may add a row are decision 12, and every row needs a public url.
+    config:
+      column_types:
+        chain: text
+        address: text
+        entity: text
+        role: text
+        url: text
+        evidence_date: date
+        effective_from: timestamptz
+        effective_to: timestamptz
+        confidence: numeric
+        label_version: integer
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || address || ':' || label_version"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum, tron, solana]
+      - name: address
+        data_tests: [not_null]
+      - name: entity
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: url
+        data_tests: [not_null]
+      - name: evidence_date
+        data_tests: [not_null]
+      - name: effective_from
+        data_tests: [not_null]
+      - name: confidence
+        data_tests: [not_null]
+      - name: label_version
+        data_tests: [not_null]
   - name: arbitrum_token_gateways
     description: >-
       The rows are the default gateway and the gateways that the L2GatewayRouter, 0x5288c571fd7ad117bea99bf60fe0846c4e84f933, returned from getGateway for UNI,

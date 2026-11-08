@@ -1,0 +1,525 @@
+version: 2
+
+# Day boundaries, one model per chain.
+x-boundary-columns: &boundary_columns
+  - name: chain
+    description: The chain the midnight is on.
+  - name: midnight
+    description: The UTC midnight.
+  - name: day_utc
+    description: The UTC day that starts at this midnight.
+    data_tests: [unique, not_null]
+  - name: boundary_block
+    description: B, Portal's first block (or produced slot) at or after the midnight. Null when the header source has no boundary record for it.
+  - name: previous_block
+    description: The block before B under the chain's rule. Its timestamp must be before the midnight.
+  - name: status
+    description: pass when every check holds, else fail.
+    data_tests:
+      - not_null
+      - accepted_values:
+          arguments:
+            values: [pass, fail]
+  - name: reason
+    description: >-
+      The checks that failed, in order: boundary_recorded, portal_headers_present, rpc_headers_present,
+      origins_agree (hash and timestamp of both blocks), previous_is_parent (the RPC header of B names the
+      previous block by number and hash), brackets_midnight (ts(previous) < midnight <= ts(B)). Null on pass.
+
+# Movements, one model per chain, all in the shape token_movements reads.
+x-movement-columns: &movement_columns
+  - name: id
+    data_type: text
+    description: The record's key in the raw table, so a rerun replaces it instead of adding another.
+    data_tests: [unique, not_null]
+  - name: chain
+    data_type: text
+    description: Which chain the movement was on.
+    data_tests: [not_null]
+  - name: token
+    data_type: text
+    description: The token contract, or the Solana mint. Null on Solana when no rule names the mint.
+  - name: block_number
+    data_type: bigint
+    description: The block the movement was in, or the slot on Solana.
+    data_tests: [not_null]
+  - name: block_hash
+    data_type: text
+    description: That block's hash.
+  - name: block_timestamp
+    data_type: timestamp with time zone
+    description: That block's time. Null on Solana when Portal has none, which leaves the movement unassigned.
+  - name: tx_hash
+    data_type: text
+    description: The transaction hash, or the Solana signature.
+    data_tests: [not_null]
+  - name: tx_index
+    data_type: integer
+    description: The transaction's place in its block.
+  - name: position
+    data_type: text
+    description: >-
+      The record's place in its block as the raw key writes it, for reading only: the log index on Ethereum,
+      tx_index:log_index on TRON, tx_index:instruction address on Solana.
+  - name: event
+    data_type: text
+    description: The log's event name, or the Solana instruction's name.
+  - name: family
+    data_type: text
+    description: >-
+      transfer, issuance or destruction. Null when the rules cannot say, such as an Issue with two candidate
+      Transfers; the day then fails instead of the build.
+    data_tests:
+      - accepted_values:
+          arguments:
+            values: [transfer, issuance, destruction]
+  - name: changes_supply
+    data_type: boolean
+    description: >-
+      Whether the movement adds or removes supply (decision 7). Null when no proof says, such as a TRON
+      Transfer to the zero address that pairs with no Redeem; the day then fails.
+  - name: from_address
+    data_type: text
+    description: The side the tokens leave, an address or a Solana token account. Null on issuance.
+  - name: to_address
+    data_type: text
+    description: The side the tokens reach. Null on destruction.
+  - name: from_owner
+    data_type: text
+    description: Who owns from_address at the movement. The address itself on Ethereum and TRON; null when unresolved on Solana.
+  - name: to_owner
+    data_type: text
+    description: Who owns to_address at the movement, the same way.
+  - name: owner_status
+    data_type: text
+    description: resolved, or unresolved when a Solana side's owner cannot be named.
+    data_tests:
+      - accepted_values:
+          arguments:
+            values: [resolved, unresolved]
+  - name: value_base
+    data_type: numeric
+    description: The amount in the token's base units. Never summed across chains.
+  - name: decimals
+    data_type: integer
+    description: The scale of value_base. The panel's declared decimals on Ethereum and TRON, the chain's own on Solana.
+  - name: value_tokens
+    data_type: numeric
+    description: value_base / 10^decimals, exact.
+  - name: account_self
+    data_type: boolean
+    description: from_address = to_address.
+  - name: owner_self
+    data_type: boolean
+    description: Both owners are resolved and equal. On Ethereum and TRON the same as account_self.
+
+x-day-check-columns: &day_check_columns
+  - name: chain
+    description: The chain.
+  - name: day_utc
+    description: The UTC day.
+    data_tests: [not_null]
+  - name: check_name
+    description: Which check this row is. The model's opening comment says what each one asks.
+  - name: passed
+    description: Whether the day passed the check. Null counts as not passed.
+
+models:
+  - name: int_ethereum_day_boundaries
+    description: Whether each Ethereum UTC midnight's boundary block is proved by Portal and RPC headers.
+    columns: *boundary_columns
+  - name: int_tron_day_boundaries
+    description: Whether each TRON UTC midnight's boundary block is proved by Portal and RPC headers.
+    columns: *boundary_columns
+  - name: int_solana_day_boundaries
+    description: Whether each Solana UTC midnight's boundary slot is proved by Portal and RPC headers.
+    columns: *boundary_columns
+  - name: int_transfer_share_days
+    description: Each chain's UTC days as block ranges between two recorded midnights, with whether each midnight passed.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || day_utc"
+    columns:
+      - name: chain
+        data_tests: [not_null]
+      - name: day_utc
+        data_tests: [not_null]
+      - name: from_block
+        description: B of the day's own midnight, the day's first block.
+      - name: to_block
+        description: B of the next midnight. The day's last block is to_block - 1.
+      - name: opening_status
+        description: The day's own midnight's status.
+      - name: closing_status
+        description: The next midnight's status.
+  - name: int_ethereum_tether_token_movements
+    description: Tether token movements on Ethereum in the shape token_movements reads.
+    config:
+      contract:
+        enforced: true
+    columns: *movement_columns
+  - name: int_tron_tether_token_movements
+    description: Tether token movements on TRON in the shape token_movements reads.
+    config:
+      contract:
+        enforced: true
+    columns: *movement_columns
+  - name: int_solana_spl_token_movements
+    description: SPL token movements on Solana in the shape token_movements reads.
+    config:
+      contract:
+        enforced: true
+    columns: *movement_columns
+  - name: int_ethereum_tether_token_day_checks
+    description: The Ethereum checks each day of the panel token must pass.
+    columns: *day_check_columns
+  - name: int_tron_tether_token_day_checks
+    description: The TRON checks each day of the panel token must pass.
+    columns: *day_check_columns
+  - name: int_solana_spl_token_day_checks
+    description: The Solana checks each day of the panel mint must pass.
+    columns: *day_check_columns
+
+# Rows marked "real" are on chain; the ones marked "made up" are specification fixtures, not observations.
+unit_tests:
+  - name: ethereum_events_take_their_family_and_supply_role
+    model: int_ethereum_tether_token_movements
+    given:
+      - input: ref('stg_ethereum__tether_token')
+        rows:
+          # Real: DestroyedBlackFunds at block 26141941, which lowered totalSupply() by exactly its _balance.
+          - {id: "26141941:388", event: DestroyedBlackFunds, block_number: 26141941, tx_hash: "0xf4e0ae5a855c22c6b16dd80aa74a394bedda4ac463ca9464a511090172b5a594", log_index: 388, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", blacklisted_user: "0x4f87f64d1914c7032e4b40368b89b6c61e91a71c", blacklisted_balance: 40010317298}
+          # Real: the AddedBlackList of that user at block 26136686. It moves nothing, so it is not a row.
+          - {id: "26136686:290", event: AddedBlackList, block_number: 26136686, log_index: 290, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", listed_user: "0x4f87f64d1914c7032e4b40368b89b6c61e91a71c"}
+          # Made up: no Issue or Redeem was found in 26100000..26366000. Ethereum's issue and redeem emit no
+          # Transfer, so each is a movement on its own.
+          - {id: "26200000:1", event: Issue, block_number: 26200000, tx_hash: "0xe1", log_index: 1, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", amount: 1000000000}
+          - {id: "26200000:2", event: Redeem, block_number: 26200000, tx_hash: "0xe2", log_index: 2, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", amount: 2500000}
+          # Real: block 25504335 log 587 sent 65000000 to the zero address, and totalSupply() stayed at
+          # 92062996230909656, so it is a transfer, not a burn. The sender is made up.
+          - {id: "25504335:587", event: Transfer, block_number: 25504335, tx_hash: "0x3769e5e46f0585ee5b1f843584451662b588710cf0a53356a33453472d45e5e6", log_index: 587, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", from_address: "0x4f87f64d1914c7032e4b40368b89b6c61e91a71c", to_address: "0x0000000000000000000000000000000000000000", value: 65000000}
+          # Made up: a Params log moves nothing.
+          - {id: "26200000:4", event: Params, block_number: 26200000, log_index: 4, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", fee_basis_points: 0, max_fee: 0}
+    expect:
+      rows:
+        - {id: "26141941:388", family: destruction, changes_supply: true, from_address: "0x4f87f64d1914c7032e4b40368b89b6c61e91a71c", to_address: null, value_base: 40010317298, decimals: 6, value_tokens: 40010.317298, account_self: false}
+        - {id: "26200000:1", family: issuance, changes_supply: true, from_address: null, to_address: null, value_base: 1000000000, decimals: 6, value_tokens: 1000, account_self: false}
+        - {id: "26200000:2", family: destruction, changes_supply: true, from_address: null, to_address: null, value_base: 2500000, decimals: 6, value_tokens: 2.5, account_self: false}
+        - {id: "25504335:587", family: transfer, changes_supply: false, from_address: "0x4f87f64d1914c7032e4b40368b89b6c61e91a71c", to_address: "0x0000000000000000000000000000000000000000", value_base: 65000000, decimals: 6, value_tokens: 65, account_self: false}
+
+  - name: tron_issue_pairs_with_its_zero_address_transfer
+    model: int_tron_tether_token_movements
+    description: >-
+      Real: at block 80864600, tx index 203, TRON's issue emitted Issue (log 1) and a Transfer from the zero
+      address to the owner multisig (log 2), both of 1000000000000000. They are one issuance, the Transfer.
+      Made up: an Issue whose transaction holds two Transfers of its amount from the zero address, which ties,
+      so all three have no family; and a Transfer to the zero address with no Redeem, whose supply effect is
+      not proved on TRON.
+    given:
+      - input: ref('stg_tron__tether_token')
+        rows:
+          - {id: "80864600:203:1", event: Issue, block_number: 80864600, tx_hash: "c042590c43d0d6f8b34335707a985e29cd46acea68f1296f2bee5e0185084f5b", tx_index: 203, log_index: 1, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, amount: 1000000000000000}
+          - {id: "80864600:203:2", event: Transfer, block_number: 80864600, tx_hash: "c042590c43d0d6f8b34335707a985e29cd46acea68f1296f2bee5e0185084f5b", tx_index: 203, log_index: 2, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value: 1000000000000000}
+          - {id: "80900000:1:0", event: Issue, block_number: 80900000, tx_hash: "bb01", tx_index: 1, log_index: 0, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, amount: 5000000}
+          - {id: "80900000:1:1", event: Transfer, block_number: 80900000, tx_hash: "bb01", tx_index: 1, log_index: 1, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value: 5000000}
+          - {id: "80900000:1:2", event: Transfer, block_number: 80900000, tx_hash: "bb01", tx_index: 1, log_index: 2, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value: 5000000}
+          - {id: "80900001:0:0", event: Transfer, block_number: 80900001, tx_hash: "bb02", tx_index: 0, log_index: 0, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, value: 3000000}
+      - input: ref('stg_tron__tether_token_transactions')
+        rows:
+          - {hash: "c042590c43d0d6f8b34335707a985e29cd46acea68f1296f2bee5e0185084f5b", result: SUCCESS}
+          - {hash: "bb01", result: SUCCESS}
+          - {hash: "bb02", result: SUCCESS}
+    expect:
+      rows:
+        - {id: "80864600:203:2", event: Transfer, family: issuance, changes_supply: true, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value_tokens: 1000000000}
+        - {id: "80900000:1:0", event: Issue, family: null, changes_supply: null, from_address: null, to_address: null, value_tokens: 5}
+        - {id: "80900000:1:1", event: Transfer, family: null, changes_supply: null, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto, value_tokens: 5}
+        - {id: "80900000:1:2", event: Transfer, family: null, changes_supply: null, from_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, to_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value_tokens: 5}
+        - {id: "80900001:0:0", event: Transfer, family: transfer, changes_supply: null, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb, value_tokens: 3}
+
+  - name: tron_keeps_successful_logs_and_flags_address_self
+    model: int_tron_tether_token_movements
+    given:
+      - input: ref('stg_tron__tether_token')
+        rows:
+          # Real: the DestroyedBlackFunds proof log at block 86646549, tx index 33, log index 1. Its user is
+          # hex b87e72d3b93c86af842a15c7a695275a316de659 in Base58Check.
+          - {id: "86646549:33:1", event: DestroyedBlackFunds, block_number: 86646549, tx_hash: "08f6a2828b1799df4dfeb14945107c67da26db59e4298a19878531c4031d1a71", tx_index: 33, log_index: 1, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, blacklisted_user: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, blacklisted_balance: 64737020336}
+          # Made up: a Transfer from an address to itself.
+          - {id: "86700000:4:0", event: Transfer, block_number: 86700000, tx_hash: "aa01", tx_index: 4, log_index: 0, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value: 20000000}
+          # Made up: a Transfer whose transaction reverted is left out.
+          - {id: "86700000:5:0", event: Transfer, block_number: 86700000, tx_hash: "aa02", tx_index: 5, log_index: 0, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, to_address: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, value: 30000000}
+      - input: ref('stg_tron__tether_token_transactions')
+        rows:
+          - {hash: "08f6a2828b1799df4dfeb14945107c67da26db59e4298a19878531c4031d1a71", result: SUCCESS}
+          - {hash: "aa01", result: SUCCESS}
+          - {hash: "aa02", result: REVERT}
+    expect:
+      rows:
+        - {id: "86646549:33:1", position: "33:1", family: destruction, changes_supply: true, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value_tokens: 64737.020336, account_self: false, owner_self: false}
+        - {id: "86700000:4:0", position: "4:0", family: transfer, changes_supply: false, from_address: TSnip9vKvo4AAoZHekS6jUgJ1ARnQX3roP, value_tokens: 20, account_self: true, owner_self: true}
+
+  # The three owner fixtures from the README's Solana owner intervals, and an unresolved case. All made up.
+  # stg_solana__spl_token is given as SQL because dbt cannot cast a fixture into an integer[] column.
+  - name: solana_owner_changes_apply_to_later_instructions
+    model: int_solana_spl_token_movements
+    description: >-
+      Fixture 1: transfer, setAuthority, transfer in one transaction. The first transfer uses the old owner
+      and the second the new one. Fixture 2: in one slot, transaction 0 transfers then hands the account to a
+      new owner, and transaction 1 transfers again; a join on slot alone would give both transfers the last
+      owner.
+    given:
+      - input: ref('stg_solana__spl_token')
+        format: sql
+        rows: |
+          select * from (values
+            ('1:0:0', 1::bigint, 0, 'sigOne', array[0], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctA", "acctB", "ownerOld"]'::jsonb, 'transfer', 10::numeric, null::integer, null, null, null),
+            ('1:0:1', 1, 0, 'sigOne', array[1], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctA", "ownerOld"]'::jsonb, 'setAuthority', null, null, null, 'AccountOwner', 'ownerB'),
+            ('1:0:2', 1, 0, 'sigOne', array[2], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctA", "acctB", "ownerB"]'::jsonb, 'transfer', 20, null, null, null, null),
+            ('2:0:0', 2, 0, 'sigTwo', array[0], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctC", "acctB", "ownerOld"]'::jsonb, 'transfer', 30, null, null, null, null),
+            ('2:0:1', 2, 0, 'sigTwo', array[1], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctC", "ownerOld"]'::jsonb, 'setAuthority', null, null, null, 'AccountOwner', 'ownerB'),
+            ('2:1:0', 2, 1, 'sigThree', array[0], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctC", "acctB", "ownerB"]'::jsonb, 'transfer', 40, null, null, null, null)
+          ) as t (id, slot, tx_index, signature, instruction_address, program_id, accounts, instruction, amount, decimals, owner_arg, authority_type, new_authority)
+      - input: ref('stg_solana__spl_token_transactions')
+        rows:
+          - {signature: sigOne, err: null}
+          - {signature: sigTwo, err: null}
+          - {signature: sigThree, err: null}
+      - input: ref('stg_solana__spl_token_balances')
+        rows:
+          - {signature: sigOne, account: acctA, pre_mint: mintM, post_mint: mintM, pre_owner: ownerOld, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigOne, account: acctB, pre_mint: mintM, post_mint: mintM, pre_owner: ownerB, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigTwo, account: acctC, pre_mint: mintM, post_mint: mintM, pre_owner: ownerOld, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigTwo, account: acctB, pre_mint: mintM, post_mint: mintM, pre_owner: ownerB, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigThree, account: acctC, pre_mint: mintM, post_mint: mintM, pre_owner: ownerB, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigThree, account: acctB, pre_mint: mintM, post_mint: mintM, pre_owner: ownerB, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+      - input: ref('stg_solana__spl_token_blocks')
+        rows: []
+    expect:
+      rows:
+        - {id: "1:0:0", token: mintM, from_owner: ownerOld, to_owner: ownerB, owner_status: resolved, owner_self: false}
+        - {id: "1:0:2", token: mintM, from_owner: ownerB, to_owner: ownerB, owner_status: resolved, owner_self: true}
+        - {id: "2:0:0", token: mintM, from_owner: ownerOld, to_owner: ownerB, owner_status: resolved, owner_self: false}
+        - {id: "2:1:0", token: mintM, from_owner: ownerB, to_owner: ownerB, owner_status: resolved, owner_self: true}
+
+  - name: solana_reinitialized_account_and_an_unresolved_walk
+    model: int_solana_spl_token_movements
+    description: >-
+      Fixture 3: the account is closed, initialized again with a new owner, then receives a transfer, which
+      takes the new owner. In a second transaction an account's owner changes with no instruction to show it,
+      so the walk ends off Portal's post_owner and that side is unresolved.
+    given:
+      - input: ref('stg_solana__spl_token')
+        format: sql
+        rows: |
+          select * from (values
+            ('3:0:0', 3::bigint, 0, 'sigClose', array[0], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctA", "acctD", "ownerOld"]'::jsonb, 'closeAccount', null::numeric, null::integer, null, null, null),
+            ('3:0:1', 3, 0, 'sigClose', array[1], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctA", "mintM"]'::jsonb, 'initializeAccount3', null, null, 'ownerNew', null, null),
+            ('3:0:2', 3, 0, 'sigClose', array[2], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctB", "acctA", "ownerB"]'::jsonb, 'transfer', 50, null, null, null, null),
+            ('4:0:0', 4, 0, 'sigUnseen', array[0], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctE", "acctB", "ownerOld"]'::jsonb, 'transfer', 60, null, null, null, null)
+          ) as t (id, slot, tx_index, signature, instruction_address, program_id, accounts, instruction, amount, decimals, owner_arg, authority_type, new_authority)
+      - input: ref('stg_solana__spl_token_transactions')
+        rows:
+          - {signature: sigClose, err: null}
+          - {signature: sigUnseen, err: null}
+      - input: ref('stg_solana__spl_token_balances')
+        rows:
+          - {signature: sigClose, account: acctA, pre_mint: mintM, post_mint: mintM, pre_owner: ownerOld, post_owner: ownerNew, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigClose, account: acctB, pre_mint: mintM, post_mint: mintM, pre_owner: ownerB, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigUnseen, account: acctE, pre_mint: mintM, post_mint: mintM, pre_owner: ownerOld, post_owner: ownerOther, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigUnseen, account: acctB, pre_mint: mintM, post_mint: mintM, pre_owner: ownerB, post_owner: ownerB, pre_decimals: 6, post_decimals: 6}
+      - input: ref('stg_solana__spl_token_blocks')
+        rows: []
+    expect:
+      rows:
+        - {id: "3:0:2", from_owner: ownerB, to_owner: ownerNew, owner_status: resolved, owner_self: false}
+        - {id: "4:0:0", from_owner: null, to_owner: ownerB, owner_status: unresolved, owner_self: false}
+
+  - name: solana_account_made_and_closed_in_one_transaction
+    model: int_solana_spl_token_movements
+    description: >-
+      Real: transaction 5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma
+      at slot 466690013, tx index 142. Account 8bvz… is made at [0, 3], gets 310 from 9gcX… at [1], sends 310
+      to EMzM… at [2], and is closed at [3], so Portal has no balance for it. The owner of 8bvz… and of EMzM…
+      are made up; the proof does not record them. Made up as well: an unchecked transfer out of a fresh
+      account, which takes its mint from that account's initializeAccount3.
+    given:
+      - input: ref('stg_solana__spl_token')
+        format: sql
+        rows: |
+          select * from (values
+            ('466690013:142:0.3', 466690013::bigint, 142, '5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma', array[0, 3], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"]'::jsonb, 'initializeAccount3', null::numeric, null::integer, 'madeUpOwnerOf8bvz', null, null),
+            ('466690013:142:1', 466690013, 142, '5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma', array[1], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["9gcX2jPSMPE3bqPG6FdB8xQbKJ9HBCii7hFmKVbr7HPM", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX", "5WwJAf7XJyUxegRRMnfDbJSxjdYKAVLVkXFUvqcMtmoF"]'::jsonb, 'transferChecked', 310, 6, null, null, null),
+            ('466690013:142:2', 466690013, 142, '5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma', array[2], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "EMzMxsWCPuJpx5iJgh2PK3zDTS3V9dZHJzH7PujJs2oc", "madeUpOwnerOf8bvz"]'::jsonb, 'transferChecked', 310, 6, null, null, null),
+            ('466690013:142:3', 466690013, 142, '5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma', array[3], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX", "5WwJAf7XJyUxegRRMnfDbJSxjdYKAVLVkXFUvqcMtmoF", "madeUpOwnerOf8bvz"]'::jsonb, 'closeAccount', null, null, null, null, null),
+            ('5:0:0', 5, 0, 'sigFresh', array[0], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctF", "mintM"]'::jsonb, 'initializeAccount3', null, null, 'ownerF', null, null),
+            ('5:0:1', 5, 0, 'sigFresh', array[1], 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', '["acctF", "acctG", "ownerF"]'::jsonb, 'transfer', 8, null, null, null, null)
+          ) as t (id, slot, tx_index, signature, instruction_address, program_id, accounts, instruction, amount, decimals, owner_arg, authority_type, new_authority)
+      - input: ref('stg_solana__spl_token_transactions')
+        rows:
+          - {signature: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", err: null}
+          - {signature: sigFresh, err: null}
+      - input: ref('stg_solana__spl_token_balances')
+        rows:
+          - {signature: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", account: 9gcX2jPSMPE3bqPG6FdB8xQbKJ9HBCii7hFmKVbr7HPM, pre_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, post_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, pre_owner: 5WwJAf7XJyUxegRRMnfDbJSxjdYKAVLVkXFUvqcMtmoF, post_owner: 5WwJAf7XJyUxegRRMnfDbJSxjdYKAVLVkXFUvqcMtmoF, pre_amount: 9526938024, post_amount: 9526937714, pre_decimals: 6, post_decimals: 6}
+          - {signature: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", account: EMzMxsWCPuJpx5iJgh2PK3zDTS3V9dZHJzH7PujJs2oc, pre_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, post_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, pre_owner: madeUpOwnerOfEMzM, post_owner: madeUpOwnerOfEMzM, pre_amount: 9404587281, post_amount: 9404587591, pre_decimals: 6, post_decimals: 6}
+      - input: ref('stg_solana__spl_token_blocks')
+        rows: []
+    expect:
+      rows:
+        - {id: "466690013:142:1", token: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, position: "142:1", from_address: 9gcX2jPSMPE3bqPG6FdB8xQbKJ9HBCii7hFmKVbr7HPM, to_address: 8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX, from_owner: 5WwJAf7XJyUxegRRMnfDbJSxjdYKAVLVkXFUvqcMtmoF, to_owner: madeUpOwnerOf8bvz, owner_status: resolved, decimals: 6, value_tokens: 0.00031}
+        - {id: "466690013:142:2", token: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, position: "142:2", from_address: 8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX, to_address: EMzMxsWCPuJpx5iJgh2PK3zDTS3V9dZHJzH7PujJs2oc, from_owner: madeUpOwnerOf8bvz, to_owner: madeUpOwnerOfEMzM, owner_status: resolved, decimals: 6, value_tokens: 0.00031}
+        - {id: "5:0:1", token: mintM, position: "0:1", from_address: acctF, to_address: acctG, from_owner: ownerF, to_owner: null, owner_status: unresolved, decimals: null, value_tokens: null}
+
+  - name: boundary_fails_when_portal_and_rpc_disagree
+    model: int_ethereum_day_boundaries
+    given:
+      - input: ref('stg_ethereum__block_headers_boundaries')
+        rows:
+          # Made up, with the window's real first block of 2026-10-08.
+          - {midnight: "2026-10-08 00:00:00+00", boundary_block: 26143956}
+          - {midnight: "2026-10-09 00:00:00+00", boundary_block: 26151156}
+      - input: ref('stg_ethereum__block_headers')
+        rows:
+          - {origin: portal, block_number: 26143955, block_hash: "0xa0", parent_hash: "0x9f", parent_number: 26143954, block_timestamp: "2026-10-07 23:59:59+00"}
+          - {origin: rpc, block_number: 26143955, block_hash: "0xa0", parent_hash: "0x9f", parent_number: 26143954, block_timestamp: "2026-10-07 23:59:59+00"}
+          - {origin: portal, block_number: 26143956, block_hash: "0xa1", parent_hash: "0xa0", parent_number: 26143955, block_timestamp: "2026-10-08 00:00:11+00"}
+          - {origin: rpc, block_number: 26143956, block_hash: "0xa1", parent_hash: "0xa0", parent_number: 26143955, block_timestamp: "2026-10-08 00:00:11+00"}
+          - {origin: portal, block_number: 26151155, block_hash: "0xb0", parent_hash: "0xaf", parent_number: 26151154, block_timestamp: "2026-10-08 23:59:59+00"}
+          - {origin: rpc, block_number: 26151155, block_hash: "0xb0", parent_hash: "0xaf", parent_number: 26151154, block_timestamp: "2026-10-08 23:59:59+00"}
+          # RPC and Portal disagree on B's hash.
+          - {origin: portal, block_number: 26151156, block_hash: "0xb1", parent_hash: "0xb0", parent_number: 26151155, block_timestamp: "2026-10-09 00:00:11+00"}
+          - {origin: rpc, block_number: 26151156, block_hash: "0xbb", parent_hash: "0xb0", parent_number: 26151155, block_timestamp: "2026-10-09 00:00:11+00"}
+    expect:
+      rows:
+        - {day_utc: "2026-10-08", boundary_block: 26143956, previous_block: 26143955, status: pass, reason: null}
+        - {day_utc: "2026-10-09", boundary_block: 26151156, previous_block: 26151155, status: fail, reason: origins_agree}
+
+  - name: ethereum_supply_reconciles_and_a_fee_fails_later_days
+    model: int_ethereum_tether_token_day_checks
+    description: >-
+      Real: totalSupply() went from 88303053982363963 at block 26141940 to 88303013972046665 at block 26141941,
+      the 40010317298 that block's DestroyedBlackFunds destroyed. The one-block days and the Params log with a
+      non-zero fee are made up.
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: ethereum, day_utc: "2026-10-01", from_block: 26141941, to_block: 26141942, opening_status: pass, closing_status: pass}
+          - {chain: ethereum, day_utc: "2026-10-02", from_block: 26141942, to_block: 26141943, opening_status: pass, closing_status: pass}
+      - input: ref('stg_ethereum__tether_token_blocks')
+        rows:
+          - {block_number: 26141941}
+          - {block_number: 26141942}
+      - input: ref('stg_ethereum__erc20_supply')
+        rows:
+          - {block_number: 26141940, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", total_supply: 88303053982363963, decimals: 6}
+          - {block_number: 26141941, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", total_supply: 88303013972046665, decimals: 6}
+          - {block_number: 26141942, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", total_supply: 88303013972046665, decimals: 6}
+      - input: ref('int_ethereum_tether_token_movements')
+        rows:
+          - {id: "26141941:388", chain: ethereum, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", block_number: 26141941, family: destruction, changes_supply: true, value_base: 40010317298}
+      - input: ref('stg_ethereum__tether_token')
+        rows:
+          - {block_number: 26141941, event: DestroyedBlackFunds, tx_hash: "0xf4e0ae5a855c22c6b16dd80aa74a394bedda4ac463ca9464a511090172b5a594", contract: "0xdac17f958d2ee523a2206206994597c13d831ec7"}
+          - {block_number: 26141942, event: Params, tx_hash: "0xfee", contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", fee_basis_points: 10, max_fee: 50000000}
+      - input: ref('stg_ethereum__tether_token_transactions')
+        rows:
+          - {hash: "0xf4e0ae5a855c22c6b16dd80aa74a394bedda4ac463ca9464a511090172b5a594"}
+          - {hash: "0xfee"}
+    expect:
+      rows:
+        - {day_utc: "2026-10-01", check_name: source_loaded, passed: true}
+        - {day_utc: "2026-10-01", check_name: transactions_recorded, passed: true}
+        - {day_utc: "2026-10-01", check_name: supply_events_paired, passed: true}
+        - {day_utc: "2026-10-01", check_name: decimals_match, passed: true}
+        - {day_utc: "2026-10-01", check_name: supply_reconciles, passed: true}
+        - {day_utc: "2026-10-01", check_name: token_contract_unchanged, passed: true}
+        - {day_utc: "2026-10-02", check_name: source_loaded, passed: true}
+        - {day_utc: "2026-10-02", check_name: transactions_recorded, passed: true}
+        - {day_utc: "2026-10-02", check_name: supply_events_paired, passed: true}
+        - {day_utc: "2026-10-02", check_name: decimals_match, passed: true}
+        - {day_utc: "2026-10-02", check_name: supply_reconciles, passed: true}
+        - {day_utc: "2026-10-02", check_name: token_contract_unchanged, passed: false}
+
+  - name: tron_day_checks_fail_on_results_ties_and_zero_transfers
+    model: int_tron_tether_token_day_checks
+    description: >-
+      Made up. On 2026-10-09 one log's transaction has no result and another's spells it SUCESS, as TRON's
+      own enum does, an Issue tied between two Transfers left a movement with no family, and a Transfer to
+      the zero address paired with nothing.
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: tron, day_utc: "2026-10-08", from_block: 100, to_block: 200, opening_status: pass, closing_status: pass}
+          - {chain: tron, day_utc: "2026-10-09", from_block: 200, to_block: 300, opening_status: pass, closing_status: pass}
+      - input: ref('stg_tron__tether_token_blocks')
+        rows:
+          - {block_number: 100}
+          - {block_number: 200}
+          - {block_number: 299}
+      - input: ref('stg_tron__tether_token')
+        rows:
+          - {block_number: 150, event: Transfer, tx_hash: t1, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
+          - {block_number: 250, event: Transfer, tx_hash: t2, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
+          - {block_number: 251, event: Transfer, tx_hash: t3, contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
+      - input: ref('stg_tron__tether_token_transactions')
+        rows:
+          - {hash: t1, result: SUCCESS}
+          - {hash: t2, result: null}
+          - {hash: t3, result: SUCESS}
+      - input: ref('int_tron_tether_token_movements')
+        rows:
+          - {id: "150:0:0", token: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, block_number: 150, family: transfer, changes_supply: false}
+          - {id: "260:0:0", token: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, block_number: 260, family: null, changes_supply: null}
+          - {id: "270:0:0", token: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, block_number: 270, family: transfer, changes_supply: null}
+    expect:
+      rows:
+        - {day_utc: "2026-10-08", check_name: source_loaded, passed: true}
+        - {day_utc: "2026-10-08", check_name: results_success, passed: true}
+        - {day_utc: "2026-10-08", check_name: supply_events_paired, passed: true}
+        - {day_utc: "2026-10-08", check_name: zero_transfers_proved, passed: true}
+        - {day_utc: "2026-10-08", check_name: token_contract_unchanged, passed: true}
+        - {day_utc: "2026-10-09", check_name: source_loaded, passed: true}
+        - {day_utc: "2026-10-09", check_name: results_success, passed: false}
+        - {day_utc: "2026-10-09", check_name: supply_events_paired, passed: false}
+        - {day_utc: "2026-10-09", check_name: zero_transfers_proved, passed: false}
+        - {day_utc: "2026-10-09", check_name: token_contract_unchanged, passed: true}
+
+  - name: solana_transactions_reconcile_per_account
+    model: int_solana_spl_token_day_checks
+    description: >-
+      Real: the proof transaction 5w15… reconciles. 9gcX… falls by 310 and EMzM… rises by 310, and the
+      account made and closed inside it has no balance and nets to zero. Made up: a second day whose
+      transaction moved 5 with no decoded movement.
+    given:
+      - input: ref('int_transfer_share_days')
+        rows:
+          - {chain: solana, day_utc: "2026-10-08", from_block: 466690000, to_block: 466690100, opening_status: pass, closing_status: pass}
+          - {chain: solana, day_utc: "2026-10-09", from_block: 466690100, to_block: 466690200, opening_status: pass, closing_status: pass}
+      - input: ref('stg_solana__spl_token_blocks')
+        rows:
+          - {slot: 466690000}
+          - {slot: 466690100}
+          - {slot: 466690200}
+      - input: ref('stg_solana__spl_token_transactions')
+        rows:
+          - {signature: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", slot: 466690013, err: null}
+          - {signature: sigMissing, slot: 466690150, err: null}
+      - input: ref('stg_solana__spl_token_balances')
+        rows:
+          - {signature: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", slot: 466690013, account: 9gcX2jPSMPE3bqPG6FdB8xQbKJ9HBCii7hFmKVbr7HPM, pre_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, post_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, pre_amount: 9526938024, post_amount: 9526937714, pre_decimals: 6, post_decimals: 6}
+          - {signature: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", slot: 466690013, account: EMzMxsWCPuJpx5iJgh2PK3zDTS3V9dZHJzH7PujJs2oc, pre_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, post_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, pre_amount: 9404587281, post_amount: 9404587591, pre_decimals: 6, post_decimals: 6}
+          - {signature: sigMissing, slot: 466690150, account: acctH, pre_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, post_mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, pre_amount: 100, post_amount: 95, pre_decimals: 6, post_decimals: 6}
+      - input: ref('int_solana_spl_token_movements')
+        rows:
+          - {id: "466690013:142:1", tx_hash: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", block_number: 466690013, token: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, from_address: 9gcX2jPSMPE3bqPG6FdB8xQbKJ9HBCii7hFmKVbr7HPM, to_address: 8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX, value_base: 310, decimals: 6}
+          - {id: "466690013:142:2", tx_hash: "5w15ERfrCC3jNQey8sDGzzQ5C7a51pnF3J25SXoFmqJWyQ5TCKFF9p1P9QUKiS5Xde7AdH5P2xBBXRCW3n3phAma", block_number: 466690013, token: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, from_address: 8bvz95dRjJSdyoCpUKDcgNXV672RKUWScgrhYqg7odSX, to_address: EMzMxsWCPuJpx5iJgh2PK3zDTS3V9dZHJzH7PujJs2oc, value_base: 310, decimals: 6}
+    expect:
+      rows:
+        - {day_utc: "2026-10-08", check_name: source_loaded, passed: true}
+        - {day_utc: "2026-10-08", check_name: decimals_match, passed: true}
+        - {day_utc: "2026-10-08", check_name: transactions_reconcile, passed: true}
+        - {day_utc: "2026-10-09", check_name: source_loaded, passed: true}
+        - {day_utc: "2026-10-09", check_name: decimals_match, passed: true}
+        - {day_utc: "2026-10-09", check_name: transactions_reconcile, passed: false}

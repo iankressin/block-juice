@@ -20,6 +20,19 @@ vars:
     windows:
       - {chain: arbitrum, token: "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0", blocks: [510496864, 520129273]}
       - {chain: base, token: "0xc3de830ea07524a0761646a6a4e4be0e114a3c83", blocks: [52011727, 53350926]}
+  # The transfer_share pipeline. Bump rule_version when a stage or movement rule changes, so shares from two
+  # rule sets are never read as one series.
+  transfer_share:
+    rule_version: 1
+    # One token per chain. decimals is the declared scale; tests compare it with what the chain reports.
+    panel:
+      - {chain: ethereum, token: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6}
+      - {chain: tron, token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", decimals: 6}
+      - {chain: solana, token: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", decimals: 6}
+    # Unset until Ian sets it (decision 12): no label applies, so S4 and S5 remove nothing.
+    label_min_confidence: null
+    # The question's window, read only by the analyses: [from, to), UTC dates.
+    window: {from: "2026-10-08", to: "2026-11-07"}
 
 models:
   transformation:
@@ -46,6 +59,9 @@ models:
         +materialized: view
       # Views, so each chain's metadata readings show up as their own step in Dagster.
       tokens:
+        +materialized: view
+      # Views, so each chain's boundaries, movements and day checks show up as their own step in Dagster.
+      transfer_share:
         +materialized: view
     marts:
       +materialized: table
