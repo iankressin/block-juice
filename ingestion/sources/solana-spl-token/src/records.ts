@@ -88,7 +88,7 @@ export function slotRecords(slot: Slot, mints: ReadonlySet<string>): RawRecord[]
  * a token account one of the first created. An account made and closed in the same transaction has
  * no balance in Portal, so only its initializeAccount* ties its transfers and closing to the mint.
  */
-export function keptInstructions(
+function keptInstructions(
   instructions: readonly Instruction[],
   tracked: ReadonlySet<string>,
 ): [Instruction, DecodedInstruction | null][] {
