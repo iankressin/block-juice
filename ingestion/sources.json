@@ -133,6 +133,11 @@
   },
   {
     "name": "tron",
+    "table": "block_headers",
+    "package": "tron-block-headers"
+  },
+  {
+    "name": "tron",
     "table": "tether_token",
     "package": "tron-tether-token"
   }
