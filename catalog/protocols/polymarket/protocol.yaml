@@ -148,8 +148,9 @@ chains:
         deployed_block: 84902341
         role: >-
           The first pUSD adapter for binary CTF positions. ctf_exchange_v2 mints and merges through
-          it, so it is the CTF stakeholder of every binary mint and merge match. Users can still call
-          it to merge or redeem. It emits no event that names the user.
+          it, so it is the CTF stakeholder of every binary mint and merge match (proof rows 2, 3).
+          Users can still call it to merge or redeem (proof row 25). It emits no event that names the
+          user, and the CTF source leaves those direct calls out (NOTES.md Q5).
         source: >-
           CtfCollateralAdapter in the ctf-exchange-v2 README and polymarket-cli; verified on Sourcify
           as src/adapters/CtfCollateralAdapter.sol (events: ownership, roles, pause only). Owner
@@ -160,8 +161,8 @@ chains:
         deployed_block: 84902347
         role: >-
           The first pUSD adapter for neg-risk positions. neg_risk_ctf_exchange_v2 mints and merges
-          through it, so it is the NegRiskAdapter stakeholder of every neg-risk mint and merge match.
-          It emits no event that names the user.
+          through it, so it is the NegRiskAdapter stakeholder of every neg-risk mint and merge match
+          (proof row 22). It emits no event that names the user.
         source: >-
           NegRiskCtfCollateralAdapter in the ctf-exchange-v2 README and polymarket-cli; verified on
           Sourcify (events: ownership, roles, pause only). Owner as pusd. Deploy block from the create
@@ -218,12 +219,13 @@ chains:
         deployed_block: null
         role: >-
           Protocol V2 BinaryModule. Redeems the legacy CTF positions users migrated into V2, so it
-          appears as a CTF redeemer.
+          appears as a CTF redeemer (proof row 23).
         source: BinaryModule (proxy) in the polymarket-v2-external README. Deploy block left to Task 11.
       neg_risk_module:
         address: "0x200000900045e3B6259600682756002200028933"
         deployed_block: null
-        role: Protocol V2 NegRiskModule. Same as binary_module for neg-risk positions.
+        role: >-
+          Protocol V2 NegRiskModule. Same as binary_module for neg-risk positions (proof row 24).
         source: NegRiskModule (proxy) in the polymarket-v2-external README. Deploy block left to Task 11.
       fee_receiver:
         address: "0x115F48DC2A731aA16251c6d6e1BEfC42f92Accc9"
@@ -244,13 +246,14 @@ events:
     signature: "event ConditionPreparation(bytes32 indexed conditionId, address indexed oracle, bytes32 indexed questionId, uint256 outcomeSlotCount)"
     topic0: "0xab3760c3bd2bb38b5bcf54dc79802ed67338b4cf29f3054ded67ed24661e4177"
     abi: abis/conditional-tokens.json
+    proof_rows: [18, 19]
   ctf.ConditionResolution:
     use: source
     emitted_by: conditional_tokens
     signature: "event ConditionResolution(bytes32 indexed conditionId, address indexed oracle, bytes32 indexed questionId, uint256 outcomeSlotCount, uint256[] payoutNumerators)"
     topic0: "0xb44d84d3289691f71497564b85d4233648d9dbae8cbdbb4329f301c3a0185894"
     abi: abis/conditional-tokens.json
-    proof_rows: [9]
+    proof_rows: [9, 20]
   ctf.PositionSplit:
     use: source
     emitted_by: conditional_tokens
@@ -264,46 +267,49 @@ events:
     signature: "event PositionsMerge(address indexed stakeholder, address collateralToken, bytes32 indexed parentCollectionId, bytes32 indexed conditionId, uint256[] partition, uint256 amount)"
     topic0: "0x6f13ca62553fcc2bcd2372180a43949c1e4cebba603901ede2f4e14f36b282ca"
     abi: abis/conditional-tokens.json
-    proof_rows: [3, 5]
+    proof_rows: [3, 5, 21, 22]
   ctf.PayoutRedemption:
     use: source
     emitted_by: conditional_tokens
     signature: "event PayoutRedemption(address indexed redeemer, address indexed collateralToken, bytes32 indexed parentCollectionId, bytes32 conditionId, uint256[] indexSets, uint256 payout)"
     topic0: "0x2682012a4a4f1973119f1c9b90745d1bd91fa2bab387344f044cb3586864d18d"
     abi: abis/conditional-tokens.json
-    proof_rows: [6, 7, 12, 14, 15]
+    proof_rows: [6, 7, 12, 14, 15, 23, 24, 25]
   ctf.TransferSingle:
     use: proof only
     emitted_by: conditional_tokens
     signature: "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)"
     topic0: "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62"
     abi: abis/conditional-tokens.json
-    note: NOTES.md Q5 says when a source would need it.
+    note: Not loaded, by the controller's decision in NOTES.md Q5; proof rows use it to check other events.
   ctf.TransferBatch:
     use: proof only
     emitted_by: conditional_tokens
     signature: "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)"
     topic0: "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
     abi: abis/conditional-tokens.json
-    note: NOTES.md Q5 says when a source would need it.
+    note: Not loaded, by the controller's decision in NOTES.md Q5; proof rows use it to check other events.
   neg_risk.MarketPrepared:
     use: source
     emitted_by: neg_risk_adapter
     signature: "event MarketPrepared(bytes32 indexed marketId, address indexed oracle, uint256 feeBips, bytes data)"
     topic0: "0xf059ab16d1ca60e123eab60e3c02b68faf060347c701a5d14885a8e1def7b3a8"
     abi: abis/neg-risk-adapter.json
+    proof_rows: [18]
   neg_risk.QuestionPrepared:
     use: source
     emitted_by: neg_risk_adapter
     signature: "event QuestionPrepared(bytes32 indexed marketId, bytes32 indexed questionId, uint256 index, bytes data)"
     topic0: "0xaac410f87d423a922a7b226ac68f0c2eaf5bf6d15e644ac0758c7f96e2c253f7"
     abi: abis/neg-risk-adapter.json
+    proof_rows: [18]
   neg_risk.OutcomeReported:
     use: source
     emitted_by: neg_risk_adapter
     signature: "event OutcomeReported(bytes32 indexed marketId, bytes32 indexed questionId, bool outcome)"
     topic0: "0x9e9fa7fd355160bd4cd3f22d4333519354beff1f5689bde87f2c5e63d8d484b2"
     abi: abis/neg-risk-adapter.json
+    proof_rows: [20]
   neg_risk.PositionSplit:
     use: source
     emitted_by: neg_risk_adapter
@@ -318,6 +324,7 @@ events:
     signature: "event PositionsMerge(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount)"
     topic0: "0xba33ac50d8894676597e6e35dc09cff59854708b642cd069d21eb9c7ca072a04"
     abi: abis/neg-risk-adapter.json
+    proof_rows: [21, 22]
   neg_risk.PositionsConverted:
     use: source
     emitted_by: neg_risk_adapter
@@ -346,7 +353,7 @@ events:
     signature: "event PositionsMerged(address indexed initiator, bytes32 indexed conditionId, uint256 amount)"
     topic0: "0x08c15f31e413dbd9bbd3b4c01b191db840e1657ab4f8d1d7d448a9a5083ba255"
     abi: abis/collateral-adapter.json
-    proof_rows: [5]
+    proof_rows: [5, 21]
   collateral_adapter.PositionsRedeemed:
     use: source
     emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
