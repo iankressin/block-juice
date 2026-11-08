@@ -11,6 +11,7 @@ from typing import NamedTuple
 import requests
 
 from pipeline.cli import BadInput, utc_iso
+from pipeline import portal
 from pipeline.portal import DATASETS_URL, call, ok
 
 
@@ -133,7 +134,7 @@ def read_portal(chain: Chain) -> Reader:
     That route is only a guess: on tron-mainnet it answers blocks minutes early. Solana skips slots, and
     Portal sends only the slots that hold a block, so the first block at or after a skipped slot is a
     later slot. On every other chain it is the block itself."""
-    session = requests.Session()
+    session = portal.session()
     url = f"{DATASETS_URL}/{chain.dataset}"
     found: dict[int, Header] = {}
 
@@ -183,7 +184,7 @@ def read_portal(chain: Chain) -> Reader:
 
 def read_chain(url: str) -> Reader:
     """The head and blocks of an EVM chain over JSON-RPC, with no guess."""
-    session = requests.Session()
+    session = portal.session()
 
     def get_block(tag: str) -> dict:
         response = session.post(

@@ -1,6 +1,7 @@
 """SQD Portal over HTTP, for bj blocks and bj answer: requests that wait out a busy Portal, and a
 dataset's finalized head."""
 
+import os
 from dataclasses import dataclass
 from time import sleep
 
@@ -12,6 +13,8 @@ DATASETS_URL = "https://portal.sqd.dev/datasets"
 # Portal answers these when it is overloaded or has no worker free, with the seconds to wait in Retry-After.
 BUSY = (429, 503, 529)
 ATTEMPTS = 5
+# The longest wait for one busy answer, whatever Retry-After asks for.
+MAX_WAIT_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -23,13 +26,33 @@ class FinalizedHead:
     hash: str
 
 
+def session() -> requests.Session:
+    """A session for Portal. It sends PORTAL_API_KEY in x-api-key when the key is set, as the sources do,
+    so a keyed Portal answers at the key's limits instead of the anonymous ones."""
+    portal = requests.Session()
+    key = os.environ.get("PORTAL_API_KEY", "")
+    if key:
+        portal.headers["x-api-key"] = key
+    return portal
+
+
+def wait_seconds(response: requests.Response) -> float:
+    """Retry-After in seconds, capped at MAX_WAIT_SECONDS. A missing or unreadable value, such as an HTTP
+    date, waits one second."""
+    try:
+        seconds = float(response.headers.get("retry-after") or 1)
+    except ValueError:
+        seconds = 1.0
+    return min(max(seconds, 0.0), MAX_WAIT_SECONDS)
+
+
 def call(session: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
     """Portal's answer, after waiting out as many as ATTEMPTS - 1 busy answers."""
     for attempt in range(ATTEMPTS):
         response = session.request(method, url, timeout=30, **kwargs)
         if response.status_code not in BUSY or attempt == ATTEMPTS - 1:
             break
-        sleep(float(response.headers.get("retry-after") or 1))
+        sleep(wait_seconds(response))
     return response
 
 

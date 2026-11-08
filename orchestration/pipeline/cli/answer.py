@@ -305,7 +305,7 @@ def run_dbt_tests(project: Path, names: Sequence[str], coverages: dict[str, Cove
 
 def finalized_heads(urls: dict[str, str]) -> dict[str, FinalizedHead]:
     """Portal's finalized head now for each stream source, by name, read once per dataset."""
-    session = requests.Session()
+    session = portal.session()
     try:
         heads = {url: portal.finalized_head(session, url) for url in sorted(set(urls.values()))}
     except requests.RequestException as error:

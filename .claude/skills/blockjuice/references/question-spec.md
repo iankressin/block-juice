@@ -87,9 +87,23 @@ window:
     tron: [86914950, 87778634]
     solana: [454377023, 466302737]
 inputs:
-  - {name: ethereum_movements, strategy: history, mart: token_movements, source: ethereum.tether_token}
-  - {name: tron_movements, strategy: history, mart: token_movements, source: tron.tether_token}
-  - {name: solana_movements, strategy: history, mart: token_movements, source: solana.spl_token}
+  - name: ethereum_movements
+    strategy: history
+    mart: token_movements
+    source: ethereum.tether_token
+    filter: {tokens: ["0xdac17f958d2ee523a2206206994597c13d831ec7"]}
+  - name: tron_movements
+    strategy: history
+    mart: token_movements
+    source: tron.tether_token
+    filter: {tokens: ["TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"]}
+  - name: solana_movements
+    strategy: history
+    mart: token_movements
+    source: solana.spl_token
+    filter: {mints: ["Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"]}
 marts: [transfer_share, transfer_share_stage_daily]
 analyses: [transfer_share_window, transfer_share_daily]
 ```
+
+The `transfer_share` analyses read their days from the `transfer_share` var in `dbt_project.yml`, not from this file. Set its `window` to the same `from` and `to` before `bj answer`, or the coverage check and the numbers describe two different windows.
