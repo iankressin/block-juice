@@ -39,22 +39,30 @@ with events (event, family) as (
         ('DestroyedBlackFunds', 'destruction')
 ),
 
+-- Supply events are a handful a month, and the logs are millions a day. Kept apart and materialized, the
+-- pairing join below scans the logs once whatever plan Postgres picks, even before it has statistics on a
+-- freshly loaded raw table, when it would otherwise rescan every log for every Transfer.
+supply as materialized (
+    select logs.id, logs.event, logs.tx_hash, logs.value_base, events.family
+    from {{ logs }} as logs
+    inner join events on events.event = logs.event
+    where logs.event in ('Issue', 'Redeem')
+),
+
 candidates as (
     select
         supply.id as supply_id,
         transfer.id as transfer_id,
-        events.family
-    from {{ logs }} as supply
-    inner join events on events.event = supply.event
+        supply.family
+    from supply
     inner join {{ logs }} as transfer
-        on transfer.event = 'Transfer'
-        and transfer.tx_hash = supply.tx_hash
+        on transfer.tx_hash = supply.tx_hash
         and transfer.value_base = supply.value_base
         and case supply.event
             when 'Issue' then transfer.from_address
             when 'Redeem' then transfer.to_address
         end = {{ zero_address }}
-    where supply.event in ('Issue', 'Redeem')
+    where transfer.event = 'Transfer'
 ),
 
 pairs as (

@@ -38,6 +38,22 @@ models:
   transformation:
     staging:
       +materialized: view
+      # Tables, for the history sources that load millions of rows a day. Postgres cannot estimate a filter on
+      # a raw row's jsonb, so through a view it guesses a few dozen rows and nests loops over millions. A
+      # table gives it real row counts, and every model and test downstream reads parsed columns once.
+      ethereum:
+        stg_ethereum__tether_token: {+materialized: table}
+        stg_ethereum__tether_token_transactions: {+materialized: table}
+        stg_ethereum__tether_token_blocks: {+materialized: table}
+      tron:
+        stg_tron__tether_token: {+materialized: table}
+        stg_tron__tether_token_transactions: {+materialized: table}
+        stg_tron__tether_token_blocks: {+materialized: table}
+      solana:
+        stg_solana__spl_token: {+materialized: table}
+        stg_solana__spl_token_transactions: {+materialized: table}
+        stg_solana__spl_token_balances: {+materialized: table}
+        stg_solana__spl_token_blocks: {+materialized: table}
     intermediate:
       +materialized: ephemeral
       # Views, not ephemeral, so each chain's rows show up as their own step in Dagster.
@@ -60,8 +76,12 @@ models:
       # Views, so each chain's metadata readings show up as their own step in Dagster.
       tokens:
         +materialized: view
-      # Views, so each chain's boundaries, movements and day checks show up as their own step in Dagster.
+      # Views, so each chain's boundaries, movements and day checks show up as their own step in Dagster. The
+      # movement models are tables: each feeds the mart, the day checks and their tests, over millions of rows.
       transfer_share:
         +materialized: view
+        int_ethereum_tether_token_movements: {+materialized: table}
+        int_tron_tether_token_movements: {+materialized: table}
+        int_solana_spl_token_movements: {+materialized: table}
     marts:
       +materialized: table
