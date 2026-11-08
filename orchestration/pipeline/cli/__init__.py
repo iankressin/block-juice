@@ -111,15 +111,18 @@ def parser() -> argparse.ArgumentParser:
 
     blocks = commands.add_parser(
         "blocks",
-        help="the block range of an EVM chain that covers a time window",
+        help="the block range of a chain that covers a time window: EVM or TRON blocks, or Solana slots",
         description="Prints the first block at or after <from> and the last block before <to>, as JSON. "
         "Times are ISO 8601 dates or datetimes, read as UTC. Without <to>, the range runs to the head. "
-        "Reads block timestamps from the chain's SQD Portal dataset.",
+        "Reads block timestamps from the chain's SQD Portal dataset. On Solana both ends are slots that "
+        "hold a block, never skipped ones.",
     )
-    blocks.add_argument("chain", help="an EVM chain, such as ethereum, arbitrum or base; an unknown name lists the rest")
+    blocks.add_argument(
+        "chain", help="a chain, such as ethereum, base, tron or solana; an unknown name lists the rest"
+    )
     blocks.add_argument("start", metavar="from")
     blocks.add_argument("end", metavar="to", nargs="?")
-    blocks.add_argument("--rpc", metavar="URL", help="read a JSON-RPC endpoint instead of Portal")
+    blocks.add_argument("--rpc", metavar="URL", help="read an EVM JSON-RPC endpoint instead of Portal")
     blocks.set_defaults(run=_blocks)
 
     check = commands.add_parser(

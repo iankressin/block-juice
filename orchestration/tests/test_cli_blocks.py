@@ -4,11 +4,13 @@ import pytest
 from fake_portal import FakePortal
 
 from pipeline.cli import BadInput, main
-from pipeline.cli.blocks import BlockRange, block_range, first_block_at_or_after, parse_time, unix_seconds
+from pipeline.cli.blocks import BlockRange, Header, block_range, first_block_at_or_after, parse_time, unix_seconds
 
 # Block n has timestamp TIMESTAMPS[n]. Blocks 2 and 3 share a second, as blocks can.
 TIMESTAMPS = [100, 112, 124, 124, 136]
 HEAD = len(TIMESTAMPS) - 1
+# Solana slot n has timestamp SLOTS[n]; None is a skipped slot, which holds no block.
+SLOTS = [100, None, None, 112, None, 124, None, None, 136]
 
 
 def fake_chain(block: int) -> int:
@@ -89,11 +91,18 @@ def test_part_of_a_second_rounds_up_to_the_next_block_second():
     assert unix_seconds(parse_time("2026-10-01T00:00:00.5")) == 1_790_812_801
 
 
-def test_non_evm_chain_exits_2_naming_current_state_only(capsys):
-    assert main(["blocks", "solana", "2026-10-01"]) == 2
+def test_unknown_chain_exits_2_listing_the_chains(capsys):
+    assert main(["blocks", "bitcoin", "2026-10-01"]) == 2
     err = capsys.readouterr().err
-    assert "Solana and Bitcoin" in err and "current state only" in err
+    assert "'bitcoin' is not a chain bj blocks reads" in err and "solana, tron" in err
+    assert "Bitcoin sources read current state only" in err
     assert err.count("\n") == 1
+
+
+@pytest.mark.parametrize("chain", ["tron", "solana"])
+def test_rpc_on_a_chain_that_is_not_evm_exits_2(chain, capsys):
+    assert main(["blocks", chain, "2026-10-01", "--rpc", "http://x"]) == 2
+    assert f"--rpc reads an EVM JSON-RPC endpoint, and {chain} is not EVM" in capsys.readouterr().err
 
 
 def test_bad_time_exits_2(capsys):
@@ -102,7 +111,9 @@ def test_bad_time_exits_2(capsys):
 
 
 def test_prints_the_range_as_json(monkeypatch, capsys):
-    monkeypatch.setattr("pipeline.cli.blocks.read_chain", lambda url: (HEAD, fake_chain))
+    monkeypatch.setattr(
+        "pipeline.cli.blocks.read_chain", lambda url: (HEAD, lambda block: Header(block, fake_chain(block)), None)
+    )
     assert main(["blocks", "ethereum", "1970-01-01T00:01:45Z", "1970-01-01T02:46:40Z", "--rpc", "http://x"]) == 0
     assert json.loads(capsys.readouterr().out) == {
         "chain": "ethereum",
@@ -113,10 +124,10 @@ def test_prints_the_range_as_json(monkeypatch, capsys):
 
 @pytest.fixture
 def portal(monkeypatch):
-    """Installs a FakePortal of the chain in TIMESTAMPS as the Portal bj blocks reads."""
+    """Installs a FakePortal of the chain in TIMESTAMPS, or of the given timestamps, as the Portal bj blocks reads."""
 
-    def install(**options):
-        fake = FakePortal(TIMESTAMPS, **options)
+    def install(timestamps=TIMESTAMPS, **options):
+        fake = FakePortal(timestamps, **options)
         monkeypatch.setattr("pipeline.cli.blocks.requests.Session", lambda: fake)
         return fake
 
@@ -145,6 +156,33 @@ def test_a_rough_portal_guess_still_gives_the_exact_blocks(portal, capsys, offse
     portal(guess_offset=offset)
     printed = blocks_json(capsys, "arbitrum", "1970-01-01T00:02:04Z", "1970-01-01T00:02:16Z")
     assert (printed["from"]["block"], printed["to"]["block"]) == (2, 3)
+
+
+def stream_queries(fake):
+    return {(dataset, query["type"]) for _, dataset, route, query in fake.requests if route == "stream"}
+
+
+# Portal's time-to-block route answers TRON blocks minutes early, so a negative offset is the usual case.
+@pytest.mark.parametrize("offset", [-2, 0, 1, 3])
+def test_tron_reads_millisecond_timestamps_and_checks_portal_guess(portal, capsys, offset):
+    fake = portal(timestamps=[at * 1000 for at in TIMESTAMPS], units_per_second=1000, guess_offset=offset)
+    printed = blocks_json(capsys, "tron", "1970-01-01T00:02:04Z", "1970-01-01T00:02:16Z")
+    assert (printed["from"]["block"], printed["to"]["block"]) == (2, 3)
+    assert stream_queries(fake) == {("tron-mainnet", "tron")}
+
+
+@pytest.mark.parametrize("offset", [-3, 0, 1, 2])
+def test_solana_window_starts_and_ends_on_slots_that_hold_a_block(portal, capsys, offset):
+    fake = portal(timestamps=SLOTS, guess_offset=offset)
+    printed = blocks_json(capsys, "solana", "1970-01-01T00:01:45Z", "1970-01-01T00:02:10Z")
+    assert (printed["from"]["block"], printed["to"]["block"]) == (3, 5)
+    assert stream_queries(fake) == {("solana-mainnet", "solana")}
+
+
+def test_a_long_run_of_skipped_slots_widens_the_read_up_to_the_head(portal, capsys):
+    portal(timestamps=[100, *[None] * 20, 200])
+    printed = blocks_json(capsys, "solana", "1970-01-01T00:02:30Z", "1970-01-01T00:05:00Z")
+    assert (printed["from"]["block"], printed["to"]["block"], printed["to"]["head"]) == (21, 21, True)
 
 
 def test_to_past_the_portal_head_ends_at_the_head(portal, capsys):

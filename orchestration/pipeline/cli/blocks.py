@@ -1,4 +1,4 @@
-"""bj blocks: the block range of an EVM chain that covers a time window."""
+"""bj blocks: the block range of a chain that covers a time window: EVM or TRON blocks, or Solana slots."""
 
 import json
 import math
@@ -6,31 +6,40 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import cache
-from time import sleep
+from typing import NamedTuple
 
 import requests
 
 from pipeline.cli import BadInput, utc_iso
+from pipeline.portal import DATASETS_URL, call, ok
 
-# The EVM chains bj blocks reads, by the name a source gives its chain before the dot, with their SQD
-# Portal datasets. Each dataset is in Portal's own list, GET https://portal.sqd.dev/datasets.
+
+@dataclass(frozen=True)
+class Chain:
+    dataset: str
+    # The `type` of a Portal stream query on the dataset.
+    kind: str = "evm"
+    # Portal gives TRON block timestamps in milliseconds, and every other chain's in seconds.
+    units_per_second: int = 1
+
+
+# The chains bj blocks reads, by the name a source gives its chain before the dot, with their SQD Portal
+# datasets. Each dataset is in Portal's own list, GET https://portal.sqd.dev/datasets.
 CHAINS = {
-    "arbitrum": "arbitrum-one",
-    "avalanche": "avalanche-mainnet",
-    "base": "base-mainnet",
-    "bsc": "binance-mainnet",
-    "ethereum": "ethereum-mainnet",
-    "gnosis": "gnosis-mainnet",
-    "linea": "linea-mainnet",
-    "optimism": "optimism-mainnet",
-    "polygon": "polygon-mainnet",
-    "unichain": "unichain-mainnet",
-    "zksync": "zksync-mainnet",
+    "arbitrum": Chain("arbitrum-one"),
+    "avalanche": Chain("avalanche-mainnet"),
+    "base": Chain("base-mainnet"),
+    "bsc": Chain("binance-mainnet"),
+    "ethereum": Chain("ethereum-mainnet"),
+    "gnosis": Chain("gnosis-mainnet"),
+    "linea": Chain("linea-mainnet"),
+    "optimism": Chain("optimism-mainnet"),
+    "polygon": Chain("polygon-mainnet"),
+    "solana": Chain("solana-mainnet", kind="solana"),
+    "tron": Chain("tron-mainnet", kind="tron", units_per_second=1000),
+    "unichain": Chain("unichain-mainnet"),
+    "zksync": Chain("zksync-mainnet"),
 }
-PORTAL_URL = "https://portal.sqd.dev/datasets"
-# Portal answers these when it is overloaded or has no worker free, with the seconds to wait in Retry-After.
-BUSY = (429, 503, 529)
-ATTEMPTS = 5
 
 
 @dataclass(frozen=True)
@@ -108,54 +117,72 @@ def unix_seconds(moment: datetime) -> int:
     return math.ceil(moment.timestamp())
 
 
-def read_portal(dataset: str) -> tuple[int, Callable[[int], int], Callable[[int], int]]:
-    """The head block number, a function giving any block's timestamp, and Portal's own guess at the
-    first block at or after a time, from a Portal dataset."""
+class Header(NamedTuple):
+    number: int
+    # Unix seconds.
+    timestamp: int
+
+
+# A chain as bj blocks reads it: the head block number, a function giving the first block at or after a
+# block number, and an optional guess at the first block at or after a time.
+Reader = tuple[int, Callable[[int], Header], Callable[[int], int] | None]
+
+
+def read_portal(chain: Chain) -> Reader:
+    """The chain's head and blocks from its Portal dataset, with Portal's time-to-block route as the guess.
+    That route is only a guess: on tron-mainnet it answers blocks minutes early. Solana skips slots, and
+    Portal sends only the slots that hold a block, so the first block at or after a skipped slot is a
+    later slot. On every other chain it is the block itself."""
     session = requests.Session()
+    url = f"{DATASETS_URL}/{chain.dataset}"
+    found: dict[int, Header] = {}
 
-    def request(method: str, route: str, **kwargs) -> requests.Response:
-        for attempt in range(ATTEMPTS):
-            response = session.request(method, f"{PORTAL_URL}/{dataset}/{route}", timeout=30, **kwargs)
-            if response.status_code not in BUSY or attempt == ATTEMPTS - 1:
+    def stream(first: int, last: int) -> list[Header]:
+        query = {
+            "type": chain.kind,
+            "fromBlock": first,
+            "toBlock": last,
+            "includeAllBlocks": True,
+            "fields": {"block": {"number": True, "timestamp": True}},
+        }
+        response = ok(call(session, "POST", f"{url}/stream", json=query), chain.dataset)
+        headers = [json.loads(line)["header"] for line in response.text.splitlines()]
+        for header in headers:
+            if header["timestamp"] is None:
+                raise BadInput(f"Portal {chain.dataset} sent block {header['number']} without a timestamp")
+        return [Header(header["number"], header["timestamp"] // chain.units_per_second) for header in headers]
+
+    def at_or_after(block: int) -> Header:
+        assert 0 <= block <= head, f"block {block} is outside 0..{head}"
+        # The block before comes in the same request: after a right guess, the search reads it next. A run
+        # of skipped slots widens the request, in steps that double, up to the head, which Portal always has.
+        first = max(block - 1, 0)
+        for doublings in range(64):
+            if block in found:
                 break
-            sleep(float(response.headers.get("retry-after") or 1))
-        return response
-
-    def ok(response: requests.Response) -> requests.Response:
-        if response.status_code != 200:
-            raise BadInput(f"Portal {dataset} answered {response.status_code}: {' '.join(response.text.split())[:300]}")
-        return response
-
-    timestamps: dict[int, int] = {}
-
-    def timestamp_of(block: int) -> int:
-        if block not in timestamps:
-            # The block before comes in the same request: after a right guess, the search reads it next.
-            query = {
-                "type": "evm",
-                "fromBlock": max(block - 1, 0),
-                "toBlock": block,
-                "includeAllBlocks": True,
-                "fields": {"block": {"number": True, "timestamp": True}},
-            }
-            for line in ok(request("POST", "stream", json=query)).text.splitlines():
-                header = json.loads(line)["header"]
-                timestamps[header["number"]] = header["timestamp"]
-        if block not in timestamps:
-            raise BadInput(f"Portal {dataset} sent no block {block}")
-        return timestamps[block]
+            last = min(block + 2**doublings - 1, head)
+            headers = stream(first, last)
+            for number in (first, block):
+                later = next((header for header in headers if header.number >= number), None)
+                if later is not None:
+                    found[number] = later
+            if last == head:
+                break
+        if block not in found:
+            raise BadInput(f"Portal {chain.dataset} sent no block from {block} to its head, block {head}")
+        return found[block]
 
     def guess(time: int) -> int:
-        response = request("GET", f"timestamps/{time}/block")
+        response = call(session, "GET", f"{url}/timestamps/{time}/block")
         # Portal answers 404 for a time after its head.
-        return head + 1 if response.status_code == 404 else ok(response).json()["block_number"]
+        return head + 1 if response.status_code == 404 else ok(response, chain.dataset).json()["block_number"]
 
-    head = ok(request("GET", "head")).json()["number"]
-    return head, timestamp_of, guess
+    head = ok(call(session, "GET", f"{url}/head"), chain.dataset).json()["number"]
+    return head, at_or_after, guess
 
 
-def read_chain(url: str) -> tuple[int, Callable[[int], int]]:
-    """The head block number, and a function giving any block's timestamp, over JSON-RPC."""
+def read_chain(url: str) -> Reader:
+    """The head and blocks of an EVM chain over JSON-RPC, with no guess."""
     session = requests.Session()
 
     def get_block(tag: str) -> dict:
@@ -171,37 +198,41 @@ def read_chain(url: str) -> tuple[int, Callable[[int], int]]:
         return body["result"]
 
     @cache
-    def timestamp_of(block: int) -> int:
-        return int(get_block(hex(block))["timestamp"], 16)
+    def at_or_after(block: int) -> Header:
+        return Header(block, int(get_block(hex(block))["timestamp"], 16))
 
     head = int(get_block("latest")["number"], 16)
-    return head, timestamp_of
+    return head, at_or_after, None
 
 
-def run(chain: str, start_text: str, end_text: str | None, rpc: str | None = None) -> int:
-    if chain not in CHAINS:
+def run(name: str, start_text: str, end_text: str | None, rpc: str | None = None) -> int:
+    if name not in CHAINS:
         raise BadInput(
-            f"{chain!r} is not a supported EVM chain (supported: {', '.join(CHAINS)})."
-            " Solana and Bitcoin sources read current state only, so they have no block range"
+            f"{name!r} is not a chain bj blocks reads (supported: {', '.join(CHAINS)})."
+            " Bitcoin sources read current state only, so they have no block range"
         )
+    chain = CHAINS[name]
+    if rpc and chain.kind != "evm":
+        raise BadInput(f"--rpc reads an EVM JSON-RPC endpoint, and {name} is not EVM; leave it out to read Portal")
     start = parse_time(start_text)
     end = parse_time(end_text) if end_text else datetime.now(timezone.utc)
     if end <= start:
         raise BadInput(f"<to> ({utc_iso(end)}) must be after <from> ({utc_iso(start)})")
     try:
-        if rpc:
-            head, timestamp_of = read_chain(rpc)
-            guess = None
-        else:
-            head, timestamp_of, guess = read_portal(CHAINS[chain])
-        found = block_range(unix_seconds(start), unix_seconds(end), head, timestamp_of, guess)
+        head, at_or_after, guess = read_chain(rpc) if rpc else read_portal(chain)
+        found = block_range(
+            unix_seconds(start), unix_seconds(end), head, lambda block: at_or_after(block).timestamp, guess
+        )
+        # The search can stop on a skipped Solana slot. The window starts at the next slot that holds a block,
+        # which is where a source's START_BLOCK sits. Its last slot always holds one.
+        from_block = at_or_after(found.from_block).number
     except (requests.RequestException, ValueError, KeyError) as error:
-        raise BadInput(f"could not read blocks from {rpc or f'Portal {CHAINS[chain]}'}: {error}") from None
+        raise BadInput(f"could not read blocks from {rpc or f'Portal {chain.dataset}'}: {error}") from None
     print(
         json.dumps(
             {
-                "chain": chain,
-                "from": {"time": utc_iso(start), "block": found.from_block},
+                "chain": name,
+                "from": {"time": utc_iso(start), "block": from_block},
                 "to": {"time": utc_iso(end), "block": found.to_block, "head": found.to_is_head},
             },
             indent=2,
