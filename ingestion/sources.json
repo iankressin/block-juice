@@ -105,6 +105,12 @@
   },
   {
     "name": "ethereum",
+    "table": "tether_token",
+    "package": "evm-tether-token",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
     "table": "uniswap_v2",
     "package": "evm-uniswap-v2",
     "settings": "chains/ethereum"
