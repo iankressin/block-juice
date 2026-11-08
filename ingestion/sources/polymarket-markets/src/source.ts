@@ -7,7 +7,8 @@ const gammaEnv = z.object({
   // Polymarket's Gamma API, which needs no key.
   GAMMA_API_URL: z.url().default("https://gamma-api.polymarket.com"),
   GAMMA_PAGE_SIZE: z.coerce.number().int().positive().max(100).default(100),
-  // Gamma allows 300 requests per 10 seconds, and a walk sends about one request a second.
+  // A round sends one request per active walk and starts at most once a second, so at most this many
+  // requests a second, under Gamma's 300 per 10 seconds.
   GAMMA_MAX_CONCURRENCY: z.coerce.number().int().positive().max(20).default(6),
   GAMMA_END_DATE_FROM: z.iso
     .date({

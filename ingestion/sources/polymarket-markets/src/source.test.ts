@@ -268,11 +268,54 @@ test("a finished walk gives its slot to the next one, and a round yields once", 
 
   const batches = await run(envAt(url, { GAMMA_MAX_CONCURRENCY: 3 }));
 
-  // 10 walks, 3 slots: the open walk takes 3 rounds, and the rest run beside it.
+  // 10 walks, 3 slots. The open walk takes 3 rounds, and a slot freed by an empty walk goes to the next
+  // pending one: rounds of {open, 05, 06}, {open, 07, after}, {open, v2 open, v2 05}, {v2 06, 07, after}.
+  // Fixed groups of three would take 6 rounds.
+  assert.equal(batches.length, 4);
+  assert.deepEqual(batches.map((batch) => (batch.succeededCallIds ?? []).length), [2, 2, 3, 3]);
   assert.equal(records(batches).length, 5);
   assert.equal(requests.length, 12);
-  assert.equal(batches.flatMap((batch) => batch.succeededCallIds ?? []).length, 10);
   assert.ok(batches.every((batch) => batch.records.length <= 2));
+});
+
+test("a round starts at most once a second", async (t) => {
+  const events: string[] = [];
+  const url = await fakeGamma(t, {
+    walks: { [OPEN]: [[market(1), market(2)], [market(3), market(4)], [market(5)]] },
+    requests: events,
+  });
+
+  const batches = await run(envAt(url, { GAMMA_MAX_CONCURRENCY: 3 }), [], fakeClock(NOW, events));
+
+  assert.equal(batches.length, 4);
+  // Four rounds: no wait before the first, one second before each of the others.
+  const sleeps = events.filter((event) => event.startsWith("sleep"));
+  assert.deepEqual(sleeps, ["sleep 1000", "sleep 1000", "sleep 1000"]);
+  const kinds = events.map((event) => (event.startsWith("sleep") ? "sleep" : "request"));
+  assert.deepEqual(kinds, [
+    ...Array(3).fill("request"),
+    "sleep",
+    ...Array(3).fill("request"),
+    "sleep",
+    ...Array(3).fill("request"),
+    "sleep",
+    ...Array(3).fill("request"),
+  ]);
+});
+
+test("a 4xx fails its walk at once, with no wait", async (t) => {
+  const events: string[] = [];
+  const url = await fakeGamma(t, {
+    reply: (walk) =>
+      walk === DAY ? { status: 422, body: { type: "validation error", error: "invalid time range" } } : undefined,
+  });
+
+  const batches = await run(envAt(url), [], fakeClock(NOW, events));
+
+  assert.deepEqual(events, []);
+  assert.deepEqual(batches.flatMap((batch) => batch.failed), [
+    { id: "markets:v1:closed:2026-11-07", call: day("2026-11-07"), error: "Gamma answered HTTP 422: invalid time range" },
+  ]);
 });
 
 test("a bad GAMMA_END_DATE_FROM, page size or concurrency is refused", () => {
@@ -316,9 +359,36 @@ test("a request that loses its connection is tried again", async (t) => {
   });
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-  const batches = await run(envAt(url, { GAMMA_MAX_CONCURRENCY: 1 }), [], fakeClock(NOW, events));
+  const batches = await run(envAt(url), [], fakeClock(NOW, events));
 
   assert.deepEqual(batches.flatMap((batch) => batch.failed), []);
   assert.deepEqual(records(batches).map(({ id }) => id), ["market:1"]);
   assert.deepEqual(events, ["sleep 1000"]);
+});
+
+test("a 4xx whose body is cut short still fails its walk at once", async (t) => {
+  const events: string[] = [];
+  const server = createServer((req, res) => {
+    const q = new URL(req.url!, "http://gamma").searchParams;
+    if (q.get("version") === "v1" && q.get("closed") === "false") {
+      res.writeHead(422, { "content-type": "application/json", "content-length": "500" });
+      res.write('{"error":"inva');
+      setTimeout(() => req.socket.destroy(), 20);
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ markets: [] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const batches = await run(envAt(url), [], fakeClock(NOW, events));
+
+  assert.deepEqual(events, []);
+  const failed = batches.flatMap((batch) => batch.failed);
+  assert.deepEqual(failed.map(({ id }) => id), ["markets:v1:open"]);
+  assert.match(failed[0]!.error, /HTTP 422/);
 });

@@ -24,7 +24,7 @@ select
     event ->> 'title' as event_title,
     (select array_agg(o.value order by o.position) from jsonb_array_elements_text(outcomes) with ordinality as o(value, position)) as outcomes,
     (select array_agg(t.value::numeric order by t.position) from jsonb_array_elements_text(clob_token_ids) with ordinality as t(value, position)) as clob_token_ids,
-    (data ->> 'negRisk')::boolean as neg_risk,
+    coalesce((data ->> 'negRisk')::boolean, false) as neg_risk,
     nullif(lower(data ->> 'negRiskMarketID'), '') as neg_risk_market_id,
     data ->> 'version' as protocol_version,
     nullif(data ->> 'startDate', '')::timestamptz as start_date,

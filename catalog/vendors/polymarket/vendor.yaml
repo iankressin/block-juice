@@ -86,7 +86,7 @@ endpoints:
         v1 or v2; anything else is HTTP 422 'expected value to be one of "v1, v2"'. With none, a list
         returns only v1 markets. version=v2 lists V2 markets. id, condition_ids, clob_token_ids and
         position_ids lookups find a V2 market without it.
-      end_date_min: ISO 8601, on endDate. end_date_max is its pair. start_date_min and start_date_max also exist.
+      end_date_min: ISO 8601, on endDate. end_date_max is its pair. Both include their bound, so day windows that share a midnight overlap on it; min = max is HTTP 422 'invalid time range' (NOTES.md). start_date_min and start_date_max also exist.
       volume_num_min: number, on volumeNum. volume_num_max, liquidity_num_min and liquidity_num_max also exist.
     order_default: id ascending, numeric (ids are strings in the JSON).
     visibility: >-

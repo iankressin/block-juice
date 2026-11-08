@@ -43,7 +43,7 @@ unit_tests:
             null::timestamptz as _loaded_at
 
   - name: v2_market_stages_with_protocol_version
-    description: Gamma market 6770019, an open Protocol V2 binary market. It has no questionID and no top-level negRisk.
+    description: Gamma market 6770019, an open Protocol V2 binary market. It has no questionID, and no negRisk, which counts as false.
     model: stg_polymarket__markets
     given:
       - input: source('polymarket', 'markets')
@@ -64,7 +64,7 @@ unit_tests:
             'Zcash Up or Down - November 7, 10:55PM-11:00PM ET' as event_title,
             array['Up','Down']::text[] as outcomes,
             array[509087509928325909252543985009258432142384070580348294089705821985333837824,509087509928325909252543985009258432142384070580348294089705821985333837825]::numeric[] as clob_token_ids,
-            null::boolean as neg_risk,
+            false as neg_risk,
             null::text as neg_risk_market_id,
             'v2' as protocol_version,
             '2026-11-07T03:55:27Z'::timestamptz as start_date,

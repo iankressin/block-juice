@@ -41,6 +41,8 @@ export function walkCalls(from: number, now: number): MarketsWalkCall[] {
   const calls: MarketsWalkCall[] = [];
   for (const v of version.options) {
     calls.push({ kind: "markets_walk", version: v, closed: false, end_date_min: null, end_date_max: null });
+    // Gamma's end_date_min and end_date_max both include their bound (catalog/vendors/polymarket/NOTES.md),
+    // so a market that ends at midnight is in two windows and none is lost.
     for (let t = start; t <= today; t += DAY_MS) {
       calls.push({
         kind: "markets_walk",
@@ -80,6 +82,7 @@ export async function* walkMarkets(
   let active: Walk[] = [];
   while (pending.length > 0 || active.length > 0) {
     while (active.length < concurrency && pending.length > 0) active.push(pending.shift()!);
+    await gamma.waitForRate();
     const outcomes = await Promise.allSettled(
       active.map((walk) =>
         gamma.markets({

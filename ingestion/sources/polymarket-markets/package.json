@@ -7,7 +7,7 @@
   },
   "scripts": {
     "ingest": "tsx src/index.ts",
-    "test": "tsx --test src/*.test.ts"
+    "test": "LOG_LEVEL=silent tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@ingestion/lib": "workspace:*",
