@@ -250,29 +250,28 @@ test("a reply in an unexpected shape fails the walk and names the field", async 
 
 test("a market seen by two walks in one round is written once", async (t) => {
   const url = await fakeGamma(t, {
-    walks: { [OPEN]: [[market(7), market(8)]], [DAY]: [[market(7), market(9)]] },
+    walks: { [OPEN]: [[market(7), market(8)]], [key("v2", false)]: [[market(7), market(9)]] },
   });
 
   const batches = await run(envAt(url));
 
-  assert.equal(batches.length, 1);
+  assert.equal(batches.length, 2);
   assert.deepEqual(records(batches).map(({ id }) => id).sort(), ["market:7", "market:8", "market:9"]);
 });
 
+const LONG_DAY = { [DAY]: [[market(1), market(2)], [market(3), market(4)], [market(5)]] };
+
 test("a finished walk gives its slot to the next one, and a round yields once", async (t) => {
   const requests: string[] = [];
-  const url = await fakeGamma(t, {
-    walks: { [OPEN]: [[market(1), market(2)], [market(3), market(4)], [market(5)]] },
-    requests,
-  });
+  const url = await fakeGamma(t, { walks: LONG_DAY, requests });
 
   const batches = await run(envAt(url, { GAMMA_MAX_CONCURRENCY: 3 }));
 
-  // 10 walks, 3 slots. The open walk takes 3 rounds, and a slot freed by an empty walk goes to the next
-  // pending one: rounds of {open, 05, 06}, {open, 07, after}, {open, v2 open, v2 05}, {v2 06, 07, after}.
-  // Fixed groups of three would take 6 rounds.
-  assert.equal(batches.length, 4);
-  assert.deepEqual(batches.map((batch) => (batch.succeededCallIds ?? []).length), [2, 2, 3, 3]);
+  // 10 walks, 3 slots. The two open walks go first, then the closed ones. The 2026-11-07 walk takes 3
+  // rounds, and a slot freed by an empty walk goes to the next pending one: {open v1, open v2},
+  // {05, 06, 07}, {07, after, v2 05}, {07, v2 06, v2 07}, {v2 after}. Fixed groups of three would take 6.
+  assert.equal(batches.length, 5);
+  assert.deepEqual(batches.map((batch) => (batch.succeededCallIds ?? []).length), [2, 2, 2, 3, 1]);
   assert.equal(records(batches).length, 5);
   assert.equal(requests.length, 12);
   assert.ok(batches.every((batch) => batch.records.length <= 2));
@@ -280,39 +279,32 @@ test("a finished walk gives its slot to the next one, and a round yields once", 
 
 test("a round starts at most once a second", async (t) => {
   const events: string[] = [];
-  const url = await fakeGamma(t, {
-    walks: { [OPEN]: [[market(1), market(2)], [market(3), market(4)], [market(5)]] },
-    requests: events,
-  });
+  const url = await fakeGamma(t, { walks: LONG_DAY, requests: events });
 
   const batches = await run(envAt(url, { GAMMA_MAX_CONCURRENCY: 3 }), [], fakeClock(NOW, events));
 
-  assert.equal(batches.length, 4);
-  // Four rounds: no wait before the first, one second before each of the others.
-  const sleeps = events.filter((event) => event.startsWith("sleep"));
-  assert.deepEqual(sleeps, ["sleep 1000", "sleep 1000", "sleep 1000"]);
+  assert.equal(batches.length, 5);
+  // Five rounds: no wait before the first, one second before each of the others.
+  assert.deepEqual(events.filter((event) => event.startsWith("sleep")), Array(4).fill("sleep 1000"));
   const kinds = events.map((event) => (event.startsWith("sleep") ? "sleep" : "request"));
-  assert.deepEqual(kinds, [
-    ...Array(3).fill("request"),
-    "sleep",
-    ...Array(3).fill("request"),
-    "sleep",
-    ...Array(3).fill("request"),
-    "sleep",
-    ...Array(3).fill("request"),
-  ]);
+  const round = (n: number) => Array(n).fill("request");
+  assert.deepEqual(kinds, [...round(2), "sleep", ...round(3), "sleep", ...round(3), "sleep", ...round(3), "sleep", ...round(1)]);
 });
 
 test("a 4xx fails its walk at once, with no wait", async (t) => {
   const events: string[] = [];
+  const requests: string[] = [];
   const url = await fakeGamma(t, {
+    requests,
     reply: (walk) =>
       walk === DAY ? { status: 422, body: { type: "validation error", error: "invalid time range" } } : undefined,
   });
 
   const batches = await run(envAt(url), [], fakeClock(NOW, events));
 
-  assert.deepEqual(events, []);
+  // The one sleep is the second between the open round and the closed round. A retry would add more.
+  assert.deepEqual(events, ["sleep 1000"]);
+  assert.equal(requests.filter((request) => request.includes("version=v1") && request.includes("end_date_min=2026-11-07")).length, 1);
   assert.deepEqual(batches.flatMap((batch) => batch.failed), [
     { id: "markets:v1:closed:2026-11-07", call: day("2026-11-07"), error: "Gamma answered HTTP 422: invalid time range" },
   ]);
@@ -387,8 +379,48 @@ test("a 4xx whose body is cut short still fails its walk at once", async (t) => 
 
   const batches = await run(envAt(url), [], fakeClock(NOW, events));
 
-  assert.deepEqual(events, []);
+  assert.deepEqual(events, ["sleep 1000"]);
   const failed = batches.flatMap((batch) => batch.failed);
   assert.deepEqual(failed.map(({ id }) => id), ["markets:v1:open"]);
   assert.match(failed[0]!.error, /HTTP 422/);
+});
+
+test("closed walks start after the open walks end, so a market that closes mid-run is seen once", async (t) => {
+  // Market 99 sits on the open walk's last page until the open walk reads its second page; then it closes.
+  const walks: Pages = {
+    [OPEN]: [[market(1), market(2)], [market(3), market(4)], [market(99)]],
+    [DAY]: [[]],
+  };
+  const requests: string[] = [];
+  const url = await fakeGamma(t, {
+    walks,
+    requests,
+    reply: (walk, query) => {
+      if (walk === OPEN && query.get("after_cursor") === "p1") {
+        walks[OPEN] = [walks[OPEN]![0]!, walks[OPEN]![1]!, []];
+        walks[DAY] = [[market(99)]];
+      }
+      return undefined;
+    },
+  });
+
+  const batches = await run(envAt(url));
+
+  const found = records(batches).filter(({ id }) => id === "market:99");
+  assert.deepEqual(found.map(({ callId }) => callId), ["markets:v1:closed:2026-11-07"]);
+  const open = requests.flatMap((request, i) => (request.includes("closed=false") ? [i] : []));
+  const closed = requests.flatMap((request, i) => (request.includes("closed=true") ? [i] : []));
+  assert.ok(Math.max(...open) < Math.min(...closed), requests.join("\n"));
+});
+
+test("a retried open walk also finishes before any closed walk starts", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeGamma(t, { walks: { [OPEN]: [[market(1)], [market(2)]] }, requests });
+  const retryOpen: MarketsWalkCall = { kind: "markets_walk", version: "v1", closed: false, end_date_min: null, end_date_max: null };
+
+  await run(envAt(url), [day("2026-11-06"), retryOpen]);
+
+  const lastOpen = requests.map((request, i) => (request.includes("closed=false") ? i : -1)).reduce((a, b) => Math.max(a, b));
+  const firstClosed = requests.findIndex((request) => request.includes("closed=true"));
+  assert.ok(lastOpen < firstClosed, requests.join("\n"));
 });

@@ -78,10 +78,20 @@ export async function* walkMarkets(
   calls: readonly MarketsWalkCall[],
   { limit, concurrency }: { limit: number; concurrency: number },
 ): AsyncGenerator<Batch<MarketsWalkCall>> {
-  const pending = calls.map((call): Walk => ({ call, cursor: undefined, page: 0 }));
+  // Open walks first. A closed walk waits for them, so a market that closes mid-run is seen open (the
+  // open walk reached it before it closed) or closed (it closed before any closed walk began), never missed.
+  const pending = [...calls.filter((call) => !call.closed), ...calls.filter((call) => call.closed)].map(
+    (call): Walk => ({ call, cursor: undefined, page: 0 }),
+  );
   let active: Walk[] = [];
   while (pending.length > 0 || active.length > 0) {
-    while (active.length < concurrency && pending.length > 0) active.push(pending.shift()!);
+    while (
+      active.length < concurrency &&
+      pending.length > 0 &&
+      (!pending[0]!.call.closed || !active.some((walk) => !walk.call.closed))
+    ) {
+      active.push(pending.shift()!);
+    }
     await gamma.waitForRate();
     const outcomes = await Promise.allSettled(
       active.map((walk) =>
