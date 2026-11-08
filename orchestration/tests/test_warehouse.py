@@ -6,7 +6,7 @@ import psycopg2
 import pytest
 from psycopg2 import sql
 
-from pipeline.warehouse import read_cursor
+from pipeline.warehouse import Cursor, read_cursor
 
 SERVER = ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD")
 
@@ -55,13 +55,13 @@ def test_no_cursor_before_pipes_creates_its_table(database):
     assert read_cursor("ethereum_erc20_transfers") is None
 
 
-def test_the_cursor_is_the_highest_block_saved_for_the_source(database):
+def test_the_cursor_is_the_highest_block_saved_for_the_source_with_its_hash(database):
     database(
         SYNC + "; insert into raw._sync values"
         " ('ethereum_erc20_transfers', 150, '0xa'), ('ethereum_erc20_transfers', 180, '0xb'),"
         " ('ethereum_erc20_transfers', 120, '0xc'), ('ethereum_other_transfers', 999, '0xd')"
     )
-    assert read_cursor("ethereum_erc20_transfers") == 180
+    assert read_cursor("ethereum_erc20_transfers") == Cursor(180, "0xb")
 
 
 def test_no_cursor_for_a_source_with_no_rows_while_another_has_some(database):

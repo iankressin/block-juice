@@ -70,6 +70,22 @@ def test_erc20_transfers_reads_each_chain_through_its_own_model():
         }
 
 
+def test_transfer_share_reads_each_chain_through_its_own_models():
+    graph = defs.resolve_asset_graph()
+    chains = {"ethereum": "tether_token", "tron": "tether_token", "solana": "spl_token"}
+    movements = {dg.AssetKey(f"int_{chain}_{table}_movements") for chain, table in chains.items()}
+    boundaries = {dg.AssetKey(f"int_{chain}_day_boundaries") for chain in chains}
+    assert graph.get(dg.AssetKey("token_movements")).parent_keys == (
+        movements | boundaries | {dg.AssetKey("entity_labels")}
+    )
+    # The status model also reads each source's load and supply checks, through models the spec leaves open.
+    assert graph.get(dg.AssetKey("transfer_share_stage_status")).parent_keys >= (
+        boundaries | {dg.AssetKey("token_movements")}
+    )
+    for published in ("transfer_share_stage_daily", "transfer_share"):
+        assert graph.get(dg.AssetKey(published)).parent_keys == {dg.AssetKey("transfer_share_stage_status")}
+
+
 def test_every_asset_and_check_runs_in_a_scheduled_pipeline():
     graph = defs.resolve_asset_graph()
     scheduled = {schedule.job_name for schedule in defs.schedules}

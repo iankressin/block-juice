@@ -10,6 +10,7 @@ from dbt.cli.main import dbtRunner
 
 from pipeline.cli.answer import DBT_FLAGS
 from pipeline.cli.coverage import Coverage
+from pipeline.warehouse import Cursor
 
 PROJECT = Path(__file__).resolve().parents[2] / "transformation"
 # addresses.json may hold checksummed addresses; the warehouse holds them in lower case.
@@ -19,7 +20,7 @@ W, T = WALLET.lower(), TOKEN.lower()
 OTHER = "0x00000000000000000000000000000000000000aa"
 # A quote in addresses.json must not break the SQL.
 LOADED = Coverage(
-    "ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", 180, {"wallets": [WALLET, "0xab'c"], "tokens": [TOKEN]}
+    "ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers", 100, ".env", Cursor(180, "0xb4"), {"wallets": [WALLET, "0xab'c"], "tokens": [TOKEN]}
 )
 
 # The readings of the tracked wallet and token at blocks 99 to 180 agree with the transfers. Every other

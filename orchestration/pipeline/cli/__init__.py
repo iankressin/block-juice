@@ -104,22 +104,27 @@ def parser() -> argparse.ArgumentParser:
         help="run a question's dbt analyses and check the data behind them",
         description="Reads answers/<slug>/question.yaml, compiles and runs its dbt analyses on the warehouse, "
         "runs the dbt tests upstream of them, checks the dead letters and freshness of every raw table they "
-        "read, and writes answers/<slug>/results/ and answer.json. Exits 1 when a check fails.",
+        "read, and writes answers/<slug>/results/ and answer.json. For each stream input, answer.json also "
+        "holds what bj coverage prints and Portal's finalized head, and coverage fails when the cursor is "
+        "past that head. Exits 1 when a check fails.",
     )
     answer.add_argument("slug")
     answer.set_defaults(run=_answer)
 
     blocks = commands.add_parser(
         "blocks",
-        help="the block range of an EVM chain that covers a time window",
+        help="the block range of a chain that covers a time window: EVM or TRON blocks, or Solana slots",
         description="Prints the first block at or after <from> and the last block before <to>, as JSON. "
         "Times are ISO 8601 dates or datetimes, read as UTC. Without <to>, the range runs to the head. "
-        "Reads block timestamps from the chain's SQD Portal dataset.",
+        "Reads block timestamps from the chain's SQD Portal dataset. On Solana both ends are slots that "
+        "hold a block, never skipped ones.",
     )
-    blocks.add_argument("chain", help="an EVM chain, such as ethereum, arbitrum or base; an unknown name lists the rest")
+    blocks.add_argument(
+        "chain", help="a chain, such as ethereum, base, tron or solana; an unknown name lists the rest"
+    )
     blocks.add_argument("start", metavar="from")
     blocks.add_argument("end", metavar="to", nargs="?")
-    blocks.add_argument("--rpc", metavar="URL", help="read a JSON-RPC endpoint instead of Portal")
+    blocks.add_argument("--rpc", metavar="URL", help="read an EVM JSON-RPC endpoint instead of Portal")
     blocks.set_defaults(run=_blocks)
 
     check = commands.add_parser(
@@ -139,7 +144,7 @@ def parser() -> argparse.ArgumentParser:
         "coverage",
         help="the blocks and addresses each stream source has loaded",
         description="Prints, as JSON, each stream source's START_BLOCK and the file that sets it, the cursor "
-        "Pipes keeps in the warehouse, its addresses.json as the filter, and covered: [START_BLOCK, cursor], "
+        "Pipes keeps in the warehouse and its block hash as cursor_hash, its addresses.json as the filter, and covered: [START_BLOCK, cursor], "
         "or null before its first run. A stream source is an entry of ingestion/sources.json whose package's "
         ".env.example sets START_BLOCK. With <source>.<table>, prints that source alone.",
     )
