@@ -123,6 +123,11 @@
   },
   {
     "name": "solana",
+    "table": "block_headers",
+    "package": "solana-block-headers"
+  },
+  {
+    "name": "solana",
     "table": "sol_balances",
     "package": "solana-sol-balances"
   },
