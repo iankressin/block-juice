@@ -47,9 +47,11 @@ For each successful transaction and each tracked account with a balance record, 
 | 4 | failed transaction moves nothing | 466690001 | 54 | `26wkcPKrRrMbN2ZoYfoDfWmabjBvihYA7XNdkdNLJKDBYenNkcm8d6fgn8bL2rifYMRjXUAmLSmexNvuEbhmDREJ` | `err` is `{"InstructionError": [0, {"Custom": 6001}]}`, its token instructions have `isCommitted: false`, and both tracked balances keep their amounts. |
 | 5 | owner from the balance record | 466690001 | 54 | as row 4 | `85WU4DGuDQL1Mc8m4EZg1rsc5hWdni5hH6MmpxBAQ8Yh` has `preOwner` = `postOwner` = `DjYqetGx4i2EskcTnZpZPQDKDLu61w6582Eqz4xPdphF`, the same address its `transfer` at `[0,2,0]` names as authority. |
 
-No `mintTo`, `mintToChecked`, `burn` or `burnChecked` of the USD₮ mint was found in the slots searched (listed under Search ranges). Their rules come from the program source; the tests that cover them use fixtures labeled as specification fixtures.
+| 6 | `burn` | 440009884 | 224 | `5qPDSnGvYtJ3Cb5uJ4fYgebF8KhC1yPE4cqX9qadbF5GAQ7fvY6qaHuhbn2a9bwPgn9rMVwXBAiLdvuPQNKvqopW` | Outer instruction `[2]`, discriminator 8, burns 9 base units from `8nnZLDVuWQXqDNuB3hsDxYrvCJ1DmoctphmK55aRdMNW`; account 1 is the mint. The account's balance falls by 9. The other 17 successful transactions of that slot reconcile too. |
+
+No `mintTo` or `mintToChecked` of the USD₮ mint was found in the slots searched. That rule comes from the program source, and the tests that cover it use fixtures labeled as specification fixtures.
 
 ## Search ranges
 
-- Transfers and balance checks: slots 466690000 to 466690049, one Portal stream query with token balances filtered by `preMint` and `postMint`.
-- Mints and burns: SPL Token instructions with discriminator 7 or 14 and account 0 equal to the mint, or 8 or 15 and account 1 equal to the mint, see the proof notes in the source package for the range scanned.
+- Transfers and balance checks: slots 466690000 to 466690049, and slot 440009884, each one Portal stream query with token balances filtered by `preMint` and `postMint`.
+- Mints and burns: SPL Token instructions with discriminator 7 or 14 and account 0 equal to the mint, or 8 or 15 and account 1 equal to the mint, slots 440000000 to 440047272. Seven burns, no mints.
