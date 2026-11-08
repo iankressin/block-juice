@@ -75,6 +75,12 @@
   },
   {
     "name": "ethereum",
+    "table": "block_headers",
+    "package": "evm-block-headers",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
     "settings": "chains/ethereum"
