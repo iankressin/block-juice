@@ -184,7 +184,8 @@ def read_portal(chain: Chain) -> Reader:
 
 def read_chain(url: str) -> Reader:
     """The head and blocks of an EVM chain over JSON-RPC, with no guess."""
-    session = portal.session()
+    # A plain session: the Portal key must never reach an RPC host the user names.
+    session = requests.Session()
 
     def get_block(tag: str) -> dict:
         response = session.post(
