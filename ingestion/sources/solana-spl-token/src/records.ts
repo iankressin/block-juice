@@ -3,8 +3,10 @@ import type { RawRecord } from "@ingestion/lib";
 import type { SolanaPortalData } from "@subsquid/pipes/solana";
 import {
   ACCOUNT_INITIALIZERS,
+  BATCH_NAME,
   TOKEN_PROGRAM_ID,
   decodeTokenInstruction,
+  unpackBatch,
   type DecodedInstruction,
 } from "#src/instructions.ts";
 
@@ -73,35 +75,72 @@ export function slotRecords(slot: Slot, mints: ReadonlySet<string>): RawRecord[]
     records.push(
       record(`tx:${signature}`, { kind: "transaction", ...at, err: items.transaction.err ?? null }),
       ...balances.map((balance) => balanceRecord(at, balance)),
-      ...keptInstructions(items.instructions, accounts).map(([instruction, decoded]) =>
-        instructionRecord(at, instruction, decoded),
-      ),
+      ...keptInstructions(items.instructions, accounts).map((kept) => instructionRecord(at, kept)),
     );
   }
   assert.equal(new Set(records.map((r) => r.id)).size, records.length, "ids are unique in a slot");
   return records;
 }
 
+/** An SPL Token instruction with its decoding, and the address of the Batch that packs it, if any. */
+type Decoded = {
+  instruction: Instruction;
+  decoding: DecodedInstruction | null;
+  packedIn: number[] | null;
+};
+
 /**
- * The SPL Token instructions to keep, in Portal's order, each with its decoding: those whose
- * accounts include a tracked mint or a token account with a tracked balance, and those that touch
- * a token account one of the first created. An account made and closed in the same transaction has
- * no balance in Portal, so only its initializeAccount* ties its transfers and closing to the mint.
+ * The transaction's SPL Token instructions in Portal's order, each decoded, with each Batch followed
+ * by the instructions it packs. A packed instruction takes the Batch's address plus its place in the
+ * batch, so it sorts after the Batch and before the next instruction. The program runs a Batch's
+ * instructions inside it without calling out, so Portal has no instruction under a Batch's address.
+ */
+function decodedInstructions(instructions: readonly Instruction[]): Decoded[] {
+  const decoded: Decoded[] = [];
+  for (const instruction of instructions) {
+    if (instruction.programId !== TOKEN_PROGRAM_ID) continue;
+    const packed = unpackBatch(instruction.accounts, instruction.data);
+    if (packed === null) {
+      const decoding = decodeTokenInstruction(instruction.accounts, instruction.data);
+      decoded.push({ instruction, decoding, packedIn: null });
+      continue;
+    }
+    const address = instruction.instructionAddress;
+    const under = instructions.filter((other) => startsWith(other.instructionAddress, address));
+    assert.equal(under.length, 0, `a Batch at ${address.join(".")} has an instruction under it`);
+    const args = { instructions: packed.length };
+    decoded.push({
+      instruction,
+      decoding: { instruction: BATCH_NAME, args, named_accounts: {} },
+      packedIn: null,
+    });
+    packed.forEach((inner, place) => {
+      const at: Instruction = { ...instruction, instructionAddress: [...address, place], ...inner };
+      const decoding = decodeTokenInstruction(inner.accounts, inner.data);
+      decoded.push({ instruction: at, decoding, packedIn: address });
+    });
+  }
+  return decoded;
+}
+
+const startsWith = (address: readonly number[], prefix: readonly number[]) =>
+  address.length > prefix.length && prefix.every((part, index) => address[index] === part);
+
+/**
+ * The SPL Token instructions to keep, in order, each with its decoding: those whose accounts include
+ * a tracked mint or a token account with a tracked balance, and those that touch a token account one
+ * of the first created. An account made and closed in the same transaction has no balance in Portal,
+ * so only its initializeAccount* ties its transfers and closing to the mint.
  */
 function keptInstructions(
   instructions: readonly Instruction[],
   tracked: ReadonlySet<string>,
-): [Instruction, DecodedInstruction | null][] {
-  const decoded = instructions
-    .filter((instruction) => instruction.programId === TOKEN_PROGRAM_ID)
-    .map((instruction): [Instruction, DecodedInstruction | null] => [
-      instruction,
-      decodeTokenInstruction(instruction.accounts, instruction.data),
-    ]);
+): Decoded[] {
+  const decoded = decodedInstructions(instructions);
   const touches = (instruction: Instruction, accounts: ReadonlySet<string>) =>
     instruction.accounts.some((account) => accounts.has(account));
   const created = new Set<string>();
-  for (const [instruction, decoding] of decoded) {
+  for (const { instruction, decoding } of decoded) {
     if (!touches(instruction, tracked)) continue;
     if (decoding === null) continue;
     if (!ACCOUNT_INITIALIZERS.has(decoding.instruction)) continue;
@@ -110,7 +149,7 @@ function keptInstructions(
     created.add(account);
   }
   const kept = decoded.filter(
-    ([instruction]) => touches(instruction, tracked) || touches(instruction, created),
+    ({ instruction }) => touches(instruction, tracked) || touches(instruction, created),
   );
   assert.ok(kept.length <= decoded.length);
   return kept;
@@ -161,11 +200,7 @@ function balanceRecord(at: At, balance: TokenBalance): RawRecord {
   });
 }
 
-function instructionRecord(
-  at: At,
-  instruction: Instruction,
-  decoded: DecodedInstruction | null,
-): RawRecord {
+function instructionRecord(at: At, { instruction, decoding: decoded, packedIn }: Decoded): RawRecord {
   assert.ok(instruction.instructionAddress.length > 0);
   return record(`${at.slot}:${at.tx_index}:${instruction.instructionAddress.join(".")}`, {
     kind: "instruction",
@@ -178,6 +213,7 @@ function instructionRecord(
     instruction: decoded?.instruction ?? null,
     args: decoded?.args ?? null,
     named_accounts: decoded?.named_accounts ?? null,
+    packed_in: packedIn,
   });
 }
 

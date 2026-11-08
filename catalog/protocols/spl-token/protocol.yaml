@@ -65,3 +65,9 @@ instructions:
     discriminator: 18
     accounts: [account, mint]
     data: [owner]
+  batch:
+    discriminator: 255
+    # Runs the instructions packed in its data, in order: for each, a u8 count of its accounts, a u8
+    # length of its data, then that data. Accounts are taken from the Batch's in turn.
+    accounts: [accounts of each packed instruction, in order]
+    data: [packed instructions]

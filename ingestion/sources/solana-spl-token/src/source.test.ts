@@ -46,6 +46,7 @@ const router = addressOf(10);
 const paid = signatureOf(1);
 const failed = signatureOf(2);
 const passThrough = signatureOf(3);
+const batched = signatureOf(4);
 const SLOT = 100;
 
 type Side = { amount: string } | null;
@@ -82,16 +83,21 @@ const call = (
 const transfer = (amount: bigint) => data(3, ...u64(amount));
 const transferChecked = (amount: bigint) => data(12, ...u64(amount), 6);
 const initializeAccount3 = data(18, ...addressBytes(owner));
+// A Batch of transfers: each packed instruction is its account count, its data length, then its data.
+const batch = (...transfers: [accounts: number, tag: number, amount: bigint][]) =>
+  data(255, ...transfers.flatMap(([accounts, tag, amount]) => [accounts, 9, tag, ...u64(amount)]));
 
 // Transaction 0 pays alice to bob through a router and directly. Transaction 1 fails. Transaction 2
 // routes carol's payment through an account made, used and closed inside it, so Portal has no
-// balance for that account.
+// balance for that account. Transaction 3 is one Batch that packs a transfer of another mint and a
+// transfer from carol to bob.
 const busy = {
   header: { number: SLOT, hash: base58.decode(filled(SLOT, 32)), timestamp: 1794009600 },
   transactions: [
     { transactionIndex: 0, signatures: [paid], err: null },
     { transactionIndex: 1, signatures: [failed], err: { InstructionError: [0, { Custom: 1 }] } },
     { transactionIndex: 2, signatures: [passThrough], err: null },
+    { transactionIndex: 3, signatures: [batched], err: null },
   ],
   tokenBalances: [
     balance(0, alice, MINT, { amount: "9007199254740993" }, { amount: "9007199254740990" }),
@@ -100,6 +106,8 @@ const busy = {
     balance(1, alice, MINT, { amount: "7" }, { amount: "7" }),
     balance(2, carol, MINT, { amount: "10" }, { amount: "8" }),
     balance(2, bob, MINT, { amount: "3" }, { amount: "5" }),
+    balance(3, carol, MINT, { amount: "8" }, { amount: "6" }),
+    balance(3, bob, MINT, { amount: "5" }, { amount: "7" }),
   ],
   instructions: [
     call(0, [0], COMPUTE_BUDGET, [], data(2, 0, 0, 1, 0)),
@@ -116,6 +124,7 @@ const busy = {
     call(2, [2], TOKEN, [ephemeral, MINT, bob, owner], transferChecked(2n)),
     call(2, [3], TOKEN, [ephemeral, owner, owner], data(9)),
     call(2, [4], TOKEN, [otherEphemeral, otherB, owner], transfer(1n)),
+    call(3, [0], TOKEN, [otherA, otherB, owner, carol, bob, owner], batch([3, 3, 1n], [3, 3, 2n])),
   ],
 };
 const empty = (slot: number) => ({
@@ -196,6 +205,11 @@ test("records are keyed by place in the chain; inner and outer instructions diff
       "100:2:1",
       "100:2:2",
       "100:2:3",
+      `tx:${batched}`,
+      `bal:100:3:${carol}`,
+      `bal:100:3:${bob}`,
+      "100:3:0",
+      "100:3:0.1",
     ],
     "no other mint's balance or SPL Token instruction, and no other program's instruction",
   );
@@ -246,6 +260,7 @@ test("a transaction, a balance and an instruction carry the fields the models re
     instruction: "transferChecked",
     args: { amount: "2", decimals: 6 },
     named_accounts: { source: alice, tokenMint: MINT, destination: bob, owner },
+    packed_in: null,
   });
 });
 
@@ -269,6 +284,25 @@ test("an account made and closed in a transaction keeps every instruction on it"
     read.some((r) => (r.data.accounts as string[] | undefined)?.includes(otherEphemeral)),
     false,
     "an account made for another mint ties nothing to the tracked mint",
+  );
+});
+
+test("a Batch is kept with each instruction it packs, at the Batch's address", async (t) => {
+  const read = await records(t);
+  const outer = byId(read, "100:3:0");
+  assert.equal(outer.instruction, "batch");
+  assert.deepEqual(outer.args, { instructions: 2 });
+  assert.equal(outer.packed_in, null);
+  const packed = byId(read, "100:3:0.1");
+  assert.equal(packed.instruction, "transfer");
+  assert.deepEqual(packed.instruction_address, [0, 1]);
+  assert.deepEqual(packed.accounts, [carol, bob, owner]);
+  assert.deepEqual(packed.args, { amount: "2" });
+  assert.deepEqual(packed.packed_in, [0]);
+  assert.equal(
+    read.some((r) => r.id === "100:3:0.0"),
+    false,
+    "the packed transfer of another mint touches no tracked account",
   );
 });
 

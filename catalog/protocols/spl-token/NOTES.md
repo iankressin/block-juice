@@ -15,6 +15,8 @@ A token account holds one mint for one owner. Four instruction families change a
 
 Amounts are u64 little-endian right after the one-byte discriminator, in the mint's base units. Plain `transfer` does not name the mint: the mint comes from the source or destination account. Every other row names it.
 
+`batch` (discriminator 255) packs several of these instructions into one. Its data holds, for each packed instruction, a u8 count of its accounts, a u8 length of its data, then that data, and the packed instructions take the Batch's accounts in turn. The program runs them in order inside the Batch, without a call of its own, so Portal shows only the Batch. A reader that decodes only the instructions above misses every movement inside a Batch. Proof row 7 is one: the second of two packed transfers moves 7944364 base units, and only that explains the two balance changes.
+
 An instruction can be outer or inner. Portal gives each one an `instructionAddress`: `[2]` is the third outer instruction, `[2, 0]` the first inner instruction it called. Sorting by `(slot, transactionIndex, instructionAddress)` gives execution order, since an inner instruction runs inside its outer one and before the next.
 
 A failed transaction keeps its instructions in Portal with `isCommitted: false` and leaves every balance as it was. Only transactions with `err` null move tokens.
@@ -48,6 +50,7 @@ For each successful transaction and each tracked account with a balance record, 
 | 5 | owner from the balance record | 466690001 | 54 | as row 4 | `85WU4DGuDQL1Mc8m4EZg1rsc5hWdni5hH6MmpxBAQ8Yh` has `preOwner` = `postOwner` = `DjYqetGx4i2EskcTnZpZPQDKDLu61w6582Eqz4xPdphF`, the same address its `transfer` at `[0,2,0]` names as authority. |
 
 | 6 | `burn` | 440009884 | 224 | `5qPDSnGvYtJ3Cb5uJ4fYgebF8KhC1yPE4cqX9qadbF5GAQ7fvY6qaHuhbn2a9bwPgn9rMVwXBAiLdvuPQNKvqopW` | Outer instruction `[2]`, discriminator 8, burns 9 base units from `8nnZLDVuWQXqDNuB3hsDxYrvCJ1DmoctphmK55aRdMNW`; account 1 is the mint. The account's balance falls by 9. The other 17 successful transactions of that slot reconcile too. |
+| 7 | `batch` | 465900089 | 106 | `3UAKnQ3efp8N16hv7yJdtu2LJxCLNZiQKzBuYGb3QLNFvtbqcySDu6UdXt1zeAE226hkHfAb9k44sFxBJ2BmibK3` | Inner instruction `[3,4,0]` has data `ff 03 09 03 dade6b0000000000 03 09 03 ac38790000000000`: two packed transfers of 3 accounts each. The second moves 7944364 from `67nP7KoBRgrM6uJgPwVjDsxeV132471AvtJABLhj6jq5` to `4Aecq3W6shsF4GMG9Vhr7R6yzupd2Pk4eEnPRMw5N5EG`. `67nP7K…` falls by 7944364, and `4Aecq3W6…` nets zero once the packed transfer joins its `transferChecked` in and `transfer` out. |
 
 No `mintTo` or `mintToChecked` of the USD₮ mint was found in the slots searched. That rule comes from the program source, and the tests that cover it use fixtures labeled as specification fixtures.
 

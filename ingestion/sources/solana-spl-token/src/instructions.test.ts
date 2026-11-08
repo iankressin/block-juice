@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getAddressDecoder, getAddressEncoder, getBase58Decoder, type Address } from "@solana/kit";
-import { decodeTokenInstruction as decode } from "#src/instructions.ts";
+import { decodeTokenInstruction as decode, unpackBatch } from "#src/instructions.ts";
 
 const base58 = getBase58Decoder();
 const data = (...bytes: number[]) => base58.decode(Uint8Array.from(bytes));
@@ -96,4 +96,46 @@ test("data the layouts do not hold decodes to null; bytes past the last field ar
   assert.equal(decode(accounts, data(6, 2, 2)), null, "no such option tag");
   assert.equal(decode(accounts, data(6, 2, 1, 9)), null, "short new authority");
   assert.deepEqual(decode(accounts, data(3, ...AMOUNT, 99))?.args, { amount: AMOUNT_TEXT });
+});
+
+test("a Batch unpacks into the instructions it packs, each with its own accounts", () => {
+  // Slot 465900089, transaction 3UAKnQ3efp8N16hv7yJdtu2LJxCLNZiQKzBuYGb3QLNFvtbqcySDu6UdXt1zeAE2
+  // 26hkHfAb9k44sFxBJ2BmibK3: the second packed transfer moves 7944364 USD₮ base units from
+  // 67nP7K… to 4Aecq3W6….
+  const accounts = [
+    "GZCRkTumPC6UTd1XhfkgWc9qsXeQPoAsQokNe9uF5vzT",
+    "2brq1DZHBH1iJoPJShLbxqs4BarKThwytnAsW8KAZYQ3",
+    "D5YqVMoSxnqeZAKAUUE1Dm3bmjtdxQ5DCF356ozqN9cM",
+    "67nP7KoBRgrM6uJgPwVjDsxeV132471AvtJABLhj6jq5",
+    "4Aecq3W6shsF4GMG9Vhr7R6yzupd2Pk4eEnPRMw5N5EG",
+    "35JazRP82XNsPLWL31Y3kwxYr3SABLufx9UnUJLnpkZz",
+  ];
+  const packed = unpackBatch(accounts, "6GVXzjTiBLxPdsyc5JAgWRhmux8cQY4F");
+  assert.ok(packed !== null);
+  const transfer = (amount: string, [source, destination, authority]: string[]) => ({
+    instruction: "transfer",
+    args: { amount },
+    named_accounts: { source, destination, authority },
+  });
+  assert.deepEqual(
+    packed.map((inner) => decode(inner.accounts, inner.data)),
+    [transfer("7069402", accounts.slice(0, 3)), transfer("7944364", accounts.slice(3))],
+  );
+});
+
+test("a Batch that does not parse is not unpacked", () => {
+  const four = [source, destination, owner, signer];
+  const transfer = [3, ...AMOUNT];
+  assert.equal(unpackBatch(four, data(3, ...AMOUNT)), null, "not a Batch");
+  assert.equal(unpackBatch(four, data(255, 3, 9, ...transfer)), null, "an account left over");
+  assert.equal(
+    unpackBatch(four, data(255, 5, 9, ...transfer)),
+    null,
+    "more accounts than the Batch has",
+  );
+  assert.equal(unpackBatch(four, data(255, 4, 20, ...transfer)), null, "data past the end");
+  assert.equal(unpackBatch(four, data(255, 4, 0)), null, "an empty instruction");
+  assert.equal(unpackBatch(four, data(255, 4, 1, 255)), null, "a Batch inside a Batch");
+  assert.equal(unpackBatch(four, data(255)), null, "nothing packed");
+  assert.deepEqual(unpackBatch(four, data(255, 4, 9, ...transfer))?.length, 1);
 });

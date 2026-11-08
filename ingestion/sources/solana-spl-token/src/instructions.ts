@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getAddressDecoder, getBase58Encoder } from "@solana/kit";
+import { getAddressDecoder, getBase58Decoder, getBase58Encoder } from "@solana/kit";
 
 export const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
@@ -115,6 +115,49 @@ const LAYOUTS: ReadonlyMap<number, Layout> = new Map<number, Layout>([
   [22, { name: "initializeImmutableOwner", accounts: ["initializeAccount"], data: [] }],
   [23, { name: "amountToUiAmount", accounts: ["mint"], data: [amount] }],
 ]);
+
+// The program's Batch instruction runs the instructions packed in its data, in order, inside itself.
+// Each packed instruction is a u8 count of its accounts, a u8 length of its data, then that data,
+// and takes its accounts from the Batch's in turn (interface/src/instruction.rs, `Batch = 255`).
+export const BATCH = 255;
+export const BATCH_NAME = "batch";
+
+export type PackedInstruction = { accounts: string[]; data: string };
+
+const base58Text = getBase58Decoder();
+
+/**
+ * The instructions a Batch packs, in the order it runs them, or null when the data is not a Batch
+ * or does not parse: a count or length past the end, an empty instruction, a Batch inside a Batch,
+ * or accounts left over. Each packed instruction's data is base58, as Portal sends an instruction's.
+ */
+export function unpackBatch(accounts: readonly string[], data: string): PackedInstruction[] | null {
+  const bytes = Uint8Array.from(base58.encode(data));
+  if (bytes.length === 0 || bytes[0] !== BATCH) return null;
+  const packed: PackedInstruction[] = [];
+  let offset = 1;
+  let account = 0;
+  // Each packed instruction takes at least three bytes, so the loop ends within bytes.length steps.
+  for (let step = 0; offset < bytes.length; step += 1) {
+    assert.ok(step < bytes.length, "a Batch packs fewer instructions than it has bytes");
+    if (offset + 2 > bytes.length) return null;
+    const count = bytes[offset]!;
+    const length = bytes[offset + 1]!;
+    const start = offset + 2;
+    if (length === 0 || start + length > bytes.length) return null;
+    if (bytes[start] === BATCH) return null;
+    if (account + count > accounts.length) return null;
+    packed.push({
+      accounts: accounts.slice(account, account + count),
+      data: base58Text.decode(bytes.subarray(start, start + length)),
+    });
+    account += count;
+    offset = start + length;
+  }
+  if (account !== accounts.length || packed.length === 0) return null;
+  assert.equal(offset, bytes.length);
+  return packed;
+}
 
 /** The instructions that create a token account. Each names the new account first. */
 export const ACCOUNT_INITIALIZERS: ReadonlySet<string> = new Set([
