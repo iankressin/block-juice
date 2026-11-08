@@ -1,0 +1,441 @@
+name: polymarket
+scope: >-
+  Polymarket's CTF era on Polygon: positions held in Gnosis ConditionalTokens, neg-risk markets run by
+  the NegRiskAdapter, fills on CTF Exchange v2 (live since 2026-04-28), and the collateral adapters and
+  auto-redeemers that users split, merge, redeem and convert through with pUSD. CTF Exchange v1 is
+  listed for its topics and to show it has no fills in the window. Protocol V2 (PositionManager and its
+  modules) belongs to Task 11; its contracts appear here only where they act on CTF positions.
+docs:
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/README.md
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/exchange/mixins/Trading.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/exchange/mixins/Events.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/adapters/CtfCollateralAdapter.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/adapters/NegRiskCtfCollateralAdapter.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/artifacts/ConditionalTokens.json
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/artifacts/NegRiskAdapter.json
+  - https://github.com/Polymarket/ctf-exchange-v2/commits/fix/nr-exchange-ctf-collateral
+  - https://github.com/Polymarket/clob-client-v2/blob/27633b3c7d/src/config.ts
+  - https://github.com/Polymarket/clob-client-v2/blob/27633b3c7d/src/order-utils/abi/ExchangeV2.ts
+  - https://github.com/Polymarket/clob-client-v2/blob/27633b3c7d/src/order-utils/abi/ExchangeV1.ts
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/README.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/docs/collateral.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/docs/migration.md
+  - https://github.com/Polymarket/neg-risk-ctf-adapter/blob/f78b35b086/src/NegRiskAdapter.sol
+  - https://github.com/Polymarket/polymarket-cli/blob/9b18b5faf5/src/commands/mod.rs
+  - https://github.com/Polymarket/py-sdk/blob/ddee30cebb/src/polymarket/models/gamma/market.py
+  - https://github.com/MetaMask/metamask-mobile/blob/d630e656cd/app/components/UI/Predict/providers/polymarket/constants.ts
+  - https://sourcify.dev/server/v2/contract/137/0xAdA100Db00Ca00073811820692005400218FcE1f
+  - https://sourcify.dev/server/v2/contract/137/0xadA2005600Dec949baf300f4C6120000bDB6eAab
+  - https://sourcify.dev/server/v2/contract/137/0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0
+  - https://sourcify.dev/server/v2/contract/137/0x64860bFD14fCcaAc09cd36f347784a9616AfB66C
+  - https://sourcify.dev/server/v2/contract/137/0xCe84E053301A82937F90ee2C2c1889cAb1db25dE
+chains:
+  polygon:
+    portal_dataset: polygon-mainnet
+    window_start_block: 94738440
+    contracts:
+      conditional_tokens:
+        address: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+        deployed_block: 4023686
+        role: >-
+          Gnosis ConditionalTokens, the ERC-1155 ledger that holds every CTF-era position. Splits
+          collateral into one position per index set, merges them back, and pays out after an oracle
+          reports. Both exchange versions settle in it.
+        source: >-
+          conditionalTokens in clob-client-v2 src/config.ts (MATIC_CONTRACTS) and in polymarket-cli
+          src/commands/mod.rs; getCtf() on all three v2 exchanges returned it on 2026-11-07. Deploy
+          block from the create trace in tx
+          0xf822536aff16fdb8df59bc9c0b5854c5bec4b9a76484ea9d6944908ced563389 (Portal stream API,
+          create-trace filter), the first block where eth_getCode returns code.
+      usdc_e:
+        address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+        deployed_block: 5013591
+        role: >-
+          Bridged USDC (USDC.e), 6 decimals. The collateral of every binary CTF position: position
+          ids are derived from it, even when users pay in pUSD.
+        source: >-
+          getCtfCollateral() on ctf_exchange_v2 returned it on 2026-11-07; USDCE in the collateral
+          adapters' constructors. Deploy block from the create trace in tx
+          0x51103659d8827d6d24732d1168de73390f4f387d58a8281944241657f1bc61d7.
+      neg_risk_adapter:
+        address: "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
+        deployed_block: 50505403
+        role: >-
+          Runs neg-risk events: prepares markets and questions, reports outcomes as the CTF oracle,
+          and splits, merges, converts and redeems positions on ConditionalTokens with
+          wrapped_collateral. It is the CTF stakeholder or redeemer of every neg-risk action.
+        source: >-
+          negRiskAdapter in clob-client-v2 src/config.ts and polymarket-cli. NEG_RISK_ADAPTER in the
+          neg-risk collateral adapters. Deploy block from the create trace in tx
+          0x192214f14b05d4404271a8d54d633d840277ba7b96df853417eb3fce274af2b9, which also created
+          wrapped_collateral.
+      wrapped_collateral:
+        address: "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2"
+        deployed_block: 50505403
+        role: >-
+          The NegRiskAdapter's wrapper around USDC.e, 6 decimals. The collateral of every neg-risk CTF
+          position, so neg-risk position ids are derived from it.
+        source: >-
+          getCtfCollateral() on neg_risk_ctf_exchange_v2 returned it on 2026-11-07. Created by
+          neg_risk_adapter in tx 0x192214f14b05d4404271a8d54d633d840277ba7b96df853417eb3fce274af2b9.
+      pusd:
+        address: "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
+        deployed_block: 84902320
+        role: >-
+          Polymarket USD (pUSD), the collateral of CTF Exchange v2, 6 decimals. Wraps USDC and
+          USDC.e 1:1; the USDC.e sits in a vault (0xc417fd8e9661c0d2120b64a04bb3278c17e99db1 in
+          every proof row). A UUPS proxy; implementation
+          0xCe84E053301A82937F90ee2C2c1889cAb1db25dE on 2026-11-07.
+        source: >-
+          CollateralToken (proxy) in the ctf-exchange-v2 and polymarket-v2-external READMEs;
+          collateral in clob-client-v2 src/config.ts; getCollateral() on all three v2 exchanges.
+          Deploy block from the create trace in tx
+          0xb182b902a72189a6b11d24b0f313439f899d2ef81a166489124c140eabb64841.
+      ctf_exchange_v1:
+        address: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"
+        deployed_block: 33605403
+        role: >-
+          CTF Exchange v1, for binary markets, trading in USDC.e until the 2026-04-28 cutover. No
+          OrderFilled in the window samples (NOTES.md, load estimate). It still emits
+          TokenRegistered for some new markets.
+        source: >-
+          exchange in clob-client-v2 src/config.ts. Deploy block from the create trace in tx
+          0x35423c49cb07c9ccecad9af20df52cccdeff0d46f833d438de8b02f2504aed22.
+      neg_risk_ctf_exchange_v1:
+        address: "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+        deployed_block: 50505492
+        role: CTF Exchange v1 for neg-risk markets. No logs at all in the window samples.
+        source: >-
+          negRiskExchange in clob-client-v2 src/config.ts. Deploy block from the create trace in tx
+          0x5935e680b186f72b6db932ce351dd6f0288b1e056ab8d0d307c5146606879369.
+      ctf_exchange_v2:
+        address: "0xE111180000d2663C0091e4f400237545B87B996B"
+        deployed_block: 84902353
+        role: >-
+          CTF Exchange v2 for binary markets. Trades pUSD against CTF positions backed by USDC.e and
+          mints or merges through ctf_collateral_adapter_v1 (its immutable outcome token factory).
+        source: >-
+          CTFExchangeV2 in the ctf-exchange-v2 README; exchangeV2 in clob-client-v2 src/config.ts.
+          getCollateral() = pusd, getCtf() = conditional_tokens, getCtfCollateral() = usdc_e,
+          getOutcomeTokenFactory() = ctf_collateral_adapter_v1 on 2026-11-07. Deploy block from the
+          create trace in tx 0xd313453c195344b3eea2d91343fb840e51130ba5562fb9c9eda83fd0f82c6c97.
+      neg_risk_ctf_exchange_v2:
+        address: "0xe2222d279d744050d28e00520010520000310F59"
+        deployed_block: 85058176
+        role: >-
+          CTF Exchange v2 for neg-risk markets ("NegRisk A" in the plan). Mints and merges through
+          neg_risk_ctf_collateral_adapter_v1.
+        source: >-
+          NegRiskCtfExchangeV2 in the ctf-exchange-v2 README since commit 4a78ab09de (2026-04-03),
+          negRiskExchangeV2 in clob-client-v2 src/config.ts. getCtfCollateral() = wrapped_collateral,
+          getOutcomeTokenFactory() = neg_risk_ctf_collateral_adapter_v1 on 2026-11-07. Deploy block
+          from the create trace in tx
+          0x81a5c04d0582967b4305b577a4f63a1d9bf5b1f6e0b9c385234540b154446ade.
+      neg_risk_ctf_exchange_v2_retired:
+        address: "0xe2222d002000Ba0053CEF3375333610F64600036"
+        deployed_block: 84902358
+        role: >-
+          The first NegRisk exchange v2 ("NegRisk B" in the plan), replaced on 2026-04-03. Its
+          getCtfCollateral() returns usdc_e, not wrapped_collateral, so it cannot match neg-risk
+          tokens; branch fix/nr-exchange-ctf-collateral in ctf-exchange-v2 fixes that in the deploy
+          script. No logs in the window samples; NOTES.md gives its full history.
+        source: >-
+          NegRiskCtfExchangeV2 in the ctf-exchange-v2 README from commit 7d6d6683d4 (2026-04-01)
+          until commit 4a78ab09de (2026-04-03). Deploy block from the create trace in tx
+          0x595af18ec89e80e07d83dceade6413128ce990e94f760c639c2860e3c9cb6324.
+      ctf_collateral_adapter_v1:
+        address: "0xADa100874d00e3331D00F2007a9c336a65009718"
+        deployed_block: 84902341
+        role: >-
+          The first pUSD adapter for binary CTF positions. ctf_exchange_v2 mints and merges through
+          it, so it is the CTF stakeholder of every binary mint and merge match. Users can still call
+          it to merge or redeem. It emits no event that names the user.
+        source: >-
+          CtfCollateralAdapter in the ctf-exchange-v2 README and polymarket-cli; verified on Sourcify
+          as src/adapters/CtfCollateralAdapter.sol (events: ownership, roles, pause only). Owner
+          0x47EbFAC3353314C788B96CDCbf41daadfE03629C, the same as pusd. Deploy block from the create
+          trace in tx 0x1e7aa0eb72e0eb24f8e4b803544e60d45b89d1a0ebfc3d0ea7cb19ece73bd3c0.
+      neg_risk_ctf_collateral_adapter_v1:
+        address: "0xAdA200001000ef00D07553cEE7006808F895c6F1"
+        deployed_block: 84902347
+        role: >-
+          The first pUSD adapter for neg-risk positions. neg_risk_ctf_exchange_v2 mints and merges
+          through it, so it is the NegRiskAdapter stakeholder of every neg-risk mint and merge match.
+          It emits no event that names the user.
+        source: >-
+          NegRiskCtfCollateralAdapter in the ctf-exchange-v2 README and polymarket-cli; verified on
+          Sourcify (events: ownership, roles, pause only). Owner as pusd. Deploy block from the create
+          trace in tx 0x4e82930278938b8dd64f31954fd1ba74298317dc79ba0e338d8999c58b053e5a.
+      ctf_collateral_adapter:
+        address: "0xAdA100Db00Ca00073811820692005400218FcE1f"
+        deployed_block: 86179826
+        role: >-
+          The current pUSD adapter that users split, merge and redeem binary positions through. Emits
+          PositionSplit, PositionsMerged and PositionsRedeemed with the user as initiator. First user
+          event at block 86180662 (2026-04-29 16:49 UTC).
+        source: >-
+          CTF_COLLATERAL_ADAPTER_ADDRESS in MetaMask's Polymarket constants (not a Polymarket repo);
+          verified on Sourcify as src/adapters/CtfCollateralAdapter.sol. Created through Polymarket's
+          deployer 0xca71ea69c54c163d17beb90beb8d001e1eb538a1, which also sent the deploys of pusd and
+          the v2 exchanges; owner as pusd. Deploy block from the create trace in tx
+          0x1a152fa541c0e573a3bdbe7f4bcd402247b2ffed3c1f0a8973dcdf32901b9105.
+      neg_risk_ctf_collateral_adapter:
+        address: "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
+        deployed_block: 86179892
+        role: >-
+          The current pUSD adapter for neg-risk positions. Emits PositionSplit, PositionsMerged,
+          PositionsRedeemed and PositionsConverted with the user as initiator.
+        source: >-
+          NEG_RISK_CTF_COLLATERAL_ADAPTER_ADDRESS in MetaMask's Polymarket constants; verified on
+          Sourcify as src/adapters/NegRiskCtfCollateralAdapter.sol. Sent by deployer
+          0xca71ea69c54c163d17beb90beb8d001e1eb538a1; owner as pusd. Deploy block from the create
+          trace in tx 0xdfdef82a68dd53443abe6d3884a888bed18ed1854277bead094bc813f641595a.
+      ctf_auto_redeem:
+        address: "0xF3cFb6a6eBFeB51876289Eb235719EB1C65252B0"
+        deployed_block: 86136861
+        role: >-
+          Redeems resolved CTF and neg-risk positions for many users in one transaction (sent
+          through an ERC-4337 EntryPoint) and pays them in pUSD. Emits BinaryRedemption and
+          NegRiskRedemption naming each user.
+        source: >-
+          Verified on Sourcify as src/CtfAutoRedeem.sol:CtfAutoRedeem. Owner
+          0x47EbFAC3353314C788B96CDCbf41daadfE03629C, the same as pusd. Not in a Polymarket repo.
+          Deploy block from the create trace in tx
+          0x1c204065cf301b0e725d293ce53cd077a6894d9bc0f6e3d7ca15095a62c6093a.
+      auto_redeemer:
+        address: "0xa1200000d0002264C9a1698e001292D00E1b00af"
+        deployed_block: null
+        role: >-
+          Protocol V2's AutoRedeemer (UUPS proxy). Besides V2 positions it redeems CTF and neg-risk
+          positions for users, the busiest redeemer in the window samples. Emits BinaryRedemption and
+          NegRiskRedemption (same topics as ctf_auto_redeem) and Redemption for V2 positions.
+        source: >-
+          AutoRedeemer (proxy) in the polymarket-v2-external README; implementation
+          0x64860bFD14fCcaAc09cd36f347784a9616AfB66C (ERC-1967 slot, 2026-11-07) verified on
+          Sourcify as src/utils/AutoRedeemer.sol. Deploy block left to Task 11.
+      binary_module:
+        address: "0x1000008dD9001B968442c1000017eaE6E0dA00Ba"
+        deployed_block: null
+        role: >-
+          Protocol V2 BinaryModule. Redeems the legacy CTF positions users migrated into V2, so it
+          appears as a CTF redeemer.
+        source: BinaryModule (proxy) in the polymarket-v2-external README. Deploy block left to Task 11.
+      neg_risk_module:
+        address: "0x200000900045e3B6259600682756002200028933"
+        deployed_block: null
+        role: Protocol V2 NegRiskModule. Same as binary_module for neg-risk positions.
+        source: NegRiskModule (proxy) in the polymarket-v2-external README. Deploy block left to Task 11.
+      fee_receiver:
+        address: "0x115F48DC2A731aA16251c6d6e1BEfC42f92Accc9"
+        deployed_block: null
+        role: Receives every v2 exchange fee in pUSD (FeeCharged.receiver).
+        source: getFeeReceiver() on all three v2 exchanges, 2026-11-07.
+      no_token_burn_address:
+        address: "0xa5Ef39C3D3e10d0B270233af41CaC69796B12966"
+        deployed_block: null
+        role: Where NegRiskAdapter.convertPositions sends the NO tokens it burns.
+        source: >-
+          NO_TOKEN_BURN_ADDRESS = address(bytes20(keccak256("NO_TOKEN_BURN_ADDRESS"))) in
+          NegRiskAdapter.sol; the hash reproduces it and proof row 8 sends NO tokens to it.
+events:
+  ctf.ConditionPreparation:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event ConditionPreparation(bytes32 indexed conditionId, address indexed oracle, bytes32 indexed questionId, uint256 outcomeSlotCount)"
+    topic0: "0xab3760c3bd2bb38b5bcf54dc79802ed67338b4cf29f3054ded67ed24661e4177"
+    abi: abis/conditional-tokens.json
+  ctf.ConditionResolution:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event ConditionResolution(bytes32 indexed conditionId, address indexed oracle, bytes32 indexed questionId, uint256 outcomeSlotCount, uint256[] payoutNumerators)"
+    topic0: "0xb44d84d3289691f71497564b85d4233648d9dbae8cbdbb4329f301c3a0185894"
+    abi: abis/conditional-tokens.json
+    proof_rows: [9]
+  ctf.PositionSplit:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event PositionSplit(address indexed stakeholder, address collateralToken, bytes32 indexed parentCollectionId, bytes32 indexed conditionId, uint256[] partition, uint256 amount)"
+    topic0: "0x2e6bb91f8cbcda0c93623c54d0403a43514fabc40084ec96b6d5379a74786298"
+    abi: abis/conditional-tokens.json
+    proof_rows: [2, 4, 8, 16]
+  ctf.PositionsMerge:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event PositionsMerge(address indexed stakeholder, address collateralToken, bytes32 indexed parentCollectionId, bytes32 indexed conditionId, uint256[] partition, uint256 amount)"
+    topic0: "0x6f13ca62553fcc2bcd2372180a43949c1e4cebba603901ede2f4e14f36b282ca"
+    abi: abis/conditional-tokens.json
+    proof_rows: [3, 5]
+  ctf.PayoutRedemption:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event PayoutRedemption(address indexed redeemer, address indexed collateralToken, bytes32 indexed parentCollectionId, bytes32 conditionId, uint256[] indexSets, uint256 payout)"
+    topic0: "0x2682012a4a4f1973119f1c9b90745d1bd91fa2bab387344f044cb3586864d18d"
+    abi: abis/conditional-tokens.json
+    proof_rows: [6, 7, 12, 14, 15]
+  ctf.TransferSingle:
+    use: proof only
+    emitted_by: conditional_tokens
+    signature: "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)"
+    topic0: "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62"
+    abi: abis/conditional-tokens.json
+    note: NOTES.md Q5 says when a source would need it.
+  ctf.TransferBatch:
+    use: proof only
+    emitted_by: conditional_tokens
+    signature: "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)"
+    topic0: "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
+    abi: abis/conditional-tokens.json
+    note: NOTES.md Q5 says when a source would need it.
+  neg_risk.MarketPrepared:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event MarketPrepared(bytes32 indexed marketId, address indexed oracle, uint256 feeBips, bytes data)"
+    topic0: "0xf059ab16d1ca60e123eab60e3c02b68faf060347c701a5d14885a8e1def7b3a8"
+    abi: abis/neg-risk-adapter.json
+  neg_risk.QuestionPrepared:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event QuestionPrepared(bytes32 indexed marketId, bytes32 indexed questionId, uint256 index, bytes data)"
+    topic0: "0xaac410f87d423a922a7b226ac68f0c2eaf5bf6d15e644ac0758c7f96e2c253f7"
+    abi: abis/neg-risk-adapter.json
+  neg_risk.OutcomeReported:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event OutcomeReported(bytes32 indexed marketId, bytes32 indexed questionId, bool outcome)"
+    topic0: "0x9e9fa7fd355160bd4cd3f22d4333519354beff1f5689bde87f2c5e63d8d484b2"
+    abi: abis/neg-risk-adapter.json
+  neg_risk.PositionSplit:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PositionSplit(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0xbbed930dbfb7907ae2d60ddf78345610214f26419a0128df39b6cc3d9e5df9b0"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [16]
+    trap: collateral_adapter.PositionSplit has the same topic0. Filter by emitting address.
+  neg_risk.PositionsMerge:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PositionsMerge(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0xba33ac50d8894676597e6e35dc09cff59854708b642cd069d21eb9c7ca072a04"
+    abi: abis/neg-risk-adapter.json
+  neg_risk.PositionsConverted:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PositionsConverted(address indexed stakeholder, bytes32 indexed marketId, uint256 indexed indexSet, uint256 amount)"
+    topic0: "0xb03d19dddbc72a87e735ff0ea3b57bef133ebe44e1894284916a84044deb367e"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [8, 13]
+  neg_risk.PayoutRedemption:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PayoutRedemption(address indexed redeemer, bytes32 indexed conditionId, uint256[] amounts, uint256 payout)"
+    topic0: "0x9140a6a270ef945260c03894b3c6b3b2695e9d5101feef0ff24fec960cfd3224"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [7]
+  collateral_adapter.PositionSplit:
+    use: source
+    emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
+    signature: "event PositionSplit(address indexed initiator, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0xbbed930dbfb7907ae2d60ddf78345610214f26419a0128df39b6cc3d9e5df9b0"
+    abi: abis/collateral-adapter.json
+    proof_rows: [4, 16]
+    trap: Same topic0 as neg_risk.PositionSplit. Filter by emitting address.
+  collateral_adapter.PositionsMerged:
+    use: source
+    emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
+    signature: "event PositionsMerged(address indexed initiator, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0x08c15f31e413dbd9bbd3b4c01b191db840e1657ab4f8d1d7d448a9a5083ba255"
+    abi: abis/collateral-adapter.json
+    proof_rows: [5]
+  collateral_adapter.PositionsRedeemed:
+    use: source
+    emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
+    signature: "event PositionsRedeemed(address indexed initiator, bytes32 indexed conditionId, uint256[] amounts, uint256 payout)"
+    topic0: "0x1daec0b1f629de29b749a189499f43104a80df46a9f34d9ccf73aa59b85fc0c0"
+    abi: abis/collateral-adapter.json
+    proof_rows: [12]
+  collateral_adapter.PositionsConverted:
+    use: source
+    emitted_by: neg_risk_ctf_collateral_adapter
+    signature: "event PositionsConverted(address indexed initiator, bytes32 indexed marketId, uint256 indexed indexSet, uint256 amount, uint256 amountOut)"
+    topic0: "0x1b8b64a5dd5755bb862006962dbcd07c11ab463091508bcaa350192a43022319"
+    abi: abis/collateral-adapter.json
+    proof_rows: [13]
+  auto_redeemer.BinaryRedemption:
+    use: source
+    emitted_by: ctf_auto_redeem, auto_redeemer
+    signature: "event BinaryRedemption(address indexed from, bytes32 indexed conditionId, uint256 payout)"
+    topic0: "0xb434294b5904213c83a167af0068ab82637c6fd4fac945e2abc74ed8d3f4d52a"
+    abi: abis/auto-redeemer.json
+    proof_rows: [14, 15]
+  auto_redeemer.NegRiskRedemption:
+    use: source
+    emitted_by: ctf_auto_redeem, auto_redeemer
+    signature: "event NegRiskRedemption(address indexed from, bytes32 indexed conditionId, uint256 payout)"
+    topic0: "0x74a51ebefec30281ec6849b727ec7916f9b1a3e5e148d6771d98315215b38b96"
+    abi: abis/auto-redeemer.json
+    proof_rows: [7]
+  ctf_exchange_v2.OrderFilled:
+    use: source
+    emitted_by: ctf_exchange_v2, neg_risk_ctf_exchange_v2, neg_risk_ctf_exchange_v2_retired
+    signature: "event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee, bytes32 builder, bytes32 metadata)"
+    topic0: "0xd543adfd945773f1a62f74f0ee55a5e3b9b1a28262980ba90b1a89f2ea84d8ee"
+    abi: abis/ctf-exchange-v2.json
+    proof_rows: [1, 2, 3, 10, 11, 17]
+    fields:
+      order_hash: {param: orderHash, at: topic1}
+      maker: {param: maker, at: topic2}
+      taker: {param: taker, at: topic3}
+      side: {param: side, at: data word 0, values: "0 = buy, 1 = sell"}
+      token_id: {param: tokenId, at: data word 1}
+      maker_amount_filled: {param: makerAmountFilled, at: data word 2}
+      taker_amount_filled: {param: takerAmountFilled, at: data word 3}
+      fee: {param: fee, at: data word 4}
+      builder: {param: builder, at: data word 5}
+      metadata: {param: metadata, at: data word 6}
+  ctf_exchange_v2.OrdersMatched:
+    use: proof only
+    emitted_by: ctf_exchange_v2, neg_risk_ctf_exchange_v2, neg_risk_ctf_exchange_v2_retired
+    signature: "event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled)"
+    topic0: "0x174b3811690657c217184f89418266767c87e4805d09680c39fc9c031c0cab7c"
+    abi: abis/ctf-exchange-v2.json
+  ctf_exchange_v2.FeeCharged:
+    use: proof only
+    emitted_by: ctf_exchange_v2, neg_risk_ctf_exchange_v2, neg_risk_ctf_exchange_v2_retired
+    signature: "event FeeCharged(address indexed receiver, uint256 amount)"
+    topic0: "0x55bb3cade9d43b798a4fe5ffdd05024b2d7870df53920673bfc7e68047cd0ab1"
+    abi: abis/ctf-exchange-v2.json
+  ctf_exchange_v1.OrderFilled:
+    use: count only
+    emitted_by: ctf_exchange_v1, neg_risk_ctf_exchange_v1
+    signature: "event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee)"
+    topic0: "0xd0a08e8c493f9c94f29311604c9de1b4e8c8d4c06bd0c789af57f2d65bfec0f6"
+    abi: null
+    abi_source: >-
+      exchangeV1Abi in clob-client-v2 src/order-utils/abi/ExchangeV1.ts. Phase C adds the ABI file
+      if v1 is ever loaded.
+  ctf_exchange_v1.TokenRegistered:
+    use: count only
+    emitted_by: ctf_exchange_v1
+    signature: "event TokenRegistered(uint256 indexed token0, uint256 indexed token1, bytes32 indexed conditionId)"
+    topic0: "0xbc9a2432e8aeb48327246cddd6e872ef452812b4243c04e6bfb786a2cd8faf0d"
+    abi: null
+    abi_source: exchangeV1Abi in clob-client-v2 src/order-utils/abi/ExchangeV1.ts.
+abi_sources:
+  abis/conditional-tokens.json: >-
+    The event entries of artifacts/ConditionalTokens.json in Polymarket/ctf-exchange-v2 at ccc0596074.
+  abis/neg-risk-adapter.json: >-
+    The event entries of artifacts/NegRiskAdapter.json in Polymarket/ctf-exchange-v2 at ccc0596074.
+    They match the event declarations in neg-risk-ctf-adapter src/NegRiskAdapter.sol.
+  abis/ctf-exchange-v2.json: >-
+    OrderFilled, OrdersMatched and FeeCharged from exchangeV2Abi in Polymarket/clob-client-v2
+    src/order-utils/abi/ExchangeV2.ts at 27633b3c7d. They match ITrading.sol and Events.sol in
+    ctf-exchange-v2.
+  abis/collateral-adapter.json: >-
+    The four position events of the Sourcify-verified NegRiskCtfCollateralAdapter at
+    0xadA2005600Dec949baf300f4C6120000bDB6eAab. The verified CtfCollateralAdapter at
+    0xAdA100Db00Ca00073811820692005400218FcE1f declares the first three with the same topic0s.
+  abis/auto-redeemer.json: >-
+    BinaryRedemption and NegRiskRedemption of the Sourcify-verified CtfAutoRedeem at
+    0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0. The verified AutoRedeemer implementation
+    0x64860bFD14fCcaAc09cd36f347784a9616AfB66C declares the same two events.
