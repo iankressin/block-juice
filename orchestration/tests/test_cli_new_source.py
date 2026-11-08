@@ -124,19 +124,20 @@ def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
 
 
 def test_creates_the_sources_file_of_a_new_source(repo):
-    assert run(repo, "polygon", "token_bridge", TEMPLATE) == 0
+    assert not (repo / "transformation/models/staging/optimism").exists()
+    assert run(repo, "optimism", "token_bridge", TEMPLATE) == 0
 
-    yml = (repo / "transformation/models/staging/polygon/_polygon__sources.yml").read_text()
+    yml = (repo / "transformation/models/staging/optimism/_optimism__sources.yml").read_text()
     shape = (repo / "transformation/models/staging/ethereum/_ethereum__sources.yml").read_text()
-    assert yml.splitlines()[:7] == shape.replace("ethereum", "polygon").splitlines()[:7]
-    (polygon,) = yaml.safe_load(yml)["sources"]
-    assert polygon["name"] == "polygon"
-    assert polygon["schema"] == "{{ env_var('RAW_SCHEMA', 'raw') }}"
-    assert polygon["tables"][0]["identifier"] == "polygon_token_bridge"
-    assert (repo / "transformation/models/staging/polygon/stg_polygon__token_bridge.sql").is_file()
-    source_ts = (repo / "ingestion/sources/polygon-token-bridge/src/source.ts").read_text()
-    assert 'name: "polygon"' in source_ts and 'name: "arbitrum"' not in source_ts
-    assert ("polygon", "token_bridge") in sources_of(repo)
+    assert yml.splitlines()[:7] == shape.replace("ethereum", "optimism").splitlines()[:7]
+    (optimism,) = yaml.safe_load(yml)["sources"]
+    assert optimism["name"] == "optimism"
+    assert optimism["schema"] == "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    assert optimism["tables"][0]["identifier"] == "optimism_token_bridge"
+    assert (repo / "transformation/models/staging/optimism/stg_optimism__token_bridge.sql").is_file()
+    source_ts = (repo / "ingestion/sources/optimism-token-bridge/src/source.ts").read_text()
+    assert 'name: "optimism"' in source_ts and 'name: "arbitrum"' not in source_ts
+    assert ("optimism", "token_bridge") in sources_of(repo)
 
 
 def test_a_failed_generator_leaves_the_files_and_exits_1(repo, monkeypatch, capsys):
