@@ -11,6 +11,8 @@
 -- Columns, for whoever sums them: a cash row has token_id and shares_delta null; a position change's
 -- token row has usdc_delta null; a redemption's token row may have shares_delta null and zeroes_position
 -- true. Trade rows have all three.
+-- A table, so parallel view swaps of its three staging inputs can't deadlock on it.
+{{ config(materialized='table') }}
 {%- set fill_columns -%}
     id, version, block_number, block_timestamp, tx_hash, log_index, wallet, token_id, side, shares, usdc, fee_usdc
 {%- endset %}

@@ -25,6 +25,8 @@
 -- Columns, for whoever sums them: a token row has usdc_delta null. A cash row has token_id and
 -- shares_delta null and zeroes_position false. Ids are <block>:<logIndex>:<token_id> and
 -- <block>:<logIndex>:cash, but a conversion's k cash rows are <block>:<logIndex>:cash:<condition_id>.
+-- A table, so parallel view swaps of its two staging inputs can't deadlock on it.
+{{ config(materialized='table') }}
 with contracts as (
     select address, role
     from {{ ref('polymarket_contracts') }}

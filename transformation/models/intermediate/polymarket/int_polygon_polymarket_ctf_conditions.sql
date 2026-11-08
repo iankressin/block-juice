@@ -4,6 +4,8 @@
 -- the two Polygon Polymarket raw tables' lowest blocks (progress R28, R33). A condition prepared before
 -- the window has no row here. Until both raw tables hold rows, the coverage start is unknown and no
 -- condition is complete.
+-- A table, so parallel view swaps of its two staging inputs can't deadlock on it.
+{{ config(materialized='table') }}
 with preparations as (
     select distinct on (condition_id)
         condition_id,
