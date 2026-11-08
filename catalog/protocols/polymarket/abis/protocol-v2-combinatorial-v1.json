@@ -1,0 +1,342 @@
+[
+  {
+    "name": "SplitOnCondition",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "parentConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "childYesConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "childNoConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "MergedOnCondition",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "parentConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "childYesConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "childNoConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "ConvertedOnEvent",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "parentConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "eventId",
+        "type": "bytes29",
+        "indexed": true,
+        "internalType": "EventId"
+      },
+      {
+        "name": "conditionIndex",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "Extracted",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "fullConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "reducedConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "residualConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "Injected",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "fullConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "reducedConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "residualConditionId",
+        "type": "bytes31",
+        "indexed": false,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "ConvertedToYesBasket",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "fullConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "MergedFromYesBasket",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "fullConditionId",
+        "type": "bytes31",
+        "indexed": true,
+        "internalType": "ConditionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "Compressed",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "oldPositionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "PositionId"
+      },
+      {
+        "name": "newPositionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "PositionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "positionAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "collateralOut",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "Wrapped",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "underlyingPositionId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "PositionId"
+      },
+      {
+        "name": "combinatorialPositionId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "PositionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "name": "Unwrapped",
+    "type": "event",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "combinatorialPositionId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "PositionId"
+      },
+      {
+        "name": "underlyingPositionId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "PositionId"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  }
+]

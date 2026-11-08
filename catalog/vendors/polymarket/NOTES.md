@@ -79,9 +79,10 @@ Types come from 796 markets sampled in windows of 100 consecutive ids across the
 ## Which protocol, and which ids
 
 - `version` names the protocol: `v1` for CTF markets, `v2` for Protocol V2. The docs: "Use `market.version` to select the identifiers … Both fields can be populated, so their presence does not select the protocol." Treat other values as unknown.
-- V1 markets: the trading token ids are `clobTokenIds`, which are ConditionalTokens position ids (proof rows 1 to 3). Many V1 markets also carry `positionIds` (474 of 795 sampled). Those never equalled `clobTokenIds` (474 of 474) and their hex form ends in `…0000`, `…0001`, `…0200`, `…0201`. Do not use them for a V1 market.
+- V1 markets: the trading token ids are `clobTokenIds`, which are ConditionalTokens position ids (proof rows 1 to 3). Many V1 markets also carry `positionIds` (474 of 795 sampled). Those never equalled `clobTokenIds` (474 of 474) and their hex form ends in `…0000`, `…0001`, `…0200`, `…0201`. They are the ids of the market's Protocol V2 twin, the position that migrating `clobTokenIds[i]` mints: `positionIds[i]` goes with `clobTokenIds[i]` (`catalog/protocols/polymarket/NOTES.md`, Q10, proof rows 36 and 40). Do not use them as the V1 market's trading tokens.
 - V2 markets: `positionIds` equals `clobTokenIds` on all 360 (`"clobTokenIds": ["8453…0608", "8453…0609"]`). The id is `conditionId` with the outcome index in the last byte: `clobTokenIds[0]` = `0x01de77a1…0000` = the `conditionId`, `clobTokenIds[1]` = the same with `…01`. The top byte of `conditionId` is the module: `0x01` binary (330 of 360), `0x02` neg risk (30 of 360).
-- The V2 `conditionId` is not a ConditionalTokens condition id. It ends in zero bytes (`0x01de77a1eabef176b40e662f3aaa0f0240000000000000000000000000000000`). Check it against the PositionManager's logs before a join relies on it.
+- The V2 `conditionId` is not a ConditionalTokens condition id. It ends in zero bytes (`0x01de77a1eabef176b40e662f3aaa0f0240000000000000000000000000000000`). It is the condition id the V2 modules emit (a `bytes31` topic with its zero 32nd byte), and the Protocol V2 Exchange's `OrderFilled.tokenId` equals `clobTokenIds[i]` (`catalog/protocols/polymarket/NOTES.md`, Q11, proof rows 26, 28 and 31).
+- Gamma lists no parlay (combinatorial, `0x03…`) market: `clob_token_ids`, `position_ids` and `condition_ids` lookups of a traded parlay returned `markets: []` on 2026-11-08.
 
 ## Outcome order and winners
 
@@ -132,5 +133,5 @@ What the rows show:
 
 - Rows 1 to 3 give the same two token ids per condition that Task 1 computed from ConditionalTokens (`getPositionId` at index sets 1 and 2): `clobTokenIds[0]` is the index set 1 token, `clobTokenIds[1]` the index set 2 token. All six ids match in full.
 - Row 1 pays `[0, 1]` on chain and Gamma shows `["0", "1"]`: Down wins. Row 3 pays `[1, 0]` and Gamma shows `["1", "0"]`: Up wins. Row 3's `closedTime` (12:00:53 UTC) equals the `ConditionResolution` block time. Row 2 is open on both sides.
-- Row 4: `0x01de77a1…` as hex is `clobTokenIds[0]` with the last byte 00 and `clobTokenIds[1]` with 01. Row 5 follows the same rule with top byte `0x02`. Whether these ids are the position ids that the Protocol V2 contracts and `OrderFilled` use is for the Protocol V2 task (Q11) to prove on a log; Gamma's side is that `positionIds` and `clobTokenIds` agree.
+- Row 4: `0x01de77a1…` as hex is `clobTokenIds[0]` with the last byte 00 and `clobTokenIds[1]` with 01. Row 5 follows the same rule with top byte `0x02`. These are the position ids that the Protocol V2 contracts and `OrderFilled` use: the protocol entry's Q11 proves it on fills of markets 5931602, 5931605 and 6015111.
 - The other V2 market looked up above (`6770019`, open, condition `0x012022213b0b69c791e46cd2665350ea69000000000000000000000000000000`) shows the same shape: `clobTokenIds[0]` `509087509928325909252543985009258432142384070580348294089705821985333837824`, `[1]` the same plus 1.
