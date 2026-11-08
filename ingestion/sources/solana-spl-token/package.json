@@ -1,0 +1,18 @@
+{
+  "name": "@ingestion/solana-spl-token",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "scripts": {
+    "ingest": "tsx src/index.ts",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@ingestion/lib": "workspace:*",
+    "@solana/kit": "^8.6.0",
+    "@subsquid/pipes": "1.0.0-beta.11",
+    "zod": "^4.6.7"
+  }
+}
