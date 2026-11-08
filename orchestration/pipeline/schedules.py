@@ -11,6 +11,7 @@ PIPELINES = {
     "bridges": "0 6 * * *",
     "prices": "0 6 * * *",
     "tokens": "0 6 * * *",
+    "transfer_share": "0 6 * * *",
 }
 
 jobs = [
