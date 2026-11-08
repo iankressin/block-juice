@@ -24,13 +24,17 @@ These notes cover the endpoints in `vendor.yaml`. Every limit, field and value b
 - A full run needs two walks, one for each value. `closed=any` is for lookups: with no id filter it gets HTTP 422 `closed=any requires at least one of id, slug, clob_token_ids, position_ids, condition_ids, request_ids, onchain_event_ids, or question_ids`.
 - A market that has just closed leaves the open list and enters the closed one. A market that traded in the last month is mostly closed now: the 5-minute crypto markets close within minutes (proof rows 2 and 9 below are both closed).
 
-## Protocol V2 markets are not in the list
+## The `version` filter and Protocol V2 markets
 
-- Open walk: 2,108 pages, 210,756 markets, zero with `version` `v2`. The market `6770019` (`polyv2zec-updown-5m-1794110100`, `version` `v2`, `closed` false) is open, and `GET /markets/keyset?id=6770019&closed=false` returns it.
-- Window test, open: `closed=false&end_date_min=2026-11-08T03:59:00Z&end_date_max=2026-11-08T04:01:00Z` (the market ends 04:00:00Z) returned 278 markets, ids 6222738 to 6770164, all `v1`, none with id 6770019.
-- Window test, closed: `closed=true&end_date_min=2026-11-07T07:59:00Z&end_date_max=2026-11-07T08:01:00Z` returned 128 markets, ids up to 6773977, all `v1`. Market `6770016` (`polyv2hype-updown-5m-1794038100`, ends 08:00:00Z) is closed and missing.
-- Look a V2 market up by `id`, `slug`, `condition_ids`, `clob_token_ids` or `position_ids` (all five returned market 6770019; for the last three, the first position id `5090…7824`). Each takes at most 100 values. Probing 83 windows of 100 consecutive ids between 6,000,000 and 6,830,000 found 360 V2 markets (353 closed, 7 open), all with a `polyv2` slug, created from 2026-10-22. The earliest `createdAt` among them is 2026-10-22T11:40Z.
-- So a list walk cannot give V2 markets. A V2 market comes from a lookup by the position ids that the logs show.
+- `version` is a filter on `/markets/keyset`. Values: `v1` and `v2`. Anything else is HTTP 422 `{"type":"validation error","error":"expected value to be one of \"v1, v2\""}` (`version=v3` and `version=V2` both got it).
+- Without `version`, a list returns only `v1` markets. Open walk with no `version`: 2,108 pages, 210,756 markets, none `v2`. `closed=true&limit=100` returned 100 `v1` markets from id 12. `version=v1&closed=false` returned 100 `v1` from id 559651.
+- `version=v2` lists V2 markets: `limit=100&version=v2&closed=true` returned 100 markets, all `v2`, from id 5662873 (`createdAt` 2026-10-13T17:30:52Z). `limit=100&version=v2&closed=false` returned 100, all `v2`, from id 6255194 (`createdAt` 2026-10-26T16:00:00Z). So the first V2 market is id 5662873, created 2026-10-13T17:30:52Z (lowest id of the two first pages; both lists sort by ascending id).
+- A walk of `version=v2&closed=false`: 55 pages, 5,446 markets, 72 s. All `v2`; condition ids start `0x01` on 4,776 (binary module) and `0x02` on 670 (neg-risk module); `negRisk` is true on 670, false on 4,018 and absent on 758; ids 6255194 to 6831390, created 2026-10-26T16:00:00Z to 2026-11-08T02:31:33Z.
+- A walk of `version=v2&closed=true`: 537 pages, 53,636 markets, 634 s (10.6 min, run beside the open walk). All `v2`; condition ids start `0x01` on 51,703 and `0x02` on 1,933; `negRisk` true on 1,933, false on 39,512, absent on 12,191; ids 5662873 to 6819513, created 2026-10-13T17:30:52Z to 2026-11-07T22:35:14Z. So V2 holds 59,082 markets in all (5,446 open, 53,636 closed), and one full V2 run is about 12 minutes sequential.
+- An id lookup does not need `version`: `id=6770019`, `condition_ids=0x0120…0000&closed=any`, `clob_token_ids` and `position_ids` each returned the V2 market 6770019 with no `version`. `id=6770019&version=v1` returned `markets: []`.
+- A keyset `slug` lookup does need it. `slug=polyv2zec-updown-5m-1794110100` (also with `closed=any`) returned `markets: []`; with `version=v2` it returned market 6770019. A V1 slug (`slug=xi-jinping-out-before-2027`) works with no `version`. `GET /markets/slug/{slug}` also returned 6770019 with no parameter, and is the slug lookup to use.
+- Earlier windows (kept as evidence that the default hides V2): `closed=false&end_date_min=2026-11-08T03:59:00Z&end_date_max=2026-11-08T04:01:00Z` returned 278 `v1` markets, none with id 6770019 (open, `v2`, ends 04:00:00Z). `closed=true&end_date_min=2026-11-07T07:59:00Z&end_date_max=2026-11-07T08:01:00Z` returned 128 `v1` markets in two pages (page 1 held 100 with a `next_cursor`; I walked page 2, 28 markets, no cursor), none with id 6770016 (`v2`, ends 08:00:00Z). The same closed window with `version=v2` returned 12 `v2` markets.
+- A sample of 83 windows of 100 consecutive ids found 360 V2 markets (353 closed, 7 open), all with a `polyv2` slug; an earlier guess that they began on 2026-10-22 was wrong, the first by id is the one above.
 
 ## How long a full run takes
 
@@ -40,6 +44,8 @@ These notes cover the endpoints in `vendor.yaml`. Every limit, field and value b
 - Closed markets that ended in the window and have volume: `closed=true&volume_num_min=0.000001&end_date_min=<day>&end_date_max=<next day>` for each day from 2026-10-01 to 2026-11-08, six days in parallel, gave 475,600 markets in 4,777 pages and 1,018 s (17 min).
 - `volume_num_min` cuts little. On the 10,438 closed markets that ended on 2026-10-20, `volume_num_min=0` and `0.000001` both gave 10,438, `1` gave 9,947 (95%), `100` gave 6,643 (64%) and `1000` gave 3,600 (34%). Windows of 100 consecutive ids held far fewer markets with a non-zero `volumeNum` (0 to 12 in the windows from id 6,000,000), so the filter and the field do not match; I did not find out why.
 - `end_date_min` and `end_date_max` split a walk into windows that can run side by side, and a minimum on `endDate` drops the old closed markets. The first closed market by id with `end_date_min=2026-10-01T00:00:00Z` was id 549868, with `endDate` 2026-12-31: a far end date does not mean a recent market. For a source that must cover trades since 2026-10-01, the open walk (43 min sequential) plus the closed day windows (17 min with six in parallel) is the measured cost; the windows lose a market whose `endDate` falls before the first trade it took.
+
+- The reply to too many requests is an open item. I did not provoke a 429, because the proxy's IP is shared. The rate-limits page says requests are throttled (delayed), not rejected. Retry 429 and 5xx with backoff.
 
 ## Fields that `stg_polymarket__markets` reads
 
@@ -66,6 +72,7 @@ Types come from 796 markets sampled in windows of 100 consecutive ids across the
 - `outcomes` and `clobTokenIds` are strings that hold JSON. Parse them. The docs say the same ("Outcome labels and prices are JSON-encoded strings", parse `clobTokenIds` for CTF).
 - Token ids are decimal strings below 2^256. Keep them as text or `numeric`, not `bigint` or a JSON number.
 - `outcomes[i]` goes with `clobTokenIds[i]` (proof rows 1 to 3).
+- Outcome count: all 796 sampled markets, 210,712 open markets (by `clobTokenIds` length) and 360 sampled V2 markets had 2 outcomes. I found no market with more than two; a lookup for one was not attempted.
 - The market object has about 100 fields; the staging model needs 18 of them.
 
 ## Which protocol, and which ids
@@ -103,7 +110,7 @@ The reply is `{"data": [ … ], "pagination": {"limit": 100, "offset": 0, "has_m
 
 ## Traps
 
-- `/markets/keyset` leaves out V2 markets. A source that only lists markets has no V2 metadata.
+- `/markets/keyset` returns only V1 markets unless you send `version=v2`. A source needs one walk per `version` (and per `closed` value).
 - The default `closed=false` leaves out every closed market, and most markets that traded in a month are closed.
 - `limit` above 100 is cut without a message. Count the rows, not the request.
 - `clobTokenIds` is null and `conditionId` is empty on placeholder markets. Drop them before a cast.

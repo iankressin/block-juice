@@ -14,7 +14,7 @@ docs:
   - https://docs.polymarket.com/api-reference/markets/get-prices-history.md
   - https://docs.polymarket.com/api-reference/wallet/list-positions-for-a-user-or-market.md
 sources:
-  - ingestion/sources/polymarket-markets  # not built yet: Task 3
+  - ingestion/sources/polymarket-markets  # not built yet: Task 3. Nothing in the repo reads this field.
 api:
   gamma:
     base_url: https://gamma-api.polymarket.com
@@ -54,8 +54,9 @@ limits:
   clob_prices_history: 1,000 requests per 10 s
   data_v2_positions: 200 requests per 10 s
   on_exceed: >-
-    Not provoked. The page says requests are delayed, not rejected. A client should still treat HTTP 429
-    like any rate error: wait and send again.
+    OPEN ITEM: the reply to too many requests is unproven. I did not provoke one, because the proxy's IP
+    is shared. The docs page says requests are throttled (delayed or queued), not rejected. A client
+    should retry HTTP 429 and 5xx with backoff.
 endpoints:
   markets_keyset:
     use: source
@@ -76,21 +77,27 @@ endpoints:
         needs one id filter. closed=any alone is HTTP 422.
       id: repeatable, at most 100 values.
       condition_ids: repeatable, at most 100 values.
-      clob_token_ids: repeatable, at most 100 values. Matches a V2 market's position ids as well.
+      clob_token_ids: repeatable, at most 100 values. Matches a V2 market's position ids as well, with no version.
       position_ids: repeatable, at most 100 values.
-      slug: repeatable, at most 100 values.
+      slug: >-
+        repeatable, at most 100 values. Needs version=v2 to find a V2 market (without it: markets []).
+        GET /markets/slug/{slug} is the slug lookup that needs no parameter.
+      version: >-
+        v1 or v2; anything else is HTTP 422 'expected value to be one of "v1, v2"'. With none, a list
+        returns only v1 markets. version=v2 lists V2 markets. id, condition_ids, clob_token_ids and
+        position_ids lookups find a V2 market without it.
       end_date_min: ISO 8601, on endDate. end_date_max is its pair. start_date_min and start_date_max also exist.
       volume_num_min: number, on volumeNum. volume_num_max, liquidity_num_min and liquidity_num_max also exist.
     order_default: id ascending, numeric (ids are strings in the JSON).
     visibility: >-
-      A list without an id filter leaves out Protocol V2 markets (version v2). The same market comes back
-      from an id, slug, condition_ids, clob_token_ids or position_ids filter. NOTES.md shows both.
+      Without version, a list returns only v1 markets (210,756 open, none v2). version=v2 returns the V2
+      markets (5,446 open, 53,636 closed on 2026-11-07). A full run walks version v1 and v2, each with closed false and true.
     reply: >-
       An object: $schema (string), markets (array of market objects), next_cursor (string, absent on the last page).
       A page of 100 markets weighs about 560 KB.
     source: >-
       The list-markets-keyset-pagination page, and replies on 2026-11-07. The 100 cap, the default order,
-      the 422 bodies and the V2 gap are from replies (NOTES.md).
+      the 422 bodies and the version filter are from replies (NOTES.md).
   markets_legacy:
     use: none
     host: gamma
@@ -106,7 +113,7 @@ endpoints:
     host: gamma
     method: GET
     path: /markets/{id}
-    role: One market by Gamma id. Also served at /markets/slug/{slug}. Returns the V2 markets that the list omits.
+    role: One market by Gamma id. Also served at /markets/slug/{slug}, which is the slug lookup. Both return V2 markets with no parameter.
   market_fields:
     use: source
     note: >-
@@ -118,7 +125,7 @@ endpoints:
       questionID: {type: string, note: "0x-prefixed. Absent on V2 markets."}
       question: {type: string}
       slug: {type: string}
-      outcomes: {type: string, note: "A JSON-encoded array: '[\"Up\", \"Down\"]'. Parse it. Every sampled market had 2."}
+      outcomes: {type: string, note: "A JSON-encoded array: '[\"Up\", \"Down\"]'. Parse it. All 796 sampled markets, all 210,712 open ones (by clobTokenIds length) and 360 V2 ones had 2; none with more was found."}
       outcomePrices: {type: string, note: "A JSON-encoded array of decimal strings. '[\"1\", \"0\"]' once a market has settled."}
       clobTokenIds: {type: string or null, note: "A JSON-encoded array of decimal strings, same order as outcomes. null on 44 open placeholder markets."}
       positionIds: {type: array of strings, note: "Absent on 321 of 796 sampled markets. On a V1 market it is not clobTokenIds. On a V2 market it equals clobTokenIds."}
