@@ -50,7 +50,9 @@ export async function portalHeaders(
     fields: { block },
   } as const;
   const headers: Header[] = [];
-  for await (const { blocks } of portal.getStream(query)) {
+  // By default the client holds blocks back until it has 10MB or 5s of them, which made each
+  // search step take 10s or more. A step needs one header, so each response is handed over at once.
+  for await (const { blocks } of portal.getStream(query, { maxBytes: 1 })) {
     for (const block of blocks) {
       const header = portalHeader.parse(block.header);
       assert.ok(header.number >= from && header.number <= head, "Portal answers inside the range");
