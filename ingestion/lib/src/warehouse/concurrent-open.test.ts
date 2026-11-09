@@ -6,8 +6,9 @@ import pg from "pg";
 import { postgresWarehouse, type Connection } from "#src/warehouse/index.ts";
 
 // PGlite has one connection, so it cannot race. These tests need a Postgres server and skip
-// without one, as the orchestration tests do.
-const SERVER = ["WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD", "WAREHOUSE_DB"] as const;
+// without one, as the orchestration tests do. Like those, they work in a database of their own,
+// dropped afterwards, so they read and write nothing of the warehouse's.
+const SERVER = ["WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD"] as const;
 
 function serverConfig(): pg.ClientConfig | string {
   const missing = SERVER.filter((name) => process.env[name] === undefined);
@@ -18,7 +19,6 @@ function serverConfig(): pg.ClientConfig | string {
     port: Number(env.WAREHOUSE_PORT),
     user: env.WAREHOUSE_USER,
     password: env.WAREHOUSE_PASSWORD,
-    database: env.WAREHOUSE_DB,
   };
 }
 
@@ -33,25 +33,26 @@ async function connect(config: pg.ClientConfig): Promise<Connection> {
 }
 
 test("warehouses that open at once on an empty schema all succeed", async (t) => {
-  const config = serverConfig();
-  if (typeof config === "string") return t.skip(config);
+  const server = serverConfig();
+  if (typeof server === "string") return t.skip(server);
   let admin: Connection;
   try {
-    admin = await connect(config);
+    admin = await connect({ ...server, database: "postgres" });
   } catch (error) {
-    return t.skip(`no Postgres server at ${config.host}:${config.port}: ${String(error)}`);
+    return t.skip(`no Postgres server at ${server.host}:${server.port}: ${String(error)}`);
   }
-  t.after(() => admin.close());
+  const database = `bj_test_${randomBytes(6).toString("hex")}`;
+  await admin.query(`create database "${database}"`);
+  t.after(async () => {
+    await admin.query(`drop database "${database}" with (force)`);
+    await admin.close();
+  });
+  const scratch = { ...server, database };
 
   for (let round = 0; round < 10; round++) {
-    const schema = `race_${round}_${randomBytes(4).toString("hex")}`;
-    const warehouse = postgresWarehouse({ schema, connect: () => connect(config) });
+    const warehouse = postgresWarehouse({ schema: `race_${round}`, connect: () => connect(scratch) });
     const results = await Promise.allSettled(["source_0", "source_1", "source_2"].map((table) => warehouse.open(table)));
-    try {
-      for (const result of results) if (result.status === "fulfilled") await result.value.close();
-    } finally {
-      await admin.query(`drop schema if exists "${schema}" cascade`);
-    }
+    for (const result of results) if (result.status === "fulfilled") await result.value.close();
     const failed = results.filter((r) => r.status === "rejected").map((r) => String(r.reason));
     assert.deepEqual(failed, [], `round ${round}`);
   }

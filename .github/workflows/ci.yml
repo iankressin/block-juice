@@ -75,7 +75,6 @@ jobs:
           WAREHOUSE_PORT: "5432"
           WAREHOUSE_USER: elt
           WAREHOUSE_PASSWORD: elt
-          WAREHOUSE_DB: warehouse
         run: pnpm exec tsx --test src/warehouse/concurrent-open.test.ts
 
   # The dbt project and the Dagster code. dbt parses, seeds and compiles against a throwaway Postgres, which
