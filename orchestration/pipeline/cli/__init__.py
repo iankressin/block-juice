@@ -92,7 +92,7 @@ def _report(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     from pipeline.cli import run
 
-    return run.run(REPO_ROOT, args.pipeline)
+    return run.run(REPO_ROOT, args.pipeline, args.select)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -214,6 +214,15 @@ def parser() -> argparse.ArgumentParser:
         "Exits 1 when the run fails, naming the steps that failed.",
     )
     run.add_argument("pipeline")
+    run.add_argument(
+        "--select",
+        nargs="+",
+        action="extend",
+        default=[],
+        metavar="KEY",
+        help="materialize only these assets of the job, by their Dagster keys: a dbt model by name "
+        "(polymarket_trades), a source as <source>/<table> (polygon/polymarket_ctf)",
+    )
     run.set_defaults(run=_run)
 
     return root

@@ -29,5 +29,6 @@ Run commands from the repo root. On a fresh checkout, run `uv run --project orch
 
 - `uv run --project orchestration bj <command>` runs every mechanical step. It reads `.env` itself. `bj --help` lists the commands.
 - dbt and Dagster read settings from the environment, so start each such command with `set -a && . ./.env && set +a &&`.
+- To rebuild part of a pipeline in the warehouse, such as one model after a failed run, use `bj run <pipeline> --select <key>`: a model by name, a source as `<source>/<table>`. It makes a Dagster run, which the Dagster UI and the run log show. A `dbt run` or `dbt build` of the warehouse makes none.
 
 Use the words in [GLOSSARY.md](../../../GLOSSARY.md).

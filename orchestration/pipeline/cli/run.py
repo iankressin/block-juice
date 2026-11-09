@@ -1,8 +1,8 @@
-"""bj run: materialize one pipeline's Dagster job. Steps that do not depend on each other run side by
-side, each in a process of its own, as in scheduled runs."""
+"""bj run: materialize one pipeline's Dagster job, or with --select only some of its assets. Steps that
+do not depend on each other run side by side, each in a process of its own, as in scheduled runs."""
 
 import importlib
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from pathlib import Path
 
 import dagster as dg
@@ -43,14 +43,29 @@ def root_cause(error):
     return error
 
 
-def materialize(module: str, pipelines: Collection[str], name: str) -> int:
+def selected_keys(module: str, name: str, select: Sequence[str]) -> list[dg.AssetKey] | None:
+    """The assets --select names, each checked against the pipeline's job. None runs the whole job."""
+    if not select:
+        return None
+    assets = job_def(module, name).asset_layer.selected_asset_keys
+    keys = [dg.AssetKey.from_user_string(key) for key in select]
+    outside = [key.to_user_string() for key in keys if key not in assets]
+    if outside:
+        listed = ", ".join(sorted(key.to_user_string() for key in assets))
+        verb = "is" if len(outside) == 1 else "are"
+        raise BadInput(f"{', '.join(outside)} {verb} not in pipeline {name}; its assets: {listed}")
+    return keys
+
+
+def materialize(module: str, pipelines: Collection[str], name: str, select: Sequence[str] = ()) -> int:
     if name not in pipelines:
         raise BadInput(f"no pipeline named {name!r}; pipelines: {', '.join(pipelines)}")
+    keys = selected_keys(module, name, select)
     # execute_in_process runs one step at a time. A job that each step's process can rebuild by name
     # runs on the job's own executor, the multiprocess one.
     job = dg.build_reconstructable_job("pipeline.cli.run", "job_def", reconstructable_args=(module, name))
     # Not `with`: entering the result starts the job's resources again and logs that to the finished run.
-    result = dg.execute_job(job, instance=dg.DagsterInstance.get(), raise_on_error=False)
+    result = dg.execute_job(job, instance=dg.DagsterInstance.get(), raise_on_error=False, asset_selection=keys)
     if result.success:
         print(f"{name}: run {result.run_id} succeeded")
         return 0
@@ -64,7 +79,7 @@ def materialize(module: str, pipelines: Collection[str], name: str) -> int:
     return 1
 
 
-def run(repo_root: Path, name: str) -> int:
+def run(repo_root: Path, name: str, select: Sequence[str] = ()) -> int:
     parse_project(repo_root / "transformation")
     module, pipelines = load_pipelines()
-    return materialize(module, pipelines, name)
+    return materialize(module, pipelines, name, select)
