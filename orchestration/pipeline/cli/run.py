@@ -1,5 +1,7 @@
-"""bj run: materialize one pipeline's Dagster job in this process."""
+"""bj run: materialize one pipeline's Dagster job. Steps that do not depend on each other run side by
+side, each in a process of its own, as in scheduled runs."""
 
+import importlib
 from collections.abc import Collection
 from pathlib import Path
 
@@ -17,11 +19,17 @@ def parse_project(project: Path) -> None:
         raise BadInput(f"dbt parse failed: {dbt_error(result)}")
 
 
-def load_definitions() -> tuple[dg.Definitions, Collection[str]]:
-    from pipeline.definitions import defs
+def load_pipelines() -> tuple[str, Collection[str]]:
+    """The module that holds the Dagster definitions, and the pipeline names. pipeline.schedules needs
+    the manifest that parse_project writes, so it is imported here, not at the top."""
     from pipeline.schedules import PIPELINES
 
-    return defs, PIPELINES
+    return "pipeline.definitions", PIPELINES
+
+
+def job_def(module: str, name: str) -> dg.JobDefinition:
+    """The pipeline's job, from the module's `defs`. Each step's process calls it to rebuild the job."""
+    return importlib.import_module(module).defs.resolve_job_def(name)
 
 
 def first_line(text: str) -> str:
@@ -35,24 +43,27 @@ def root_cause(error):
     return error
 
 
-def materialize(defs: dg.Definitions, pipelines: Collection[str], name: str) -> int:
+def materialize(module: str, pipelines: Collection[str], name: str) -> int:
     if name not in pipelines:
         raise BadInput(f"no pipeline named {name!r}; pipelines: {', '.join(pipelines)}")
-    result = defs.resolve_job_def(name).execute_in_process(instance=dg.DagsterInstance.get(), raise_on_error=False)
-    if result.success:
-        print(f"{name}: run {result.run_id} succeeded")
-        return 0
-    print(f"{name}: run {result.run_id} failed")
-    failures = [event for event in result.all_events if event.is_step_failure]
-    for event in failures:
-        print(f"  step {event.step_key} failed: {first_line(root_cause(event.step_failure_data.error).message)}")
-    if not failures:
-        run_failure = next((event for event in result.all_events if event.is_run_failure), None)
-        print(f"  no step failed: {first_line(run_failure.message) if run_failure else 'the run did not finish'}")
-    return 1
+    # execute_in_process runs one step at a time. A job that each step's process can rebuild by name
+    # runs on the job's own executor, the multiprocess one.
+    job = dg.build_reconstructable_job("pipeline.cli.run", "job_def", reconstructable_args=(module, name))
+    with dg.execute_job(job, instance=dg.DagsterInstance.get(), raise_on_error=False) as result:
+        if result.success:
+            print(f"{name}: run {result.run_id} succeeded")
+            return 0
+        print(f"{name}: run {result.run_id} failed")
+        failures = [event for event in result.all_events if event.is_step_failure]
+        for event in failures:
+            print(f"  step {event.step_key} failed: {first_line(root_cause(event.step_failure_data.error).message)}")
+        if not failures:
+            run_failure = next((event for event in result.all_events if event.is_run_failure), None)
+            print(f"  no step failed: {first_line(run_failure.message) if run_failure else 'the run did not finish'}")
+        return 1
 
 
 def run(repo_root: Path, name: str) -> int:
     parse_project(repo_root / "transformation")
-    defs, pipelines = load_definitions()
-    return materialize(defs, pipelines, name)
+    module, pipelines = load_pipelines()
+    return materialize(module, pipelines, name)

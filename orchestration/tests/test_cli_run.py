@@ -1,38 +1,37 @@
+import os
+from pathlib import Path
+
 import dagster as dg
 import pytest
 
 from pipeline.cli import main
 from pipeline.cli import run as run_command
 
-
-@dg.asset
-def loaded():
-    return 1
-
-
-@dg.asset(deps=[loaded])
-def transformed():
-    raise RuntimeError("relation raw.ethereum_eth_balances does not exist")
-
-
-STUB = dg.Definitions(
-    assets=[loaded, transformed],
-    jobs=[dg.define_asset_job("balances", selection="*"), dg.define_asset_job("loads", selection=[loaded])],
-)
+TESTS = Path(__file__).parent
 
 
 @pytest.fixture
-def stubbed(monkeypatch):
+def barrier(monkeypatch, tmp_path):
+    path = tmp_path / "barrier"
+    path.mkdir()
+    monkeypatch.setenv("STUB_BARRIER_DIR", str(path))
+    return path
+
+
+@pytest.fixture
+def stubbed(monkeypatch, barrier):
     parsed = []
     monkeypatch.setattr(run_command, "parse_project", parsed.append)
-    monkeypatch.setattr(run_command, "load_definitions", lambda: (STUB, ["balances", "loads"]))
+    # Each step's process imports the stub module by name, and finds it through PYTHONPATH.
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(filter(None, [str(TESTS), os.environ.get("PYTHONPATH")])))
+    monkeypatch.setattr(run_command, "load_pipelines", lambda: ("stub_pipelines", ["balances", "loads", "side_by_side", "one_fails"]))
     return parsed
 
 
 def test_unknown_pipeline_exits_2_listing_the_pipelines(stubbed, capsys):
     assert main(["run", "prices"]) == 2
     err = capsys.readouterr().err
-    assert "no pipeline named 'prices'; pipelines: balances, loads" in err
+    assert "no pipeline named 'prices'; pipelines: balances, loads, side_by_side, one_fails" in err
     assert err.count("\n") == 1
 
 
@@ -69,3 +68,19 @@ def test_failed_run_exits_1_naming_the_failed_step(stubbed, capsys):
     out = capsys.readouterr().out
     assert "step transformed failed: RuntimeError: relation raw.ethereum_eth_balances does not exist" in out
     assert "step loaded" not in out
+
+
+def test_runs_a_pipelines_steps_side_by_side(stubbed, capsys):
+    assert main(["run", "side_by_side"]) == 0
+    assert "side_by_side: run " in capsys.readouterr().out
+
+
+def test_a_failed_step_lets_the_others_finish(stubbed, barrier, capsys):
+    assert main(["run", "one_fails"]) == 1
+    assert "step fails failed: RuntimeError: source broke" in capsys.readouterr().out
+    assert (barrier / "sibling").exists()
+
+
+def test_runs_from_any_directory(stubbed, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", "loads"]) == 0
