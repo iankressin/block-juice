@@ -25,6 +25,9 @@ SLUG = re.compile(r"^[a-z0-9-]+$")
 # dbt and Postgres take these as column names without quoting or case folding.
 COLUMN = re.compile(r"^[a-z_][a-z0-9_]*$")
 FENCE = re.compile(r"^```(yaml|csv)\n(.*?)\n```$", re.MULTILINE | re.DOTALL)
+# A fenced block runs to its closing fence or, left open, to the end of the text, as GitHub renders it.
+ANY_FENCE = re.compile(r"(^```.*?(?:^```[^\n]*$|\Z))", re.MULTILINE | re.DOTALL)
+HTML_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 
@@ -194,30 +197,46 @@ def load_yaml(text: str, label: str) -> Any:
         raise Invalid(f"{label} is not valid YAML: {' '.join(str(error).split())}") from None
 
 
+def is_app(item: dict) -> bool:
+    return (item.get("user") or {}).get("type") == "Bot"
+
+
 def trusted(item: dict) -> bool:
     """Text the model may read: from someone with write access or from an App installed on the repo, such as
     the factory or a review bot. Never from a passer-by, who could write instructions into a public ticket."""
-    return (item.get("user") or {}).get("type") == "Bot" or item.get("author_association") in TRUSTED
+    return is_app(item) or item.get("author_association") in TRUSTED
 
 
-def entry(heading: str, body: str | None) -> str:
-    return f"### {heading}\n\n{normalized(body).strip() or '(empty)'}\n"
+def visible(body: str | None) -> str:
+    """A human's text as GitHub renders it: HTML comments outside fenced blocks dropped. The human who checks
+    the ticket never sees a hidden comment, so the model must not read one either."""
+    parts = ANY_FENCE.split(normalized(body))
+    return "".join(part if index % 2 else HTML_COMMENT.sub("", part) for index, part in enumerate(parts))
+
+
+def text_of(item: dict) -> str:
+    """An App's text stays as posted, so the model sees the factory's scope comment with its marker."""
+    return normalized(item.get("body")) if is_app(item) else visible(item.get("body"))
+
+
+def entry(heading: str, item: dict) -> str:
+    return f"### {heading}\n\n{text_of(item).strip() or '(empty)'}\n"
 
 
 def ticket(issue: dict, comments: list[dict], pull: dict | None = None) -> str:
     """The ticket as the model reads it: title, body, the trusted comments in order and, when the branch
     has an open PR, its trusted reviews, review comments and comments."""
-    parts = [f"# #{issue['number']} {issue['title']}\n", normalized(issue.get("body")).strip() or "(no description)", "", "## Comments\n"]
+    parts = [f"# #{issue['number']} {issue['title']}\n", visible(issue.get("body")).strip() or "(no description)", "", "## Comments\n"]
     shown = [c for c in comments if trusted(c)]
-    parts += [entry(f"{c['user']['login']}, {c['created_at']}", c["body"]) for c in shown] or ["(none)\n"]
+    parts += [entry(f"{c['user']['login']}, {c['created_at']}", c) for c in shown] or ["(none)\n"]
     if pull:
         parts.append(f"## Review of PR #{pull['number']}\n")
-        reviews = [r for r in pull["reviews"] if trusted(r) and (normalized(r.get("body")).strip() or r["state"] == "CHANGES_REQUESTED")]
+        reviews = [r for r in pull["reviews"] if trusted(r) and (text_of(r).strip() or r["state"] == "CHANGES_REQUESTED")]
         notes = [c for c in pull["review_comments"] if trusted(c)]
         talk = [c for c in pull["comments"] if trusted(c)]
-        parts += [entry(f"{r['user']['login']}, review {r['state'].lower()}, {r.get('submitted_at')}", r.get("body")) for r in reviews]
-        parts += [entry(f"{c['user']['login']} on {c['path']} line {c.get('line') or c.get('original_line')}", c["body"]) for c in notes]
-        parts += [entry(f"{c['user']['login']}, {c['created_at']}", c["body"]) for c in talk]
+        parts += [entry(f"{r['user']['login']}, review {r['state'].lower()}, {r.get('submitted_at')}", r) for r in reviews]
+        parts += [entry(f"{c['user']['login']} on {c['path']} line {c.get('line') or c.get('original_line')}", c) for c in notes]
+        parts += [entry(f"{c['user']['login']}, {c['created_at']}", c) for c in talk]
         if not (reviews or notes or talk):
             parts.append("(none)\n")
     return "\n".join(parts)
