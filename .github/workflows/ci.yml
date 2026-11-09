@@ -23,10 +23,25 @@ env:
   PYTHON_VERSION: "3.13"
 
 jobs:
-  # The TypeScript extract/load layer: one typecheck for every package, then each package's tests.
+  # The TypeScript extract/load layer: one typecheck for every package, then each package's tests, then
+  # the warehouse tests that need a real Postgres, against a throwaway one.
   ingestion:
     name: Ingestion (typecheck and tests)
     runs-on: ubuntu-latest
+    services:
+      warehouse:
+        image: postgres:16
+        env:
+          POSTGRES_USER: elt
+          POSTGRES_PASSWORD: elt
+          POSTGRES_DB: warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elt -d warehouse"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
     defaults:
       run:
         working-directory: ingestion
@@ -51,6 +66,17 @@ jobs:
 
       - name: Test every package
         run: pnpm --recursive --workspace-concurrency=1 test
+
+      # The variables stay on this step, so no other package's tests see them.
+      - name: Warehouse tests against Postgres
+        working-directory: ingestion/lib
+        env:
+          WAREHOUSE_HOST: localhost
+          WAREHOUSE_PORT: "5432"
+          WAREHOUSE_USER: elt
+          WAREHOUSE_PASSWORD: elt
+          WAREHOUSE_DB: warehouse
+        run: pnpm exec tsx --test src/warehouse/concurrent-open.test.ts
 
   # The dbt project and the Dagster code. dbt parses, seeds and compiles against a throwaway Postgres, which
   # also lets the warehouse tests run instead of skipping. pytest needs the ingestion packages installed,
