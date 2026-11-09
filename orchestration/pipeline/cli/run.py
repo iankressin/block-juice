@@ -49,18 +49,19 @@ def materialize(module: str, pipelines: Collection[str], name: str) -> int:
     # execute_in_process runs one step at a time. A job that each step's process can rebuild by name
     # runs on the job's own executor, the multiprocess one.
     job = dg.build_reconstructable_job("pipeline.cli.run", "job_def", reconstructable_args=(module, name))
-    with dg.execute_job(job, instance=dg.DagsterInstance.get(), raise_on_error=False) as result:
-        if result.success:
-            print(f"{name}: run {result.run_id} succeeded")
-            return 0
-        print(f"{name}: run {result.run_id} failed")
-        failures = [event for event in result.all_events if event.is_step_failure]
-        for event in failures:
-            print(f"  step {event.step_key} failed: {first_line(root_cause(event.step_failure_data.error).message)}")
-        if not failures:
-            run_failure = next((event for event in result.all_events if event.is_run_failure), None)
-            print(f"  no step failed: {first_line(run_failure.message) if run_failure else 'the run did not finish'}")
-        return 1
+    # Not `with`: entering the result starts the job's resources again and logs that to the finished run.
+    result = dg.execute_job(job, instance=dg.DagsterInstance.get(), raise_on_error=False)
+    if result.success:
+        print(f"{name}: run {result.run_id} succeeded")
+        return 0
+    print(f"{name}: run {result.run_id} failed")
+    failures = [event for event in result.all_events if event.is_step_failure]
+    for event in failures:
+        print(f"  step {event.step_key} failed: {first_line(root_cause(event.step_failure_data.error).message)}")
+    if not failures:
+        run_failure = next((event for event in result.all_events if event.is_run_failure), None)
+        print(f"  no step failed: {first_line(run_failure.message) if run_failure else 'the run did not finish'}")
+    return 1
 
 
 def run(repo_root: Path, name: str) -> int:

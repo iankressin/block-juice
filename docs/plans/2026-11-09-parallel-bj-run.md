@@ -37,7 +37,7 @@ Not done: a concurrency cap or a `--sequential` flag. Scheduled runs have run wi
 - The multiprocess executor needs a persistent instance. `bj` sets `DAGSTER_HOME` (`orchestration/pipeline/cli/__init__.py:224`); `orchestration/tests/conftest.py` sets one for tests.
 - Python runs through `uv run` in `orchestration/`, TypeScript through `pnpm` in `ingestion/`, on Node 24 (`mise.toml`).
 - Checks against Postgres use a throwaway container on port 55432. Port 5432 is the dev warehouse.
-- Load real Polymarket data with `bj run` outside the Claude Code sandbox: stream sources crawl through its proxy, and Gamma needs a route the sandbox lacks.
+- Load real Polymarket data with `bj run` from a shell with direct network access to Portal and Gamma.
 
 ## Review Focus
 
@@ -183,7 +183,7 @@ Not done: a concurrency cap or a `--sequential` flag. Scheduled runs have run wi
 
 ### Task 3: Check on the real pipeline
 
-No code. Run outside the sandbox, from the repo root, with Tasks 1 and 2 in place.
+No code. Run from the repo root, with direct network access, with Tasks 1 and 2 in place.
 
 - [ ] **Step 1: `_sync` on an empty warehouse (Review Focus 1)**
 

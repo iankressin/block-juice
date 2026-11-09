@@ -84,3 +84,11 @@ def test_a_failed_step_lets_the_others_finish(stubbed, barrier, capsys):
 def test_runs_from_any_directory(stubbed, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     assert main(["run", "loads"]) == 0
+
+
+def test_nothing_is_logged_to_a_run_after_it_ends(stubbed, capsys):
+    assert main(["run", "loads"]) == 0
+    run_id = capsys.readouterr().out.split("loads: run ")[1].split()[0]
+    events = dg.DagsterInstance.get().all_logs(run_id)
+    types = [event.dagster_event.event_type for event in events if event.dagster_event]
+    assert types[types.index(dg.DagsterEventType.RUN_SUCCESS) + 1 :] == []
