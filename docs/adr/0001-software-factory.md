@@ -41,7 +41,7 @@ The build run reads the scope comment by machine, so the comment has a fixed sha
 
 ### Reference seeds and tests
 
-The reference lands in `transformation/seeds/reference/reference_<slug>.csv`. A singular test in `transformation/tests/reference/`, tagged `reference`, compares the analysis over the eval window to the seed through the `reference_mismatches` macro, within the tolerance the scope run set. `bj answer` runs only the tests upstream of an analysis, so the build run runs these with `dbt test --select tag:reference` and records the outcome with `bj check <slug> reference_match`. CI loads the seeds and compiles the tests but never runs them, since it holds no chain data.
+The reference lands in `transformation/seeds/reference/reference_<name>.csv`, where `<name>` is the slug with `_` for `-`, as dbt and Postgres want it. A singular test in `transformation/tests/reference/`, tagged `reference`, compares the analysis over the eval window to the seed through the `reference_mismatches` macro, within the tolerance the scope run set. `bj answer` runs only the tests upstream of an analysis, so the build run runs these with `dbt test --select tag:reference` and records the outcome with `bj check <slug> reference_match`. CI loads the seeds and compiles the tests but never runs them, since it holds no chain data.
 
 ### Brakes
 

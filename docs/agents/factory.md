@@ -33,8 +33,8 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 
 ## Reference seeds and tests
 
-- Seed: `transformation/seeds/reference/reference_<slug>.csv`, registered with a description naming the oracle, the window and the ticket.
-- Test: `transformation/tests/reference/<slug>_matches_reference.sql`, tagged `reference`, built on the `reference_mismatches` macro.
+- Seed: `transformation/seeds/reference/reference_<name>.csv`, where `<name>` is the slug with `_` for `-`. Registered in `_reference_seeds.yml` with a description naming the oracle, the window and the ticket.
+- Test: `transformation/tests/reference/<name>_matches_reference.sql`, tagged `reference`, built on the `reference_mismatches` macro.
 - `bj answer` does not run these tests. Run them with `dbt test --select tag:reference`. The build run records the verdict with `bj check <slug> reference_match`.
 - CI seeds and compiles them but never runs them.
 
