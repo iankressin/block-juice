@@ -1,35 +1,36 @@
-# The factory's scope run (docs/agents/factory.md). The `scope` label starts it. It claims the ticket, has
-# the model write a reference answer over a short window to .factory/, checks those files and posts them as
-# one scope comment. The model gets no token that can write: every GitHub write below uses the App's token.
+# The factory's scope run (docs/agents/factory.md). The `scope` label starts it. Three jobs, so the model never
+# shares a machine with a token that can write: `claim` removes the label with the App's token, `work` has the
+# model write a reference answer over a short window to .factory/ with read-only access, and `publish`, on a
+# fresh runner, checks those files and posts them as one scope comment with the App's token.
 name: Factory scope
 
 on:
   issues:
     types: [labeled]
 
-# GITHUB_TOKEN only reads. claude-code-action gets it, and puts it in the checkout's git config.
 permissions:
   contents: read
-  issues: read
 
 env:
   FACTORY_MODEL: claude-opus-5-5
   FACTORY_MAX_TURNS: "100"
   PYTHON_VERSION: "3.13"
+  GH_REPO: ${{ github.repository }}
+  ISSUE: ${{ github.event.issue.number }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
-  scope:
+  # The run's first write. A run that finds the label gone does nothing else.
+  claim:
     if: github.event.label.name == 'scope'
-    # On the job, not the workflow, so a run for any other label never joins the queue and bumps a waiting one.
+    # On each job, not the workflow, so a run for any other label never joins the queue and bumps a waiting job.
     concurrency:
       group: factory-${{ github.event.issue.number }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-    env:
-      GH_REPO: ${{ github.repository }}
-      ISSUE: ${{ github.event.issue.number }}
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    timeout-minutes: 10
+    outputs:
+      claimed: ${{ steps.claim.outputs.claimed }}
     steps:
       - name: Create the App token
         id: app
@@ -40,7 +41,6 @@ jobs:
           permission-issues: write
           permission-metadata: read
 
-      # The run's first write. A run that finds the label gone does nothing else.
       - name: Claim the ticket
         id: claim
         env:
@@ -56,27 +56,36 @@ jobs:
           gh issue edit "$ISSUE" --remove-label "$remove"
           echo "claimed=true" >> "$GITHUB_OUTPUT"
 
+  # The model's job. GITHUB_TOKEN only reads here, and claude-code-action puts it in the checkout's git config.
+  work:
+    needs: claim
+    if: needs.claim.outputs.claimed == 'true'
+    concurrency:
+      group: factory-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      issues: read
+    steps:
       - uses: actions/checkout@v4
-        if: steps.claim.outputs.claimed == 'true'
         with:
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@v6
-        if: steps.claim.outputs.claimed == 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-dependency-glob: orchestration/uv.lock
 
       - name: Install Python packages
-        if: steps.claim.outputs.claimed == 'true'
         run: uv sync --locked
         working-directory: orchestration
 
       - name: Write the ticket and the ticket list
-        if: steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           raw="$RUNNER_TEMP/raw"
           mkdir -p "$raw" .factory
@@ -87,7 +96,6 @@ jobs:
 
       # Outside the checkout, so the key never sits in the repo. .mcp.json already registers the Portal MCP.
       - name: Write the Dune MCP config
-        if: steps.claim.outputs.claimed == 'true'
         env:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
         run: >-
@@ -97,7 +105,6 @@ jobs:
 
       - name: Read the prompt
         id: prompt
-        if: steps.claim.outputs.claimed == 'true'
         run: |
           {
             echo "text<<FACTORY_PROMPT_END"
@@ -105,10 +112,9 @@ jobs:
             echo "FACTORY_PROMPT_END"
           } >> "$GITHUB_OUTPUT"
 
-      # The files decide, not the model's exit: the next step checks them even when this one fails.
+      # The files decide, not the model's exit: publish checks them even when this step fails.
       - name: Scope the ticket
         id: claude
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         env:
@@ -124,44 +130,8 @@ jobs:
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(uv run *),mcp__sqd-portal__*,mcp__dune__*"
             --disallowedTools "Bash(git push *),Bash(gh *)"
 
-      # An installation token lasts an hour and the model step can run longer, so every write below takes a
-      # fresh one. always(), so a failure before this step still gets a token to report with.
-      - name: Renew the App token
-        id: app_write
-        if: always() && steps.claim.outputs.claimed == 'true'
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
-          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
-          permission-issues: write
-          permission-metadata: read
-
-      - name: Check the scope and post the comment
-        if: steps.claim.outputs.claimed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
-        run: |
-          uv run --project orchestration python .github/factory/factory.py comment .factory > "$RUNNER_TEMP/scope-comment.md"
-          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/scope-comment.md"
-
-      # The model writes only comment.md when it cannot scope the ticket, to ask the human what it needs.
-      - name: Hand the ticket to a human
-        if: failure() && steps.claim.outputs.claimed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
-        run: |
-          {
-            echo "The scope run produced no valid scope; see run $RUN_URL."
-            if [ -s .factory/comment.md ]; then
-              echo
-              cat .factory/comment.md
-            fi
-          } > "$RUNNER_TEMP/handoff.md"
-          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/handoff.md"
-          gh issue edit "$ISSUE" --add-label ready-for-human
-
       - name: Collect the transcript
-        if: always() && steps.claim.outputs.claimed == 'true'
+        if: always()
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
@@ -175,8 +145,18 @@ jobs:
           uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/transcript" EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
           uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
 
+      # After the scrub above, since artifacts of a public repo are open to any signed-in user. always(), so
+      # publish gets whatever the model wrote, even comment.md alone.
+      - name: Collect the scope files
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          for file in scope.yaml reference.csv comment.md; do
+            if [ -f ".factory/$file" ]; then cp ".factory/$file" "$RUNNER_TEMP/out/"; fi
+          done
+
       - uses: actions/upload-artifact@v4
-        if: always() && steps.claim.outputs.claimed == 'true'
+        if: always()
         with:
           name: factory-scope-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -184,3 +164,84 @@ jobs:
             .factory
           include-hidden-files: true
           retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: factory-scope-${{ github.event.issue.number }}-${{ github.run_id }}-out
+          path: ${{ runner.temp }}/out
+          overwrite: true
+          retention-days: 7
+
+  # A fresh runner the model never touched. It runs code from the default branch only, and reads the model's
+  # files as data.
+  publish:
+    needs: [claim, work]
+    if: always() && needs.claim.outputs.claimed == 'true'
+    concurrency:
+      group: factory-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Create the App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-metadata: read
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # No cache: the work job's runner could have saved one with the model's files in it.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: false
+
+      - name: Install Python packages
+        run: uv sync --locked
+        working-directory: orchestration
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: factory-scope-${{ github.event.issue.number }}-${{ github.run_id }}-out
+          path: .factory
+
+      # Before anything is posted: the model can write a secret, such as EVM_RPC_URL with its key, into its files.
+      - name: Scrub the scope files
+        id: scrub
+        env:
+          EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
+
+      - name: Check the scope and post the comment
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          uv run --project orchestration python .github/factory/factory.py comment .factory > "$RUNNER_TEMP/scope-comment.md"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/scope-comment.md"
+
+      # The model writes only comment.md when it cannot scope the ticket, to ask the human what it needs. The
+      # prose goes out only once scrubbed.
+      - name: Hand the ticket to a human
+        if: failure()
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SCRUBBED: ${{ steps.scrub.outcome }}
+        run: |
+          {
+            echo "The scope run produced no valid scope; see run $RUN_URL."
+            if [ "$SCRUBBED" = success ] && [ -s .factory/comment.md ]; then
+              echo
+              cat .factory/comment.md
+            fi
+          } > "$RUNNER_TEMP/handoff.md"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/handoff.md"
+          gh issue edit "$ISSUE" --add-label ready-for-human

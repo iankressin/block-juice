@@ -23,7 +23,7 @@ We run a software factory, in the sense of the software-factory skill: tasks who
 | Ticket source | The form, filled by a human. |
 | Git host | GitHub. Runs act as a GitHub App installed on this repo only. |
 | Orchestrator | GitHub Actions on `issues: labeled`. One concurrency group per ticket, queued, never cancelled. |
-| Runner | GitHub-hosted standard runners with CI's Postgres service. Jobs time out at four hours. A self-hosted runner is the escape hatch when a load outgrows them. |
+| Runner | GitHub-hosted standard runners with CI's Postgres service. The job that runs the model times out at four hours. A self-hosted runner is the escape hatch when a load outgrows them. |
 | Observability platform | None. Each run uploads two artifacts: the agent transcript and `answers/<slug>/`, kept seven days. |
 | Model | A dedicated Console workspace with a monthly spend limit. |
 

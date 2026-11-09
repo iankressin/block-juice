@@ -1,54 +1,40 @@
-# The factory's build run (docs/agents/factory.md). A human's `ready-for-agent` label starts it. It claims the
-# ticket, reads the newest scope comment, checks out factory/<issue>-<slug>, and has the model build the
-# pipeline and its reference test over the eval window. Then it runs the reference test again as the
-# verdict, runs the repo's checks, commits, pushes and opens or updates a draft PR. The model gets no token
-# that can write: every GitHub write below uses the App's token.
+# The factory's build run (docs/agents/factory.md). A human's `ready-for-agent` label starts it. Three jobs, so
+# the model never shares a machine with a token that can write. `claim` removes the label with the App's token.
+# `work`, with read-only access, reads the newest scope comment, checks out factory/<issue>-<slug>, has the model
+# build the pipeline and its reference test over the eval window, runs the reference test again as the verdict,
+# runs the repo's checks and saves the model's changes as a patch. `publish`, on a fresh runner, commits the
+# patch, pushes it and opens or updates a draft PR with the App's token.
 name: Factory build
 
 on:
   issues:
     types: [labeled]
 
-# GITHUB_TOKEN only reads. claude-code-action gets it, and puts it in the checkout's git config.
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
 
 env:
   FACTORY_MODEL: claude-opus-5-5
   FACTORY_MAX_TURNS: "300"
   NODE_VERSION: "24"
   PYTHON_VERSION: "3.13"
+  GH_REPO: ${{ github.repository }}
+  ISSUE: ${{ github.event.issue.number }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
-  build:
+  # The run's first write. A run that finds the label gone does nothing else.
+  claim:
     if: github.event.label.name == 'ready-for-agent'
-    # On the job, not the workflow, so a run for any other label never joins the queue and bumps a waiting one.
+    # On each job, not the workflow, so a run for any other label never joins the queue and bumps a waiting job.
     concurrency:
       group: factory-${{ github.event.issue.number }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-    services:
-      warehouse:
-        image: postgres:16
-        env:
-          POSTGRES_USER: elt
-          POSTGRES_PASSWORD: elt
-          POSTGRES_DB: warehouse
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U elt -d warehouse"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 15
-    env:
-      GH_REPO: ${{ github.repository }}
-      ISSUE: ${{ github.event.issue.number }}
-      BASE: ${{ github.event.repository.default_branch }}
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    timeout-minutes: 10
+    outputs:
+      claimed: ${{ steps.claim.outputs.claimed }}
+      bot: ${{ steps.app.outputs.app-slug }}[bot]
     steps:
       - name: Create the App token
         id: app
@@ -56,12 +42,9 @@ jobs:
         with:
           client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
           private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
-          permission-contents: write
           permission-issues: write
-          permission-pull-requests: write
           permission-metadata: read
 
-      # The run's first write. A run that finds the label gone does nothing else.
       - name: Claim the ticket
         id: claim
         env:
@@ -77,53 +60,101 @@ jobs:
           gh issue edit "$ISSUE" --remove-label "$remove"
           echo "claimed=true" >> "$GITHUB_OUTPUT"
 
+  # The model's job. GITHUB_TOKEN only reads here, and claude-code-action puts it in the checkout's git config.
+  # The model can rewrite anything on this runner, $GITHUB_ENV and $GITHUB_PATH too, so the steps after it take
+  # the run's own values from step outputs set before it, and publish takes only job outputs and an artifact.
+  work:
+    needs: claim
+    if: needs.claim.outputs.claimed == 'true'
+    concurrency:
+      group: factory-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    services:
+      warehouse:
+        image: postgres:16
+        env:
+          POSTGRES_USER: elt
+          POSTGRES_PASSWORD: elt
+          POSTGRES_DB: warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elt -d warehouse"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    outputs:
+      scoped: ${{ steps.scope.outputs.scoped }}
+      slug: ${{ steps.scope.outputs.slug }}
+      branch: ${{ steps.scope.outputs.branch }}
+      test: ${{ steps.scope.outputs.test }}
+      base_sha: ${{ steps.branch.outputs.base_sha }}
+      status: ${{ steps.verdict.outputs.status }}
+      detail: ${{ steps.verdict.outputs.detail }}
+      typecheck: ${{ steps.typecheck.outcome }}
+      package_tests: ${{ steps.package_tests.outcome }}
+      dbt_parse: ${{ steps.dbt_parse.outcome }}
+      pytest: ${{ steps.pytest.outcome }}
+    steps:
       - uses: actions/checkout@v4
-        if: steps.claim.outputs.claimed == 'true'
         with:
           persist-credentials: false
 
       # The glue runs from the default branch even after the checkout moves to a branch made from an older one.
       - name: Keep the default branch's glue
-        if: steps.claim.outputs.claimed == 'true'
+        id: glue
         run: |
           cp -R .github/factory "$RUNNER_TEMP/factory"
-          echo "FACTORY=$RUNNER_TEMP/factory" >> "$GITHUB_ENV"
+          echo "dir=$RUNNER_TEMP/factory" >> "$GITHUB_OUTPUT"
 
       - uses: astral-sh/setup-uv@v6
-        if: steps.claim.outputs.claimed == 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-dependency-glob: orchestration/uv.lock
 
       - name: Install Python packages
-        if: steps.claim.outputs.claimed == 'true'
         run: uv sync --locked
         working-directory: orchestration
 
+      # scoped=false tells publish the ticket has no valid scope comment, as against a step that failed earlier.
       - name: Read the scope comment
         id: scope
-        if: steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+          GH_TOKEN: ${{ github.token }}
+          BOT: ${{ needs.claim.outputs.bot }}
+          FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           raw="$RUNNER_TEMP/raw"
           mkdir -p "$raw"
           gh api "repos/$GH_REPO/issues/$ISSUE" > "$raw/issue.json"
           gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" > "$raw/comments.json"
-          uv run --project orchestration python "$FACTORY/factory.py" extract "$raw/comments.json" "$BOT" .factory > "$RUNNER_TEMP/scope.out"
+          if ! uv run --project orchestration python "$FACTORY/factory.py" extract "$raw/comments.json" "$BOT" .factory > "$RUNNER_TEMP/scope.out"; then
+            echo "scoped=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           slug=$(sed -n 's/^slug=//p' "$RUNNER_TEMP/scope.out")
           name=$(sed -n 's/^name=//p' "$RUNNER_TEMP/scope.out")
           {
-            echo "SLUG=$slug"
-            echo "NAME=$name"
-            echo "BRANCH=factory/$ISSUE-$slug"
-            echo "TEST=${name}_matches_reference"
-          } >> "$GITHUB_ENV"
+            echo "scoped=true"
+            echo "slug=$slug"
+            echo "name=$name"
+            echo "branch=factory/$ISSUE-$slug"
+            echo "test=${name}_matches_reference"
+          } >> "$GITHUB_OUTPUT"
 
+      # base_sha is the commit publish applies the model's patch to. The git config is saved for the step that
+      # makes the patch.
       - name: Check out the ticket's branch
-        if: steps.claim.outputs.claimed == 'true'
+        id: branch
+        env:
+          BRANCH: ${{ steps.scope.outputs.branch }}
         run: |
           if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
             git fetch --depth 1 origin "$BRANCH"
@@ -131,11 +162,15 @@ jobs:
           else
             git checkout -b "$BRANCH"
           fi
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          cp .git/config "$RUNNER_TEMP/git-config"
 
       - name: Write the ticket and its review
-        if: steps.claim.outputs.claimed == 'true'
+        id: review
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.scope.outputs.branch }}
+          FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           raw="$RUNNER_TEMP/raw"
           pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
@@ -146,15 +181,13 @@ jobs:
             gh api --paginate --slurp "repos/$GH_REPO/issues/$pr/comments" > "$raw/pull_comments.json"
           fi
           uv run --project orchestration python "$FACTORY/factory.py" ticket "$raw" > .factory/issue.md
-          echo "PR=$pr" >> "$GITHUB_ENV"
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
-        if: steps.claim.outputs.claimed == 'true'
         with:
           package_json_file: ingestion/package.json
 
       - uses: actions/setup-node@v4
-        if: steps.claim.outputs.claimed == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -162,20 +195,23 @@ jobs:
 
       # As CI does: the example values point at the Postgres service above. psql reads the same settings.
       - name: Load .env.example into the environment
-        if: steps.claim.outputs.claimed == 'true'
         run: |
           grep -E '^[A-Z_]+=' .env.example >> "$GITHUB_ENV"
           sed -nE 's/^WAREHOUSE_(HOST|PORT|USER|PASSWORD)=/PG\1=/p; s/^WAREHOUSE_DB=/PGDATABASE=/p' .env.example >> "$GITHUB_ENV"
 
       - name: Set up the checkout and the run log
-        if: steps.claim.outputs.claimed == 'true'
         run: |
           uv run --project orchestration bj install
           psql -v ON_ERROR_STOP=1 -q -f infra/postgres/ops.sql
 
       - name: Read the prompt
         id: prompt
-        if: steps.claim.outputs.claimed == 'true'
+        env:
+          FACTORY: ${{ steps.glue.outputs.dir }}
+          SLUG: ${{ steps.scope.outputs.slug }}
+          NAME: ${{ steps.scope.outputs.name }}
+          BRANCH: ${{ steps.scope.outputs.branch }}
+          PR: ${{ steps.review.outputs.pr }}
         run: |
           {
             echo "text<<FACTORY_PROMPT_END"
@@ -192,7 +228,6 @@ jobs:
       # The verdict below decides, not the model's exit, so the PR opens even when this step fails.
       - name: Build the pipeline
         id: claude
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
@@ -209,24 +244,12 @@ jobs:
       # fails the verdict, since the test would read the tables the model's own loop left. dbt test exits 0
       # when its selection is empty, and an old run_results.json could hold the model's own run, so the
       # verdict comes from a fresh file that must name the test.
-      # An installation token lasts an hour and the model step can run longer, so every write below takes a
-      # fresh one. always(), so a failure before this step still gets a token to report with.
-      - name: Renew the App token
-        id: app_write
-        if: always() && steps.claim.outputs.claimed == 'true'
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
-          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-issues: write
-          permission-pull-requests: write
-          permission-metadata: read
-
       - name: Run the reference test as the verdict
         id: verdict
-        if: steps.claim.outputs.claimed == 'true'
         working-directory: transformation
+        env:
+          FACTORY: ${{ steps.glue.outputs.dir }}
+          TEST: ${{ steps.scope.outputs.test }}
         run: |
           built=0
           uv run --project ../orchestration dbt build --select "+$TEST" --exclude-resource-type test --exclude-resource-type unit_test || built=$?
@@ -244,72 +267,160 @@ jobs:
 
       # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote answer.json.
       - name: Record the verdict in answer.json
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         env:
+          SLUG: ${{ steps.scope.outputs.slug }}
           STATUS: ${{ steps.verdict.outputs.status }}
           DETAIL: ${{ steps.verdict.outputs.detail }}
         run: uv run --project orchestration bj check "$SLUG" reference_match "$STATUS" "$DETAIL; see PR"
 
       - name: pnpm typecheck
         id: typecheck
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         run: pnpm typecheck
         working-directory: ingestion
 
       - name: Package tests
         id: package_tests
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         run: pnpm --recursive --workspace-concurrency=1 test
         working-directory: ingestion
 
       - name: dbt parse
         id: dbt_parse
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         run: uv run --project ../orchestration dbt parse
         working-directory: transformation
 
       - name: pytest
         id: pytest
-        if: steps.claim.outputs.claimed == 'true'
         continue-on-error: true
         run: uv run pytest
         working-directory: orchestration
 
-      # The App's bot user signs the commit, so its id goes in the noreply address.
-      - name: Commit and push
-        if: steps.claim.outputs.claimed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
-          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+      # The git config and hooks go back to their state before the model, so a filter or hook it set in the
+      # repo cannot change what goes into the patch.
+      - name: Save the model's changes as a patch
         run: |
-          bot_id=$(gh api "/users/$BOT" --jq .id)
+          cp "$RUNNER_TEMP/git-config" .git/config
+          rm -rf .git/hooks
+          mkdir -p "$RUNNER_TEMP/out"
           git add -A
-          if ! git diff --cached --quiet; then
+          git diff --cached --binary > "$RUNNER_TEMP/out/changes.patch"
+          if [ -f .factory/result.md ]; then cp .factory/result.md "$RUNNER_TEMP/out/"; fi
+
+      - name: Collect the transcript
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FACTORY: ${{ steps.glue.outputs.dir }}
+        run: |
+          ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
+          mkdir -p "$RUNNER_TEMP/transcript"
+          if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
+          if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" ANTHROPIC_API_KEY
+          uv run --project orchestration python "$FACTORY/factory.py" scrub answers ANTHROPIC_API_KEY
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" ANTHROPIC_API_KEY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/transcript
+            answers/${{ steps.scope.outputs.slug }}
+          include-hidden-files: true
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-out
+          path: ${{ runner.temp }}/out
+          overwrite: true
+          retention-days: 7
+
+  # A fresh runner the model never touched, where every write after the claim happens. It runs no code from the
+  # work job: it applies the patch with git and reads result.md and the verdict as text.
+  publish:
+    needs: [claim, work]
+    if: always() && needs.claim.outputs.claimed == 'true'
+    concurrency:
+      group: factory-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE: ${{ github.event.repository.default_branch }}
+      BRANCH: ${{ needs.work.outputs.branch }}
+      SLUG: ${{ needs.work.outputs.slug }}
+      TEST: ${{ needs.work.outputs.test }}
+      STATUS: ${{ needs.work.outputs.status }}
+      DETAIL: ${{ needs.work.outputs.detail }}
+    steps:
+      - name: Create the App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-metadata: read
+
+      - uses: actions/checkout@v4
+        if: needs.work.result == 'success'
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        if: needs.work.result == 'success'
+        with:
+          name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-out
+          path: ${{ runner.temp }}/out
+
+      # The App's bot user signs the commit, so its id goes in the noreply address. A push the branch rejects,
+      # because someone pushed to it while the run worked, goes to a human: the run never forces a push.
+      - name: Commit and push
+        id: push
+        if: needs.work.result == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+          BASE_SHA: ${{ needs.work.outputs.base_sha }}
+        run: |
+          git fetch --depth 1 origin "$BASE_SHA"
+          git checkout -B "$BRANCH" "$BASE_SHA"
+          if [ -s "$RUNNER_TEMP/out/changes.patch" ]; then
+            bot_id=$(gh api "/users/$BOT" --jq .id)
+            git apply --index --binary "$RUNNER_TEMP/out/changes.patch"
             git -c user.name="$BOT" -c user.email="$bot_id+$BOT@users.noreply.github.com" \
-              commit -q -m "factory: build #$ISSUE $SLUG" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+              commit --no-verify -q -m "factory: build #$ISSUE $SLUG" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
           fi
-          git push "https://x-access-token:$GH_TOKEN@github.com/$GH_REPO.git" "HEAD:refs/heads/$BRANCH"
+          push_exit=0
+          git push "https://x-access-token:$GH_TOKEN@github.com/$GH_REPO.git" "HEAD:refs/heads/$BRANCH" 2> "$RUNNER_TEMP/push.log" || push_exit=$?
+          cat "$RUNNER_TEMP/push.log" >&2
+          if [ "$push_exit" -ne 0 ]; then
+            if grep -qF '[rejected]' "$RUNNER_TEMP/push.log"; then echo "rejected=true" >> "$GITHUB_OUTPUT"; fi
+            exit 1
+          fi
 
       - name: Open or update the draft PR
         id: pr
-        if: steps.claim.outputs.claimed == 'true'
+        if: needs.work.result == 'success'
         env:
-          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           TITLE: ${{ github.event.issue.title }}
-          STATUS: ${{ steps.verdict.outputs.status }}
-          DETAIL: ${{ steps.verdict.outputs.detail }}
-          TYPECHECK: ${{ steps.typecheck.outcome }}
-          PACKAGE_TESTS: ${{ steps.package_tests.outcome }}
-          DBT_PARSE: ${{ steps.dbt_parse.outcome }}
-          PYTEST: ${{ steps.pytest.outcome }}
+          TYPECHECK: ${{ needs.work.outputs.typecheck }}
+          PACKAGE_TESTS: ${{ needs.work.outputs.package_tests }}
+          DBT_PARSE: ${{ needs.work.outputs.dbt_parse }}
+          PYTEST: ${{ needs.work.outputs.pytest }}
         run: |
           body="$RUNNER_TEMP/pr-body.md"
           {
-            if [ -s .factory/result.md ]; then cat .factory/result.md; else echo "The build run wrote no result.md. See the run."; fi
+            if [ -s "$RUNNER_TEMP/out/result.md" ]; then cat "$RUNNER_TEMP/out/result.md"; else echo "The build run wrote no result.md. See the run."; fi
             echo
             echo "## Factory checks"
             echo
@@ -325,8 +436,9 @@ jobs:
             echo
             echo "Build run: $RUN_URL"
           } > "$body"
-          if [ -n "$PR" ]; then
-            gh pr edit "$PR" --body-file "$body"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body-file "$body"
           else
             gh pr create --draft --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$body"
           fi
@@ -340,13 +452,11 @@ jobs:
 
       # A failed verdict or a failed repo check means a human must look before the PR is ready for review.
       - name: Report on the ticket
-        if: steps.claim.outputs.claimed == 'true'
+        if: needs.work.result == 'success'
         env:
-          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ steps.pr.outputs.url }}
-          STATUS: ${{ steps.verdict.outputs.status }}
-          DETAIL: ${{ steps.verdict.outputs.detail }}
-          CHECKS: ${{ steps.typecheck.outcome }} ${{ steps.package_tests.outcome }} ${{ steps.dbt_parse.outcome }} ${{ steps.pytest.outcome }}
+          CHECKS: ${{ needs.work.outputs.typecheck }} ${{ needs.work.outputs.package_tests }} ${{ needs.work.outputs.dbt_parse }} ${{ needs.work.outputs.pytest }}
         run: |
           checks="repo checks passed"
           if [ "$CHECKS" != "success success success success" ]; then checks="a repo check failed"; fi
@@ -356,38 +466,18 @@ jobs:
           fi
 
       - name: Hand the ticket to a human
-        if: failure() && steps.claim.outputs.claimed == 'true'
+        if: failure() || needs.work.result != 'success'
         env:
-          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
-          SCOPE: ${{ steps.scope.outcome }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SCOPED: ${{ needs.work.outputs.scoped }}
+          REJECTED: ${{ steps.push.outputs.rejected }}
         run: |
-          if [ "$SCOPE" = failure ]; then
+          if [ "$REJECTED" = true ]; then
+            message="The build run did not push: \`$BRANCH\` moved while the run worked, and the run never forces a push. See run $RUN_URL."
+          elif [ "$SCOPED" = false ]; then
             message="The build run found no valid scope comment from the factory, so the ticket needs a scope run first: add \`scope\`. See run $RUN_URL."
           else
             message="The build run failed before it could report; see run $RUN_URL."
           fi
           gh issue comment "$ISSUE" --body "$message"
           gh issue edit "$ISSUE" --add-label ready-for-human
-
-      - name: Collect the transcript
-        if: always() && steps.claim.outputs.claimed == 'true'
-        env:
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
-          mkdir -p "$RUNNER_TEMP/transcript"
-          if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
-          if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" ANTHROPIC_API_KEY
-          uv run --project orchestration python "$FACTORY/factory.py" scrub answers ANTHROPIC_API_KEY
-
-      - uses: actions/upload-artifact@v4
-        if: always() && steps.claim.outputs.claimed == 'true'
-        with:
-          name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/transcript
-            answers/${{ env.SLUG }}
-          include-hidden-files: true
-          retention-days: 7
