@@ -205,8 +205,9 @@ jobs:
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(uv run *),Bash(pnpm *),Bash(psql *),Bash(set -a *),Bash(set +a *),Bash(. ./.env *),mcp__sqd-portal__*"
             --disallowedTools "Bash(git push *),Bash(gh *)"
 
-      # Builds what the reference test reads from the committed code, then runs only that test. dbt test exits
-      # 0 when its selection is empty, and an old run_results.json could hold the model's own run, so the
+      # Builds what the reference test reads from the committed code, then runs only that test. A failed build
+      # fails the verdict, since the test would read the tables the model's own loop left. dbt test exits 0
+      # when its selection is empty, and an old run_results.json could hold the model's own run, so the
       # verdict comes from a fresh file that must name the test.
       # An installation token lasts an hour and the model step can run longer, so every write below takes a
       # fresh one. always(), so a failure before this step still gets a token to report with.
@@ -227,7 +228,12 @@ jobs:
         if: steps.claim.outputs.claimed == 'true'
         working-directory: transformation
         run: |
-          uv run --project ../orchestration dbt build --select "+$TEST" --exclude-resource-type test --exclude-resource-type unit_test || true
+          built=0
+          uv run --project ../orchestration dbt build --select "+$TEST" --exclude-resource-type test --exclude-resource-type unit_test || built=$?
+          if [ "$built" -ne 0 ]; then
+            printf "status=failed\ndetail=dbt build of the test's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
           rm -f target/run_results.json
           uv run --project ../orchestration dbt test --select "tag:reference,$TEST" || true
           if [ -f target/run_results.json ]; then

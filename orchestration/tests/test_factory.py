@@ -218,6 +218,8 @@ def run_results(*results):
     [
         (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 0}), "status=passed\ndetail=0 mismatches over tolerance\n"),
         (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "fail", "failures": 3}), "status=failed\ndetail=3 mismatches over tolerance\n"),
+        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 2}), "status=failed\ndetail=2 mismatches over tolerance\n"),
+        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "warn", "failures": 4}), "status=failed\ndetail=4 mismatches over tolerance\n"),
         (run_results(), "status=failed\ndetail=the test x_matches_reference did not run\n"),
         (run_results({"unique_id": "seed.transformation.x_matches_reference", "status": "success"}), "status=failed\ndetail=the test x_matches_reference did not run\n"),
         (

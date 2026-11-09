@@ -225,15 +225,17 @@ def ticket(issue: dict, comments: list[dict], pull: dict | None = None) -> str:
 
 def verdict(run_results: dict, test: str) -> tuple[bool, str]:
     """Passed only when dbt ran the test and it returned no rows. A test dbt never selected is a failure,
-    since `dbt test` exits 0 when its selection is empty."""
+    since `dbt test` exits 0 when its selection is empty. So is a pass with rows, which a `warn_if` or
+    `error_if` threshold on the test allows."""
     found = [r for r in run_results.get("results", []) if r["unique_id"].startswith("test.") and r["unique_id"].rsplit(".", 1)[-1] == test]
     if not found:
         return False, f"the test {test} did not run"
     result = found[0]
-    if result["status"] == "pass":
+    failures = result.get("failures") or 0
+    if result["status"] == "pass" and failures == 0:
         return True, "0 mismatches over tolerance"
-    if result["status"] == "fail":
-        return False, f"{result['failures']} mismatches over tolerance"
+    if result["status"] in ("pass", "warn", "fail") and failures:
+        return False, f"{failures} mismatches over tolerance"
     message = " ".join(str(result.get("message") or "").split())
     return False, f"the test {test} ended in {result['status']}: {message}"
 
