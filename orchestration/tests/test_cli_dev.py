@@ -65,6 +65,17 @@ def test_installs_starts_the_stack_then_execs_dagster_dev_from_orchestration(rep
     assert NEXT not in out
 
 
+def test_dagster_dev_reads_the_checkouts_dagster_home(repo, tools, execs, monkeypatch):
+    monkeypatch.delenv("DAGSTER_HOME")
+
+    with pytest.raises(Execed):
+        main(["dev"])
+
+    home = repo / "orchestration" / ".dagster_home"
+    assert os.environ["DAGSTER_HOME"] == str(home)
+    assert home.is_dir()
+
+
 def test_a_failed_compose_up_exits_1_and_never_starts_dagster(repo, tools, execs, capsys):
     tools.failing[UP] = (1, "service \"warehouse-init\" didn't complete successfully: exit 3\n")
 

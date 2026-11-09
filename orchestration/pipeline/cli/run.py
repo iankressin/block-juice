@@ -1,6 +1,5 @@
 """bj run: materialize one pipeline's Dagster job in this process."""
 
-import os
 from collections.abc import Collection
 from pathlib import Path
 
@@ -39,9 +38,7 @@ def root_cause(error):
 def materialize(defs: dg.Definitions, pipelines: Collection[str], name: str) -> int:
     if name not in pipelines:
         raise BadInput(f"no pipeline named {name!r}; pipelines: {', '.join(pipelines)}")
-    # With DAGSTER_HOME set, the run lands in the same history `dagster dev` shows.
-    instance = dg.DagsterInstance.get() if os.environ.get("DAGSTER_HOME") else None
-    result = defs.resolve_job_def(name).execute_in_process(instance=instance, raise_on_error=False)
+    result = defs.resolve_job_def(name).execute_in_process(instance=dg.DagsterInstance.get(), raise_on_error=False)
     if result.success:
         print(f"{name}: run {result.run_id} succeeded")
         return 0
