@@ -21,3 +21,6 @@ __pycache__/
 
 # answers: what the skill and bj answer write for each question stays local
 answers/
+
+# The files a factory run passes between its steps and the model (.github/factory/README.md)
+.factory/
