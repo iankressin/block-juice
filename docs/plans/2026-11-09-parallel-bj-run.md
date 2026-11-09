@@ -25,7 +25,7 @@ Measured or read on 2026-11-09.
 | Sources that open at once on an empty warehouse fail. `open()` runs `create schema if not exists` and `create table if not exists <schema>._dead_letters`, and `IF NOT EXISTS` is not safe across sessions. | Three opens at once on an empty schema, 40 rounds on Postgres 16: all 40 rounds had a failed open (`23505` on `pg_namespace_nspname_index` and `pg_type_typname_nsp_index`). With `pg_advisory_xact_lock` around the same statements: no failures. | Task 1 |
 | Pipes creates `<schema>._sync` the same way. | `getCursor` in `@subsquid/pipes/dist/targets/drizzle/node-postgres/postgres-state.js` sends its `CREATE TABLE IF NOT EXISTS` through `doWithRetry`: 3 retries, 50 ms apart, on any error. The retry finds the table the other session made. | Task 3, Step 1 |
 | More load on Portal and the RPCs at once. | `portalClient` (`ingestion/lib/src/portal.ts`) retries HTTP 429 and 529 ten times, about two minutes, and both CTF sources use it. RPC sources go through eRPC, whose rate-limit budgets (`infra/erpc/erpc.yaml:80`) count all callers together. The largest pipelines, `balances` and `prices`, run 5 ingestion steps; the executor's default cap is the CPU count. | None; Review Focus 2 |
-| The `bj run` tests swap in stub definitions with monkeypatch, which a step's own process never sees. | Prototype: step processes import a stub module found through `PYTHONPATH`. Two assets that each wait for the other passed in 1.7 s under the multiprocess executor and failed after 20 s under `execute_in_process`. | Task 2 |
+| The `bj run` tests swap in stub definitions with monkeypatch, which a step's own process never sees. | Prototype: step processes import a stub module by name. Dagster starts them with `spawn`, which copies the parent's `sys.path`, so they find the module where the parent does. Two assets that each wait for the other passed in 1.7 s under the multiprocess executor and failed after 20 s under `execute_in_process`. | Task 2 |
 | Each step starts its own process. | `import pipeline.definitions` took 1.6 to 1.9 s (three tries). Steps of one wave start together, so a run pays it about once per wave: loads, dead-letter checks, dbt. | None; Task 3 times the whole run |
 | Logs from several steps mix. | Each Dagster line names the step key and the process id. An ingestion step logs its source's output in one block when `pnpm ingest` exits (`orchestration/pipeline/assets/ingestion.py`), so one source's lines stay together. | None |
 
@@ -43,8 +43,8 @@ Not done: a concurrency cap or a `--sequential` flag. Scheduled runs have run wi
 
 1. First run on an empty warehouse: both CTF sources create `_sync` at the same moment. Expected: Pipes' retry handles it and both loads go on. Checked by Task 3, Step 1.
 2. A source pointed straight at a public RPC, bypassing eRPC, that spaces its own requests (`RPC_MIN_INTERVAL_MS` on `solana-spl-balances`), running beside another source on the same endpoint. Each keeps its own spacing, so the endpoint sees the sum. Expected: refused calls become dead letters that the next run retries; the run does not crash. No test: this is the case that would justify a cap.
-3. `bj run` started from a directory other than `orchestration/`. Expected: it works, because step processes import `pipeline.cli.run` from the installed package. Test: `test_runs_from_any_directory` in Task 2.
-4. One load fails while others are still running. Expected: the others finish, dbt is skipped, and `bj run` exits 1 naming the failed step. Test: `test_a_failed_step_lets_the_others_finish` in Task 2.
+3. `bj run` started from a directory other than `orchestration/`. Expected: it works, because step processes import `pipeline.cli.run` from the installed package, start with the parent's `sys.path`, and every path the code reads is absolute. No test: no working directory can change that, so a test could never fail.
+4. One load fails while others are still running. Expected: the others finish, dbt is skipped, and `bj run` exits 1 naming the failed step. Test: `test_a_failed_step_lets_the_others_finish_and_skips_what_needs_it` in Task 2.
 5. Ctrl-C during a parallel run. Expected: no `tsx src/index.ts` process outlives `bj run`. Checked by Task 3, Step 4.
 
 ---
@@ -216,3 +216,14 @@ No code. Run from the repo root, with direct network access, with Tasks 1 and 2 
 - [ ] **Step 4: Ctrl-C (Review Focus 5)**
 
   Start `bj run polymarket` in a terminal and press Ctrl-C once the three loads have started. Expected: within about 10 s, `pgrep -fl 'tsx src/index.ts'` prints nothing, and the Dagster UI shows the run as failed or canceled. If a load survives, stop and report before merging.
+
+## Changes after review
+
+The whole-branch review changed these, after the tasks above:
+
+- `materialize` keeps `execute_job`'s result without `with`: entering it starts the job's resources again and logs that to the finished run. `test_nothing_is_logged_to_a_run_after_it_ends` checks it.
+- The lock in `open()` takes a two-part key, `pg_advisory_xact_lock(hashtext('ingestion'), hashtext('warehouse.ddl'))`. Postgres keeps two-part keys apart from the one-part keys Pipes locks its cursors with.
+- The race test creates a scratch database and drops it afterwards, as `orchestration/tests/test_warehouse.py` does, so it reads only `WAREHOUSE_HOST`, `WAREHOUSE_PORT`, `WAREHOUSE_USER` and `WAREHOUSE_PASSWORD`, and each round uses schema `race_<round>`.
+- The `stubbed` fixture sets no `PYTHONPATH`; step processes start with the parent's `sys.path`.
+- `test_runs_from_any_directory` is gone (Review Focus 3). `one_fails` gains `after_both`, which depends on `fails` and `sibling`, and the failed-step test checks that it never runs.
+- `bj run --help` and `.claude/skills/blockjuice/workflows/schedule-jobs.md` no longer say the job runs in this process.

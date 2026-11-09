@@ -49,12 +49,18 @@ def sibling():
     (Path(os.environ["STUB_BARRIER_DIR"]) / "sibling").touch()
 
 
+@dg.asset(deps=[fails, sibling])
+def after_both():
+    """Stands in for the dbt step, which needs every load."""
+    (Path(os.environ["STUB_BARRIER_DIR"]) / "after_both").touch()
+
+
 defs = dg.Definitions(
-    assets=[loaded, transformed, a, b, fails, sibling],
+    assets=[loaded, transformed, a, b, fails, sibling, after_both],
     jobs=[
         dg.define_asset_job("balances", selection=[loaded, transformed]),
         dg.define_asset_job("loads", selection=[loaded]),
         dg.define_asset_job("side_by_side", selection=[a, b]),
-        dg.define_asset_job("one_fails", selection=[fails, sibling]),
+        dg.define_asset_job("one_fails", selection=[fails, sibling, after_both]),
     ],
 )

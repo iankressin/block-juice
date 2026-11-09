@@ -1,13 +1,8 @@
-import os
-from pathlib import Path
-
 import dagster as dg
 import pytest
 
 from pipeline.cli import main
 from pipeline.cli import run as run_command
-
-TESTS = Path(__file__).parent
 
 
 @pytest.fixture
@@ -22,8 +17,8 @@ def barrier(monkeypatch, tmp_path):
 def stubbed(monkeypatch, barrier):
     parsed = []
     monkeypatch.setattr(run_command, "parse_project", parsed.append)
-    # Each step's process imports the stub module by name, and finds it through PYTHONPATH.
-    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(filter(None, [str(TESTS), os.environ.get("PYTHONPATH")])))
+    # Each step's process imports stub_pipelines by name. It finds it because pytest puts this
+    # directory on sys.path, and Dagster starts step processes with spawn, which copies sys.path.
     monkeypatch.setattr(run_command, "load_pipelines", lambda: ("stub_pipelines", ["balances", "loads", "side_by_side", "one_fails"]))
     return parsed
 
@@ -75,15 +70,11 @@ def test_runs_a_pipelines_steps_side_by_side(stubbed, capsys):
     assert "side_by_side: run " in capsys.readouterr().out
 
 
-def test_a_failed_step_lets_the_others_finish(stubbed, barrier, capsys):
+def test_a_failed_step_lets_the_others_finish_and_skips_what_needs_it(stubbed, barrier, capsys):
     assert main(["run", "one_fails"]) == 1
     assert "step fails failed: RuntimeError: source broke" in capsys.readouterr().out
     assert (barrier / "sibling").exists()
-
-
-def test_runs_from_any_directory(stubbed, monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
-    assert main(["run", "loads"]) == 0
+    assert not (barrier / "after_both").exists()
 
 
 def test_nothing_is_logged_to_a_run_after_it_ends(stubbed, capsys):
