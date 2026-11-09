@@ -124,10 +124,22 @@ jobs:
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(uv run *),mcp__sqd-portal__*,mcp__dune__*"
             --disallowedTools "Bash(git push *),Bash(gh *)"
 
+      # An installation token lasts an hour and the model step can run longer, so every write below takes a
+      # fresh one. always(), so a failure before this step still gets a token to report with.
+      - name: Renew the App token
+        id: app_write
+        if: always() && steps.claim.outputs.claimed == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-metadata: read
+
       - name: Check the scope and post the comment
         if: steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
         run: |
           uv run --project orchestration python .github/factory/factory.py comment .factory > "$RUNNER_TEMP/scope-comment.md"
           gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/scope-comment.md"
@@ -136,7 +148,7 @@ jobs:
       - name: Hand the ticket to a human
         if: failure() && steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
         run: |
           {
             echo "The scope run produced no valid scope; see run $RUN_URL."

@@ -208,6 +208,20 @@ jobs:
       # Builds what the reference test reads from the committed code, then runs only that test. dbt test exits
       # 0 when its selection is empty, and an old run_results.json could hold the model's own run, so the
       # verdict comes from a fresh file that must name the test.
+      # An installation token lasts an hour and the model step can run longer, so every write below takes a
+      # fresh one. always(), so a failure before this step still gets a token to report with.
+      - name: Renew the App token
+        id: app_write
+        if: always() && steps.claim.outputs.claimed == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-metadata: read
+
       - name: Run the reference test as the verdict
         id: verdict
         if: steps.claim.outputs.claimed == 'true'
@@ -263,7 +277,7 @@ jobs:
       - name: Commit and push
         if: steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
           BOT: ${{ steps.app.outputs.app-slug }}[bot]
         run: |
           bot_id=$(gh api "/users/$BOT" --jq .id)
@@ -278,7 +292,7 @@ jobs:
         id: pr
         if: steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
           TITLE: ${{ github.event.issue.title }}
           STATUS: ${{ steps.verdict.outputs.status }}
           DETAIL: ${{ steps.verdict.outputs.detail }}
@@ -322,7 +336,7 @@ jobs:
       - name: Report on the ticket
         if: steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
           PR_URL: ${{ steps.pr.outputs.url }}
           STATUS: ${{ steps.verdict.outputs.status }}
           DETAIL: ${{ steps.verdict.outputs.detail }}
@@ -338,7 +352,7 @@ jobs:
       - name: Hand the ticket to a human
         if: failure() && steps.claim.outputs.claimed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app_write.outputs.token || steps.app.outputs.token }}
           SCOPE: ${{ steps.scope.outcome }}
         run: |
           if [ "$SCOPE" = failure ]; then
