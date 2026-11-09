@@ -259,6 +259,22 @@ def verdict(run_results: dict, test: str) -> tuple[bool, str]:
     return False, f"the test {test} ended in {result['status']}: {message}"
 
 
+def model_error(execution_file: Path) -> str:
+    """The error a Claude Code run ended with, from the execution log claude-code-action writes, or an empty
+    string when the run ended well or wrote no log. The human gets it in the hand-off and the PR body, so a
+    dead key, an empty credit balance or a bad model name does not need a trip through three logs."""
+    if not execution_file.is_file():
+        return ""
+    try:
+        data = json.loads(execution_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ""
+    for message in data if isinstance(data, list) else [data]:
+        if isinstance(message, dict) and message.get("type") == "result" and message.get("is_error"):
+            return " ".join(str(message.get("result") or "the run ended in an error with no message").split())
+    return ""
+
+
 def scrub(folder: Path, secrets: list[str]) -> int:
     """Replaces each secret with *** in every file under folder, and counts the files it changed. Artifacts
     of a public repo are open to any signed-in user, and an error the model saw can quote a URL with its key."""
@@ -354,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
     verdict_parser = commands.add_parser("verdict", help="print status= and detail= for one test in dbt's run_results.json")
     verdict_parser.add_argument("run_results", type=Path)
     verdict_parser.add_argument("test")
+    model_error_parser = commands.add_parser("model-error", help="print the error a Claude Code run ended with, from its execution log, or nothing")
+    model_error_parser.add_argument("execution_file", type=Path)
     scrub_parser = commands.add_parser("scrub", help="replace the values of the named environment variables with *** in every file under <dir>")
     scrub_parser.add_argument("dir", type=Path)
     scrub_parser.add_argument("names", nargs="+", metavar="NAME")
@@ -367,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
             output = ticket_command(args.dir)
         elif args.command == "verdict":
             output = verdict_command(args.run_results, args.test)
+        elif args.command == "model-error":
+            output = model_error(args.execution_file)
         else:
             output = f"scrubbed {scrub(args.dir, [os.environ.get(name, '') for name in args.names])} file(s) under {args.dir}\n"
     except Invalid as error:
