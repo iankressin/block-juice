@@ -1,0 +1,59 @@
+name: Analysis
+description: Ask for an on-chain analysis. A scope run reads it, computes a reference answer over a short window, and comments.
+labels: [scope]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Filing this form starts a scope run, which posts one comment: the oracle, the eval window, a reference
+        answer and a load estimate. Read it, edit the ticket or reply, and add `scope` to run it again. Add
+        `ready-for-agent` when the scope is right. docs/agents/factory.md has the whole loop.
+  - type: input
+    id: question
+    attributes:
+      label: Question
+      description: One question, in plain words.
+      placeholder: Which wallets made the most profit on Aave in October 2026?
+    validations:
+      required: true
+  - type: textarea
+    id: reasoning
+    attributes:
+      label: Reasoning
+      description: Why you want it, and what decision it feeds.
+    validations:
+      required: true
+  - type: textarea
+    id: definitions
+    attributes:
+      label: Definitions
+      description: What counts, which markets or contracts, which chains. Give addresses where you know them.
+      placeholder: |
+        profit: realised profit in USD, priced at each trade's block
+        markets: Aave v3 on Ethereum, every reserve
+    validations:
+      required: true
+  - type: input
+    id: window
+    attributes:
+      label: Window
+      description: The time span the answer covers, in UTC.
+      placeholder: October 2026
+    validations:
+      required: true
+  - type: dropdown
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: What you expect the build run to ship.
+      options:
+        - a mart and an analysis
+        - an analysis over existing marts
+        - not sure
+      default: 2
+  - type: input
+    id: tolerance_hint
+    attributes:
+      label: Tolerance hint
+      description: How close the pipeline must come to the reference, if you know. The scope run proposes one otherwise.
+      placeholder: within 0.1% of each wallet's profit

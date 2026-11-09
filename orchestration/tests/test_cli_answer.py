@@ -334,9 +334,9 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
     answer.run_dbt_tests(Path("transformation"), ["usdc_flows"], {TRANSFERS: LOADED})
     answer.run_dbt_tests(Path("transformation"), ["eth_total"], {})
     flows, eth = calls
-    assert flows[: flows.index("--vars")] == ("test", "--select", "+usdc_flows")
+    assert flows[: flows.index("--vars")] == ("test", "--select", "+usdc_flows", "--exclude", "tag:reference")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
-    assert eth == ("test", "--select", "+eth_total")
+    assert eth == ("test", "--select", "+eth_total", "--exclude", "tag:reference")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):
