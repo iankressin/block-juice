@@ -52,6 +52,6 @@ The model's tools come from `--allowedTools` in `claude_args`. Claude Code's [pe
    ```
 
    The `-ignore` is there because actionlint 1.7.12 knows an old `create-github-app-token` that had no `client-id`. v3 takes it.
-2. File an Analysis ticket whose answer the repo already holds. Read the scope comment and check its oracle, window and rows.
+2. File an Analysis ticket whose answer the repo already holds; `first-ticket.md` has the text for one. Read the scope comment and check its oracle, window and rows.
 3. Add `ready-for-agent`. Review the draft PR: the comparison table, the factory checks, the files. Read the transcript in the run's artifacts.
 4. Close the PR without merging and delete its `factory/<issue>-<slug>` branch.
