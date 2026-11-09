@@ -84,3 +84,16 @@ def test_nothing_is_logged_to_a_run_after_it_ends(stubbed, capsys):
     events = dg.DagsterInstance.get().all_logs(run_id)
     types = [event.dagster_event.event_type for event in events if event.dagster_event]
     assert types[types.index(dg.DagsterEventType.RUN_SUCCESS) + 1 :] == []
+
+
+def test_select_runs_only_the_named_assets_as_a_dagster_run(stubbed, capsys):
+    # The balances job's transformed raises, so the run succeeds only if --select leaves it out.
+    assert main(["run", "balances", "--select", "loaded"]) == 0
+    assert "balances: run " in capsys.readouterr().out
+    [run] = dg.DagsterInstance.get().get_runs()
+    assert (run.job_name, run.asset_selection) == ("balances", {dg.AssetKey("loaded")})
+
+
+def test_a_selected_key_outside_the_pipeline_exits_2_listing_its_assets(stubbed, capsys):
+    assert main(["run", "loads", "--select", "transformed"]) == 2
+    assert "transformed is not in pipeline loads; its assets: loaded" in capsys.readouterr().err
