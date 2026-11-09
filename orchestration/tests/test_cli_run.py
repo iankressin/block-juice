@@ -65,7 +65,8 @@ def test_failed_run_exits_1_naming_the_failed_step(stubbed, capsys):
     assert "step loaded" not in out
 
 
-def test_runs_a_pipelines_steps_side_by_side(stubbed, capsys):
+def test_runs_a_pipelines_steps_side_by_side(stubbed, capsys, monkeypatch):
+    monkeypatch.setenv("DAGSTER_MULTIPROCESS_EXECUTOR_MAX_CONCURRENT", "2")
     assert main(["run", "side_by_side"]) == 0
     assert "side_by_side: run " in capsys.readouterr().out
 
