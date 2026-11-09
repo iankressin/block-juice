@@ -103,6 +103,11 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       const deadLetters = `${raw}."_dead_letters"`;
       const db = await connect();
       try {
+        // IF NOT EXISTS fails when two sessions create the same object at once, and Dagster opens
+        // a pipeline's sources at once, so they take turns here. The key has two parts: Postgres
+        // keeps those apart from the one-part keys Pipes locks its cursors with.
+        await db.query("begin");
+        await db.query("select pg_advisory_xact_lock(hashtext('ingestion'), hashtext('warehouse.ddl'))");
         await db.query(`create schema if not exists ${raw}`);
         await db.query(
           `create table if not exists ${table} (
@@ -124,7 +129,9 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
              primary key (source_table, id)
            )`,
         );
+        await db.query("commit");
       } catch (error) {
+        await db.query("rollback").catch(() => {});
         await db.close();
         throw error;
       }

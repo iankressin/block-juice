@@ -209,7 +209,8 @@ def parser() -> argparse.ArgumentParser:
     run = commands.add_parser(
         "run",
         help="materialize one pipeline's Dagster job: ingestion, then dbt",
-        description="Parses the dbt project, then runs the Dagster job of <pipeline> in this process. "
+        description="Parses the dbt project, then runs the Dagster job of <pipeline>, with steps that do not "
+        "depend on each other side by side, as in scheduled runs. "
         "Exits 1 when the run fails, naming the steps that failed.",
     )
     run.add_argument("pipeline")
