@@ -147,7 +147,7 @@ uv run --project orchestration bj --help
 | Command | What it does |
 |---|---|
 | `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: dbt tests, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
-| `bj run <pipeline>` | Runs one pipeline's Dagster job in-process, after `dbt parse`. |
+| `bj run <pipeline>` | Runs one pipeline's Dagster job after `dbt parse`. Steps that do not depend on each other run side by side, as in scheduled runs. |
 | `bj install` | Sets up a checkout and starts nothing: copies each missing `.env` from its `.env.example` and checks them, runs `pnpm install --frozen-lockfile` in `ingestion/`, and runs `dbt parse`. Never overwrites an `.env`. Exits 2 when pnpm is missing, and 1 when an `.env` lacks a required key or pnpm fails. |
 | `bj dev` | Runs `bj install`, starts the stack with `docker compose up -d`, runs the checks of `bj doctor` less Dagster's port, then hands over to `dagster dev`. Exits 2 when port 3000 is in use or a tool is missing, and 1 when a step or check failed. |
 | `bj doctor [--copy-env]` | Checks the local setup: `.env` and each source's `.env` against their `.env.example` (keys by name, never values), the compose ports, the warehouse, the eRPC and Dshackle health endpoints, and the tool versions `mise.toml` pins. `--copy-env` copies `.env.example` to each source `.env` that is missing. Exits 1 when a check failed. |
