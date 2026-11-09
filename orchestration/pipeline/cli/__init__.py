@@ -220,6 +220,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(REPO_ROOT / ".env", override=False)
+    # One Dagster history per checkout, which bj run writes and the dagster dev that bj dev starts reads.
+    home = Path(os.environ.setdefault("DAGSTER_HOME", str(REPO_ROOT / "orchestration" / ".dagster_home")))
+    home.mkdir(parents=True, exist_ok=True)
     cli = parser()
     args = cli.parse_args(argv)
     try:
