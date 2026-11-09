@@ -6,7 +6,12 @@ For a ticket whose answer has the slug `<slug>`, with `<name>` the slug with `_`
 
 - The seed is `reference_<name>.csv`: the key columns and the value column, one row per expected result.
 - `_reference_seeds.yml` registers it, with a description that names the oracle, the window and the ticket.
-- The test is `../../tests/reference/<name>_matches_reference.sql`, tagged `reference`. It calls the `reference_mismatches` macro, which returns one row per key that is missing on either side or whose value is over the tolerance, with the columns `expected`, `actual` and `reason`.
+- The test is `../../tests/reference/<name>_matches_reference.sql`, tagged `reference`. It calls the `reference_mismatches` macro, which returns the rows that do not match, with the key columns, `expected`, `actual` and `reason`. The reasons, in the order the macro checks them:
+  - `duplicate_in_expected`: the key is on more than one row of the seed.
+  - `duplicate_in_actual`: the key is on more than one row of `actual`.
+  - `missing_in_actual`: the key is in the seed only.
+  - `missing_in_expected`: the key is in `actual` only.
+  - `over_tolerance`: the values differ by more than the tolerance, or one of them is null.
 
 `bj answer` does not run these tests. Run them with `dbt test --select tag:reference`.
 
