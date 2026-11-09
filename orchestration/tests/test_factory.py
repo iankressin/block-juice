@@ -193,6 +193,22 @@ def test_a_ticket_with_no_pr_has_no_review_section(tmp_path, capsys):
     assert capsys.readouterr().out == "# #12 T\n\n(no description)\n\n## Comments\n\n(none)\n"
 
 
+def test_scrub_masks_each_secret_in_every_file_and_skips_an_empty_one(tmp_path, monkeypatch, capsys):
+    session = tmp_path / "transcript" / "-home-runner-work"
+    session.mkdir(parents=True)
+    leaked = session / "session.jsonl"
+    leaked.write_text('{"error": "POST https://eth.example/v2/k3y failed"}\n')
+    clean = tmp_path / "transcript" / "execution.json"
+    clean.write_text("[]\n")
+    monkeypatch.setenv("EVM_RPC_URL", "https://eth.example/v2/k3y")
+    monkeypatch.setenv("DUNE_API_KEY", "")
+
+    assert factory.main(["scrub", str(tmp_path / "transcript"), "EVM_RPC_URL", "DUNE_API_KEY", "UNSET_NAME"]) == 0
+    assert leaked.read_text() == '{"error": "POST *** failed"}\n'
+    assert clean.read_text() == "[]\n"
+    assert capsys.readouterr().out == f"scrubbed 1 file(s) under {tmp_path / 'transcript'}\n"
+
+
 def run_results(*results):
     return {"results": list(results)}
 

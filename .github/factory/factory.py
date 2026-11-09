@@ -1,5 +1,5 @@
 """The files that cross between the factory's runs and GitHub: the scope comment, the ticket the model
-reads, and the verdict of a reference test.
+reads, the verdict of a reference test, and the artifacts a run uploads.
 
 The workflows run it as `uv run --project orchestration python factory.py <command>`. It reads JSON that
 `gh` wrote and the files the model wrote, and prints a comment, markdown or GITHUB_OUTPUT lines. It never
@@ -10,6 +10,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import re
 import sys
 from datetime import date, datetime
@@ -237,6 +238,23 @@ def verdict(run_results: dict, test: str) -> tuple[bool, str]:
     return False, f"the test {test} ended in {result['status']}: {message}"
 
 
+def scrub(folder: Path, secrets: list[str]) -> int:
+    """Replaces each secret with *** in every file under folder, and counts the files it changed. Artifacts
+    of a public repo are open to any signed-in user, and an error the model saw can quote a URL with its key."""
+    values = [secret.encode() for secret in secrets if secret]
+    changed = 0
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file():
+            continue
+        data = cleaned = path.read_bytes()
+        for value in values:
+            cleaned = cleaned.replace(value, b"***")
+        if cleaned != data:
+            path.write_bytes(cleaned)
+            changed += 1
+    return changed
+
+
 def read_text(path: Path) -> str:
     if not path.is_file():
         raise Invalid(f"{path} does not exist")
@@ -315,6 +333,9 @@ def main(argv: list[str] | None = None) -> int:
     verdict_parser = commands.add_parser("verdict", help="print status= and detail= for one test in dbt's run_results.json")
     verdict_parser.add_argument("run_results", type=Path)
     verdict_parser.add_argument("test")
+    scrub_parser = commands.add_parser("scrub", help="replace the values of the named environment variables with *** in every file under <dir>")
+    scrub_parser.add_argument("dir", type=Path)
+    scrub_parser.add_argument("names", nargs="+", metavar="NAME")
     args = parser.parse_args(argv)
     try:
         if args.command == "comment":
@@ -323,8 +344,10 @@ def main(argv: list[str] | None = None) -> int:
             output = extract_command(args.comments, args.bot, args.dir)
         elif args.command == "ticket":
             output = ticket_command(args.dir)
-        else:
+        elif args.command == "verdict":
             output = verdict_command(args.run_results, args.test)
+        else:
+            output = f"scrubbed {scrub(args.dir, [os.environ.get(name, '') for name in args.names])} file(s) under {args.dir}\n"
     except Invalid as error:
         print(f"factory.py {args.command}: {error}", file=sys.stderr)
         return 1
