@@ -287,3 +287,26 @@ def test_model_error_is_nothing_for_a_missing_or_broken_log(tmp_path, capsys):
     (tmp_path / "broken.json").write_text("{not json")
     assert factory.main(["model-error", str(tmp_path / "broken.json")]) == 0
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize(
+    ("content", "found"),
+    [
+        (b"PORTAL_URL=https://portal.example/?key=sqd_prt_s3cret", True),
+        (b"c3FkX3BydF9zM2NyZXQ=", True),
+        (b"c3FkX3BydF9zM2NyZXQ", True),
+        (b"7371645f7072745f7333637265 74".replace(b" ", b""), True),
+        (b"a clean seed row,1\n", False),
+    ],
+)
+def test_leaks_finds_a_secret_as_is_or_encoded_and_only_then(tmp_path, monkeypatch, capsys, content, found):
+    monkeypatch.setenv("PORTAL_API_KEY", "sqd_prt_s3cret")
+    monkeypatch.setenv("EMPTY_SECRET", "")
+    path = tmp_path / "file.txt"
+    path.write_bytes(content)
+    (tmp_path / "list").write_text(f"{path}\n{tmp_path / 'missing.txt'}\n")
+    code = factory.main(["leaks", str(tmp_path / "list"), "PORTAL_API_KEY", "EMPTY_SECRET"])
+    out, err = capsys.readouterr()
+    assert code == (1 if found else 0)
+    assert ("file.txt" in err) == found
+    assert "sqd_prt_s3cret" not in out + err

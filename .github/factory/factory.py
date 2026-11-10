@@ -7,6 +7,7 @@ calls GitHub. Exit codes: 0 done, 1 the input is not what the contract in docs/a
 """
 
 import argparse
+import base64
 import csv
 import io
 import json
@@ -17,6 +18,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 
 MARKER = "<!-- factory:scope -->"
 SLUG = re.compile(r"^[a-z0-9-]+$")
@@ -282,6 +284,28 @@ def model_error(execution_file: Path) -> str:
     return ""
 
 
+def encodings(secret: str) -> set[bytes]:
+    """The secret as a careless or hostile hand might write it into a file: as is, base64 in both
+    alphabets with and without padding, hex in both cases, and URL-encoded."""
+    raw = secret.encode()
+    forms = {raw, raw.hex().encode(), raw.hex().upper().encode(), quote(secret, safe="").encode()}
+    for encode in (base64.b64encode, base64.urlsafe_b64encode):
+        encoded = encode(raw)
+        forms.update({encoded, encoded.rstrip(b"=")})
+    return forms
+
+
+def leaks(paths: list[Path], secrets: list[str]) -> list[str]:
+    """The files among paths that hold a secret in any of its encodings. Trusted code runs it on the
+    files a patch produced, since masking the patch's text misses an encoded copy."""
+    forms = [form for secret in secrets if secret for form in encodings(secret)]
+    found = []
+    for path in paths:
+        if path.is_file() and any(form in path.read_bytes() for form in forms):
+            found.append(str(path))
+    return found
+
+
 def scrub(folder: Path, secrets: list[str]) -> int:
     """Replaces each secret with *** in every file under folder, and counts the files it changed. Artifacts
     of a public repo are open to any signed-in user, and an error the model saw can quote a URL with its key."""
@@ -379,6 +403,9 @@ def main(argv: list[str] | None = None) -> int:
     verdict_parser.add_argument("test")
     model_error_parser = commands.add_parser("model-error", help="print the error a Claude Code run ended with, from its execution log, or nothing")
     model_error_parser.add_argument("execution_file", type=Path)
+    leaks_parser = commands.add_parser("leaks", help="exit 1 and name the files listed in <list>, one path a line, that hold the value of a named environment variable in any common encoding")
+    leaks_parser.add_argument("list", type=Path)
+    leaks_parser.add_argument("names", nargs="+", metavar="NAME")
     scrub_parser = commands.add_parser("scrub", help="replace the values of the named environment variables with *** in every file under <dir>")
     scrub_parser.add_argument("dir", type=Path)
     scrub_parser.add_argument("names", nargs="+", metavar="NAME")
@@ -394,6 +421,13 @@ def main(argv: list[str] | None = None) -> int:
             output = verdict_command(args.run_results, args.test)
         elif args.command == "model-error":
             output = model_error(args.execution_file)
+        elif args.command == "leaks":
+            paths = [Path(line) for line in read_text(args.list).splitlines() if line.strip()]
+            found = leaks(paths, [os.environ.get(name, "") for name in args.names])
+            if found:
+                print("a secret, or an encoding of one, is in: " + ", ".join(found), file=sys.stderr)
+                return 1
+            output = f"no secret in {len(paths)} file(s)\n"
         else:
             output = f"scrubbed {scrub(args.dir, [os.environ.get(name, '') for name in args.names])} file(s) under {args.dir}\n"
     except Invalid as error:

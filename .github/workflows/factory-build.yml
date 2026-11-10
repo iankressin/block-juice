@@ -396,10 +396,10 @@ jobs:
           name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-out
           path: ${{ runner.temp }}/out
 
-      # Trusted code on a runner the model never touched masks the secrets in the model's output. The work
-      # job's own mask runs where the model can rewrite it, so it counts for nothing here. A secret in the
-      # patch means the model wrote it into the repo's files: the run then pushes nothing.
-      - name: Check the model's output for secrets
+      # Trusted code on a runner the model never touched masks the secrets in the PR body. The work job's
+      # own mask runs where the model can rewrite it, so it counts for nothing here. A raw secret in the
+      # patch's text is caught here; one hidden in an encoding is caught on the applied files below.
+      - name: Mask secrets in the PR body
         id: secrets
         if: needs.work.result == 'success'
         env:
@@ -414,6 +414,39 @@ jobs:
             exit 1
           fi
 
+      # A factory PR changes data files and code, never the factory itself, git's own settings or binaries,
+      # which a check cannot read. After the patch is applied, every changed file is searched for each
+      # secret and its common encodings. Either finding ends the run before anything is pushed.
+      - name: Apply the model's changes
+        id: apply
+        if: needs.work.result == 'success'
+        env:
+          BASE_SHA: ${{ needs.work.outputs.base_sha }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+        run: |
+          git fetch --depth 1 origin "$BASE_SHA"
+          git checkout -B "$BRANCH" "$BASE_SHA"
+          patch="$RUNNER_TEMP/out/changes.patch"
+          if [ ! -s "$patch" ]; then exit 0; fi
+          if grep -q '^GIT binary patch' "$patch"; then
+            echo "forbidden=a binary file" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes add a binary file, which the factory never pushes"
+            exit 1
+          fi
+          touched=$(git apply --numstat "$patch" | cut -f3- | grep -E '^(\.github/|\.gitattributes$|\.gitmodules$)' || true)
+          if [ -n "$touched" ]; then
+            echo "forbidden=$(echo "$touched" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes touch files the factory never changes: $touched"
+            exit 1
+          fi
+          git apply --index "$patch"
+          git diff --cached --name-only --diff-filter=AMR > "$RUNNER_TEMP/changed-files"
+          if ! python3 -I .github/factory/factory.py leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY; then
+            echo "leaked=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
       # The App's bot user signs the commit, so its id goes in the noreply address. A push the branch rejects,
       # because someone pushed to it while the run worked, goes to a human: the run never forces a push.
       - name: Commit and push
@@ -422,13 +455,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           BOT: ${{ steps.app.outputs.app-slug }}[bot]
-          BASE_SHA: ${{ needs.work.outputs.base_sha }}
         run: |
-          git fetch --depth 1 origin "$BASE_SHA"
-          git checkout -B "$BRANCH" "$BASE_SHA"
-          if [ -s "$RUNNER_TEMP/out/changes.patch" ]; then
+          if ! git diff --cached --quiet; then
             bot_id=$(gh api "/users/$BOT" --jq .id)
-            git apply --index --binary "$RUNNER_TEMP/out/changes.patch"
             git -c user.name="$BOT" -c user.email="$bot_id+$BOT@users.noreply.github.com" \
               commit --no-verify -q -m "factory: build #$ISSUE $SLUG" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
           fi
@@ -516,10 +545,13 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           SCOPED: ${{ needs.work.outputs.scoped }}
           REJECTED: ${{ steps.push.outputs.rejected }}
-          LEAKED: ${{ steps.secrets.outputs.leaked }}
+          LEAKED: ${{ steps.secrets.outputs.leaked || steps.apply.outputs.leaked }}
+          FORBIDDEN: ${{ steps.apply.outputs.forbidden }}
         run: |
           if [ "$LEAKED" = true ]; then
             message="The build run's changes contained a secret, so nothing was pushed. Rotate the key and read the run: $RUN_URL."
+          elif [ -n "$FORBIDDEN" ]; then
+            message="The build run's changes touched what the factory never pushes ($FORBIDDEN), so nothing was pushed. See run $RUN_URL."
           elif [ "$REJECTED" = true ]; then
             message="The build run did not push: \`$BRANCH\` moved while the run worked, and the run never forces a push. See run $RUN_URL."
           elif [ "$SCOPED" = false ]; then
