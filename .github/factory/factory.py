@@ -18,7 +18,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 MARKER = "<!-- factory:scope -->"
 SLUG = re.compile(r"^[a-z0-9-]+$")
@@ -286,15 +286,32 @@ def model_error(execution_file: Path) -> str:
     return ""
 
 
+def forms(secret: str) -> set[str]:
+    """The secret, and the parts of it a hand would write on their own: without a trailing slash and,
+    for a URL, its hostname with and without the port and a leading www. A host is the sensitive part
+    of a Portal URL, and a model could write it bare."""
+    found = {secret, secret.rstrip("/")}
+    parsed = urlparse(secret) if "://" in secret else None
+    if parsed and parsed.hostname:
+        host = parsed.hostname
+        found.update({host, host.removeprefix("www.")})
+        if parsed.port:
+            found.add(f"{host}:{parsed.port}")
+    return {form for form in found if form}
+
+
 def encodings(secret: str) -> set[bytes]:
-    """The secret as a careless or hostile hand might write it into a file: as is, base64 in both
-    alphabets with and without padding, hex in both cases, and URL-encoded."""
-    raw = secret.encode()
-    forms = {raw, raw.hex().encode(), raw.hex().upper().encode(), quote(secret, safe="").encode()}
-    for encode in (base64.b64encode, base64.urlsafe_b64encode):
-        encoded = encode(raw)
-        forms.update({encoded, encoded.rstrip(b"=")})
-    return forms
+    """Every form of the secret as a careless or hostile hand might write it into a file: as is, in
+    lower and upper case, base64 in both alphabets with and without padding, hex in both cases, and
+    URL-encoded."""
+    out: set[bytes] = set()
+    for form in forms(secret):
+        raw = form.encode()
+        out.update({raw, raw.lower(), raw.upper(), raw.hex().encode(), raw.hex().upper().encode(), quote(form, safe="").encode()})
+        for encode in (base64.b64encode, base64.urlsafe_b64encode):
+            encoded = encode(raw)
+            out.update({encoded, encoded.rstrip(b"=")})
+    return out
 
 
 def leaks(paths: list[Path], secrets: list[str]) -> list[str]:
@@ -371,7 +388,13 @@ def staged_problems(paths: list[str], summary: str, numstat: list[str]) -> list[
 def scrub(folder: Path, secrets: list[str]) -> int:
     """Replaces each secret with *** in every file under folder, and counts the files it changed. Artifacts
     of a public repo are open to any signed-in user, and an error the model saw can quote a URL with its key."""
-    values = [secret.encode() for secret in secrets if secret]
+    # Every form in every case, longest first, so a URL is masked whole before its bare host would leave
+    # the scheme behind.
+    values = sorted(
+        {variant.encode() for secret in secrets if secret for form in forms(secret) for variant in (form, form.lower(), form.upper())},
+        key=len,
+        reverse=True,
+    )
     changed = 0
     for path in sorted(folder.rglob("*")):
         if not path.is_file():

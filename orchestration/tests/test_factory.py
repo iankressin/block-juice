@@ -380,3 +380,20 @@ def test_staged_check_refuses_what_git_says_the_patch_did(tmp_path, capsys, path
         assert code == 0 and "the factory may change" in out
     else:
         assert code == 1 and problem in err
+
+
+def test_scrub_and_leaks_treat_a_url_secret_by_its_host_too(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PORTAL_HOST", "https://portal.example.net:8443/")
+    folder = tmp_path / "out"
+    folder.mkdir()
+    (folder / "a.txt").write_text("PORTAL_URL=https://portal.example.net:8443/datasets/x and bare portal.example.net:8443 and PORTAL.EXAMPLE.NET")
+    assert factory.main(["scrub", str(folder), "PORTAL_HOST"]) == 0
+    masked = (folder / "a.txt").read_text()
+    assert "portal.example.net" not in masked.lower()
+    assert masked.startswith("PORTAL_URL=***")
+
+    leak = tmp_path / "leak.sql"
+    leak.write_text("-- see cG9ydGFsLmV4YW1wbGUubmV0 for the host")
+    (tmp_path / "list").write_bytes(f"{leak}\0".encode())
+    assert factory.main(["leaks", str(tmp_path / "list"), "PORTAL_HOST"]) == 1
+    assert "leak.sql" in capsys.readouterr().err
