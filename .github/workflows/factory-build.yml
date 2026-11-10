@@ -301,6 +301,10 @@ jobs:
       # The git config and hooks go back to their state before the model, so a filter or hook it set in the
       # repo cannot change what goes into the patch.
       - name: Save the model's changes as a patch
+        env:
+          FACTORY: ${{ steps.glue.outputs.dir }}
+          MODEL_OUTCOME: ${{ steps.claude.outcome }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
           cp "$RUNNER_TEMP/git-config" .git/config
           rm -rf .git/hooks
@@ -308,6 +312,10 @@ jobs:
           git add -A
           git diff --cached --binary > "$RUNNER_TEMP/out/changes.patch"
           if [ -f .factory/result.md ]; then cp .factory/result.md "$RUNNER_TEMP/out/"; fi
+          {
+            echo "$MODEL_OUTCOME"
+            uv run --project orchestration python "$FACTORY/factory.py" model-error "${EXECUTION_FILE:-/nonexistent}"
+          } > "$RUNNER_TEMP/out/model.txt"
 
       - name: Collect the transcript
         if: always()
@@ -426,6 +434,7 @@ jobs:
             echo
             echo "| Check | Result |"
             echo "|---|---|"
+            echo "| Model step | $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt" 2>/dev/null || echo unknown) |"
             echo "| Reference test \`$TEST\` | $STATUS: $DETAIL |"
             echo "| \`pnpm typecheck\` | $TYPECHECK |"
             echo "| Package tests | $PACKAGE_TESTS |"
@@ -460,7 +469,11 @@ jobs:
         run: |
           checks="repo checks passed"
           if [ "$CHECKS" != "success success success success" ]; then checks="a repo check failed"; fi
-          gh issue comment "$ISSUE" --body "Build run: $PR_URL. Verdict: $STATUS, $DETAIL; $checks."
+          model=""
+          if [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
+            model=" The model step ended in $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt")."
+          fi
+          gh issue comment "$ISSUE" --body "Build run: $PR_URL. Verdict: $STATUS, $DETAIL; $checks.$model"
           if [ "$STATUS" != passed ] || [ "$checks" != "repo checks passed" ]; then
             gh issue edit "$ISSUE" --add-label ready-for-human
           fi

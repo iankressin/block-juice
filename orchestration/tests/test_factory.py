@@ -261,3 +261,26 @@ def test_the_verdict_passes_only_when_the_test_ran_and_returned_no_rows(tmp_path
     path = write_json(tmp_path / "run_results.json", results)
     assert factory.main(["verdict", str(path), "x_matches_reference"]) == 0
     assert capsys.readouterr().out == output
+
+
+@pytest.mark.parametrize(
+    ("log", "expected"),
+    [
+        ([{"type": "system", "subtype": "init"}, {"type": "result", "subtype": "success", "is_error": True, "result": "Credit balance is too low"}], "Credit balance is too low"),
+        ([{"type": "result", "subtype": "success", "is_error": False, "result": "Done."}], ""),
+        ([{"type": "result", "subtype": "error_max_turns", "is_error": True, "result": None}], "the run ended in an error with no message"),
+        ({"type": "result", "is_error": True, "result": "  two\n lines "}, "two lines"),
+    ],
+)
+def test_model_error_is_the_error_a_run_ended_with_or_nothing(tmp_path, capsys, log, expected):
+    path = write_json(tmp_path / "claude-execution-output.json", log)
+    assert factory.main(["model-error", str(path)]) == 0
+    assert capsys.readouterr().out == expected
+
+
+def test_model_error_is_nothing_for_a_missing_or_broken_log(tmp_path, capsys):
+    assert factory.main(["model-error", str(tmp_path / "missing.json")]) == 0
+    assert capsys.readouterr().out == ""
+    (tmp_path / "broken.json").write_text("{not json")
+    assert factory.main(["model-error", str(tmp_path / "broken.json")]) == 0
+    assert capsys.readouterr().out == ""

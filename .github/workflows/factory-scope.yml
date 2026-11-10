@@ -145,15 +145,27 @@ jobs:
           uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/transcript" EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
           uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
 
-      # After the scrub above, since artifacts of a public repo are open to any signed-in user. always(), so
-      # publish gets whatever the model wrote, even comment.md alone.
+      # always(), so publish gets whatever the model wrote, even comment.md alone, plus how the model step ended
+      # and the error it ended with, for the hand-off. Scrubbed, since artifacts of a public repo are open to any
+      # signed-in user.
       - name: Collect the scope files
         if: always()
+        env:
+          MODEL_OUTCOME: ${{ steps.claude.outcome }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           for file in scope.yaml reference.csv comment.md; do
             if [ -f ".factory/$file" ]; then cp ".factory/$file" "$RUNNER_TEMP/out/"; fi
           done
+          {
+            echo "$MODEL_OUTCOME"
+            uv run --project orchestration python .github/factory/factory.py model-error "${EXECUTION_FILE:-/nonexistent}"
+          } > "$RUNNER_TEMP/out/model.txt"
+          uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/out" EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -238,6 +250,10 @@ jobs:
         run: |
           {
             echo "The scope run produced no valid scope; see run $RUN_URL."
+            if [ "$SCRUBBED" = success ] && [ -s .factory/model.txt ] && [ "$(head -n 1 .factory/model.txt)" != success ]; then
+              echo
+              echo "The model step ended in $(head -n 1 .factory/model.txt): $(tail -n +2 .factory/model.txt)"
+            fi
             if [ "$SCRUBBED" = success ] && [ -s .factory/comment.md ]; then
               echo
               cat .factory/comment.md
