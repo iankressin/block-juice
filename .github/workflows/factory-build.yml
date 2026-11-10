@@ -396,6 +396,24 @@ jobs:
           name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-out
           path: ${{ runner.temp }}/out
 
+      # Trusted code on a runner the model never touched masks the secrets in the model's output. The work
+      # job's own mask runs where the model can rewrite it, so it counts for nothing here. A secret in the
+      # patch means the model wrote it into the repo's files: the run then pushes nothing.
+      - name: Check the model's output for secrets
+        id: secrets
+        if: needs.work.result == 'success'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+        run: |
+          cp "$RUNNER_TEMP/out/changes.patch" "$RUNNER_TEMP/changes.before"
+          python3 -I .github/factory/factory.py scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
+          if ! cmp -s "$RUNNER_TEMP/changes.before" "$RUNNER_TEMP/out/changes.patch"; then
+            echo "leaked=true" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes contain a secret, so nothing is pushed"
+            exit 1
+          fi
+
       # The App's bot user signs the commit, so its id goes in the noreply address. A push the branch rejects,
       # because someone pushed to it while the run worked, goes to a human: the run never forces a push.
       - name: Commit and push
@@ -498,8 +516,11 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           SCOPED: ${{ needs.work.outputs.scoped }}
           REJECTED: ${{ steps.push.outputs.rejected }}
+          LEAKED: ${{ steps.secrets.outputs.leaked }}
         run: |
-          if [ "$REJECTED" = true ]; then
+          if [ "$LEAKED" = true ]; then
+            message="The build run's changes contained a secret, so nothing was pushed. Rotate the key and read the run: $RUN_URL."
+          elif [ "$REJECTED" = true ]; then
             message="The build run did not push: \`$BRANCH\` moved while the run worked, and the run never forces a push. See run $RUN_URL."
           elif [ "$SCOPED" = false ]; then
             message="The build run found no valid scope comment from the factory, so the ticket needs a scope run first: add \`scope\`. See run $RUN_URL."

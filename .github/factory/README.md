@@ -22,6 +22,10 @@ Both upload the transcript, with secrets masked, for seven days. When the model 
 
 claude-code-action stops before the model runs when the person who added the label has no write access. So a stranger's Analysis ticket ends with `ready-for-human`. Read it, then add `scope` yourself to run it. The model reads comments only from people with write access and from Apps installed on the repo.
 
+## What the model can reach
+
+The model step holds two secrets in its environment: the model's own credential, which the action needs, and `PORTAL_API_KEY`. A hostile prompt could read either, so both should be keys made for the factory alone, which you can revoke. The model's runner masks secrets in the transcript before upload, but the model can rewrite that code on its runner, so treat the transcript as the one artifact only the model's own mask protects. The patch and the PR body are masked by trusted code in `publish`, and a patch that carries a secret is never pushed: the run comments and adds `ready-for-human`. Two hardenings are left for later: a local proxy that adds the Portal key so the model never sees it, and dropping the runner's `sudo` before the model step.
+
 ## Secrets
 
 | Secret | Used by |
