@@ -1,3 +1,15 @@
 version: 2
 
-seeds: []
+seeds:
+  - name: reference_uni_v3_uni_swaps_2026_10_15
+    description: >-
+      #32: swaps and UNI volume per Uniswap v3 pool holding UNI (0x1f9840a85d5af5bf1d1762f925bdaddc4201f984)
+      on Ethereum blocks 26194189 to 26201364 (2026-10-15T00:00:00Z to 2026-10-16T00:00:00Z), from the
+      dune oracle: Dune query 9099271 (https://dune.com/queries/9099271), execution
+      01M71D9WZ5R1R99CRVP8X63128, which joins uniswap_v3_ethereum.UniswapV3Pool_evt_Swap to
+      Factory_evt_PoolCreated.
+    config:
+      column_types:
+        pool: text
+        swaps: numeric
+        uni_volume: numeric
