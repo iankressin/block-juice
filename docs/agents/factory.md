@@ -10,7 +10,7 @@ How analysis tickets become pipeline PRs without a human at the keyboard. The de
 | `ready-for-agent` | a human, after reading the scope comment | a build run starts |
 | `ready-for-human` | a build run that failed, or a human | nothing. A human reads the ticket and the draft PR |
 | `reference-mismatch` | a build run, on the PR | the reference test ran and the pipeline did not match within tolerance |
-| `not-verified` | a build run, on the PR | the reference test never ran against data: the eval window did not load, or the upstream build failed. The pipeline is unproven, not wrong |
+| `not-verified` | a build run, on the PR | the reference test produced no valid comparison: it never ran because the eval window did not load or the upstream build failed, or it ended in an error. The pipeline is unproven, not wrong |
 
 A run's first write removes the label that started it. That is the claim. A second run on the same ticket queues behind the first and finds the label gone, so it exits at once.
 
@@ -20,7 +20,7 @@ Never add `scope` or `ready-for-agent` from inside a run. A run that needs a hum
 
 **Scope run.** Reads the ticket. Picks an eval window of a day or a few thousand blocks. Computes the reference from an oracle independent of SQD Portal, in the order protocol API, Dune, block-pinned RPC, with Portal MCP as the declared fallback. Estimates the full window's load. Posts one scope comment. Writes nothing in the repo.
 
-**Build run.** Reads the latest scope comment. Checks out `factory/<issue>-<slug>`, resuming it when it exists. Drives the bj skill to build what the analysis needs, ships the reference as a seed and a test, loads the eval window only, and runs the test as its eval loop, three fix attempts at most. The eval window is a day or a few thousand blocks whatever the ticket asks for, small enough to load through the public Portal in minutes; the ticket's full window runs on the operator's warehouse after the merge. A scan that does not shrink with the window, such as pool discovery from a token's first pool, is the exception the scope comment must call out. Opens or updates a draft PR. On a failed verdict the PR gets `reference-mismatch`, or `not-verified` when the test never ran, and the ticket gets `ready-for-human`. The run never merges and never marks the PR ready for review.
+**Build run.** Reads the latest scope comment. Checks out `factory/<issue>-<slug>`, resuming it when it exists. Drives the bj skill to build what the analysis needs, ships the reference as a seed and a test, loads the eval window only, and runs the test as its eval loop, three fix attempts at most. The eval window is a day or a few thousand blocks whatever the ticket asks for, small enough to load through the public Portal in minutes; the ticket's full window runs on the operator's warehouse after the merge. A scan that does not shrink with the window, such as pool discovery from a token's first pool, is the exception the scope comment must call out. Opens or updates a draft PR. On a failed verdict the PR gets `reference-mismatch`, or `not-verified` when the test produced no valid comparison, and the ticket gets `ready-for-human`. The run never merges and never marks the PR ready for review.
 
 Both run on GitHub Actions as the factory's GitHub App. The workflows are `.github/workflows/factory-scope.yml` and `factory-build.yml`; the prompts and glue are under `.github/factory/`.
 
