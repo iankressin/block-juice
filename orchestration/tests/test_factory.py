@@ -354,3 +354,28 @@ def test_patch_check_refuses_what_the_factory_never_pushes(tmp_path, capsys, pat
         assert code == 0 and "only files the factory may change" in out
     else:
         assert code == 1 and problem in err
+
+
+@pytest.mark.parametrize(
+    ("paths", "summary", "numstat", "problem"),
+    [
+        (["transformation/analyses/x.sql"], " create mode 100644 transformation/analyses/x.sql\n", ["1\t0\ttransformation/analyses/x.sql"], None),
+        ([".github/factory/scope.md"], "", ["1\t1\t.github/factory/scope.md"], "a file the factory never changes: .github/factory/scope.md"),
+        (["docs/.gitignore"], "", ["1\t0\tdocs/.gitignore"], "a file the factory never changes: docs/.gitignore"),
+        (["bj"], " mode change 100644 => 100755 bj\n", ["0\t0\tbj"], "a mode change"),
+        (["link"], " create mode 120000 link\n", ["1\t0\tlink"], "a symlink"),
+        (["vendor"], " create mode 160000 vendor\n", ["1\t0\tvendor"], "a submodule"),
+        (["a.sql", "b.sql"], " rename a.sql => b.sql (100%)\n", ["0\t0\tb.sql"], "a rename or copy"),
+        (["docs/images/x.png"], " create mode 100644 docs/images/x.png\n", ["-\t-\tdocs/images/x.png"], "a binary file: docs/images/x.png"),
+    ],
+)
+def test_staged_check_refuses_what_git_says_the_patch_did(tmp_path, capsys, paths, summary, numstat, problem):
+    (tmp_path / "paths").write_bytes(b"".join(p.encode() + b"\0" for p in paths))
+    (tmp_path / "summary").write_text(summary)
+    (tmp_path / "numstat").write_bytes(b"".join(n.encode() + b"\0" for n in numstat))
+    code = factory.main(["staged-check", str(tmp_path / "paths"), str(tmp_path / "summary"), str(tmp_path / "numstat")])
+    out, err = capsys.readouterr()
+    if problem is None:
+        assert code == 0 and "the factory may change" in out
+    else:
+        assert code == 1 and problem in err

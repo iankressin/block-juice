@@ -424,10 +424,11 @@ jobs:
           fi
 
       # A factory PR changes data files and code, never the factory itself, git's own settings, binaries
-      # (which a check cannot read), symlinks or modes. The patch's own headers say which, and a header the
-      # check cannot read counts against it. After the patch is applied, every changed file is searched for
-      # each secret and its common encodings, with the list NUL-separated so a quoted path cannot hide a
-      # file. Any finding ends the run before anything is pushed.
+      # (which a check cannot read), symlinks or modes. The patch's headers get a first look, and a header
+      # the check cannot read counts against it; then git applies the patch to the index and git's own
+      # listing of what it staged is checked again. Every changed file is searched for each secret and its
+      # common encodings, with the lists NUL-separated so a quoted path cannot hide a file. Any finding
+      # ends the run before anything is pushed.
       - name: Apply the model's changes
         id: apply
         if: needs.work.result == 'success'
@@ -447,7 +448,16 @@ jobs:
             exit 1
           fi
           git -c core.hooksPath=/dev/null apply --index "$patch"
-          git diff --cached -z --name-only --diff-filter=AMR > "$RUNNER_TEMP/changed-files"
+          # git is the authority on what the patch did; the header check above is only an extra layer.
+          git diff --cached -z --name-only --no-renames > "$RUNNER_TEMP/staged-paths"
+          git diff --cached --summary > "$RUNNER_TEMP/staged-summary"
+          git diff --cached -z --numstat --no-renames > "$RUNNER_TEMP/staged-numstat"
+          if ! problems=$(python3 -I "$GLUE/factory.py" staged-check "$RUNNER_TEMP/staged-paths" "$RUNNER_TEMP/staged-summary" "$RUNNER_TEMP/staged-numstat" 2>&1 >/dev/null); then
+            echo "forbidden=$problems" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes hold $problems"
+            exit 1
+          fi
+          git diff --cached -z --name-only --no-renames --diff-filter=AM > "$RUNNER_TEMP/changed-files"
           if ! python3 -I "$GLUE/factory.py" leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY; then
             echo "leaked=true" >> "$GITHUB_OUTPUT"
             exit 1

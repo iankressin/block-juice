@@ -341,6 +341,31 @@ def patch_problems(patch: str) -> list[str]:
     return sorted(set(problems))
 
 
+def staged_problems(paths: list[str], summary: str, numstat: list[str]) -> list[str]:
+    """Why the index must not be committed, with git as the authority on what the patch did: a path the
+    factory never changes, a mode change, a symlink, a rename or copy, or a binary file. `paths` is
+    `git diff --cached -z --name-only --no-renames`, `summary` is `git diff --cached --summary`, and
+    `numstat` is `git diff --cached -z --numstat --no-renames`, where a binary file shows as `-\t-`."""
+    problems = []
+    for path in paths:
+        if FORBIDDEN_PATH.search(path):
+            problems.append(f"a file the factory never changes: {path}")
+    for line in summary.splitlines():
+        line = line.strip()
+        if line.startswith("mode change"):
+            problems.append("a mode change")
+        elif line.startswith(("create mode 120000", "delete mode 120000")):
+            problems.append("a symlink")
+        elif line.startswith(("create mode 160000", "delete mode 160000")):
+            problems.append("a submodule")
+        elif line.startswith(("rename ", "copy ")):
+            problems.append("a rename or copy")
+    for record in numstat:
+        if record.startswith("-\t-\t"):
+            problems.append(f"a binary file: {record.split(chr(9), 2)[-1]}")
+    return sorted(set(problems))
+
+
 def scrub(folder: Path, secrets: list[str]) -> int:
     """Replaces each secret with *** in every file under folder, and counts the files it changed. Artifacts
     of a public repo are open to any signed-in user, and an error the model saw can quote a URL with its key."""
@@ -443,6 +468,10 @@ def main(argv: list[str] | None = None) -> int:
     leaks_parser.add_argument("names", nargs="+", metavar="NAME")
     patch_check = commands.add_parser("patch-check", help="exit 1 and say why when <patch> holds a binary file, a symlink, a mode change, a quoted path or a file the factory never changes")
     patch_check.add_argument("patch", type=Path)
+    staged_check = commands.add_parser("staged-check", help="exit 1 and say why when the index git staged from a patch holds a file the factory never changes, a mode change, a symlink, a rename or a binary file")
+    staged_check.add_argument("paths", type=Path, help="git diff --cached -z --name-only --no-renames")
+    staged_check.add_argument("summary", type=Path, help="git diff --cached --summary")
+    staged_check.add_argument("numstat", type=Path, help="git diff --cached -z --numstat --no-renames")
     scrub_parser = commands.add_parser("scrub", help="replace the values of the named environment variables with *** in every file under <dir>")
     scrub_parser.add_argument("dir", type=Path)
     scrub_parser.add_argument("names", nargs="+", metavar="NAME")
@@ -473,6 +502,17 @@ def main(argv: list[str] | None = None) -> int:
                 print("; ".join(problems), file=sys.stderr)
                 return 1
             output = "the patch changes only files the factory may change\n"
+        elif args.command == "staged-check":
+            for path in (args.paths, args.summary, args.numstat):
+                if not path.is_file():
+                    raise Invalid(f"{path} does not exist")
+            paths = [os.fsdecode(part) for part in args.paths.read_bytes().split(b"\0") if part]
+            numstat = [os.fsdecode(part) for part in args.numstat.read_bytes().split(b"\0") if part]
+            problems = staged_problems(paths, read_text(args.summary), numstat)
+            if problems:
+                print("; ".join(problems), file=sys.stderr)
+                return 1
+            output = f"the index holds {len(paths)} file(s) the factory may change\n"
         else:
             output = f"scrubbed {scrub(args.dir, [os.environ.get(name, '') for name in args.names])} file(s) under {args.dir}\n"
     except Invalid as error:
