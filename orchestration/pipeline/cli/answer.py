@@ -8,7 +8,7 @@ import subprocess
 from collections import Counter
 from collections.abc import Collection, Iterable, Sequence
 from contextlib import closing
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -271,14 +271,103 @@ def compile_analyses(project: Path, names: Sequence[str]) -> tuple[dict, list[st
     return manifest, [analyses[name] for name in names]
 
 
-def run_dbt_tests(project: Path, names: Sequence[str], coverages: dict[str, Coverage]) -> Check:
-    """The dbt tests upstream of the analyses. Tests that reconcile history with state, such as
-    tests/erc20_transfers_match_balances.sql, read what each stream source loaded from var('coverage').
+@dataclass(frozen=True)
+class Event:
+    """A record in this checkout's Dagster history: the run it came from, and when (Unix seconds)."""
+
+    run_id: str
+    at: float
+
+
+def upstream_tests(manifest: dict, analysis_ids: Sequence[str]) -> dict[str, list[str]]:
+    """Each data test on a model or source above the marts the analyses read, with the marts it sits
+    above. The marts' own tests are left out, as are tests tagged `coverage` or `reference`, which
+    run_dbt_tests selects or excludes by tag, and unit tests, which check code the marts' build ran."""
+    nodes = manifest["nodes"]
+    marts = {p for a in analysis_ids for p in nodes[a]["depends_on"]["nodes"] if p.startswith("model.")}
+    above: dict[str, set[str]] = {}
+    for mart in marts:
+        stack = list(nodes[mart]["depends_on"]["nodes"])
+        while stack:
+            unique_id = stack.pop()
+            if mart in above.setdefault(unique_id, set()):
+                continue
+            above[unique_id].add(mart)
+            stack.extend(nodes.get(unique_id, {}).get("depends_on", {}).get("nodes", []))
+    tests = {}
+    for unique_id, node in nodes.items():
+        parents = set(node["depends_on"]["nodes"]) if node.get("resource_type") == "test" else set()
+        if not parents or parents & marts or {"coverage", "reference"} & set(node.get("tags", [])):
+            continue
+        fed = set().union(*(above.get(parent, set()) for parent in parents))
+        if fed:
+            tests[unique_id] = sorted(fed)
+    return tests
+
+
+def stale_tests(tests: dict[str, list[str]], builds: dict[str, Event | None], passes: dict[str, Event | None]) -> list[str]:
+    """The tests that have not passed since each mart above them was last built. A pass counts when it came
+    in the run that built the mart, which tests a model before what it feeds, or in a later run. Without a
+    record of the build or of a pass, the test is stale."""
+
+    def covered(test: str, mart: str) -> bool:
+        built, passed = builds.get(mart), passes.get(test)
+        return built is not None and passed is not None and (passed.run_id == built.run_id or passed.at >= built.at)
+
+    return sorted(test for test, marts in tests.items() if not all(covered(test, mart) for mart in marts))
+
+
+def asset_key(manifest: dict, unique_id: str):
+    """The Dagster asset key the pipeline's dbt assets give a model."""
+    from dagster_dbt import DagsterDbtTranslator
+
+    return DagsterDbtTranslator().get_asset_spec(manifest, unique_id, None).key
+
+
+def check_key(manifest: dict, unique_id: str):
+    """The Dagster asset check key the pipeline's dbt assets give a test; None when it maps to none."""
+    from dagster_dbt import DagsterDbtTranslator
+    from dagster_dbt.asset_utils import get_asset_check_key_for_test
+
+    return get_asset_check_key_for_test(manifest, DagsterDbtTranslator(), unique_id, None)
+
+
+def dagster_history(manifest: dict, tests: dict[str, list[str]]) -> tuple[dict[str, Event | None], dict[str, Event | None]]:
+    """From this checkout's Dagster history: when each mart in `tests` was last materialized, and when each
+    test last passed. A test whose latest run failed or warned has no pass."""
+    import dagster as dg
+
+    instance = dg.DagsterInstance.get()
+    builds: dict[str, Event | None] = {}
+    for mart in sorted({mart for marts in tests.values() for mart in marts}):
+        entry = instance.get_latest_materialization_event(asset_key(manifest, mart))
+        builds[mart] = Event(entry.run_id, entry.timestamp) if entry else None
+    keys = {test: check_key(manifest, test) for test in tests}
+    latest = instance.event_log_storage.get_latest_asset_check_execution_by_key([k for k in keys.values() if k])
+    passes: dict[str, Event | None] = {}
+    for test, key in keys.items():
+        record = latest.get(key) if key else None
+        passed = record is not None and record.status.value == "SUCCEEDED" and record.event is not None
+        passes[test] = Event(record.run_id, record.event.timestamp) if passed else None
+    return builds, passes
+
+
+def run_dbt_tests(
+    project: Path, names: Sequence[str], coverages: dict[str, Coverage], upstream: Sequence[str] = ()
+) -> Check:
+    """The dbt tests on the marts the analyses read, the tests tagged `coverage` upstream of them, and
+    `upstream`: the other tests above the marts that have not passed since the marts were built (stale_tests).
+    The rest passed in the runs that built the marts, and a pipeline's dbt build skips what sits downstream
+    of a failure. Tests tagged `coverage`, such as tests/erc20_transfers_match_balances.sql, reconcile
+    history with state over what each stream source loaded, which only bj answer passes, in
+    var('coverage'); in a build they compare nothing, so bj answer always runs them.
     Tests tagged `reference` are left out: dbt's eager selection would pull in every factory ticket's
     reference test that shares a mart with the analysis, over windows this warehouse may not hold."""
     loaded = {name: c.to_json() for name, c in coverages.items()}
     variables = ("--vars", json.dumps({"coverage": loaded})) if loaded else ()
-    result = dbt(project, "test", "--select", *(f"+{name}" for name in names), "--exclude", "tag:reference", *variables)
+    selection = [selector for name in names for selector in (f"1+{name}", f"+{name},tag:coverage")]
+    selection += list(upstream)
+    result = dbt(project, "test", "--select", *selection, "--exclude", "tag:reference", *variables)
     if result.exception is not None:
         raise BadInput(f"dbt test could not run: {dbt_error(result)}")
     return dbt_tests_check((r.node.name, str(r.status)) for r in result.result.results)
@@ -359,7 +448,11 @@ def run(repo_root: Path, slug: str) -> int:
     inputs = upstream_inputs(manifest, analysis_ids)
     streams = stream_inputs(question, inputs, coverage.sources(repo_root), coverage.stream_sources(repo_root))
     coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
-    tests = run_dbt_tests(project, question.analyses, coverages)
+    above = upstream_tests(manifest, analysis_ids)
+    stale = stale_tests(above, *dagster_history(manifest, above))
+    tests = run_dbt_tests(project, question.analyses, coverages, [manifest["nodes"][t]["name"] for t in stale])
+    if len(stale) < len(above):
+        tests = replace(tests, detail=f"{tests.detail}; {len(above) - len(stale)} upstream passed since the marts were built")
     results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)
     checks = [tests, dead_letters_check(dead_letters), freshness_check(last_runs)]
     if streams:

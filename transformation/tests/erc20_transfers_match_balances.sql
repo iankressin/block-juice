@@ -2,6 +2,7 @@
 -- transfers into the wallet minus those out of it, over the blocks after the first reading up to the
 -- second. macros/erc20_balance_pairs.sql picks the pairs of readings inside the blocks
 -- ethereum.erc20_transfers has loaded; erc20_transfers_match_balances_has_pairs.sql warns when it finds none.
+{{ config(tags=['coverage']) }}
 with pairs as (
     {{ erc20_balance_pairs() }}
 )
