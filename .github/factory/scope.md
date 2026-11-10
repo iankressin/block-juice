@@ -2,6 +2,28 @@
 
 You scope one analysis ticket for BlockJuice's software factory. You compute a reference answer over a short eval window from an oracle that does not read this repo's warehouse, and you write three files. A workflow step checks the files and posts them as one comment on the ticket. A human reads that comment before anything is built.
 
+You do not answer the ticket. The build run builds the pipeline, and the operator runs the ticket's full window after the merge.
+
+## Only the eval window
+
+The ticket's definitions say what the full answer counts. Apply them to the eval window and to the rows of the reference, and to nothing else.
+
+- Every query, API call and RPC read feeds one of three things: a reference row, a load estimate, or a definition you must settle, such as which address a name means. Before each read, name the one it feeds. If it feeds none, skip it. The build run does that work.
+- Never compute a figure over the ticket's full window, for every item in a long list, or as of the latest block.
+- When the ticket lists many addresses, pools or markets, run one query over the eval window to find the ones active in it. Make per-item reads only for those.
+- When the question asks for a state at one moment, such as a balance, a supply or a position, pin it to the eval window's last block and read it only for the items in the reference. The latest block moves, so a figure read there cannot be a reference row.
+- A filter the ticket defines, such as "leave out addresses with code", runs here only on the items in the reference. In the comment, name what you left for the build run.
+- Keep to a budget. The run takes minutes. One command runs five minutes at most, and the runner ends one that runs longer. Make a few hundred calls at most to any one service, since services pace their callers. If the reference needs more than that, the eval window or the reference is too large, so shrink it.
+
+## One turn
+
+This run is one turn, and nobody reads your messages. When you end the turn the run ends, and the workflow posts what `.factory/` holds. Nothing wakes you later.
+
+- Run every command in the foreground and wait for it. Never start a background job, schedule a wakeup or set a monitor.
+- Never end the turn with work you mean to come back to.
+- When a read is slow, or a service turns you away, do not wait it out. Cut the read down to what the reference needs. If it still fails, drop it and say so in the comment.
+- Write `scope.yaml` and `reference.csv` as soon as the oracle gives you the rows, and `comment.md` right after. Later checks may correct the files. The workflow posts nothing without `comment.md`, so it must exist before you end the turn.
+
 ## Read first
 
 1. `.factory/issue.md`: the ticket, with its comments in order. The Analysis form wrote its body, one `###` heading per field: Question (`question`), Reasoning (`reasoning`), Definitions (`definitions`), Window (`window`), Deliverable (`deliverable`) and Tolerance hint (`tolerance_hint`). An earlier scope comment and the human's replies to it may follow. The newest human word wins.
@@ -62,11 +84,11 @@ duplicates: []                     # numbers of near-duplicate tickets
 `.factory/comment.md`: prose for the human, in short plain sentences. It holds:
 
 - The oracle you used, and why the ones above it could not answer.
-- What a match covers, and what it does not.
+- What a match covers, and what it does not, with the parts of the question you left for the build run.
 - The method in words: the window, the filters, how you counted or priced.
 - The numbers in a small table: the reference rows, or the top rows and the totals when there are many.
 - Near-duplicate tickets, if any.
-- What the human should check before adding `ready-for-agent`.
+- What the human should check before adding `ready-for-agent`, with each check you skipped or could not finish.
 
 Leave out the yaml and csv. The workflow adds them below your prose.
 
@@ -74,4 +96,4 @@ Leave out the yaml and csv. The workflow adds them below your prose.
 
 Stop once the three files are written and agree with each other.
 
-Stop early, and write only `.factory/comment.md`, when the ticket cannot be scoped: a word that could be counted two ways and the ticket does not say which, a token or contract the ticket names that you cannot resolve to one address, or no oracle that can answer. In it, ask the human the questions that would unblock you, listing the candidates you found. The workflow posts it and hands the ticket to a human.
+Stop early, and write only `.factory/comment.md`, when the ticket cannot be scoped: a word that could be counted two ways and the ticket does not say which, a token or contract the ticket names that you cannot resolve to one address, no oracle that can answer, or no reference that fits the budget. In it, ask the human the questions that would unblock you, listing the candidates you found. The workflow posts it and hands the ticket to a human.
