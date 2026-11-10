@@ -50,9 +50,9 @@ The model's tools come from `--allowedTools` in `claude_args`. Claude Code's [pe
 - `mcp__sqd-portal__*` "matches every tool from" that server. The repo's `.mcp.json` registers it, and claude-code-action's docs say such tools "still need to be explicitly allowed".
 - `--disallowedTools "Bash(git push *),Bash(gh *)"`: a deny rule wins over any allow rule. It "isn't a security boundary around the program", which is why the model also gets no token that can write.
 
-The scope run is one turn. The action exits when the model ends it, so nothing that waits for a later turn reports back. The run denies `ScheduleWakeup`, `Monitor` and `CronCreate`, and sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which takes `run_in_background` off the Bash tool.
+Each run is one turn. The action exits when the model ends it, so nothing that waits for a later turn reports back. Both runs deny `ScheduleWakeup`, `Monitor` and `CronCreate`, and set `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which takes `run_in_background` off the Bash tool. `BASH_MAX_TIMEOUT_MS` ends a command after an hour in the build run, so a load runs in the foreground.
 
-The scope run also works on the eval window only. `BASH_MAX_TIMEOUT_MS` ends a command after five minutes, and the model step's `timeout-minutes` ends the step after 45. `publish` checks whatever files the model wrote by then.
+The scope run works on the eval window only. There `BASH_MAX_TIMEOUT_MS` ends a command after five minutes, and the model step's `timeout-minutes` ends the step after 45. `publish` checks whatever files the model wrote by then.
 
 ## Dry run
 
