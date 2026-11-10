@@ -21,6 +21,9 @@ def scratch():
     try:
         admin = psycopg2.connect(**settings, dbname="postgres")
     except psycopg2.OperationalError as error:
+        # CI starts a Postgres for these tests, so there a failed connection is a failure, not a missing server.
+        if os.environ.get("CI"):
+            raise
         pytest.skip(f"no Postgres server at {settings['host']}:{settings['port']}: {' '.join(str(error).split())}")
     admin.autocommit = True
     name = f"bj_test_{uuid.uuid4().hex[:12]}"

@@ -58,3 +58,11 @@ models:
       polymarket:
         # As for intermediate polymarket models: no nested loops.
         +pre-hook: "set local enable_nestloop = off"
+
+# The factory's reference rows, one seed per ticket (seeds/reference/README.md). Fixtures for the reference
+# tests, not pipeline assets: Dagster leaves everything tagged reference out, the build run seeds them, and
+# `dbt seed --select tag:reference` loads them on another warehouse.
+seeds:
+  transformation:
+    reference:
+      +tags: [reference]

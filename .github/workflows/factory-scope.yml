@@ -131,6 +131,7 @@ jobs:
             --disallowedTools "Bash(git push *),Bash(gh *)"
 
       - name: Collect the transcript
+        id: transcript
         if: always()
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
@@ -149,6 +150,7 @@ jobs:
       # and the error it ended with, for the hand-off. Scrubbed, since artifacts of a public repo are open to any
       # signed-in user.
       - name: Collect the scope files
+        id: scope_files
         if: always()
         env:
           MODEL_OUTCOME: ${{ steps.claude.outcome }}
@@ -167,8 +169,9 @@ jobs:
           } > "$RUNNER_TEMP/out/model.txt"
           uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/out" EVM_RPC_URL DUNE_API_KEY CLAUDE_CODE_OAUTH_TOKEN
 
+      # Only after the masks above ended well: a failed mask must not publish what it was meant to hide.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.transcript.outcome == 'success'
         with:
           name: factory-scope-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -178,7 +181,7 @@ jobs:
           retention-days: 7
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.scope_files.outcome == 'success'
         with:
           name: factory-scope-${{ github.event.issue.number }}-${{ github.run_id }}-out
           path: ${{ runner.temp }}/out

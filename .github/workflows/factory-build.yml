@@ -96,6 +96,7 @@ jobs:
       test: ${{ steps.scope.outputs.test }}
       base_sha: ${{ steps.branch.outputs.base_sha }}
       status: ${{ steps.verdict.outputs.status }}
+      kind: ${{ steps.verdict.outputs.kind }}
       detail: ${{ steps.verdict.outputs.detail }}
       typecheck: ${{ steps.typecheck.outcome }}
       package_tests: ${{ steps.package_tests.outcome }}
@@ -204,6 +205,29 @@ jobs:
           uv run --project orchestration bj install
           psql -v ON_ERROR_STOP=1 -q -f infra/postgres/ops.sql
 
+      # A Portal other than the public one, as a secret since its name need not be public. Only the host
+      # changes: each chain keeps its own dataset path, written into the chain's gitignored .env, which
+      # loadEnv reads before the chain's .env.example. Without the secret the sources read the public Portal.
+      - name: Point the sources at the factory's Portal
+        env:
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
+        run: |
+          if [ -z "$PORTAL_HOST" ]; then echo "no PORTAL_HOST: the sources read the public Portal"; exit 0; fi
+          host=${PORTAL_HOST%/}
+          for example in ingestion/sources/*/chains/*/.env.example; do
+            url=$(sed -n 's/^PORTAL_URL=//p' "$example")
+            [ -n "$url" ] || continue
+            path=${url#*://}
+            path=/${path#*/}
+            dir=$(dirname "$example")
+            {
+              if [ -f "$dir/.env" ]; then grep -v '^PORTAL_URL=' "$dir/.env" || true; fi
+              echo "PORTAL_URL=$host$path"
+            } > "$dir/.env.tmp"
+            mv "$dir/.env.tmp" "$dir/.env"
+            echo "$dir: $path"
+          done
+
       - name: Read the prompt
         id: prompt
         env:
@@ -226,10 +250,17 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The verdict below decides, not the model's exit, so the PR opens even when this step fails.
+      # PORTAL_API_KEY reaches every stream source through loadEnv, which lets the process environment win.
+      # The public Portal paces anonymous streams, and a pool scan over millions of blocks needs the key.
+      - name: Preserve the injected Portal key when sourcing .env
+        run: sed --in-place '/^PORTAL_API_KEY=/d' .env
+
       - name: Build the pipeline
         id: claude
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
+        env:
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
@@ -254,7 +285,7 @@ jobs:
           built=0
           uv run --project ../orchestration dbt build --select "+$TEST" --exclude-resource-type test --exclude-resource-type unit_test || built=$?
           if [ "$built" -ne 0 ]; then
-            printf "status=failed\ndetail=dbt build of the test's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
+            printf "status=failed\nkind=not_run\ndetail=dbt build of the test's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
           rm -f target/run_results.json
@@ -262,7 +293,7 @@ jobs:
           if [ -f target/run_results.json ]; then
             uv run --project ../orchestration python "$FACTORY/factory.py" verdict target/run_results.json "$TEST" | tee -a "$GITHUB_OUTPUT"
           else
-            printf 'status=failed\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
+            printf 'status=failed\nkind=not_run\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
           fi
 
       # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote answer.json.
@@ -318,22 +349,26 @@ jobs:
           } > "$RUNNER_TEMP/out/model.txt"
 
       - name: Collect the transcript
+        id: transcript
         if: always()
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
           FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
           mkdir -p "$RUNNER_TEMP/transcript"
           if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
           if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN
-          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
+          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
 
+      # Only after the mask above ended well: a failed mask must not publish what it was meant to hide.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.transcript.outcome == 'success'
         with:
           name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -365,6 +400,7 @@ jobs:
       SLUG: ${{ needs.work.outputs.slug }}
       TEST: ${{ needs.work.outputs.test }}
       STATUS: ${{ needs.work.outputs.status }}
+      KIND: ${{ needs.work.outputs.kind }}
       DETAIL: ${{ needs.work.outputs.detail }}
     steps:
       - name: Create the App token
@@ -383,11 +419,81 @@ jobs:
         with:
           persist-credentials: false
 
+      # The checks below run from this copy of the default branch's glue, not from the ticket's branch.
+      - name: Keep the default branch's glue
+        id: glue
+        if: needs.work.result == 'success'
+        run: |
+          cp -R .github/factory "$RUNNER_TEMP/glue"
+          echo "dir=$RUNNER_TEMP/glue" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v4
         if: needs.work.result == 'success'
         with:
           name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-out
           path: ${{ runner.temp }}/out
+
+      # Trusted code on a runner the model never touched masks the secrets in the PR body. The work job's
+      # own mask runs where the model can rewrite it, so it counts for nothing here. A raw secret in the
+      # patch's text is caught here; one hidden in an encoding is caught on the applied files below.
+      - name: Mask secrets in the PR body
+        id: secrets
+        if: needs.work.result == 'success'
+        env:
+          GLUE: ${{ steps.glue.outputs.dir }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
+        run: |
+          # The mask runs whatever the artifact holds; a missing patch must not skip it.
+          if [ -f "$RUNNER_TEMP/out/changes.patch" ]; then cp "$RUNNER_TEMP/out/changes.patch" "$RUNNER_TEMP/changes.before"; fi
+          python3 -I "$GLUE/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
+          if [ -f "$RUNNER_TEMP/changes.before" ] && ! cmp -s "$RUNNER_TEMP/changes.before" "$RUNNER_TEMP/out/changes.patch"; then
+            echo "leaked=true" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes contain a secret, so nothing is pushed"
+            exit 1
+          fi
+
+      # A factory PR changes data files and code, never the factory itself, git's own settings, binaries
+      # (which a check cannot read), symlinks or modes. The patch's headers get a first look, and a header
+      # the check cannot read counts against it; then git applies the patch to the index and git's own
+      # listing of what it staged is checked again. Every changed file is searched for each secret and its
+      # common encodings, with the lists NUL-separated so a quoted path cannot hide a file. Any finding
+      # ends the run before anything is pushed.
+      - name: Apply the model's changes
+        id: apply
+        if: needs.work.result == 'success'
+        env:
+          GLUE: ${{ steps.glue.outputs.dir }}
+          BASE_SHA: ${{ needs.work.outputs.base_sha }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
+        run: |
+          git fetch --depth 1 origin "$BASE_SHA"
+          git checkout -B "$BRANCH" "$BASE_SHA"
+          patch="$RUNNER_TEMP/out/changes.patch"
+          if [ ! -s "$patch" ]; then exit 0; fi
+          if ! problems=$(python3 -I "$GLUE/factory.py" patch-check "$patch" 2>&1 >/dev/null); then
+            echo "forbidden=$problems" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes hold $problems"
+            exit 1
+          fi
+          git -c core.hooksPath=/dev/null apply --index "$patch"
+          # git is the authority on what the patch did; the header check above is only an extra layer.
+          git diff --cached -z --name-only --no-renames > "$RUNNER_TEMP/staged-paths"
+          git diff --cached --summary > "$RUNNER_TEMP/staged-summary"
+          git diff --cached -z --numstat --no-renames > "$RUNNER_TEMP/staged-numstat"
+          if ! problems=$(python3 -I "$GLUE/factory.py" staged-check "$RUNNER_TEMP/staged-paths" "$RUNNER_TEMP/staged-summary" "$RUNNER_TEMP/staged-numstat" 2>&1 >/dev/null); then
+            echo "forbidden=$problems" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes hold $problems"
+            exit 1
+          fi
+          git diff --cached -z --name-only --no-renames --diff-filter=AM > "$RUNNER_TEMP/changed-files"
+          if ! python3 -I "$GLUE/factory.py" leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST; then
+            echo "leaked=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
 
       # The App's bot user signs the commit, so its id goes in the noreply address. A push the branch rejects,
       # because someone pushed to it while the run worked, goes to a human: the run never forces a push.
@@ -397,18 +503,17 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           BOT: ${{ steps.app.outputs.app-slug }}[bot]
-          BASE_SHA: ${{ needs.work.outputs.base_sha }}
         run: |
-          git fetch --depth 1 origin "$BASE_SHA"
-          git checkout -B "$BRANCH" "$BASE_SHA"
-          if [ -s "$RUNNER_TEMP/out/changes.patch" ]; then
+          if ! git diff --cached --quiet; then
             bot_id=$(gh api "/users/$BOT" --jq .id)
-            git apply --index --binary "$RUNNER_TEMP/out/changes.patch"
-            git -c user.name="$BOT" -c user.email="$bot_id+$BOT@users.noreply.github.com" \
+            git -c core.hooksPath=/dev/null -c user.name="$BOT" -c user.email="$bot_id+$BOT@users.noreply.github.com" \
               commit --no-verify -q -m "factory: build #$ISSUE $SLUG" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
           fi
+          # The token travels in a header, as actions/checkout sends it, never in the URL git prints.
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
           push_exit=0
-          git push "https://x-access-token:$GH_TOKEN@github.com/$GH_REPO.git" "HEAD:refs/heads/$BRANCH" 2> "$RUNNER_TEMP/push.log" || push_exit=$?
+          git -c core.hooksPath=/dev/null -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH" 2> "$RUNNER_TEMP/push.log" || push_exit=$?
           cat "$RUNNER_TEMP/push.log" >&2
           if [ "$push_exit" -ne 0 ]; then
             if grep -qF '[rejected]' "$RUNNER_TEMP/push.log"; then echo "rejected=true" >> "$GITHUB_OUTPUT"; fi
@@ -448,15 +553,26 @@ jobs:
           pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --body-file "$body"
+          elif [ "$(gh api "repos/$GH_REPO/compare/$BASE...$BRANCH" --jq .ahead_by)" = 0 ]; then
+            # The model changed nothing, so the branch equals the base and a PR cannot open. The ticket hears why.
+            echo "nothing=true" >> "$GITHUB_OUTPUT"
+            exit 0
           else
             gh pr create --draft --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$body"
           fi
           labels=$(gh pr view "$BRANCH" --json labels --jq '.labels[].name')
-          if [ "$STATUS" = passed ]; then
-            if grep -qx reference-mismatch <<<"$labels"; then gh pr edit "$BRANCH" --remove-label reference-mismatch; fi
-          else
-            gh pr edit "$BRANCH" --add-label reference-mismatch
-          fi
+          case "$KIND" in
+            passed) want="" ;;
+            mismatch) want=reference-mismatch ;;
+            *) want=not-verified ;;
+          esac
+          for label in reference-mismatch not-verified; do
+            if [ "$label" = "$want" ]; then
+              gh pr edit "$BRANCH" --add-label "$label"
+            elif grep -qx "$label" <<<"$labels"; then
+              gh pr edit "$BRANCH" --remove-label "$label"
+            fi
+          done
           echo "url=$(gh pr view "$BRANCH" --json url --jq .url)" >> "$GITHUB_OUTPUT"
 
       # A failed verdict or a failed repo check means a human must look before the PR is ready for review.
@@ -465,6 +581,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ steps.pr.outputs.url }}
+          NOTHING: ${{ steps.pr.outputs.nothing }}
           CHECKS: ${{ needs.work.outputs.typecheck }} ${{ needs.work.outputs.package_tests }} ${{ needs.work.outputs.dbt_parse }} ${{ needs.work.outputs.pytest }}
         run: |
           checks="repo checks passed"
@@ -472,6 +589,11 @@ jobs:
           model=""
           if [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
             model=" The model step ended in $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt")."
+          fi
+          if [ "$NOTHING" = true ]; then
+            gh issue comment "$ISSUE" --body "Build run $RUN_URL changed nothing, so no PR opened. Verdict: $STATUS, $DETAIL; $checks.$model"
+            gh issue edit "$ISSUE" --add-label ready-for-human
+            exit 0
           fi
           gh issue comment "$ISSUE" --body "Build run: $PR_URL. Verdict: $STATUS, $DETAIL; $checks.$model"
           if [ "$STATUS" != passed ] || [ "$checks" != "repo checks passed" ]; then
@@ -484,13 +606,24 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           SCOPED: ${{ needs.work.outputs.scoped }}
           REJECTED: ${{ steps.push.outputs.rejected }}
+          LEAKED: ${{ steps.secrets.outputs.leaked || steps.apply.outputs.leaked }}
+          FORBIDDEN: ${{ steps.apply.outputs.forbidden }}
+          SCRUBBED: ${{ steps.secrets.outcome }}
         run: |
-          if [ "$REJECTED" = true ]; then
+          if [ "$LEAKED" = true ]; then
+            message="The build run's changes contained a secret, so nothing was pushed. Rotate the key and read the run: $RUN_URL."
+          elif [ -n "$FORBIDDEN" ]; then
+            message="The build run's changes touched what the factory never pushes ($FORBIDDEN), so nothing was pushed. See run $RUN_URL."
+          elif [ "$REJECTED" = true ]; then
             message="The build run did not push: \`$BRANCH\` moved while the run worked, and the run never forces a push. See run $RUN_URL."
           elif [ "$SCOPED" = false ]; then
             message="The build run found no valid scope comment from the factory, so the ticket needs a scope run first: add \`scope\`. See run $RUN_URL."
           else
             message="The build run failed before it could report; see run $RUN_URL."
+          fi
+          # The model's diagnostic goes out only once the trusted mask above has run over it.
+          if [ "$SCRUBBED" = success ] && [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
+            message="$message The model step ended in $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt")."
           fi
           gh issue comment "$ISSUE" --body "$message"
           gh issue edit "$ISSUE" --add-label ready-for-human

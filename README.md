@@ -24,16 +24,237 @@ When something breaks, you can see it. `bj doctor` checks your env and services 
 
 ## What
 
-| You need | What ships |
-|---|---|
-| Point-in-time balances | ETH, ERC-20, SOL, SPL, BTC → `analytics.latest_balances` |
-| Transfer history | ERC-20 on Ethereum, Arbitrum, Base → `analytics.erc20_transfers` |
-| DEX activity | Uniswap v2/v3/v4 → `analytics.dex_trades` |
-| Address labels | Code + exchange seeds → `analytics.address_labels` |
-| Token metadata | Name, symbol and decimals of listed ERC-20 tokens on Ethereum, Arbitrum, Base → `analytics.tokens` |
-| Token prices | Binance and Coinbase candles for any listed token → `analytics.token_prices`; Chainlink rounds on Ethereum, Arbitrum, Base → `analytics.oracle_prices` |
-| How it runs | TypeScript extract/load → dbt → Dagster, plus Docker for the warehouse, eRPC, Dshackle and monitoring |
-| How you drive it | `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`, …) and the blockjuice skill |
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens and feeds you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<source>_<table>` it was built from, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC.
+
+The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
+
+| | Ethereum | Arbitrum | Base | Solana | Bitcoin | Binance, Coinbase |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| [Balances](#balances) | ✓ | | | ✓ | ✓ | |
+| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | |
+| [DEX trades](#dex-trades) | ✓ | | | | | |
+| [Bridges](#bridges) | | ✓ | ✓ | | | |
+| [Labels](#labels) | | ✓ | ✓ | | | |
+| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | |
+| [Exchange prices](#exchange-prices) | | | | | | ✓ |
+| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | |
+
+### Balances
+
+`analytics.latest_balances`
+
+Each wallet's latest balance of each asset, in the asset's base units: wei, lamports, satoshis or token units. One row per chain, wallet and asset. Covers ETH and ERC-20 on Ethereum, SOL and SPL on Solana, and BTC on Bitcoin.
+
+The `balances` pipeline builds it from five call sources: `evm-eth-balances`, `evm-erc20-balances`, `solana-sol-balances`, `solana-spl-balances` and `bitcoin-btc-balances`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `solana` or `bitcoin`. |
+| `wallet` | text | The address whose balance was read. |
+| `asset_type` | text | `native`, `erc20` or `spl`. |
+| `asset` | text | `eth`, `sol` or `btc`, or the token or mint address. |
+| `block_number` | bigint | The block, or Solana slot, the balance was read at. |
+| `balance` | numeric | The amount in the asset's base units. |
+
+### Transfers
+
+`analytics.erc20_transfers` and `analytics.classified_transfers`
+
+Every ERC-20 transfer of the tokens you list, or only those into or out of your wallets. One row per Transfer log, in the token's base units. `classified_transfers` adds what kind of address each side is and sorts the transfer into a category: bridge, exchange, contract, p2p or unknown. Covers Ethereum, Arbitrum and Base. Classification reads [labels](#labels), which cover Arbitrum and Base.
+
+The `transfers` pipeline builds both from the stream source `evm-erc20-transfers`, which reads Portal.
+
+#### `erc20_transfers`
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `arbitrum` or `base`. |
+| `id` | text | The log's place on its chain, `<block>:<logIndex>`. Unique with `chain`. |
+| `block_number` | bigint | The block the transfer was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+| `token` | text | The token's contract address, lowercased. |
+| `from_address` | text | The sender, lowercased. |
+| `to_address` | text | The receiver, lowercased. |
+| `value` | numeric | The amount in the token's base units. |
+
+#### `classified_transfers`
+
+Every column of `erc20_transfers`, and these:
+
+| Column | Type | Description |
+|---|---|---|
+| `from_kind` | text | `exchange`, `deposit`, `contract`, `eoa`, `bridge` or `unknown`. |
+| `from_exchange` | text | The exchange behind an exchange or deposit address. Else null. |
+| `from_entity` | text | The exchange, `bridge:<chain>`, or the address itself. |
+| `from_group` | text | The kind, with a deposit address counted as `exchange`. |
+| `to_kind` | text | As `from_kind`, for the receiver. |
+| `to_exchange` | text | As `from_exchange`, for the receiver. |
+| `to_entity` | text | As `from_entity`, for the receiver. |
+| `to_group` | text | As `from_group`, for the receiver. |
+| `category` | text | `bridge`, `exchange`, `contract`, `p2p` or `unknown`. |
+
+### DEX trades
+
+`analytics.dex_trades`
+
+One Uniswap swap: the token the swapper received and the token they paid, in each token's base units, with no decimals or prices applied. One row per Swap log. Covers Uniswap v2, v3 and v4 on Ethereum, for the pools that trade the tokens you list.
+
+The `dex` pipeline builds it from the stream sources `evm-uniswap-v2`, `evm-uniswap-v3` and `evm-uniswap-v4`.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The Swap log's place on its chain, `<block>:<logIndex>`. |
+| `chain` | text | `ethereum`. |
+| `protocol` | text | `uniswap`. |
+| `version` | text | `v2`, `v3` or `v4`. |
+| `pool` | text | The pool's address, or its id in v4. |
+| `block_number` | bigint | The block the swap was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+| `tx_from` | text | Who signed the transaction. |
+| `sender` | text | The pool's own sender field, often a router. |
+| `recipient` | text | The pool's own recipient field. Null in v4. |
+| `hooks` | text | The v4 pool's hooks contract. Null in v2 and v3. |
+| `token_bought` | text | The token the swapper received. The zero address is native ETH. |
+| `amount_bought` | numeric | How much of it, in base units. |
+| `token_sold` | text | The token the swapper paid. |
+| `amount_sold` | numeric | How much of it, in base units. |
+
+### Bridges
+
+`analytics.bridge_transfers` and `analytics.bridge_pairs`
+
+One token move between an L2 and Ethereum through the chain's own bridge, in the token's base units. `direction` is `to_ethereum` for a withdrawal and `from_ethereum` for a deposit. `bridge_pairs` matches a withdrawal from one L2 with the deposit into another L2 it could have paid for: the same Ethereum address, token and amount, after the withdrawal chain's finality delay. The match uses amount and timing only. It does not read the Ethereum leg, which would prove it. Covers the Arbitrum token bridge and the OP Standard Bridge on Base, for the Ethereum tokens you list.
+
+The `bridges` pipeline builds both from the stream sources `arbitrum-token-bridge` and `evm-op-standard-bridge`.
+
+#### `bridge_transfers`
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `arbitrum` or `base`, the L2 the move was read on. |
+| `id` | text | The log's place on its chain, `<block>:<logIndex>`. Unique with `chain`. |
+| `direction` | text | `to_ethereum` for a withdrawal, `from_ethereum` for a deposit. |
+| `l2_address` | text | The address on the L2 side. |
+| `ethereum_address` | text | The address on the Ethereum side. |
+| `ethereum_token` | text | The token's address on Ethereum. |
+| `l2_token` | text | The token's address on the L2. |
+| `amount` | numeric | The amount in the token's base units. |
+| `block_number` | bigint | The block the move was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+
+#### `bridge_pairs`
+
+| Column | Type | Description |
+|---|---|---|
+| `from_chain` | text | The L2 the withdrawal left. |
+| `from_address` | text | The address it left from. |
+| `ethereum_address` | text | The Ethereum address both legs share. |
+| `to_chain` | text | The L2 the deposit reached. |
+| `to_address` | text | The address it reached. |
+| `ethereum_token` | text | The Ethereum token both legs share. |
+| `amount` | numeric | The amount both legs share, in base units. |
+| `withdrawal_id` | text | The withdrawal's `id` in `bridge_transfers`. |
+| `withdrawn_at` | timestamptz | When the withdrawal was made. |
+| `withdrawal_tx_hash` | text | The withdrawal's transaction. |
+| `deposit_id` | text | The deposit's `id` in `bridge_transfers`. |
+| `deposited_at` | timestamptz | When the deposit was made. |
+| `deposit_tx_hash` | text | The deposit's transaction. |
+| `candidates` | bigint | How many withdrawals could have paid for the deposit. |
+
+### Labels
+
+`analytics.address_labels`
+
+What kind of address each listed address is: `exchange` when the seed names it, `contract` when it has code, else `eoa`, which includes EIP-7702 delegations. One row per chain and address, with the exchange that owns it when one does. Covers Arbitrum and Base.
+
+The `labels` pipeline builds it from the call source `evm-address-code`, which reads each address's code with `eth_getCode`, and the seed `transformation/seeds/cex_addresses.csv`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `arbitrum` or `base`. |
+| `address` | text | The address, lowercased. |
+| `code_block` | bigint | The block the code was read at. |
+| `code_kind` | text | `contract`, `eip7702_delegation` or `none`. |
+| `exchange` | text | The exchange that owns the address, from the seed. Else null. |
+| `exchange_label` | text | The seed's label for the address, such as `Coinbase 1`. Else null. |
+| `kind` | text | `exchange`, `contract` or `eoa`. |
+
+### Tokens
+
+`analytics.tokens`
+
+Each listed token's latest `name`, `symbol` and `decimals`. One row per chain and token. Symbols repeat, so key on `chain` and `token`. A null `decimals` means the contract has none, so never assume 18. Covers ERC-20 tokens on Ethereum, Arbitrum and Base.
+
+The `tokens` pipeline builds it from the call source `evm-erc20-metadata`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `arbitrum` or `base`. |
+| `token` | text | The token's contract address, lowercased. |
+| `name` | text | What `name()` returned, with a `bytes32` reply decoded. Null when the call reverted. |
+| `symbol` | text | What `symbol()` returned, decoded like `name`. Null when the call reverted. |
+| `decimals` | integer | What `decimals()` returned. Null when the contract has none. |
+| `block_number` | bigint | The block the reading was taken at. |
+
+### Exchange prices
+
+`analytics.token_prices`
+
+One candle of one token against one quote asset at one interval, from one exchange. Prices are in quote-asset units and volume in token units. Covers Binance and Coinbase spot markets, for the pairs in each source's `tokens.json`. Binance serves intervals from `1m` to `1w`, Coinbase `1m`, `5m`, `15m`, `1h`, `6h` and `1d`.
+
+The `prices` pipeline builds it from the call sources `binance-candles` and `coinbase-candles`, which read each exchange's public market-data API.
+
+| Column | Type | Description |
+|---|---|---|
+| `exchange` | text | `binance` or `coinbase`. |
+| `token` | text | The token's ticker on the exchange, such as `UNI`. |
+| `quote` | text | The asset the prices are in, such as `USDT` or `USD`. |
+| `interval` | text | The candle's length in Binance's names, such as `1h` or `1d`. |
+| `open_time` | timestamptz | When the candle opened. |
+| `close_time` | timestamptz | The candle's last millisecond. |
+| `open` | numeric | The first trade's price, in quote-asset units. |
+| `high` | numeric | The highest trade price. |
+| `low` | numeric | The lowest trade price. |
+| `close` | numeric | The last trade's price. |
+| `volume` | numeric | How much of the token traded, in token units. |
+| `quote_volume` | numeric | How much of the quote asset traded. Null for Coinbase. |
+| `trades` | bigint | How many trades the candle holds. Null for Coinbase. |
+
+### Oracle prices
+
+`analytics.oracle_prices`
+
+One round of one Chainlink price feed: the answer scaled by the feed's decimals into a price in quote units, with the round id the feed's proxy reports. One row per round. Covers Chainlink feeds on Ethereum, Arbitrum and Base, for the aggregators you list.
+
+The `prices` pipeline builds it from the stream source `evm-chainlink-price-feeds` and the seed `transformation/seeds/chainlink_feeds.csv`, which names each aggregator's feed, proxy, phase, decimals and heartbeat.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `arbitrum` or `base`. |
+| `oracle` | text | `chainlink`. |
+| `id` | text | The log's place on its chain, `<block>:<logIndex>`. Unique with `chain`. |
+| `feed` | text | The feed's name as its proxy describes it, such as `ETH / USD`. |
+| `token` | text | The asset the feed prices, such as `ETH`. |
+| `quote` | text | The asset the price is in, such as `USD`. |
+| `proxy` | text | The address the feed is known by and that users read. |
+| `aggregator` | text | The contract that stored the round and emitted its log. |
+| `round_id` | numeric | The round's id as the proxy reports it. |
+| `price` | numeric | The answer scaled by `decimals`, in quote units. |
+| `answer` | numeric | The answer as the aggregator emitted it, an integer in the feed's decimals. |
+| `decimals` | integer | How many decimals the feed's answer carries. |
+| `updated_at` | timestamptz | When the aggregator stored the round. |
+| `block_number` | bigint | The block the round's log was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+
+TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
 The code is ordinary software engineering: typed sources, tests, schedules and docs a teammate can follow. [docs/architecture.md](docs/architecture.md) has the details.
 
