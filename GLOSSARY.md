@@ -97,3 +97,35 @@ _Avoid_: query, report
 **Check**:
 A test that `bj answer` runs on an answer's inputs before the answer ships. It passes or fails.
 _Avoid_: validation
+
+### Factory
+
+The factory is the set of GitHub Actions runs that turn an analysis ticket into a pipeline PR. Its design is ADR 0001; its contract is `docs/agents/factory.md`. The bare word **run** stays the source's, above.
+
+**Ticket**:
+A GitHub issue that asks for an analysis, filed through the Analysis form. Its labels say which factory run comes next.
+_Avoid_: issue (when speaking of the factory), task, job
+
+**Scope run**:
+The factory run that reads a ticket, picks an eval window, computes the reference from an oracle and posts the scope comment. It writes nothing in the repo.
+_Avoid_: triage run, planning run
+
+**Build run**:
+The factory run that drives the bj skill to build the pipeline a ticket asks for, verifies it against the reference on the eval window, and opens a draft PR.
+_Avoid_: implementer run, agent run
+
+**Oracle**:
+Where a scope run gets the reference from. Independent of Portal when it can be: a protocol's API, Dune or a block-pinned RPC read. Portal MCP is the declared fallback.
+_Avoid_: ground truth source, baseline
+
+**Reference**:
+The rows a scope run got from the oracle for the eval window, which the build run's pipeline must reproduce within tolerance. Shipped as a seed under `transformation/seeds/reference/` with a test tagged `reference`.
+_Avoid_: expected data, golden data, fixture
+
+**Eval window**:
+The day or few thousand blocks a scope run picks, small enough to load on a runner in minutes. The build run verifies on it; the full window runs on the operator's warehouse after the merge.
+_Avoid_: sample, test range
+
+**Scope comment**:
+The one comment a scope run posts: a marker, prose for the human, a `yaml` block with the oracle, window and tolerance, and a `csv` block with the reference. The build run reads the newest one by machine.
+_Avoid_: scope report, plan comment

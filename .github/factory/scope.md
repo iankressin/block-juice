@@ -1,0 +1,77 @@
+# Scope run
+
+You scope one analysis ticket for BlockJuice's software factory. You compute a reference answer over a short eval window from an oracle that does not read this repo's warehouse, and you write three files. A workflow step checks the files and posts them as one comment on the ticket. A human reads that comment before anything is built.
+
+## Read first
+
+1. `.factory/issue.md`: the ticket, with its comments in order. The Analysis form wrote its body, one `###` heading per field: Question (`question`), Reasoning (`reasoning`), Definitions (`definitions`), Window (`window`), Deliverable (`deliverable`) and Tolerance hint (`tolerance_hint`). An earlier scope comment and the human's replies to it may follow. The newest human word wins.
+2. `.claude/skills/blockjuice/SKILL.md`, then `workflows/answer.md` step 1 and `references/question-spec.md` in the same folder. They say how to define each word, pick a slug and turn times into blocks.
+3. `GLOSSARY.md`. Use its words.
+4. `docs/agents/factory.md`: the contract your files must keep.
+5. `.factory/open-issues.json`: the repo's last 200 tickets, for near duplicates.
+
+## Rules
+
+- Never answer from memory. Every number comes from a query you ran in this session.
+- Take the reference rows from the oracle. Never from this repo's warehouse, its sources or its marts: the build run checks the pipeline against your rows, so they must not come from the pipeline.
+- Pick the oracle in this order, and take the first that can answer:
+  1. The protocol's own API.
+  2. Dune, through the `mcp__dune__*` tools. Save the query and record its id.
+  3. Block-pinned RPC reads. `EVM_RPC_URL` in the environment is an Ethereum archive node. Read it inside a script and never print it.
+  4. The SQD Portal MCP (`mcp__sqd-portal__*`). This is the fallback. The pipeline reads Portal too, so a match then proves the transformation only. Set `independent_of_portal: false` and say so in the comment.
+- Pick an eval window of one day, or a few thousand blocks, inside the ticket's window. Turn its times into blocks with `uv run --project orchestration bj blocks <chain> <from> <to>`.
+- Estimate the full window's load the way `.claude/skills/blockjuice/workflows/history-source.md` step 2 says: count the matching logs over a few thousand blocks with the Portal MCP and scale. Never count the whole window.
+- Propose a tolerance and say why. Use `absolute` 0 for counts. Use `relative` for prices and USD values, sized to how the oracle and the pipeline may price or round.
+- Run code as `uv run --project orchestration python <file>`, with scripts under `.factory/`. Do not edit any other file. Do not run git or gh.
+
+## Outputs
+
+Write all three files, or only `comment.md` when you must stop (below).
+
+`.factory/scope.yaml`, with every key:
+
+```yaml
+slug: uni-v3-swaps-2026-10-15      # [a-z0-9-]+; names answers/<slug>, the seed and the test
+question: <the ticket's question, verbatim>
+oracle:
+  kind: protocol_api               # protocol_api, dune, rpc or portal
+  ref: <query id, endpoint or method; enough for a human to run it again>
+  independent_of_portal: true      # false only when kind is portal
+  covers: <one sentence: what a match proves>
+window:
+  chain: ethereum
+  from: 2026-10-15T00:00:00Z
+  to: 2026-10-16T00:00:00Z
+  blocks: [23580000, 23587000]     # from bj blocks
+tolerance:
+  kind: absolute                   # absolute or relative
+  value: 0
+reference:
+  key: [pool]                      # the columns that name a row of reference.csv
+  value: swaps                     # the column compared within the tolerance
+full_window:
+  from: 2026-10-01T00:00:00Z
+  to: 2026-11-01T00:00:00Z
+  blocks: 222450                   # how many blocks the full window spans
+  estimate_minutes: 40             # rough load time
+duplicates: []                     # numbers of near-duplicate tickets
+```
+
+`.factory/reference.csv`: a header with the key columns and the value column, then one row per expected result. Tens to a few hundred rows. Column names are lowercase, `[a-z_][a-z0-9_]*`. Every value cell is a number. Name the columns as the analysis will, since the build run's test compares the two by name.
+
+`.factory/comment.md`: prose for the human, in short plain sentences. It holds:
+
+- The oracle you used, and why the ones above it could not answer.
+- What a match covers, and what it does not.
+- The method in words: the window, the filters, how you counted or priced.
+- The numbers in a small table: the reference rows, or the top rows and the totals when there are many.
+- Near-duplicate tickets, if any.
+- What the human should check before adding `ready-for-agent`.
+
+Leave out the yaml and csv. The workflow adds them below your prose.
+
+## Stop
+
+Stop once the three files are written and agree with each other.
+
+Stop early, and write only `.factory/comment.md`, when the ticket cannot be scoped: a word that could be counted two ways and the ticket does not say which, a token or contract the ticket names that you cannot resolve to one address, or no oracle that can answer. In it, ask the human the questions that would unblock you, listing the candidates you found. The workflow posts it and hands the ticket to a human.
