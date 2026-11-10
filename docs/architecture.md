@@ -146,7 +146,7 @@ uv run --project orchestration bj --help
 
 | Command | What it does |
 |---|---|
-| `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: the dbt tests on the marts it reads, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
+| `bj answer <slug>` | Runs the answer's analyses, writes `results/` and `answer.json`, and checks the inputs: the dbt tests on the marts it reads and the `coverage` tests upstream of them, dead letters, the last successful run and, for history sources, coverage of the window. Exits 1 when a check fails. |
 | `bj run <pipeline> [--select <key> ...]` | Runs one pipeline's Dagster job after `dbt parse`. Steps that do not depend on each other run side by side, as in scheduled runs. `--select` materializes only the named assets of the job, by their Dagster keys: a dbt model by name, a source as `<source>/<table>`; dbt builds only the selected models and their tests. A key outside the pipeline exits 2 and lists the pipeline's assets. |
 | `bj install` | Sets up a checkout and starts nothing: copies each missing `.env` from its `.env.example` and checks them, runs `pnpm install --frozen-lockfile` in `ingestion/`, and runs `dbt parse`. Never overwrites an `.env`. Exits 2 when pnpm is missing, and 1 when an `.env` lacks a required key or pnpm fails. |
 | `bj dev` | Runs `bj install`, starts the stack with `docker compose up -d`, runs the checks of `bj doctor` less Dagster's port, then hands over to `dagster dev`. Exits 2 when port 3000 is in use or a tool is missing, and 1 when a step or check failed. |
