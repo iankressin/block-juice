@@ -41,7 +41,7 @@ async function records(url: string, startBlock: number, endBlock?: number) {
   const stream = await forChain("ethereum").stream({ PORTAL_URL: url, START_BLOCK: startBlock, END_BLOCK: endBlock });
   const read: RawRecord[] = [];
   for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
-  return read.map(({ id, data }) => ({ id, ...data }));
+  return read.map(({ id, data }): { id: string } & Record<string, unknown> => ({ ...data, id }));
 }
 
 const txs: Tx[] = [
