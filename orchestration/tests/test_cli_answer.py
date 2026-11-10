@@ -222,11 +222,12 @@ def offline(monkeypatch):
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
     dbt_coverages = []
 
-    def run_dbt_tests(project, names, coverages):
+    def run_dbt_tests(project, names, coverages, upstream=()):
         dbt_coverages.append(coverages)
         return Check("dbt_tests", True, "3 passed")
 
     monkeypatch.setattr(answer, "run_dbt_tests", run_dbt_tests)
+    monkeypatch.setattr(answer, "dagster_history", lambda manifest, tests: ({}, {}))
     monkeypatch.setattr(answer, "provenance", lambda root: {"git_sha": "abc", "git_dirty": False, "dbt_version": "x"})
     monkeypatch.setattr(answer.coverage, "sources", lambda root: [TRANSFERS, "ethereum.eth_balances"])
     monkeypatch.setattr(answer.coverage, "stream_sources", lambda root: [TRANSFERS])
@@ -342,6 +343,140 @@ def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch
             "--exclude", "tag:reference",
         )
     ]
+
+
+def test_upstream_tests_are_named_by_the_tests_bj_answer_must_rerun(monkeypatch):
+    calls = []
+
+    def dbt(project, *args):
+        calls.append(args)
+        return SimpleNamespace(exception=None, result=SimpleNamespace(results=[]))
+
+    monkeypatch.setattr(answer, "dbt", dbt)
+    answer.run_dbt_tests(Path("transformation"), ["eth_total"], {}, ["unique_int_eth_id", "not_null_stg_eth_id"])
+    assert calls == [
+        (
+            "test", "--select", "1+eth_total", "+eth_total,tag:coverage", "unique_int_eth_id", "not_null_stg_eth_id",
+            "--exclude", "tag:reference",
+        )
+    ]
+
+
+def dbt_test_node(parents, tags=(), kind="test"):
+    return {"resource_type": kind, "depends_on": {"nodes": list(parents)}, "tags": list(tags)}
+
+
+GRAPH = {
+    "nodes": {
+        "analysis.t.overview": {"resource_type": "analysis", "depends_on": {"nodes": ["model.t.trades", "model.t.wallets"]}},
+        "model.t.trades": {"resource_type": "model", "depends_on": {"nodes": ["model.t.int_fills", "model.t.markets"]}},
+        "model.t.wallets": {"resource_type": "model", "depends_on": {"nodes": ["model.t.int_ledger"]}},
+        "model.t.markets": {"resource_type": "model", "depends_on": {"nodes": ["model.t.stg_markets"]}},
+        "model.t.int_fills": {"resource_type": "model", "depends_on": {"nodes": ["model.t.stg_fills"]}},
+        "model.t.int_ledger": {"resource_type": "model", "depends_on": {"nodes": ["model.t.stg_fills"]}},
+        "model.t.stg_fills": {"resource_type": "model", "depends_on": {"nodes": ["source.t.polygon.fills"]}},
+        "model.t.stg_markets": {"resource_type": "model", "depends_on": {"nodes": []}},
+        "model.t.elsewhere": {"resource_type": "model", "depends_on": {"nodes": []}},
+        "test.t.unique_trades_id": dbt_test_node(["model.t.trades"]),
+        "test.t.trades_match_wallets": dbt_test_node(["model.t.trades", "model.t.int_ledger"]),
+        "test.t.unique_int_fills_id": dbt_test_node(["model.t.int_fills"]),
+        "test.t.unique_stg_fills_id": dbt_test_node(["model.t.stg_fills"]),
+        "test.t.not_null_stg_markets_id": dbt_test_node(["model.t.stg_markets"]),
+        "test.t.not_null_fills_source": dbt_test_node(["source.t.polygon.fills"]),
+        "test.t.reconciles": dbt_test_node(["model.t.int_ledger"], tags=["coverage"]),
+        "test.t.ticket": dbt_test_node(["model.t.int_ledger"], tags=["reference"]),
+        "unit_test.t.int_fills.math": dbt_test_node(["model.t.int_fills"], kind="unit_test"),
+        "test.t.not_null_elsewhere_id": dbt_test_node(["model.t.elsewhere"]),
+    },
+    "sources": {"source.t.polygon.fills": source("polygon", "fills")},
+}
+
+
+def test_upstream_tests_are_the_data_tests_above_the_marts_with_the_marts_they_feed():
+    """The marts' own tests run through 1+, coverage tests through their tag, unit tests check code that the
+    marts' build already ran, and reference tests stay out."""
+    assert answer.upstream_tests(GRAPH, ["analysis.t.overview"]) == {
+        "test.t.unique_int_fills_id": ["model.t.trades"],
+        "test.t.unique_stg_fills_id": ["model.t.trades", "model.t.wallets"],
+        "test.t.not_null_stg_markets_id": ["model.t.trades"],
+        "test.t.not_null_fills_source": ["model.t.trades", "model.t.wallets"],
+    }
+
+
+BUILT = answer.Event("run-full", 100.0)
+
+
+@pytest.mark.parametrize(
+    "builds, passed, stale",
+    [
+        # Tested in the run that built the mart, before the mart itself: covered.
+        ({"m": BUILT}, answer.Event("run-full", 90.0), False),
+        # The mart was rebuilt alone afterwards, so newer rows reached it untested.
+        ({"m": answer.Event("run-partial", 200.0)}, answer.Event("run-full", 90.0), True),
+        # Tested again in a later run, over at least the rows the mart holds.
+        ({"m": BUILT}, answer.Event("run-later", 150.0), False),
+        # No Dagster record of the mart, as after a dbt build outside Dagster.
+        ({"m": None}, answer.Event("run-full", 90.0), True),
+        # The test never passed: no record, or its latest run failed or warned.
+        ({"m": BUILT}, None, True),
+    ],
+)
+def test_an_upstream_test_reruns_unless_it_passed_since_the_mart_was_built(builds, passed, stale):
+    assert answer.stale_tests({"t": ["m"]}, builds, {"t": passed}) == (["t"] if stale else [])
+
+
+def test_an_upstream_test_reruns_when_any_mart_it_feeds_was_built_after_it_passed():
+    builds = {"trades": BUILT, "wallets": answer.Event("run-partial", 200.0)}
+    assert answer.stale_tests({"t": ["trades", "wallets"]}, builds, {"t": answer.Event("run-full", 90.0)}) == ["t"]
+
+
+def test_dagster_history_reads_the_marts_builds_and_the_tests_last_passes(monkeypatch):
+    """A mart rebuilt alone after a full run: its build is the partial run's, and the upstream test's pass
+    is the full run's, under the asset and check keys dagster-dbt gives them."""
+    import dagster as dg
+
+    @dg.asset(key="int_fills")
+    def int_fills():
+        return 1
+
+    @dg.asset_check(asset=int_fills, name="unique_int_fills_id")
+    def unique_int_fills_id():
+        return dg.AssetCheckResult(passed=True)
+
+    @dg.asset(key="trades", deps=[int_fills])
+    def trades():
+        return 2
+
+    instance = dg.DagsterInstance.ephemeral()
+    full = dg.materialize([int_fills, unique_int_fills_id, trades], instance=instance)
+    partial = dg.materialize([int_fills, unique_int_fills_id, trades], instance=instance, selection=[trades.key])
+    monkeypatch.setattr(dg.DagsterInstance, "get", staticmethod(lambda: instance))
+    monkeypatch.setattr(answer, "asset_key", lambda manifest, unique_id: dg.AssetKey(unique_id.split(".")[-1]))
+    monkeypatch.setattr(
+        answer,
+        "check_key",
+        lambda manifest, unique_id: dg.AssetCheckKey(dg.AssetKey("int_fills"), unique_id.split(".")[-1]),
+    )
+
+    builds, passes = answer.dagster_history({}, {"test.t.unique_int_fills_id": ["model.t.trades"]})
+    assert builds["model.t.trades"].run_id == partial.run_id
+    assert passes["test.t.unique_int_fills_id"].run_id == full.run_id
+    assert answer.stale_tests({"test.t.unique_int_fills_id": ["model.t.trades"]}, builds, passes) == [
+        "test.t.unique_int_fills_id"
+    ]
+
+
+def test_dagster_keys_match_the_pipelines_for_a_model_and_a_test():
+    """bj answer looks records up under the keys the pipeline's dbt assets write them under."""
+    manifest = json.loads((Path(__file__).resolve().parents[2] / "transformation" / "target" / "manifest.json").read_text())
+    model = next(uid for uid, n in manifest["nodes"].items() if n["resource_type"] == "model")
+    generic = next(
+        uid for uid, n in manifest["nodes"].items() if n["resource_type"] == "test" and n.get("attached_node") == model
+    )
+    name = manifest["nodes"][model]["name"]
+    assert answer.asset_key(manifest, model).to_user_string() == name
+    key = answer.check_key(manifest, generic)
+    assert (key.asset_key.to_user_string(), key.name) == (name, manifest["nodes"][generic]["name"])
 
 
 def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch):
