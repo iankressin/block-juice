@@ -13,7 +13,7 @@ For a ticket whose answer has the slug `<slug>`, with `<name>` the slug with `_`
   - `missing_in_expected`: the key is in `actual` only.
   - `over_tolerance`: the values differ by more than the tolerance, or one of them is null.
 
-`bj answer` does not run these tests. Run them with `dbt test --select tag:reference`.
+Neither `bj answer` nor a Dagster pipeline seeds or runs these: everything tagged `reference` stays out of the pipelines. Load the seeds with `dbt seed --select tag:reference`, then run `dbt test --select tag:reference`.
 
 ## Example
 
