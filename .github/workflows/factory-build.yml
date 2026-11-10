@@ -205,6 +205,29 @@ jobs:
           uv run --project orchestration bj install
           psql -v ON_ERROR_STOP=1 -q -f infra/postgres/ops.sql
 
+      # A Portal other than the public one, as a secret since its name need not be public. Only the host
+      # changes: each chain keeps its own dataset path, written into the chain's gitignored .env, which
+      # loadEnv reads before the chain's .env.example. Without the secret the sources read the public Portal.
+      - name: Point the sources at the factory's Portal
+        env:
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
+        run: |
+          if [ -z "$PORTAL_HOST" ]; then echo "no PORTAL_HOST: the sources read the public Portal"; exit 0; fi
+          host=${PORTAL_HOST%/}
+          for example in ingestion/sources/*/chains/*/.env.example; do
+            url=$(sed -n 's/^PORTAL_URL=//p' "$example")
+            [ -n "$url" ] || continue
+            path=${url#*://}
+            path=/${path#*/}
+            dir=$(dirname "$example")
+            {
+              if [ -f "$dir/.env" ]; then grep -v '^PORTAL_URL=' "$dir/.env" || true; fi
+              echo "PORTAL_URL=$host$path"
+            } > "$dir/.env.tmp"
+            mv "$dir/.env.tmp" "$dir/.env"
+            echo "$dir: $path"
+          done
+
       - name: Read the prompt
         id: prompt
         env:
@@ -332,6 +355,7 @@ jobs:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
           FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
