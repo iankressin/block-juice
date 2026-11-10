@@ -229,6 +229,9 @@ jobs:
       # The verdict below decides, not the model's exit, so the PR opens even when this step fails.
       # PORTAL_API_KEY reaches every stream source through loadEnv, which lets the process environment win.
       # The public Portal paces anonymous streams, and a pool scan over millions of blocks needs the key.
+      - name: Preserve the injected Portal key when sourcing .env
+        run: sed --in-place '/^PORTAL_API_KEY=/d' .env
+
       - name: Build the pipeline
         id: claude
         continue-on-error: true
