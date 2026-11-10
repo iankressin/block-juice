@@ -272,13 +272,15 @@ def compile_analyses(project: Path, names: Sequence[str]) -> tuple[dict, list[st
 
 
 def run_dbt_tests(project: Path, names: Sequence[str], coverages: dict[str, Coverage]) -> Check:
-    """The dbt tests upstream of the analyses. Tests that reconcile history with state, such as
+    """The dbt tests on the marts the analyses read. Models further upstream are left out: the pipeline's
+    dbt build tested each one when it built it, and skips what sits downstream of a failure, so a mart
+    exists only if they passed. Tests that reconcile history with state, such as
     tests/erc20_transfers_match_balances.sql, read what each stream source loaded from var('coverage').
     Tests tagged `reference` are left out: dbt's eager selection would pull in every factory ticket's
     reference test that shares a mart with the analysis, over windows this warehouse may not hold."""
     loaded = {name: c.to_json() for name, c in coverages.items()}
     variables = ("--vars", json.dumps({"coverage": loaded})) if loaded else ()
-    result = dbt(project, "test", "--select", *(f"+{name}" for name in names), "--exclude", "tag:reference", *variables)
+    result = dbt(project, "test", "--select", *(f"1+{name}" for name in names), "--exclude", "tag:reference", *variables)
     if result.exception is not None:
         raise BadInput(f"dbt test could not run: {dbt_error(result)}")
     return dbt_tests_check((r.node.name, str(r.status)) for r in result.result.results)
