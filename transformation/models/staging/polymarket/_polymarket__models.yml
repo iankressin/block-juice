@@ -40,6 +40,10 @@ unit_tests:
             true as closed,
             '2026-11-06T23:42:29.518395Z'::timestamptz as created_at,
             '2026-11-08T02:06:47.361469Z'::timestamptz as updated_at,
+            null::text as sports_market_type,
+            null::timestamptz as game_start_time,
+            'eth-up-or-down-5m' as series_slug,
+            'crypto_fees_v2' as fee_type,
             null::timestamptz as _loaded_at
 
   - name: v2_market_stages_with_protocol_version
@@ -72,6 +76,10 @@ unit_tests:
             false as closed,
             '2026-11-07T03:55:15.046979Z'::timestamptz as created_at,
             '2026-11-07T03:57:26.166638Z'::timestamptz as updated_at,
+            null::text as sports_market_type,
+            null::timestamptz as game_start_time,
+            'zec-up-or-down-5m' as series_slug,
+            'crypto_fees_v2' as fee_type,
             null::timestamptz as _loaded_at
 
   - name: placeholder_market_keeps_its_row
@@ -104,4 +112,8 @@ unit_tests:
             false as closed,
             '2026-05-18T04:06:22.952376Z'::timestamptz as created_at,
             '2026-10-20T19:41:24.870812Z'::timestamptz as updated_at,
+            null::text as sports_market_type,
+            null::timestamptz as game_start_time,
+            null::text as series_slug,
+            'weather_fees' as fee_type,
             null::timestamptz as _loaded_at

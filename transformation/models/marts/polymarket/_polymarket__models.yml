@@ -39,6 +39,16 @@ models:
           True when the condition was prepared at or after the coverage start, the greatest of each Polygon
           Polymarket raw table's lowest block. Its charts and PnL are then whole.
         data_tests: [not_null]
+      - name: is_sports
+        description: >-
+          True when Gamma gives the market a sportsMarketType or a sports fee schedule; null when Gamma
+          lacks the condition.
+      - name: sports_market_type
+        description: Gamma's sportsMarketType, such as moneyline, spreads or totals; null on other markets.
+      - name: series_slug
+        description: Gamma's series for the event, such as nfl-2026; it names the league.
+      - name: game_start_time
+        description: When Gamma says the game starts; null on markets that are not about one game.
 
   - name: polymarket_trades
     description: >-
@@ -95,6 +105,73 @@ models:
         description: usdc / shares, in pUSD per share.
       - name: fee_usdc
         description: The maker's fee in pUSD.
+
+  - name: polymarket_wallet_fills
+    description: >-
+      One row per fill per wallet: every OrderFilled, read for the wallet whose pUSD or shares moved, with
+      its role in the match. Maker fills and the taker order's own fills alike. shares are outcome tokens;
+      usdc and fee_usdc are pUSD, usdc before fees; price is usdc / shares, in pUSD per share.
+    columns:
+      - name: id
+        description: The OrderFilled log's key from the raw table.
+        data_tests: [unique, not_null]
+      - name: version
+        description: The exchange version that filled the order.
+        data_tests: [not_null]
+      - name: exchange
+        description: The exchange contract that emitted the fill.
+        data_tests: [not_null]
+      - name: block_number
+        description: The block the fill was in.
+        data_tests: [not_null]
+      - name: block_timestamp
+        description: When that block was mined.
+      - name: tx_hash
+        description: The transaction the fill was in.
+      - name: log_index
+        description: The fill's position in that block's logs.
+      - name: order_hash
+        description: The EIP-712 hash of the filled order.
+      - name: wallet
+        description: The order's owner, the proxy wallet or Safe that Polymarket shows as the trader.
+        data_tests: [not_null]
+      - name: role
+        description: >-
+          taker on the taker order's own fill, whose taker is the exchange; maker on every other fill, where
+          the wallet's order rested on the book.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [maker, taker]
+      - name: counterparty
+        description: The taker order's owner on a maker fill; null on a taker fill.
+      - name: condition_id
+        description: The market the token belongs to; null when Gamma lacks the token.
+      - name: token_id
+        description: The outcome token traded.
+        data_tests: [not_null]
+      - name: outcome_index
+        description: The token's outcome, counted from 0; null when Gamma lacks the token.
+      - name: outcome
+        description: Gamma's name for the token's outcome.
+      - name: complement_token_id
+        description: The other outcome's token in a two-outcome market; null otherwise.
+      - name: side
+        description: buy or sell, for the wallet.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [buy, sell]
+      - name: shares
+        description: Outcome tokens traded.
+      - name: usdc
+        description: pUSD paid or received, before fees.
+      - name: fee_usdc
+        description: The wallet's fee in pUSD.
+      - name: price
+        description: usdc / shares, in pUSD per share.
 
   - name: polymarket_price_candles
     description: >-
@@ -372,13 +449,17 @@ unit_tests:
           select '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id, '6826443' as market_id,
               'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
               '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
-              false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date
+              false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
+              true as is_sports, null::text as sports_market_type, 'mls-2026' as series_slug,
+              null::timestamptz as game_start_time
           union all
-          select '0xaa', '1', 'Made up?', 'made-up', '2', 'Made up', false, array['Yes', 'No'], '2026-10-31 00:00:00+00'
+          select '0xaa', '1', 'Made up?', 'made-up', '2', 'Made up', false, array['Yes', 'No'], '2026-10-31 00:00:00+00',
+              false, null, null, null
           union all
           select '0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac', '6205625',
               'Exact Score: D.C. United SC 5 - 4 New York City FC?', 'mls-dcu-nyc-2026-11-07-exact-score-5-4', '1253279',
-              'D.C. United SC vs. New York City FC - Exact Score', true, array['Yes', 'No'], '2026-11-07 21:00:00+00'
+              'D.C. United SC vs. New York City FC - Exact Score', true, array['Yes', 'No'], '2026-11-07 21:00:00+00',
+              true, 'exact_score', 'mls-2026', '2026-11-07 19:00:00+00'
       - input: ref('int_polygon_polymarket_ctf_resolutions')
         rows:
           - {condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 0, payout_fraction: 0, resolved_block: 96926001, resolved_at: "2026-11-07 23:34:18+00"}
@@ -395,12 +476,14 @@ unit_tests:
             '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
             false as neg_risk, 'ctf' as protocol, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
             96926007::bigint as prepared_block, null::timestamptz as resolved_at, null::numeric[] as payout_fractions,
-            true as history_complete
+            true as history_complete, true as is_sports, null::text as sports_market_type, 'mls-2026' as series_slug,
+            null::timestamptz as game_start_time
         union all
         select '0xaa', '1', 'Made up?', 'made-up', '2', 'Made up', false, 'ctf', array['Yes', 'No'],
-            '2026-10-31 00:00:00+00', 96900000, null, null, false
+            '2026-10-31 00:00:00+00', 96900000, null, null, false, false, null, null, null
         union all
         select '0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac', '6205625',
             'Exact Score: D.C. United SC 5 - 4 New York City FC?', 'mls-dcu-nyc-2026-11-07-exact-score-5-4', '1253279',
             'D.C. United SC vs. New York City FC - Exact Score', true, 'ctf', array['Yes', 'No'], '2026-11-07 21:00:00+00',
-            null, '2026-11-07 23:34:18+00', array[0, 1]::numeric[], false
+            null, '2026-11-07 23:34:18+00', array[0, 1]::numeric[], false, true, 'exact_score', 'mls-2026',
+            '2026-11-07 19:00:00+00'
