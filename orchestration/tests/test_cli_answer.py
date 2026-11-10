@@ -325,7 +325,8 @@ def test_dbt_tests_get_what_the_stream_inputs_loaded_and_state_answers_get_nothi
 
 def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch):
     """`1+` takes each analysis and the models it selects from, the marts; their tests come with them.
-    Tests further upstream ran when the pipeline's dbt build made those marts."""
+    Tests further upstream ran when the pipeline's dbt build made those marts, except those tagged
+    `coverage`, which compare nothing without bj answer's var('coverage')."""
     calls = []
 
     def dbt(project, *args):
@@ -334,7 +335,13 @@ def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total", "eth_total_by_wallet"], {})
-    assert calls == [("test", "--select", "1+eth_total", "1+eth_total_by_wallet", "--exclude", "tag:reference")]
+    assert calls == [
+        (
+            "test", "--select",
+            "1+eth_total", "+eth_total,tag:coverage", "1+eth_total_by_wallet", "+eth_total_by_wallet,tag:coverage",
+            "--exclude", "tag:reference",
+        )
+    ]
 
 
 def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch):
@@ -348,9 +355,9 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
     answer.run_dbt_tests(Path("transformation"), ["usdc_flows"], {TRANSFERS: LOADED})
     answer.run_dbt_tests(Path("transformation"), ["eth_total"], {})
     flows, eth = calls
-    assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "--exclude", "tag:reference")
+    assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "+usdc_flows,tag:coverage", "--exclude", "tag:reference")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
-    assert eth == ("test", "--select", "1+eth_total", "--exclude", "tag:reference")
+    assert eth == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):
