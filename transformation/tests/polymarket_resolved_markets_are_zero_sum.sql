@@ -9,13 +9,16 @@
 -- It warns rather than fails: two channels are not loaded, by design (progress R27). Users who call the
 -- old binary adapter directly split, merge and redeem with no event that names them (R9), and outcome
 -- tokens sent from wallet to wallet come in as free shares (plan Decision 5).
+-- markets and participants are read more than once, so they are "not materialized" to keep their tables'
+-- statistics (see polymarket_market_participants). Each event is summed before the event filters join,
+-- since those filters estimate as one row and Postgres then rescans every market once per event.
 {{ config(severity='warn') }}
-with markets as (
+with markets as not materialized (
     select condition_id, event_id, neg_risk, resolved_at, history_complete
     from {{ ref('polymarket_markets') }}
 ),
 
-participants as (
+participants as not materialized (
     select condition_id, pnl_usdc, fees_usdc
     from {{ ref('polymarket_market_participants') }}
 ),
@@ -52,18 +55,26 @@ closed_events as (
     having bool_and(resolved_at is not null and history_complete)
 ),
 
-neg_risk_events as (
+event_sums as (
     select
-        'neg_risk_event' as scope,
-        m.event_id as id,
+        m.event_id,
         sum(p.pnl_usdc) + sum(p.fees_usdc) as imbalance_usdc,
         count(*) as rows_summed
     from markets as m
-    inner join closed_events as e on e.event_id = m.event_id
-    inner join event_fees as f on f.event_id = m.event_id
     inner join participants as p on p.condition_id = m.condition_id
-    where f.fee_bips = 0
     group by m.event_id
+),
+
+neg_risk_events as (
+    select
+        'neg_risk_event' as scope,
+        s.event_id as id,
+        s.imbalance_usdc,
+        s.rows_summed
+    from event_sums as s
+    inner join closed_events as e on e.event_id = s.event_id
+    inner join event_fees as f on f.event_id = s.event_id
+    where f.fee_bips = 0
 )
 
 select scope, id, imbalance_usdc, rows_summed
