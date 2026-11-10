@@ -1,0 +1,29 @@
+version: 2
+
+models:
+  - name: deployment_state_gas
+    description: >-
+      One contract-deployment transaction per row, with the EIP-8037 state gas its creates and new storage
+      slots would cost, as a lower bound.
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      # Unique while the mart holds one chain; a second chain makes the grain (chain, tx_hash).
+      - name: tx_hash
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: creates
+        data_tests: [not_null]
+      - name: new_accounts
+        data_tests: [not_null]
+      - name: code_bytes
+        data_tests: [not_null]
+      - name: new_slots
+        data_tests: [not_null]
+      - name: state_gas
+        data_tests: [not_null]

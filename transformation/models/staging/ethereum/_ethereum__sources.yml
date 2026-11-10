@@ -45,3 +45,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: contract_deployments
+        identifier: ethereum_contract_deployments
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

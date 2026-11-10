@@ -53,10 +53,17 @@ models:
         # Filters on jsonb staging columns keep the default selectivity, so the planner picks nested
         # loops that go quadratic on real loads; hash joins scale.
         +pre-hook: "set local enable_nestloop = off"
+      # Views, so each chain's deployments show up as their own step in Dagster.
+      deployments:
+        +materialized: view
     marts:
       +materialized: table
       polymarket:
         # As for intermediate polymarket models: no nested loops.
+        +pre-hook: "set local enable_nestloop = off"
+      deployments:
+        # The views it reads join on jsonb staging columns, and the planner's nested loops took three
+        # minutes over a 2,990-block window; hash joins take seconds.
         +pre-hook: "set local enable_nestloop = off"
 
 # The factory's reference rows, one seed per ticket (seeds/reference/README.md). Fixtures for the reference

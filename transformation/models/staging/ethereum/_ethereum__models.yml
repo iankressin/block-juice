@@ -142,3 +142,42 @@ models:
         description: Null when symbol() reverted or returned nothing at that block.
       - name: decimals
         description: Null when decimals() reverted or returned nothing at that block, since ERC-20 makes it optional. Never assume 18.
+  - name: stg_ethereum__contract_deployments
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: transaction_index
+        data_tests: [not_null]
+      - name: trace_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [create, call, suicide]
+      - name: trace_address
+        data_tests: [not_null]
+  - name: stg_ethereum__contract_deployments_transactions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: hash
+        data_tests: [unique, not_null]
+      - name: transaction_index
+        data_tests: [not_null]
+      - name: status
+        data_tests: [not_null]
+  - name: stg_ethereum__contract_deployments_state_diffs
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: address
+        data_tests: [not_null]
+      - name: key
+        data_tests: [not_null]
+      - name: diff_kind
+        description: Portal sends no '=' rows; the test fails if it starts to, since the rules read existence from '*' and '-'.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['+', '*', '-']

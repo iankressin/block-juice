@@ -13,3 +13,18 @@ seeds:
         pool: text
         swaps: numeric
         uni_volume: numeric
+  - name: reference_eip8037_state_gas_deployments_2026_11_08
+    description: >-
+      #42: Ethereum contract-deployment transactions whose EIP-8037 state gas,
+      1530 * (120 * new_accounts + code_bytes + 64 * new_slots), is strictly above each threshold, on
+      Ethereum blocks 26366424 to 26369413 (2026-11-08T00:00:00Z to 2026-11-08T10:00:00Z), from the rpc
+      oracle: an Ethereum archive RPC, trace_block per block for successful create traces (no error on the
+      create or any ancestor frame; code length from result.code), then trace_replayTransaction [stateDiff]
+      per deployment transaction for new slots (zero to nonzero by from/to value) and new accounts (create
+      address not existing before the transaction). Scripts .factory/oracle.py and .factory/summarize.py of
+      the scope run; 20 of 20 sampled transactions matched debug_traceTransaction prestateTracer diffMode
+      and eth_getCode.
+    config:
+      column_types:
+        threshold_gas: numeric
+        deployments_above: numeric
