@@ -11,11 +11,14 @@
 --   pnl_usdc = net_cash_usdc + position_value_usdc.
 --   trades counts the wallet's fills, as the maker of either order. buy_usdc and sell_usdc are before
 --   fees: a buy's usdc_delta is -(usdc + fee), a sell's usdc - fee.
-with ledger as (
+-- ledger and markets are read twice, so Postgres would materialize them, and a materialized CTE has no
+-- statistics: it then guessed 40,000 market-wallet pairs for millions and joined them in nested loops
+-- that never finished. "not materialized" lets it plan on the tables' own statistics.
+with ledger as not materialized (
     select * from {{ ref('int_polymarket_wallet_ledger') }}
 ),
 
-markets as (
+markets as not materialized (
     select condition_id, resolved_at, payout_fractions, history_complete
     from {{ ref('polymarket_markets') }}
 ),
