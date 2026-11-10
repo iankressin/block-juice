@@ -6,7 +6,7 @@ import pg from "pg";
 import { postgresWarehouse, type Connection } from "#src/warehouse/index.ts";
 
 // PGlite has one connection, so it cannot race. These tests need a Postgres server and skip
-// without one, as the orchestration tests do. Like those, they work in a database of their own,
+// without one, as the orchestration tests do, except in CI, where a failed connection fails them. Like those, they work in a database of their own,
 // dropped afterwards, so they read and write nothing of the warehouse's.
 const SERVER = ["WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD"] as const;
 
@@ -39,6 +39,8 @@ test("warehouses that open at once on an empty schema all succeed", async (t) =>
   try {
     admin = await connect({ ...server, database: "postgres" });
   } catch (error) {
+    // CI starts a Postgres for this test, so there a failed connection is a failure, not a missing server.
+    if (process.env.CI) throw error;
     return t.skip(`no Postgres server at ${server.host}:${server.port}: ${String(error)}`);
   }
   const database = `bj_test_${randomBytes(6).toString("hex")}`;
