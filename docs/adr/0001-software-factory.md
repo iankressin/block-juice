@@ -33,7 +33,7 @@ We run a software factory, in the sense of the software-factory skill: tasks who
 
 **Build run.** Trigger: the `ready-for-agent` label, applied by a human only. The run removes the label to claim the ticket. When a `factory/<issue>-<slug>` branch exists it resumes there and reads the PR's review comments. It drives the bj skill with the ticket and the scope comment as input, loads the eval window only, and ships the reference as a seed with a dbt test. Typecheck, the package tests and `dbt parse` run before any push. After the first mismatch it makes at most three fix attempts. It opens a draft PR with the answer and the comparison table in the body. On failure the PR still opens, labelled `reference-mismatch` when the test ran and failed or `not-verified` when it never ran, and the ticket gets `ready-for-human`. A human always merges. Nothing retries on its own, and review comments trigger nothing.
 
-The pipeline is the deliverable, verified on the eval window. The full-window answer runs on the operator's own warehouse after the merge.
+The pipeline is the deliverable, verified on the eval window: a day or a few thousand blocks, however long the ticket's window is, small enough to load through the public Portal on a shared runner in minutes. The full-window answer runs on the operator's own warehouse after the merge. Scans that do not shrink with the window, such as a factory pattern's pool discovery from a token's first pool, are the exception the scope run must estimate and name.
 
 ### The scope comment
 

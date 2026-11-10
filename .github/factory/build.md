@@ -16,7 +16,9 @@ The section "This run" at the end gives the ticket number, the slug, `<name>` (t
 
 A Postgres on this runner, empty apart from the run log tables. The environment already holds the warehouse settings from `.env.example`, and `bj install` has written every `.env`. Run dbt as `cd transformation && uv run --project ../orchestration dbt <args>`, or with the skill's `set -a && . ./.env && set +a &&` prefix. `psql` connects with no arguments.
 
-Load the eval window only, never the full window. A stream source reads from `START_BLOCK` to `END_BLOCK` in its `chains/<chain>/.env`, which git ignores: set both to `window.blocks`. A source with no `END_BLOCK` yet gets one, as `evm-chainlink-price-feeds` has.
+Load the eval window only, never the ticket's full window, however long the ticket's window is. The runner reads the public Portal, which paces anonymous streams, and the operator runs the full window on their own warehouse after the merge. A stream source reads from `START_BLOCK` to `END_BLOCK` in its `chains/<chain>/.env`, which git ignores: set both to `window.blocks`. A source with no `END_BLOCK` yet gets one, as `evm-chainlink-price-feeds` has.
+
+A scan that does not shrink with the window, such as a factory pattern's pool discovery from a token's first pool, is the exception. Before you start one, estimate it from the first minutes of the run. If it would not finish well inside this run, stop it, and write `result.md` with the scan's size, the rate you saw, and the two ways out: a `PORTAL_API_KEY` for the factory, or a way for the source to take the eval's contracts directly. Never widen the eval window or shrink the scan to make a load fit: a pool left out is a mismatch the test would hide.
 
 ## Do
 
