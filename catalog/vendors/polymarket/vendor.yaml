@@ -1,0 +1,195 @@
+name: polymarket
+scope: >-
+  Polymarket's public REST APIs for market metadata and cross-checks: the Gamma API's market list and
+  market lookups (a market's question, outcomes, token ids and protocol version), the CLOB API's
+  prices-history, and the Data API's v2 positions. Covers hosts, paging, filters, field types, limits and
+  errors for those endpoints. Leaves out trading, order books, WebSockets, the relayer, the bridge, perps,
+  and every authenticated endpoint. The on-chain side is in catalog/protocols/polymarket/.
+docs:
+  - https://docs.polymarket.com/api-reference/markets/list-markets-keyset-pagination.md
+  - https://docs.polymarket.com/api-spec/gamma-openapi.yaml
+  - https://docs.polymarket.com/market-data/market-details.md
+  - https://docs.polymarket.com/market-data/discover-markets.md
+  - https://docs.polymarket.com/api-reference/rate-limits.md
+  - https://docs.polymarket.com/api-reference/markets/get-prices-history.md
+  - https://docs.polymarket.com/api-reference/wallet/list-positions-for-a-user-or-market.md
+sources:
+  - ingestion/sources/polymarket-markets
+api:
+  gamma:
+    base_url: https://gamma-api.polymarket.com
+    auth: none
+    role: Market metadata (events, markets, tags, series). Read-only and public.
+    source: The servers entry of gamma-openapi.yaml.
+  clob:
+    base_url: https://clob.polymarket.com
+    auth: none for the endpoints below
+    role: Order book and price history.
+    source: The servers entry of clob-openapi.yaml.
+  data:
+    base_url: https://data-api.polymarket.com
+    auth: none for the endpoint below
+    role: Wallet positions and activity, as Polymarket's site shows them.
+    source: The servers entry of the Data API v2 spec (https://data-api.polymarket.com/v2/openapi.json).
+  reaching_hosts: >-
+    None of these hosts resolved from this machine on 2026-11-07. Requests went through an HTTP proxy
+    (curl -x). That is a property of the machine, not of the API.
+  caching: >-
+    CloudFront (Gamma) and Cloudflare (CLOB) cache replies. A Gamma list reply carried cache-control:
+    public, max-age=300, x-cache and age headers; one came back as a hit at age 174 s. A prices-history
+    reply carried max-age=90. A reply can be that old.
+limits:
+  gamma:
+    general: 4,000 requests per 10 s
+    markets: 300 requests per 10 s
+    markets_and_events_listing: 900 requests per 10 s
+    counted_by: IP
+    source: >-
+      The rate-limits page: "Cloudflare IP-based request limits". Over the limit, requests are "throttled
+      (delayed/queued) rather than immediately rejected".
+    observed: >-
+      Never reached. A paced scan of 2,108 pages ran at about 0.8 requests a second, limited by the
+      round trip (about 1 s a request through the proxy), and six parallel windows ran without a 429 or
+      a slow reply.
+  clob_prices_history: 1,000 requests per 10 s
+  data_v2_positions: 200 requests per 10 s
+  on_exceed: >-
+    OPEN ITEM: the reply to too many requests is unproven. I did not provoke one, because the proxy's IP
+    is shared. The docs page says requests are throttled (delayed or queued), not rejected. A client
+    should retry HTTP 429 and 5xx with backoff.
+endpoints:
+  markets_keyset:
+    use: source
+    host: gamma
+    method: GET
+    path: /markets/keyset
+    paging: >-
+      Cursor. A reply holds next_cursor when it is full; send it back as after_cursor. The last page has
+      fewer than limit markets and no next_cursor. offset is refused with HTTP 422. There is no total and no
+      count field.
+    params:
+      limit: integer, default 20, at most 100. A larger value is cut to 100 without an error (500 and 1000 both returned 100 markets).
+      after_cursor: opaque string from the previous reply's next_cursor. It encodes the last id and a hash of the filters.
+      order: comma-separated field names, such as id or volume_num.
+      ascending: boolean, only used with order.
+      closed: >-
+        Default false: only markets with closed=false. true gives only closed markets. any gives both but
+        needs one id filter. closed=any alone is HTTP 422.
+      id: repeatable, at most 100 values.
+      condition_ids: repeatable, at most 100 values.
+      clob_token_ids: repeatable, at most 100 values. Matches a V2 market's position ids as well, with no version.
+      position_ids: repeatable, at most 100 values.
+      slug: >-
+        repeatable, at most 100 values. Needs version=v2 to find a V2 market (without it: markets []).
+        GET /markets/slug/{slug} is the slug lookup that needs no parameter.
+      version: >-
+        v1 or v2; anything else is HTTP 422 'expected value to be one of "v1, v2"'. With none, a list
+        returns only v1 markets. version=v2 lists V2 markets. id, condition_ids, clob_token_ids and
+        position_ids lookups find a V2 market without it.
+      end_date_min: ISO 8601, on endDate. end_date_max is its pair. Both include their bound, so day windows that share a midnight overlap on it; min = max is HTTP 422 'invalid time range' (NOTES.md). start_date_min and start_date_max also exist.
+      volume_num_min: number, on volumeNum. volume_num_max, liquidity_num_min and liquidity_num_max also exist.
+    order_default: id ascending, numeric (ids are strings in the JSON).
+    visibility: >-
+      Without version, a list returns only v1 markets (210,756 open, none v2). version=v2 returns the V2
+      markets (5,446 open, 53,636 closed on 2026-11-07). A full run walks version v1 and v2, each with closed false and true.
+    reply: >-
+      An object: $schema (string), markets (array of market objects), next_cursor (string, absent on the last page).
+      A page of 100 markets weighs about 560 KB.
+    source: >-
+      The list-markets-keyset-pagination page, and replies on 2026-11-07. The 100 cap, the default order,
+      the 422 bodies and the version filter are from replies (NOTES.md).
+  markets_legacy:
+    use: none
+    host: gamma
+    method: GET
+    path: /markets
+    status: >-
+      Deprecated. Every reply carried deprecation: true, sunset: Fri, 01 May 2026 00:00:00 GMT and
+      warning: 299 - "use /markets/keyset". It still answered HTTP 200 on 2026-11-07. It returns a bare
+      array and takes offset, but refuses an offset above 2000 (HTTP 422, "offset too large, use
+      /markets/keyset for deeper pagination"). Do not build on it.
+  market_by_id:
+    use: check
+    host: gamma
+    method: GET
+    path: /markets/{id}
+    role: One market by Gamma id. Also served at /markets/slug/{slug}, which is the slug lookup. Both return V2 markets with no parameter.
+  market_fields:
+    use: source
+    note: >-
+      The fields that stg_polymarket__markets reads, as they appear in a /markets/keyset market object.
+      Types come from 796 markets sampled across the id range on 2026-11-07 and 210,756 open markets.
+    fields:
+      id: {type: string, example: "6764951", note: Gamma market id. A decimal string.}
+      conditionId: {type: string, note: "0x-prefixed, 64 hex digits. Empty string on 44 open placeholder markets."}
+      questionID: {type: string, note: "0x-prefixed. Absent on V2 markets."}
+      question: {type: string}
+      slug: {type: string}
+      outcomes: {type: string, note: "A JSON-encoded array: '[\"Up\", \"Down\"]'. Parse it. All 796 sampled markets, all 210,712 open ones (by clobTokenIds length) and 360 V2 ones had 2; none with more was found."}
+      outcomePrices: {type: string, note: "A JSON-encoded array of decimal strings. '[\"1\", \"0\"]' once a market has settled."}
+      clobTokenIds: {type: string or null, note: "A JSON-encoded array of decimal strings, same order as outcomes. null on 44 open placeholder markets."}
+      positionIds: {type: array of strings, note: "Absent on 321 of 796 sampled markets. On a V1 market it is not clobTokenIds. On a V2 market it equals clobTokenIds."}
+      negRisk: {type: boolean, note: "Absent on 26 of 210,756 open markets and on 65 of 360 sampled V2 markets. Treat absent as false."}
+      negRiskMarketID: {type: string, note: "On neg-risk V1 markets, the NegRiskAdapter market id. Absent on non-neg-risk markets and on V2 neg-risk markets."}
+      version: {type: string, values: [v1, v2], note: Names the protocol. v1 is CTF. v2 is Protocol V2.}
+      startDate: {type: string, note: "ISO 8601, such as 2025-07-03T20:37:00.228Z or 2026-11-06T05:57:43Z."}
+      endDate: {type: string, note: "ISO 8601, such as 2027-01-01T04:59:00Z."}
+      closed: {type: boolean}
+      createdAt: {type: string, note: "ISO 8601 with microseconds."}
+      updatedAt: {type: string, note: "ISO 8601 with microseconds."}
+      closedTime: {type: string, note: "Absent while open. '2026-10-15 12:00:53+00' once closed. Not ISO 8601: a space, no colon in the offset."}
+      events: {type: array of objects, note: "One element on all 796 sampled markets. events[0] holds id, slug, title and negRisk."}
+  events_in_market:
+    note: events[0].id, events[0].slug and events[0].title feed event_id, event_slug and event_title.
+  prices_history:
+    use: check
+    host: clob
+    method: GET
+    path: /prices-history
+    params:
+      market: required. The outcome token id (the docs call it "market (asset id)").
+      startTs: Unix seconds.
+      endTs: Unix seconds.
+      interval: one of max, all, 1m, 1w, 1d, 6h, 1h.
+      fidelity: integer, minutes per point. Default 1.
+    reply: '{"history": [{"t": Unix seconds, "p": price}]}'
+    fields:
+      t: {type: integer, unit: Unix seconds}
+      p: {type: number, unit: USDC per share}
+    source: The get-prices-history page, and a reply on 2026-11-07 (NOTES.md).
+  positions:
+    use: check
+    host: data
+    method: GET
+    path: /v2/positions
+    params:
+      user: a proxy wallet address. At least one of user and condition is required.
+      condition: a condition id.
+      status: OPEN (the default), REDEEMABLE or CLOSED. OPEN also holds settled positions not yet redeemed.
+      limit: integer, 100 in the replies.
+      cursor: the pagination.next_cursor of the previous reply, sent with the same user or condition.
+    reply: '{"data": [position], "pagination": {"limit", "offset", "has_more", "next_cursor"}}'
+    fields:
+      proxy_wallet: {type: string, note: lowercase address}
+      token_id: {type: string}
+      condition_id: {type: string}
+      current_size: {type: number, unit: shares}
+      total_size: {type: number, unit: shares bought}
+      avg_price: {type: number, unit: USDC per share}
+      realized_pnl: {type: number, unit: USDC}
+      total_pnl: {type: number, unit: USDC}
+      status: {values: [OPEN, CLOSED, REDEEMABLE]}
+      outcome: {type: string}
+      outcome_index: {type: integer}
+      negative_risk: {type: boolean}
+    source: The list-positions page, and replies on 2026-11-07 (NOTES.md).
+errors:
+  "422 offset on keyset":
+    body: '{"type":"validation error","error":"offset is not allowed on keyset endpoints"}'
+    meaning: offset was sent to /markets/keyset.
+  "422 offset too large":
+    body: '{"type":"validation error","error":"offset too large, use /markets/keyset for deeper pagination"}'
+    meaning: offset above 2000 on the deprecated /markets.
+  "422 closed any":
+    body: '{"type":"validation error","error":"closed=any requires at least one of id, slug, clob_token_ids, position_ids, condition_ids, request_ids, onchain_event_ids, or question_ids"}'
+    meaning: closed=any without an id filter.

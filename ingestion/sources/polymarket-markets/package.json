@@ -1,0 +1,16 @@
+{
+  "name": "@ingestion/polymarket-markets",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "scripts": {
+    "ingest": "tsx src/index.ts",
+    "test": "LOG_LEVEL=silent tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@ingestion/lib": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

@@ -24,20 +24,21 @@ When something breaks, you can see it. `bj doctor` checks your env and services 
 
 ## What
 
-Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens and feeds you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<source>_<table>` it was built from, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC.
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<source>_<table>` it was built from, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC.
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
-| | Ethereum | Arbitrum | Base | Solana | Bitcoin | Binance, Coinbase |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| [Balances](#balances) | ✓ | | | ✓ | ✓ | |
-| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | |
-| [DEX trades](#dex-trades) | ✓ | | | | | |
-| [Bridges](#bridges) | | ✓ | ✓ | | | |
-| [Labels](#labels) | | ✓ | ✓ | | | |
-| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | |
-| [Exchange prices](#exchange-prices) | | | | | | ✓ |
-| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | |
+| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | Binance, Coinbase |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| [Balances](#balances) | ✓ | | | | ✓ | ✓ | |
+| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | |
+| [DEX trades](#dex-trades) | ✓ | | | | | | |
+| [Bridges](#bridges) | | ✓ | ✓ | | | | |
+| [Labels](#labels) | | ✓ | ✓ | | | | |
+| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | |
+| [Exchange prices](#exchange-prices) | | | | | | | ✓ |
+| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | |
+| [Polymarket](#polymarket) | | | | ✓ | | | |
 
 ### Balances
 
@@ -253,6 +254,98 @@ The `prices` pipeline builds it from the stream source `evm-chainlink-price-feed
 | `block_timestamp` | timestamptz | When that block was produced. |
 | `tx_hash` | text | The transaction the log was in. |
 | `log_index` | integer | The log's position in the block. |
+
+### Polymarket
+
+`analytics.polymarket_markets`, `analytics.polymarket_trades`, `analytics.polymarket_price_candles` and `analytics.polymarket_market_participants`
+
+Polymarket's prediction markets on Polygon. A market is one condition in ConditionalTokens, with one outcome token per outcome. Once the market resolves, a share of each outcome redeems for that outcome's payout fraction in pUSD. Amounts are whole pUSD and whole shares, not base units. The `addresses.json` files list Polymarket's own contracts, so the tables cover every market, from the block the stream sources start at. A market prepared before that block has `history_complete` false, and its trades, candles and PnL miss what came before.
+
+The `polymarket` pipeline builds all four from the call source `polymarket-markets`, which reads Polymarket's Gamma API for market names, and two stream sources that read Portal. `polygon-polymarket-ctf` loads each condition's preparation and resolution, and the splits, merges, redemptions and conversions of ConditionalTokens, the NegRiskAdapter, and the adapters and auto-redeemers in front of them. `polygon-polymarket-ctf-exchange-v2` loads every fill of the three CTF Exchange v2 contracts.
+
+#### `polymarket_markets`
+
+One row per market.
+
+| Column | Type | Description |
+|---|---|---|
+| `condition_id` | text | The market's condition in ConditionalTokens. Unique. |
+| `market_id` | text | Gamma's market id. |
+| `question` | text | Gamma's question. |
+| `slug` | text | Gamma's slug for the market. |
+| `event_id` | text | Gamma's event id. A neg-risk event holds several markets. |
+| `event_title` | text | Gamma's title for the event. |
+| `neg_risk` | boolean | True when the market belongs to a neg-risk event. |
+| `protocol` | text | `ctf`, for markets that settle in ConditionalTokens. |
+| `outcomes` | text[] | Gamma's outcome names, such as `Yes` and `No`. |
+| `end_date` | timestamptz | When Gamma says the market ends. |
+| `prepared_block` | bigint | The block of the condition's ConditionPreparation log. Null when that came before the start block. |
+| `resolved_at` | timestamptz | When the condition resolved. Null until then. |
+| `payout_fractions` | numeric[] | The pUSD one share of each outcome redeems for, in the order of `outcomes`. Null until resolved. |
+| `history_complete` | boolean | True when the condition was prepared at or after the first block every Polymarket stream source loaded. Its trades, candles and PnL are then whole. |
+
+#### `polymarket_trades`
+
+One row per fill of a maker order. A match also logs the taker order's own fill, which repeats the same trade, so that one stays out.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The OrderFilled log's place on Polygon, `<block>:<logIndex>`. Unique. |
+| `version` | text | `ctf_exchange_v2`. |
+| `exchange` | text | The exchange contract that emitted the fill. |
+| `block_number` | bigint | The block the fill was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+| `condition_id` | text | The market the token belongs to. |
+| `token_id` | numeric | The outcome token traded. |
+| `outcome` | text | Gamma's name for the token's outcome. |
+| `maker` | text | The maker order's owner: the proxy wallet or Safe that Polymarket shows as the trader. |
+| `taker` | text | The taker order's owner. |
+| `maker_side` | text | `buy` or `sell`, for the maker. |
+| `shares` | numeric | Outcome tokens traded. |
+| `usdc` | numeric | pUSD paid or received, before fees. |
+| `price` | numeric | `usdc / shares`, in pUSD per share. |
+| `fee_usdc` | numeric | The maker's fee, in pUSD. |
+
+#### `polymarket_price_candles`
+
+One row per outcome token and minute, in pUSD per share. In a two-outcome market a trade of one outcome at a price also prices the other at 1 minus that price, so a token can have a candle in a minute it did not trade.
+
+| Column | Type | Description |
+|---|---|---|
+| `token_id` | numeric | The outcome token. |
+| `minute` | timestamptz | The minute the candle covers, from its start. |
+| `condition_id` | text | The market the token belongs to. |
+| `outcome` | text | Gamma's name for the token's outcome. |
+| `open` | numeric | The minute's first price. |
+| `high` | numeric | The minute's highest price. |
+| `low` | numeric | The minute's lowest price. |
+| `close` | numeric | The minute's last price. |
+| `trades` | bigint | The token's own trades in the minute. 0 when only the other outcome traded. |
+| `shares_volume` | numeric | Shares of the token traded in the minute. |
+| `usdc_volume` | numeric | pUSD paid for them, before fees. |
+
+#### `polymarket_market_participants`
+
+One row per market and wallet: every wallet that traded, split, merged, redeemed or converted in the market. `pnl_usdc` is the cash the wallet got, after fees, plus what its shares are worth.
+
+| Column | Type | Description |
+|---|---|---|
+| `condition_id` | text | The market. |
+| `wallet` | text | The proxy wallet or Safe that Polymarket shows as the trader. |
+| `trades` | bigint | The wallet's fills in the market, as the maker of either order. |
+| `buy_usdc` | numeric | pUSD the wallet paid for shares, before fees. |
+| `sell_usdc` | numeric | pUSD the wallet got for shares, before fees. |
+| `fees_usdc` | numeric | Fees the wallet paid on its fills, in pUSD. |
+| `net_cash_usdc` | numeric | Cash the wallet got less cash it paid, from trades, splits, merges, redemptions and conversions, after fees. |
+| `open_shares` | numeric | Shares the wallet still holds, over all the market's outcomes. |
+| `position_value_usdc` | numeric | What those shares are worth: each outcome's shares times its payout fraction once resolved, else the close of its last candle. Null when a held outcome has no price. |
+| `pnl_usdc` | numeric | `net_cash_usdc + position_value_usdc`. Null when `position_value_usdc` is. |
+| `first_activity_at` | timestamptz | The wallet's first move in the market. |
+| `last_activity_at` | timestamptz | The wallet's last move in the market. |
+| `resolved` | boolean | True when the market has resolved. |
+| `history_complete` | boolean | The market's `history_complete`. When false, PnL misses what happened before the start block. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

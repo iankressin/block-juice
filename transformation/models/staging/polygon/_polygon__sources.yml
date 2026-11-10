@@ -1,0 +1,17 @@
+version: 2
+
+# Source name + table name must match the ingestion Source's `name` + `table`.
+sources:
+  - name: polygon
+    schema: "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    tables:
+      - name: polymarket_ctf
+        identifier: polygon_polymarket_ctf
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: polymarket_ctf_exchange_v2
+        identifier: polygon_polymarket_ctf_exchange_v2
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

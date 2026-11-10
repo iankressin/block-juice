@@ -1,0 +1,999 @@
+name: polymarket
+scope: >-
+  Polymarket on Polygon. The CTF era: positions held in Gnosis ConditionalTokens, neg-risk markets run
+  by the NegRiskAdapter, fills on CTF Exchange v2 (live since 2026-04-28), and the collateral adapters
+  and auto-redeemers that users split, merge, redeem and convert through with pUSD. CTF Exchange v1 is
+  listed for its topics and to show it has no fills in the window. Protocol V2 (deployed 2026-05-26,
+  first fill 2026-05-29): positions held in the PositionManager, minted and burned by the binary,
+  neg-risk and combinatorial modules, traded on the Protocol V2 Exchange, reached through the Router
+  and the AutoRedeemer. Most V2 fills are parlays (combinatorial positions) whose legs are CTF markets
+  migrated into V2 (NOTES.md, Protocol V2).
+docs:
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/README.md
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/exchange/mixins/Trading.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/exchange/mixins/Events.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/adapters/CtfCollateralAdapter.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/src/adapters/NegRiskCtfCollateralAdapter.sol
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/artifacts/ConditionalTokens.json
+  - https://github.com/Polymarket/ctf-exchange-v2/blob/ccc0596074/artifacts/NegRiskAdapter.json
+  - https://github.com/Polymarket/ctf-exchange-v2/commits/fix/nr-exchange-ctf-collateral
+  - https://github.com/Polymarket/clob-client-v2/blob/27633b3c7d/src/config.ts
+  - https://github.com/Polymarket/clob-client-v2/blob/27633b3c7d/src/order-utils/abi/ExchangeV2.ts
+  - https://github.com/Polymarket/clob-client-v2/blob/27633b3c7d/src/order-utils/abi/ExchangeV1.ts
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/README.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/docs/collateral.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/docs/migration.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/docs/modules.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/docs/position-ids.md
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/libraries/Ids.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/abstract/BaseModule.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/BinaryModule.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/NegRiskModule.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/CombinatorialModule.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/migration/BaseMigrationMixin.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/migration/BinaryMigrationMixin.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/modules/migration/NegRiskMigrationMixin.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/routers/Router.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/exchange/Exchange.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/utils/AutoRedeemer.sol
+  - https://github.com/Polymarket/polymarket-v2-external/blob/741f8bbe88/src/positionManager/PositionManager.sol
+  - https://sourcify.dev/server/v2/contract/137/0x862f1cff1bd6246a2585e3622137e6f961b34e55
+  - https://sourcify.dev/server/v2/contract/137/0xc4a3a6492df0d23f9fd1cfcd328dd10dbd5943b6
+  - https://sourcify.dev/server/v2/contract/137/0xf96968a44022b17240b42c557693e7c383d2d8a3
+  - https://sourcify.dev/server/v2/contract/137/0x91fa5e2f12a308a13defdb6aaf80b71dbe9b7696
+  - https://sourcify.dev/server/v2/contract/137/0xcc5de1e9d14a7ab75e872e23fc9d605518bac2d0
+  - https://github.com/Polymarket/neg-risk-ctf-adapter/blob/f78b35b086/src/NegRiskAdapter.sol
+  - https://github.com/Polymarket/polymarket-cli/blob/9b18b5faf5/src/commands/mod.rs
+  - https://github.com/Polymarket/py-sdk/blob/ddee30cebb/src/polymarket/models/gamma/market.py
+  - https://github.com/MetaMask/metamask-mobile/blob/d630e656cd/app/components/UI/Predict/providers/polymarket/constants.ts
+  - https://sourcify.dev/server/v2/contract/137/0xAdA100Db00Ca00073811820692005400218FcE1f
+  - https://sourcify.dev/server/v2/contract/137/0xadA2005600Dec949baf300f4C6120000bDB6eAab
+  - https://sourcify.dev/server/v2/contract/137/0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0
+  - https://sourcify.dev/server/v2/contract/137/0x64860bFD14fCcaAc09cd36f347784a9616AfB66C
+  - https://sourcify.dev/server/v2/contract/137/0xCe84E053301A82937F90ee2C2c1889cAb1db25dE
+chains:
+  polygon:
+    portal_dataset: polygon-mainnet
+    window_start_block: 94738440
+    contracts:
+      conditional_tokens:
+        address: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+        deployed_block: 4023686
+        role: >-
+          Gnosis ConditionalTokens, the ERC-1155 ledger that holds every CTF-era position. Splits
+          collateral into one position per index set, merges them back, and pays out after an oracle
+          reports. Both exchange versions settle in it.
+        source: >-
+          conditionalTokens in clob-client-v2 src/config.ts (MATIC_CONTRACTS) and in polymarket-cli
+          src/commands/mod.rs; getCtf() on all three v2 exchanges returned it on 2026-11-07. Deploy
+          block from the create trace in tx
+          0xf822536aff16fdb8df59bc9c0b5854c5bec4b9a76484ea9d6944908ced563389 (Portal stream API,
+          create-trace filter), the first block where eth_getCode returns code.
+      usdc_e:
+        address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+        deployed_block: 5013591
+        role: >-
+          Bridged USDC (USDC.e), 6 decimals. The collateral of every binary CTF position: position
+          ids are derived from it, even when users pay in pUSD.
+        source: >-
+          getCtfCollateral() on ctf_exchange_v2 returned it on 2026-11-07; USDCE in the collateral
+          adapters' constructors. Deploy block from the create trace in tx
+          0x51103659d8827d6d24732d1168de73390f4f387d58a8281944241657f1bc61d7.
+      neg_risk_adapter:
+        address: "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
+        deployed_block: 50505403
+        role: >-
+          Runs neg-risk events: prepares markets and questions, reports outcomes as the CTF oracle,
+          and splits, merges, converts and redeems positions on ConditionalTokens with
+          wrapped_collateral. It is the CTF stakeholder or redeemer of every neg-risk action.
+        source: >-
+          negRiskAdapter in clob-client-v2 src/config.ts and polymarket-cli. NEG_RISK_ADAPTER in the
+          neg-risk collateral adapters. Deploy block from the create trace in tx
+          0x192214f14b05d4404271a8d54d633d840277ba7b96df853417eb3fce274af2b9, which also created
+          wrapped_collateral.
+      wrapped_collateral:
+        address: "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2"
+        deployed_block: 50505403
+        role: >-
+          The NegRiskAdapter's wrapper around USDC.e, 6 decimals. The collateral of every neg-risk CTF
+          position, so neg-risk position ids are derived from it.
+        source: >-
+          getCtfCollateral() on neg_risk_ctf_exchange_v2 returned it on 2026-11-07. Created by
+          neg_risk_adapter in tx 0x192214f14b05d4404271a8d54d633d840277ba7b96df853417eb3fce274af2b9.
+      pusd:
+        address: "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
+        deployed_block: 84902320
+        role: >-
+          Polymarket USD (pUSD), the collateral of CTF Exchange v2, 6 decimals. Wraps USDC and
+          USDC.e 1:1; the USDC.e sits in a vault (0xc417fd8e9661c0d2120b64a04bb3278c17e99db1 in
+          every proof row). A UUPS proxy; implementation
+          0xCe84E053301A82937F90ee2C2c1889cAb1db25dE on 2026-11-07.
+        source: >-
+          CollateralToken (proxy) in the ctf-exchange-v2 and polymarket-v2-external READMEs;
+          collateral in clob-client-v2 src/config.ts; getCollateral() on all three v2 exchanges.
+          Deploy block from the create trace in tx
+          0xb182b902a72189a6b11d24b0f313439f899d2ef81a166489124c140eabb64841.
+      ctf_exchange_v1:
+        address: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"
+        deployed_block: 33605403
+        role: >-
+          CTF Exchange v1, for binary markets, trading in USDC.e until the 2026-04-28 cutover. No
+          OrderFilled in the window samples (NOTES.md, load estimate). It still emits
+          TokenRegistered for some new markets.
+        source: >-
+          exchange in clob-client-v2 src/config.ts. Deploy block from the create trace in tx
+          0x35423c49cb07c9ccecad9af20df52cccdeff0d46f833d438de8b02f2504aed22.
+      neg_risk_ctf_exchange_v1:
+        address: "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+        deployed_block: 50505492
+        role: CTF Exchange v1 for neg-risk markets. No logs at all in the window samples.
+        source: >-
+          negRiskExchange in clob-client-v2 src/config.ts. Deploy block from the create trace in tx
+          0x5935e680b186f72b6db932ce351dd6f0288b1e056ab8d0d307c5146606879369.
+      ctf_exchange_v2:
+        address: "0xE111180000d2663C0091e4f400237545B87B996B"
+        deployed_block: 84902353
+        role: >-
+          CTF Exchange v2 for binary markets. Trades pUSD against CTF positions backed by USDC.e and
+          mints or merges through ctf_collateral_adapter_v1 (its immutable outcome token factory).
+        source: >-
+          CTFExchangeV2 in the ctf-exchange-v2 README; exchangeV2 in clob-client-v2 src/config.ts.
+          getCollateral() = pusd, getCtf() = conditional_tokens, getCtfCollateral() = usdc_e,
+          getOutcomeTokenFactory() = ctf_collateral_adapter_v1 on 2026-11-07. Deploy block from the
+          create trace in tx 0xd313453c195344b3eea2d91343fb840e51130ba5562fb9c9eda83fd0f82c6c97.
+      neg_risk_ctf_exchange_v2:
+        address: "0xe2222d279d744050d28e00520010520000310F59"
+        deployed_block: 85058176
+        role: >-
+          CTF Exchange v2 for neg-risk markets ("NegRisk A" in the plan). Mints and merges through
+          neg_risk_ctf_collateral_adapter_v1.
+        source: >-
+          NegRiskCtfExchangeV2 in the ctf-exchange-v2 README since commit 4a78ab09de (2026-04-03),
+          negRiskExchangeV2 in clob-client-v2 src/config.ts. getCtfCollateral() = wrapped_collateral,
+          getOutcomeTokenFactory() = neg_risk_ctf_collateral_adapter_v1 on 2026-11-07. Deploy block
+          from the create trace in tx
+          0x81a5c04d0582967b4305b577a4f63a1d9bf5b1f6e0b9c385234540b154446ade.
+      neg_risk_ctf_exchange_v2_retired:
+        address: "0xe2222d002000Ba0053CEF3375333610F64600036"
+        deployed_block: 84902358
+        role: >-
+          The first NegRisk exchange v2 ("NegRisk B" in the plan), replaced on 2026-04-03. Its
+          getCtfCollateral() returns usdc_e, not wrapped_collateral, so it cannot match neg-risk
+          tokens; branch fix/nr-exchange-ctf-collateral in ctf-exchange-v2 fixes that in the deploy
+          script. No logs in the window samples; NOTES.md gives its full history.
+        source: >-
+          NegRiskCtfExchangeV2 in the ctf-exchange-v2 README from commit 7d6d6683d4 (2026-04-01)
+          until commit 4a78ab09de (2026-04-03). Deploy block from the create trace in tx
+          0x595af18ec89e80e07d83dceade6413128ce990e94f760c639c2860e3c9cb6324.
+      ctf_collateral_adapter_v1:
+        address: "0xADa100874d00e3331D00F2007a9c336a65009718"
+        deployed_block: 84902341
+        role: >-
+          The first pUSD adapter for binary CTF positions. ctf_exchange_v2 mints and merges through
+          it, so it is the CTF stakeholder of every binary mint and merge match (proof rows 2, 3).
+          Users can still call it to merge or redeem (proof row 25). It emits no event that names the
+          user, and the CTF source leaves those direct calls out (NOTES.md Q5).
+        source: >-
+          CtfCollateralAdapter in the ctf-exchange-v2 README and polymarket-cli; verified on Sourcify
+          as src/adapters/CtfCollateralAdapter.sol (events: ownership, roles, pause only). Owner
+          0x47EbFAC3353314C788B96CDCbf41daadfE03629C, the same as pusd. Deploy block from the create
+          trace in tx 0x1e7aa0eb72e0eb24f8e4b803544e60d45b89d1a0ebfc3d0ea7cb19ece73bd3c0.
+      neg_risk_ctf_collateral_adapter_v1:
+        address: "0xAdA200001000ef00D07553cEE7006808F895c6F1"
+        deployed_block: 84902347
+        role: >-
+          The first pUSD adapter for neg-risk positions. neg_risk_ctf_exchange_v2 mints and merges
+          through it, so it is the NegRiskAdapter stakeholder of every neg-risk mint and merge match
+          (proof row 22). It emits no event that names the user.
+        source: >-
+          NegRiskCtfCollateralAdapter in the ctf-exchange-v2 README and polymarket-cli; verified on
+          Sourcify (events: ownership, roles, pause only). Owner as pusd. Deploy block from the create
+          trace in tx 0x4e82930278938b8dd64f31954fd1ba74298317dc79ba0e338d8999c58b053e5a.
+      ctf_collateral_adapter:
+        address: "0xAdA100Db00Ca00073811820692005400218FcE1f"
+        deployed_block: 86179826
+        role: >-
+          The current pUSD adapter that users split, merge and redeem binary positions through. Emits
+          PositionSplit, PositionsMerged and PositionsRedeemed with the user as initiator. First user
+          event at block 86180662 (2026-04-29 16:49 UTC).
+        source: >-
+          CTF_COLLATERAL_ADAPTER_ADDRESS in MetaMask's Polymarket constants (not a Polymarket repo);
+          verified on Sourcify as src/adapters/CtfCollateralAdapter.sol. Created through Polymarket's
+          deployer 0xca71ea69c54c163d17beb90beb8d001e1eb538a1, which also sent the deploys of pusd and
+          the v2 exchanges; owner as pusd. Deploy block from the create trace in tx
+          0x1a152fa541c0e573a3bdbe7f4bcd402247b2ffed3c1f0a8973dcdf32901b9105.
+      neg_risk_ctf_collateral_adapter:
+        address: "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
+        deployed_block: 86179892
+        role: >-
+          The current pUSD adapter for neg-risk positions. Emits PositionSplit, PositionsMerged,
+          PositionsRedeemed and PositionsConverted with the user as initiator.
+        source: >-
+          NEG_RISK_CTF_COLLATERAL_ADAPTER_ADDRESS in MetaMask's Polymarket constants; verified on
+          Sourcify as src/adapters/NegRiskCtfCollateralAdapter.sol. Sent by deployer
+          0xca71ea69c54c163d17beb90beb8d001e1eb538a1; owner as pusd. Deploy block from the create
+          trace in tx 0xdfdef82a68dd53443abe6d3884a888bed18ed1854277bead094bc813f641595a.
+      ctf_auto_redeem:
+        address: "0xF3cFb6a6eBFeB51876289Eb235719EB1C65252B0"
+        deployed_block: 86136861
+        role: >-
+          Redeems resolved CTF and neg-risk positions for many users in one transaction (sent
+          through an ERC-4337 EntryPoint) and pays them in pUSD. Emits BinaryRedemption and
+          NegRiskRedemption naming each user.
+        source: >-
+          Verified on Sourcify as src/CtfAutoRedeem.sol:CtfAutoRedeem. Owner
+          0x47EbFAC3353314C788B96CDCbf41daadfE03629C, the same as pusd. Not in a Polymarket repo.
+          Deploy block from the create trace in tx
+          0x1c204065cf301b0e725d293ce53cd077a6894d9bc0f6e3d7ca15095a62c6093a.
+      auto_redeemer:
+        address: "0xa1200000d0002264C9a1698e001292D00E1b00af"
+        deployed_block: 87479597
+        role: >-
+          Protocol V2's AutoRedeemer (UUPS proxy). Besides V2 positions it redeems CTF and neg-risk
+          positions for users, the busiest redeemer in the window samples. Emits BinaryRedemption and
+          NegRiskRedemption (same topics as ctf_auto_redeem) and, for V2 positions, Redemption, which
+          names the user; the module's PositionRedeemed names the AutoRedeemer (proof row 35).
+        source: >-
+          AutoRedeemer (proxy) in the polymarket-v2-external README; implementation
+          0x64860bFD14fCcaAc09cd36f347784a9616AfB66C (ERC-1967 slot, 2026-11-07 and 2026-11-08)
+          verified on Sourcify as src/utils/AutoRedeemer.sol. Deploy block from the create trace in tx
+          0xae932d6f7fc45e48d6e9a25855d233fe97af1d81ee3bfe8a551b3887af567883 (Portal MCP), the first
+          block where eth_getCode returns code.
+      position_manager:
+        address: "0x006F54F7f9A22e0000CC2AB60031000000ae9fEF"
+        deployed_block: 87479409
+        role: >-
+          Protocol V2's ERC-1155 ledger (UUPS proxy) that holds every V2 position. Only a position's
+          module can mint or burn it (by the id's top byte). Emits TransferSingle and TransferBatch with
+          the same topic0s as ConditionalTokens. The earliest V2 deploy block.
+        source: >-
+          PositionManager (proxy) in the polymarket-v2-external README; POSITION_MANAGER() on
+          binary_module returned it on 2026-11-08. Implementation
+          0xCc5De1e9D14a7AB75E872E23FC9D605518Bac2D0 (ERC-1967 slot, 2026-11-08), verified on
+          Sourcify. Deploy block from the create trace in tx
+          0x5b6d7449146a3435ec0fcd1691b2c3a35df0c98fad40418fe7dc6da943ffc93a.
+      protocol_v2_exchange:
+        address: "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"
+        deployed_block: 87479471
+        role: >-
+          The Protocol V2 Exchange (UUPS proxy). Trades pUSD against V2 positions; mints and merges
+          through the position's module itself, as initiator and recipient (proof rows 27, 28, 30).
+          Emits OrderFilled, OrdersMatched and FeeCharged with the CTF Exchange v2 topic0s. First fill
+          at block 87620369 (2026-05-29 17:22:47 UTC); 4,460,881 fills to block 96943000, 99% of them
+          parlays.
+        source: >-
+          Exchange (proxy) in the polymarket-v2-external README. Implementation
+          0x862f1cff1bd6246a2585e3622137e6f961b34e55 (ERC-1967 slot, 2026-11-08), verified on
+          Sourcify as src/exchange/MigratableExchange.sol, which is not in the public repo; the
+          README still lists 0x641b40ec414a076b9e79E703Fc7BF4EBEC248Bb7. Deploy block from the create
+          trace in tx 0x802752af6f6ac8714b2e55ab242853c5eb39cbaf36b4ba67b309d342d1953583.
+      router:
+        address: "0x12121212006e4CD160D18e3f00711DA5c3372600"
+        deployed_block: 87479565
+        role: >-
+          The Protocol V2 Router (UUPS proxy). Users split, merge, redeem and convert through it: it
+          moves the user's pUSD or positions to the module, calls it with the user as recipient, and
+          emits its own Router* event naming the user. The module's event names the Router as
+          initiator (proof rows 32–34). Its combinatorialCollateralReturn runs any list of parlay ops
+          with recipients the caller chooses, the module included, and emits only
+          CombinatorialCollateralReturned(initiator) (proof row 42).
+        source: >-
+          Router (proxy) in the polymarket-v2-external README; implementation
+          0x91fA5E2F12a308A13DefdB6aaF80B71DBe9B7696 (ERC-1967 slot, 2026-11-08), verified on
+          Sourcify as src/routers/Router.sol. Deploy block from the create trace in tx
+          0x12064d0797170d3345a3ad2edf8cbfa99f991c9c3a8f5c2569b61fde43a8acc9.
+      binary_module:
+        address: "0x1000008dD9001B968442c1000017eaE6E0dA00Ba"
+        deployed_block: 87479502
+        role: >-
+          Protocol V2 BinaryModule (UUPS proxy, module id 1). Mints and burns binary V2 positions:
+          native V2 markets, and CTF markets registered for migration. Redeems the legacy CTF positions
+          users migrated into V2, so it appears as a CTF redeemer (proof rows 23, 38). Its
+          ConditionResolved holds each binary V2 result.
+        source: >-
+          BinaryModule (proxy) in the polymarket-v2-external README; moduleId() = 1,
+          CONDITIONAL_TOKENS() = conditional_tokens, USDCE() = usdc_e, POSITION_MANAGER() =
+          position_manager, COLLATERAL_TOKEN() = pusd on 2026-11-08. Implementation
+          0x66290cf3c362be3910c1b5572d381453fa7da2ba (ERC-1967 slot, 2026-11-08) is not verified on
+          Sourcify; the README lists 0xf6428c0B5fa9361c0708CDdb95468cf54C56e9A2. Deploy block from
+          the create trace in tx 0x106d3269f1216e2210fcdf4f8f153f1ea0c91f7c0c3b64f1f94ecc9864baaf04.
+      neg_risk_module:
+        address: "0x200000900045e3B6259600682756002200028933"
+        deployed_block: 87479533
+        role: >-
+          Protocol V2 NegRiskModule (UUPS proxy, module id 2). Same as binary_module for neg-risk
+          events, plus horizontal split and merge, conversion, and results it derives for sibling and
+          synthetic Other conditions (proof rows 24, 39).
+        source: >-
+          NegRiskModule (proxy) in the polymarket-v2-external README. Implementation
+          0xc4a3a6492df0d23f9fd1cfcd328dd10dbd5943b6 (ERC-1967 slot, 2026-11-07 and 2026-11-08),
+          verified on Sourcify as src/modules/NegRiskModule.sol; the README lists
+          0x39a5B01a100edF811f2748aa37B1313715Ded70e. Deploy block from the create trace in tx
+          0xb5df3d49ae904c4142728d1507abb9407baace6254bd7f9ff08a2ac808410c68.
+      combinatorial_module:
+        address: "0x30000034706C7d8e12009DAB006Be20000c031A8"
+        deployed_block: 87479439
+        role: >-
+          Protocol V2 CombinatorialModule (UUPS proxy, module id 3). Parlays: a condition whose YES
+          pays the product of its legs' payouts (binary or neg-risk V2 positions) and whose NO pays
+          the rest. Stores no result; a redemption reads the legs' results. Mints and burns the
+          parlay positions the Exchange trades (proof rows 29, 30, 32–34, 40–42).
+        source: >-
+          CombinatorialModule (proxy) in the polymarket-v2-external README; implementation
+          0xf96968a44022B17240B42c557693E7C383d2d8a3 (ERC-1967 slot, 2026-11-08), verified on
+          Sourcify as src/modules/CombinatorialModule.sol. Deploy block from the create trace in tx
+          0x23e9ec18f52791fa4d96d85c7dd5d94949210d262011650f3118da6873c8ea2b.
+      oracle_aggregator:
+        address: "0x0A0a0A0A8B00C51b7D810501b03F230028C04a87"
+        deployed_block: null
+        role: >-
+          Protocol V2's OracleAggregator. The resolver that reports native V2 results to the modules
+          (ResultReported.resolver in proof row 37). Not loaded.
+        source: OracleAggregator (proxy) in the polymarket-v2-external README.
+      fee_receiver:
+        address: "0x115F48DC2A731aA16251c6d6e1BEfC42f92Accc9"
+        deployed_block: null
+        role: Receives every v2 exchange fee in pUSD (FeeCharged.receiver).
+        source: getFeeReceiver() on all three v2 exchanges, 2026-11-07.
+      no_token_burn_address:
+        address: "0xa5Ef39C3D3e10d0B270233af41CaC69796B12966"
+        deployed_block: null
+        role: Where NegRiskAdapter.convertPositions sends the NO tokens it burns.
+        source: >-
+          NO_TOKEN_BURN_ADDRESS = address(bytes20(keccak256("NO_TOKEN_BURN_ADDRESS"))) in
+          NegRiskAdapter.sol; the hash reproduces it and proof row 8 sends NO tokens to it.
+events:
+  ctf.ConditionPreparation:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event ConditionPreparation(bytes32 indexed conditionId, address indexed oracle, bytes32 indexed questionId, uint256 outcomeSlotCount)"
+    topic0: "0xab3760c3bd2bb38b5bcf54dc79802ed67338b4cf29f3054ded67ed24661e4177"
+    abi: abis/conditional-tokens.json
+    proof_rows: [18, 19]
+  ctf.ConditionResolution:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event ConditionResolution(bytes32 indexed conditionId, address indexed oracle, bytes32 indexed questionId, uint256 outcomeSlotCount, uint256[] payoutNumerators)"
+    topic0: "0xb44d84d3289691f71497564b85d4233648d9dbae8cbdbb4329f301c3a0185894"
+    abi: abis/conditional-tokens.json
+    proof_rows: [9, 20]
+  ctf.PositionSplit:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event PositionSplit(address indexed stakeholder, address collateralToken, bytes32 indexed parentCollectionId, bytes32 indexed conditionId, uint256[] partition, uint256 amount)"
+    topic0: "0x2e6bb91f8cbcda0c93623c54d0403a43514fabc40084ec96b6d5379a74786298"
+    abi: abis/conditional-tokens.json
+    proof_rows: [2, 4, 8, 16]
+  ctf.PositionsMerge:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event PositionsMerge(address indexed stakeholder, address collateralToken, bytes32 indexed parentCollectionId, bytes32 indexed conditionId, uint256[] partition, uint256 amount)"
+    topic0: "0x6f13ca62553fcc2bcd2372180a43949c1e4cebba603901ede2f4e14f36b282ca"
+    abi: abis/conditional-tokens.json
+    proof_rows: [3, 5, 21, 22]
+  ctf.PayoutRedemption:
+    use: source
+    emitted_by: conditional_tokens
+    signature: "event PayoutRedemption(address indexed redeemer, address indexed collateralToken, bytes32 indexed parentCollectionId, bytes32 conditionId, uint256[] indexSets, uint256 payout)"
+    topic0: "0x2682012a4a4f1973119f1c9b90745d1bd91fa2bab387344f044cb3586864d18d"
+    abi: abis/conditional-tokens.json
+    proof_rows: [6, 7, 12, 14, 15, 23, 24, 25, 38, 39]
+  ctf.TransferSingle:
+    use: proof only
+    emitted_by: conditional_tokens
+    signature: "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)"
+    topic0: "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62"
+    abi: abis/conditional-tokens.json
+    note: Not loaded, by the controller's decision in NOTES.md Q5; proof rows use it to check other events.
+  ctf.TransferBatch:
+    use: proof only
+    emitted_by: conditional_tokens
+    signature: "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)"
+    topic0: "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
+    abi: abis/conditional-tokens.json
+    note: Not loaded, by the controller's decision in NOTES.md Q5; proof rows use it to check other events.
+  neg_risk.MarketPrepared:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event MarketPrepared(bytes32 indexed marketId, address indexed oracle, uint256 feeBips, bytes data)"
+    topic0: "0xf059ab16d1ca60e123eab60e3c02b68faf060347c701a5d14885a8e1def7b3a8"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [18]
+  neg_risk.QuestionPrepared:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event QuestionPrepared(bytes32 indexed marketId, bytes32 indexed questionId, uint256 index, bytes data)"
+    topic0: "0xaac410f87d423a922a7b226ac68f0c2eaf5bf6d15e644ac0758c7f96e2c253f7"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [18]
+  neg_risk.OutcomeReported:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event OutcomeReported(bytes32 indexed marketId, bytes32 indexed questionId, bool outcome)"
+    topic0: "0x9e9fa7fd355160bd4cd3f22d4333519354beff1f5689bde87f2c5e63d8d484b2"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [20]
+  neg_risk.PositionSplit:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PositionSplit(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0xbbed930dbfb7907ae2d60ddf78345610214f26419a0128df39b6cc3d9e5df9b0"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [16]
+    trap: collateral_adapter.PositionSplit has the same topic0. Filter by emitting address.
+  neg_risk.PositionsMerge:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PositionsMerge(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0xba33ac50d8894676597e6e35dc09cff59854708b642cd069d21eb9c7ca072a04"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [21, 22]
+  neg_risk.PositionsConverted:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PositionsConverted(address indexed stakeholder, bytes32 indexed marketId, uint256 indexed indexSet, uint256 amount)"
+    topic0: "0xb03d19dddbc72a87e735ff0ea3b57bef133ebe44e1894284916a84044deb367e"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [8, 13]
+  neg_risk.PayoutRedemption:
+    use: source
+    emitted_by: neg_risk_adapter
+    signature: "event PayoutRedemption(address indexed redeemer, bytes32 indexed conditionId, uint256[] amounts, uint256 payout)"
+    topic0: "0x9140a6a270ef945260c03894b3c6b3b2695e9d5101feef0ff24fec960cfd3224"
+    abi: abis/neg-risk-adapter.json
+    proof_rows: [7]
+  collateral_adapter.PositionSplit:
+    use: source
+    emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
+    signature: "event PositionSplit(address indexed initiator, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0xbbed930dbfb7907ae2d60ddf78345610214f26419a0128df39b6cc3d9e5df9b0"
+    abi: abis/collateral-adapter.json
+    proof_rows: [4, 16]
+    trap: Same topic0 as neg_risk.PositionSplit. Filter by emitting address.
+  collateral_adapter.PositionsMerged:
+    use: source
+    emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
+    signature: "event PositionsMerged(address indexed initiator, bytes32 indexed conditionId, uint256 amount)"
+    topic0: "0x08c15f31e413dbd9bbd3b4c01b191db840e1657ab4f8d1d7d448a9a5083ba255"
+    abi: abis/collateral-adapter.json
+    proof_rows: [5, 21]
+  collateral_adapter.PositionsRedeemed:
+    use: source
+    emitted_by: ctf_collateral_adapter, neg_risk_ctf_collateral_adapter
+    signature: "event PositionsRedeemed(address indexed initiator, bytes32 indexed conditionId, uint256[] amounts, uint256 payout)"
+    topic0: "0x1daec0b1f629de29b749a189499f43104a80df46a9f34d9ccf73aa59b85fc0c0"
+    abi: abis/collateral-adapter.json
+    proof_rows: [12]
+  collateral_adapter.PositionsConverted:
+    use: source
+    emitted_by: neg_risk_ctf_collateral_adapter
+    signature: "event PositionsConverted(address indexed initiator, bytes32 indexed marketId, uint256 indexed indexSet, uint256 amount, uint256 amountOut)"
+    topic0: "0x1b8b64a5dd5755bb862006962dbcd07c11ab463091508bcaa350192a43022319"
+    abi: abis/collateral-adapter.json
+    proof_rows: [13]
+  auto_redeemer.BinaryRedemption:
+    use: source
+    emitted_by: ctf_auto_redeem, auto_redeemer
+    signature: "event BinaryRedemption(address indexed from, bytes32 indexed conditionId, uint256 payout)"
+    topic0: "0xb434294b5904213c83a167af0068ab82637c6fd4fac945e2abc74ed8d3f4d52a"
+    abi: abis/auto-redeemer.json
+    proof_rows: [14, 15]
+  auto_redeemer.NegRiskRedemption:
+    use: source
+    emitted_by: ctf_auto_redeem, auto_redeemer
+    signature: "event NegRiskRedemption(address indexed from, bytes32 indexed conditionId, uint256 payout)"
+    topic0: "0x74a51ebefec30281ec6849b727ec7916f9b1a3e5e148d6771d98315215b38b96"
+    abi: abis/auto-redeemer.json
+    proof_rows: [7]
+  ctf_exchange_v2.OrderFilled:
+    use: source
+    emitted_by: ctf_exchange_v2, neg_risk_ctf_exchange_v2, neg_risk_ctf_exchange_v2_retired
+    signature: "event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee, bytes32 builder, bytes32 metadata)"
+    topic0: "0xd543adfd945773f1a62f74f0ee55a5e3b9b1a28262980ba90b1a89f2ea84d8ee"
+    abi: abis/ctf-exchange-v2.json
+    proof_rows: [1, 2, 3, 10, 11, 17]
+    fields:
+      order_hash: {param: orderHash, at: topic1}
+      maker: {param: maker, at: topic2}
+      taker: {param: taker, at: topic3}
+      side: {param: side, at: data word 0, values: "0 = buy, 1 = sell"}
+      token_id: {param: tokenId, at: data word 1}
+      maker_amount_filled: {param: makerAmountFilled, at: data word 2}
+      taker_amount_filled: {param: takerAmountFilled, at: data word 3}
+      fee: {param: fee, at: data word 4}
+      builder: {param: builder, at: data word 5}
+      metadata: {param: metadata, at: data word 6}
+  ctf_exchange_v2.OrdersMatched:
+    use: proof only
+    emitted_by: ctf_exchange_v2, neg_risk_ctf_exchange_v2, neg_risk_ctf_exchange_v2_retired
+    signature: "event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled)"
+    topic0: "0x174b3811690657c217184f89418266767c87e4805d09680c39fc9c031c0cab7c"
+    abi: abis/ctf-exchange-v2.json
+  ctf_exchange_v2.FeeCharged:
+    use: proof only
+    emitted_by: ctf_exchange_v2, neg_risk_ctf_exchange_v2, neg_risk_ctf_exchange_v2_retired
+    signature: "event FeeCharged(address indexed receiver, uint256 amount)"
+    topic0: "0x55bb3cade9d43b798a4fe5ffdd05024b2d7870df53920673bfc7e68047cd0ab1"
+    abi: abis/ctf-exchange-v2.json
+  ctf_exchange_v1.OrderFilled:
+    use: count only
+    emitted_by: ctf_exchange_v1, neg_risk_ctf_exchange_v1
+    signature: "event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee)"
+    topic0: "0xd0a08e8c493f9c94f29311604c9de1b4e8c8d4c06bd0c789af57f2d65bfec0f6"
+    abi: null
+    abi_source: >-
+      exchangeV1Abi in clob-client-v2 src/order-utils/abi/ExchangeV1.ts. Phase C adds the ABI file
+      if v1 is ever loaded.
+  ctf_exchange_v1.TokenRegistered:
+    use: count only
+    emitted_by: ctf_exchange_v1
+    signature: "event TokenRegistered(uint256 indexed token0, uint256 indexed token1, bytes32 indexed conditionId)"
+    topic0: "0xbc9a2432e8aeb48327246cddd6e872ef452812b4243c04e6bfb786a2cd8faf0d"
+    abi: null
+    abi_source: exchangeV1Abi in clob-client-v2 src/order-utils/abi/ExchangeV1.ts.
+  protocol_v2_exchange.OrderFilled:
+    use: source
+    emitted_by: protocol_v2_exchange
+    signature: "event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee, bytes32 builder, bytes32 metadata)"
+    topic0: "0xd543adfd945773f1a62f74f0ee55a5e3b9b1a28262980ba90b1a89f2ea84d8ee"
+    abi: abis/protocol-v2-exchange.json
+    proof_rows: [26, 27, 28, 29, 30, 31, 43]
+    fields: >-
+      As ctf_exchange_v2.OrderFilled. tokenId is a V2 position id: top byte the module (1 binary, 2
+      neg risk, 3 parlay), low byte the outcome (0 = YES or outcomes[0], 1 = NO or outcomes[1]).
+    trap: >-
+      Same topic0 as ctf_exchange_v2.OrderFilled. Filter by emitting address.
+  protocol_v2_exchange.OrdersMatched:
+    use: proof only
+    emitted_by: protocol_v2_exchange
+    signature: "event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint8 side, uint256 tokenId, uint256 makerAmountFilled, uint256 takerAmountFilled)"
+    topic0: "0x174b3811690657c217184f89418266767c87e4805d09680c39fc9c031c0cab7c"
+    abi: abis/protocol-v2-exchange.json
+  protocol_v2_exchange.FeeCharged:
+    use: proof only
+    emitted_by: protocol_v2_exchange
+    signature: "event FeeCharged(address indexed receiver, uint256 amount)"
+    topic0: "0x55bb3cade9d43b798a4fe5ffdd05024b2d7870df53920673bfc7e68047cd0ab1"
+    abi: abis/protocol-v2-exchange.json
+  protocol_v2_module.PositionsSplit:
+    use: source
+    emitted_by: binary_module, neg_risk_module, combinatorial_module
+    signature: "event PositionsSplit(address indexed initiator, bytes31 indexed conditionId, address indexed recipient0, address recipient1, uint256 amount)"
+    topic0: "0xb6a6b8b17a43b07b9359dd12d304e42077eede9e672f8646144842c8604582a4"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [27, 30, 32, 43]
+    fields: >-
+      amount pUSD became amount of outcome 0 for recipient0 and amount of outcome 1 for recipient1.
+      initiator is the caller (Exchange, Router or a wallet), not always the wallet. On
+      combinatorial_module the inputs may come from the module's own balance and a recipient may be
+      the module, so a wallet's change needs the PositionManager's transfers (NOTES.md Q8).
+  protocol_v2_module.PositionsMerged:
+    use: source
+    emitted_by: binary_module, neg_risk_module, combinatorial_module
+    signature: "event PositionsMerged(address indexed initiator, bytes31 indexed conditionId, address indexed recipient, uint256 amount)"
+    topic0: "0xf233f7be4ce81130a78e8eb2fa626497586c56094d27bfec2e196471e9c60301"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [28, 33, 41, 42]
+    fields: amount of each outcome burned; recipient got amount pUSD.
+  protocol_v2_module.PositionRedeemed:
+    use: source
+    emitted_by: binary_module, neg_risk_module, combinatorial_module
+    signature: "event PositionRedeemed(address indexed initiator, uint256 indexed positionId, address indexed recipient, uint256 amount, uint256 payout)"
+    topic0: "0x4fd474b703f46b453536518b4cbc159dfbea6fd663233763d321a9bc8ccdf97f"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [34, 35]
+    fields: >-
+      amount of positionId burned, payout pUSD minted to recipient. One position (one outcome) per
+      event, unlike a CTF redemption.
+  protocol_v2_module.ResultReported:
+    use: proof only
+    emitted_by: binary_module, neg_risk_module
+    signature: "event ResultReported(address indexed resolver, bytes31 indexed conditionId, uint256[] result)"
+    topic0: "0x669c053fe14f2493990c0c90d8d2870cd45e2630b34b8a2b4f02869301987713"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [37, 38, 39]
+    note: Follows every ConditionResolved with the same result; adds only who reported it.
+  protocol_v2_module.ConditionResolved:
+    use: source
+    emitted_by: binary_module, neg_risk_module
+    signature: "event ConditionResolved(bytes31 indexed conditionId, uint256[] result)"
+    topic0: "0xe560c1a2847d4cf2e66de11fe592605556989449f38cc3ab96e2e287daa68caa"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [37, 38, 39]
+    fields: result[i] / 1,000,000 is outcome i's payout fraction; the two always sum to 1,000,000.
+  protocol_v2_module.RemainingConditionsDerivableAsNo:
+    use: source
+    emitted_by: neg_risk_module
+    signature: "event RemainingConditionsDerivableAsNo(bytes29 indexed eventId)"
+    topic0: "0x7b4e633936952f2babe4b4b548a8ccb384cdfdf1a95247fbacd18e387b490502"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [39]
+    fields: >-
+      One condition of eventId resolved YES, so every unresolved condition of it, the synthetic Other
+      included, now pays [0, 1000000] without a ConditionResolved of its own.
+  protocol_v2_module.SyntheticConditionDerivableAsYes:
+    use: source
+    emitted_by: neg_risk_module
+    signature: "event SyntheticConditionDerivableAsYes(bytes29 indexed eventId, bytes31 indexed conditionId)"
+    topic0: "0x5bea118d92630445b0b401b6883731630ed870edf2f259980efe977dfc128b36"
+    abi: abis/protocol-v2-module.json
+    fields: Every real condition of eventId resolved NO, so the synthetic Other conditionId pays [1000000, 0].
+    note: None from deploy to block 96943000 (NOTES.md, load estimate).
+  protocol_v2_module.EventPrepared:
+    use: source
+    emitted_by: neg_risk_module
+    signature: "event EventPrepared(bytes29 indexed eventId, uint256 conditionCount, bytes32 legacyEventId)"
+    topic0: "0x9bdf886b29ff2e03765aa003845c79f3700b39f9628db119aeeaac5d0fd73306"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [36]
+    note: Only for a NegRiskAdapter market registered for migration. Native V2 events emit nothing.
+  protocol_v2_module.MigrationConditionRegistered:
+    use: source
+    emitted_by: binary_module, neg_risk_module
+    signature: "event MigrationConditionRegistered(bytes31 indexed v2ConditionId, bytes32 indexed legacyConditionId)"
+    topic0: "0x0da49435dfd3b856758ee0b1a2500f1e8062fed24dd654594af9fa163cc5bcb4"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [36, 40]
+    fields: Links a V2 condition to the ConditionalTokens condition it mirrors.
+  protocol_v2_module.PositionMigrated:
+    use: source
+    emitted_by: binary_module, neg_risk_module
+    signature: "event PositionMigrated(address indexed from, bytes31 indexed conditionId, uint256 indexed positionId, uint256 outcomeIndex, uint256 amount)"
+    topic0: "0xe8d329e97d555e1e9d0da49d3b12d41a966458eee02ff4c869e54c6711d7c80b"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [40]
+    fields: >-
+      from gave amount of the legacy CTF position (outcome outcomeIndex of the registered legacy
+      condition) and got amount of positionId. No cash moves.
+  protocol_v2_module.MigrationResolved:
+    use: proof only
+    emitted_by: binary_module, neg_risk_module
+    signature: "event MigrationResolved(bytes31 indexed conditionId, bytes32 indexed legacyConditionId, uint256 legacyPayout0, uint256 legacyPayout1, uint256 result0, uint256 result1)"
+    topic0: "0xf87100968b0fe70751acf87590ffac515231c5b999cba36e6820c7d312dcc8af"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [38, 39]
+  protocol_v2_module.LegacyCollateralSettled:
+    use: proof only
+    emitted_by: binary_module, neg_risk_module
+    signature: "event LegacyCollateralSettled(address indexed legacyToken, address indexed vault, uint256 amount)"
+    topic0: "0x7a07cc3efaf017520e4ad55e66052f0398632c810a3fab73e58e4c7050746825"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [23]
+  protocol_v2_module.HorizontalSplit:
+    use: source
+    emitted_by: neg_risk_module
+    signature: "event HorizontalSplit(address indexed initiator, bytes29 indexed eventId, address indexed recipient, uint256 amount)"
+    topic0: "0x9dbee20759d31417e9b0d739e07904f87139522ce89cf2f6ad78e299067674ce"
+    abi: abis/protocol-v2-module.json
+    fields: amount pUSD became amount YES of every condition of eventId, the synthetic Other included.
+  protocol_v2_module.HorizontalMerge:
+    use: source
+    emitted_by: neg_risk_module
+    signature: "event HorizontalMerge(address indexed initiator, bytes29 indexed eventId, address indexed recipient, uint256 amount)"
+    topic0: "0xbfdd473162148936b92fc229a1d66bcded27968d61ec543cbd86b433fd2d7b4b"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.PositionConverted:
+    use: source
+    emitted_by: neg_risk_module
+    signature: "event PositionConverted(address indexed initiator, bytes29 indexed eventId, address indexed recipient, uint256 conditionIndex, uint256 amount)"
+    topic0: "0x975e919c2cacb75b8a9fc78ddf455a5211812df2f388c877c8d3adfe156e2779"
+    abi: abis/protocol-v2-module.json
+    fields: >-
+      Burns amount NO of condition conditionIndex and mints amount YES of every other condition of
+      eventId, the synthetic Other included. No fee and no cash, unlike neg_risk.PositionsConverted.
+  protocol_v2_module.BridgePositionMinted:
+    use: count only
+    emitted_by: binary_module, neg_risk_module
+    signature: "event BridgePositionMinted(address indexed to, uint256 indexed positionId, uint256 amount)"
+    topic0: "0xd310e554d3fd5335d0aca4ef77d4859f65a3e728008329aef6db44ebaf78f1e1"
+    abi: abis/protocol-v2-module.json
+    note: The cross-chain bridge's mint, not migration. None from deploy to block 96943000.
+  protocol_v2_module.BridgePositionsBurned:
+    use: count only
+    emitted_by: binary_module, neg_risk_module
+    signature: "event BridgePositionsBurned(uint256[] positionIds, uint256[] amounts)"
+    topic0: "0x06735e2794e58fa40f90f6d752f9a94f47d33c04a1128e995673886ec726c3ae"
+    abi: abis/protocol-v2-module.json
+    note: None from deploy to block 96943000.
+  protocol_v2_module.CombinatorialConditionPrepared:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event CombinatorialConditionPrepared(bytes31 indexed conditionId, uint256[] legs)"
+    topic0: "0x51c89d7ee51515f7235e928930da7f81be08212bc14870a6a37c64744492db96"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [30, 40]
+    fields: legs are the binary or neg-risk V2 position ids the parlay's YES needs, in ascending order.
+  protocol_v2_module.SplitOnCondition:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event SplitOnCondition(address indexed user, bytes31 indexed parentConditionId, bytes31 childYesConditionId, bytes31 childNoConditionId, address recipient0, address recipient1, uint256 amount)"
+    topic0: "0x1a07698f7dd85df4924787e65bad71fa08c54c04700b09c8c648c6e797540202"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [41]
+  protocol_v2_module.MergedOnCondition:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event MergedOnCondition(address indexed user, bytes31 indexed parentConditionId, bytes31 childYesConditionId, bytes31 childNoConditionId, address recipient, uint256 amount)"
+    topic0: "0x532e91b101b4cdffc29d79b6ca1f3ae8690d4846c75145039161f4a22c55019a"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.SplitOnEvent:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event SplitOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, address[] recipients, uint256 amount)"
+    topic0: "0x24ddc4002a06123a2abb28bb44889b496299eac2a85e9ccf87514396dda1d063"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.MergedOnEvent:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event MergedOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, address recipient, uint256 amount)"
+    topic0: "0xb219258fc090ae084a29f0659e7e2947568de5694939da14181645a55f03f870"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.ConvertedOnEvent:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event ConvertedOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, uint256 conditionIndex, address[] recipients, uint256 amount)"
+    topic0: "0x93d226ffc1c7cc4176213b47c5966043f735f6d3c3e5c092fd619ff1fe5d3bd3"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.Extracted:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Extracted(address indexed user, bytes31 indexed fullConditionId, bytes31 reducedConditionId, bytes31 residualConditionId, address recipient0, address recipient1, uint256 amount)"
+    topic0: "0x6c14fdbd417e901138c803349c26df1115726b468ebc6142d39f7b9aef7f17fe"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.Injected:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Injected(address indexed user, bytes31 indexed fullConditionId, bytes31 reducedConditionId, bytes31 residualConditionId, address recipient, uint256 amount)"
+    topic0: "0xbb32ee0762f37f8b1ace698804f2f31be362ada55b233e359de04fefd164819f"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.ConvertedToYesBasket:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event ConvertedToYesBasket(address indexed user, bytes31 indexed fullConditionId, address[] recipients, uint256 amount)"
+    topic0: "0x348359e703372b7a9511e430c7e4db280578fb31a773e6c075ef7328cec34da6"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.MergedFromYesBasket:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event MergedFromYesBasket(address indexed user, bytes31 indexed fullConditionId, address recipient, uint256 amount)"
+    topic0: "0x09e4439e8186f011e12eb04a93f9d5477f79e7479375c8108d5e38e234a84ff6"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.Compressed:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Compressed(address indexed user, uint256 indexed oldPositionId, uint256 indexed newPositionId, address recipient, uint256 amount, uint256 positionAmount, uint256 collateralOut)"
+    topic0: "0x43f975db4a407bc85816b44922ab015dc6b990ead8d39099398c03a258e70bce"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_module.Wrapped:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Wrapped(address indexed user, uint256 underlyingPositionId, uint256 combinatorialPositionId, address recipient, uint256 amount)"
+    topic0: "0xee943741871b99130d74367c491afe27aa9324108e10ae51d0a8f9e8cd9f9eff"
+    abi: abis/protocol-v2-module.json
+    proof_rows: [40, 41]
+    fields: Burns amount of a binary or neg-risk position and mints amount YES of the one-leg parlay over it.
+    trap: Not pUSD's Wrapped (different topic0). Filter by emitting address.
+  protocol_v2_module.Unwrapped:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Unwrapped(address indexed user, uint256 combinatorialPositionId, uint256 underlyingPositionId, address recipient, uint256 amount)"
+    topic0: "0x49c5e71a70e54b164c70c3345b2f3ca11fbad1c05a76146be4c4e849f992658b"
+    abi: abis/protocol-v2-module.json
+  protocol_v2_combinatorial_v1.SplitOnCondition:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event SplitOnCondition(address indexed user, bytes31 indexed parentConditionId, bytes31 childYesConditionId, bytes31 childNoConditionId, uint256 amount)"
+    topic0: "0xc4747d3c92aa806d6d6d728fc217e20d7d226b1d13f4f38f21cc08959a1022e3"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.MergedOnCondition:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event MergedOnCondition(address indexed user, bytes31 indexed parentConditionId, bytes31 childYesConditionId, bytes31 childNoConditionId, uint256 amount)"
+    topic0: "0x24b452926426e8eae480fccf2819ab5f2dc9a1c716051f56254daeba45c91193"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.ConvertedOnEvent:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event ConvertedOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, uint256 conditionIndex, uint256 amount)"
+    topic0: "0x7d00ad31c6bffc3d728f3f5f452bfa0d3aed78a0da14e332a797b236d82a8260"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.Extracted:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Extracted(address indexed user, bytes31 indexed fullConditionId, bytes31 reducedConditionId, bytes31 residualConditionId, uint256 amount)"
+    topic0: "0xa9f051bec58e54c1f4912413ddd9f2e0a1518864f1d91c9bc08ebaf89e7f6628"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    proof_rows: [42]
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.Injected:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Injected(address indexed user, bytes31 indexed fullConditionId, bytes31 reducedConditionId, bytes31 residualConditionId, uint256 amount)"
+    topic0: "0x6e48dd0f4ee5ab61383baf3647ded82eb77748c1c8b83d5ed5aad6a343ac8818"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.ConvertedToYesBasket:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event ConvertedToYesBasket(address indexed user, bytes31 indexed fullConditionId, uint256 amount)"
+    topic0: "0xee4d03c83d901973444c4c53893b11ead86e3ba346a1306a43e3dfcdabb3ca71"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.MergedFromYesBasket:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event MergedFromYesBasket(address indexed user, bytes31 indexed fullConditionId, uint256 amount)"
+    topic0: "0xdf69c86c64c26c9c414584e0257361580ee772af35f4adb6de01c67f19479fcf"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.Compressed:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Compressed(address indexed user, uint256 indexed oldPositionId, uint256 indexed newPositionId, uint256 amount, uint256 positionAmount, uint256 collateralOut)"
+    topic0: "0x15689bef3c8f54b3802431bb1385b57cbd5719f6252a6f8951b0b99a886aec53"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.Wrapped:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Wrapped(address indexed user, uint256 underlyingPositionId, uint256 combinatorialPositionId, uint256 amount)"
+    topic0: "0x0bf848ea08b9ef096e9f3a682c4c34c75db6757c68741e352562d958deefff0f"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.Unwrapped:
+    use: source
+    emitted_by: combinatorial_module
+    signature: "event Unwrapped(address indexed user, uint256 combinatorialPositionId, uint256 underlyingPositionId, uint256 amount)"
+    topic0: "0xd8da05482e470c7492871d0f4b02d554a7e1a9c41d5d1a15c56a654e5c5aa436"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      The shape combinatorial_module emitted before block 93452332 (implementations
+      0xb529b2430d78868422c47934d9d61cc9d0c53dbb, 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2). It has no recipient fields: the outputs went where
+      the caller said, so only the PositionManager's transfers name the wallet (NOTES.md Q8, row 42).
+  protocol_v2_combinatorial_v1.SplitOnEvent:
+    use: count only
+    emitted_by: combinatorial_module
+    signature: "event SplitOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, uint256 amount)"
+    topic0: "0xa28651a0a46029826e32a3681505bbbc3470dce34495083c5fc801163ce5764f"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      Declared by implementations 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2; none emitted from deploy to block 96943000.
+  protocol_v2_combinatorial_v1.MergedOnEvent:
+    use: count only
+    emitted_by: combinatorial_module
+    signature: "event MergedOnEvent(address indexed user, bytes31 indexed parentConditionId, bytes29 indexed eventId, uint256 amount)"
+    topic0: "0x61934c0c9a86a3603c9b5f41b02f7b589ca08d13bb3a9bb7c7e45bf820637b01"
+    abi: abis/protocol-v2-combinatorial-v1.json
+    note: >-
+      Declared by implementations 0x03cc063e6f9552e3842136538092134edc8962de and
+      0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2; none emitted from deploy to block 96943000.
+  auto_redeemer.Redemption:
+    use: source
+    emitted_by: auto_redeemer
+    signature: "event Redemption(address indexed from, uint256 indexed positionId, uint256 payout)"
+    topic0: "0xeebddeddf4ae1ee54a48517af27958e7666d69c7ba2e3e7c2b0ff87ef5f4491e"
+    abi: abis/auto-redeemer.json
+    proof_rows: [35]
+    fields: >-
+      The user the AutoRedeemer redeemed a V2 position for, and the pUSD paid. The amount burned is
+      the user's whole balance, in the module's PositionRedeemed just before it in the same tx.
+  router.RouterPositionSplit:
+    use: proof only
+    emitted_by: router
+    signature: "event RouterPositionSplit(address indexed initiator, bytes31 indexed conditionId, uint256 amount)"
+    topic0: "0x04373eecd7397b9318ae470769098aaab46f432620d95b0d84fc2297a415704c"
+    abi: null
+    abi_source: RouterEvents in src/routers/Router.sol at 741f8bbe88; the Sourcify-verified Router implementation declares the same.
+    proof_rows: [32]
+  router.RouterPositionsMerged:
+    use: proof only
+    emitted_by: router
+    signature: "event RouterPositionsMerged(address indexed initiator, bytes31 indexed conditionId, uint256 amount)"
+    topic0: "0x8eb905ea8eb4589289705df45fe31e6d4a35385a223b60c259691cc86dbfb982"
+    abi: null
+    abi_source: As router.RouterPositionSplit.
+    proof_rows: [33]
+  router.RouterPositionRedeemed:
+    use: proof only
+    emitted_by: router
+    signature: "event RouterPositionRedeemed(address indexed initiator, uint256 indexed positionId, uint256 amount)"
+    topic0: "0x81b466b1b365aea7f5664f9a2d8b3a8591d3244acffb5134355ad4da7fe2366a"
+    abi: null
+    abi_source: As router.RouterPositionSplit.
+    proof_rows: [34]
+  position_manager.TransferSingle:
+    use: proof only
+    emitted_by: position_manager
+    signature: "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 amount)"
+    topic0: "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62"
+    abi: null
+    abi_source: Solady ERC1155 in the Sourcify-verified PositionManager implementation.
+    note: >-
+      Same topic0 as ctf.TransferSingle. Not loaded; proof rows use it. A wallet's parlay changes
+      can only be read from these and position_manager.TransferBatch (NOTES.md Q8).
+  position_manager.TransferBatch:
+    use: proof only
+    emitted_by: position_manager
+    signature: "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] amounts)"
+    topic0: "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
+    abi: null
+    abi_source: As position_manager.TransferSingle.
+    note: Same topic0 as ctf.TransferBatch. Not loaded; proof rows use it.
+abi_sources:
+  abis/conditional-tokens.json: >-
+    The event entries of artifacts/ConditionalTokens.json in Polymarket/ctf-exchange-v2 at ccc0596074.
+  abis/neg-risk-adapter.json: >-
+    The event entries of artifacts/NegRiskAdapter.json in Polymarket/ctf-exchange-v2 at ccc0596074.
+    They match the event declarations in neg-risk-ctf-adapter src/NegRiskAdapter.sol.
+  abis/ctf-exchange-v2.json: >-
+    OrderFilled, OrdersMatched and FeeCharged from exchangeV2Abi in Polymarket/clob-client-v2
+    src/order-utils/abi/ExchangeV2.ts at 27633b3c7d. They match ITrading.sol and Events.sol in
+    ctf-exchange-v2.
+  abis/collateral-adapter.json: >-
+    The four position events of the Sourcify-verified NegRiskCtfCollateralAdapter at
+    0xadA2005600Dec949baf300f4C6120000bDB6eAab. The verified CtfCollateralAdapter at
+    0xAdA100Db00Ca00073811820692005400218FcE1f declares the first three with the same topic0s.
+  abis/auto-redeemer.json: >-
+    BinaryRedemption and NegRiskRedemption of the Sourcify-verified CtfAutoRedeem at
+    0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0. The verified AutoRedeemer implementation
+    0x64860bFD14fCcaAc09cd36f347784a9616AfB66C declares the same two events, plus Redemption, the
+    third entry, copied from it.
+  abis/protocol-v2-exchange.json: >-
+    OrderFilled, OrdersMatched and FeeCharged of the Sourcify-verified MigratableExchange
+    implementation 0x862f1cff1bd6246a2585e3622137e6f961b34e55. They match the declarations in
+    src/exchange/Exchange.sol of polymarket-v2-external at 741f8bbe88, and abis/ctf-exchange-v2.json.
+  abis/protocol-v2-combinatorial-v1.json: >-
+    The twelve parlay events whose shape changed at block 93452332, from the Sourcify-verified
+    CombinatorialModule implementation 0x572cd48cce93b2e58f1cc0253a7fdd4b4952a9c2. The earlier
+    verified implementations 0xb529b2430d78868422c47934d9d61cc9d0c53dbb and
+    0x03cc063e6f9552e3842136538092134edc8962de declare the same (the first lacks ConvertedOnEvent,
+    SplitOnEvent and MergedOnEvent).
+  abis/protocol-v2-module.json: >-
+    The position, resolution and migration events of the Sourcify-verified NegRiskModule
+    implementation 0xc4a3a6492df0d23f9fd1cfcd328dd10dbd5943b6 (17) and the parlay events of the
+    verified CombinatorialModule implementation 0xf96968a44022B17240B42c557693E7C383d2d8a3 (13).
+    Both match polymarket-v2-external at 741f8bbe88 (BaseModule.sol, BaseMigrationMixin.sol,
+    NegRiskModule.sol, CombinatorialModule.sol), where ConditionId is bytes31, EventId bytes29 and
+    PositionId uint256. The current BinaryModule implementation is not verified; every topic0 it
+    emitted from deploy to block 96943000 is in this file.

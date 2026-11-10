@@ -1,0 +1,406 @@
+version: 2
+
+models:
+  - name: polymarket_markets
+    description: >-
+      One row per Polymarket market: a condition of a Gamma v1 market, with Gamma's names, its payouts
+      once resolved, and whether the sources hold its whole history.
+    columns:
+      - name: condition_id
+        description: The market's condition in ConditionalTokens.
+        data_tests: [unique, not_null]
+      - name: market_id
+        description: Gamma's market id.
+        data_tests: [not_null]
+      - name: question
+        description: Gamma's question.
+      - name: slug
+        description: Gamma's slug for the market.
+      - name: event_id
+        description: Gamma's event id. A neg-risk event holds several markets.
+      - name: event_title
+        description: Gamma's title for the event.
+      - name: neg_risk
+        description: True when the market belongs to a neg-risk event.
+      - name: protocol
+        description: ctf, for markets that settle in ConditionalTokens.
+      - name: outcomes
+        description: Gamma's outcome names, in outcome_index order.
+      - name: end_date
+        description: When Gamma says the market ends.
+      - name: prepared_block
+        description: The block of the ConditionPreparation log; null when that came before the window.
+      - name: resolved_at
+        description: When the condition resolved; null until then.
+      - name: payout_fractions
+        description: The pUSD one token of each outcome redeems for, in outcome_index order; null until resolved.
+      - name: history_complete
+        description: >-
+          True when the condition was prepared at or after the coverage start, the greatest of each Polygon
+          Polymarket raw table's lowest block. Its charts and PnL are then whole.
+        data_tests: [not_null]
+
+  - name: polymarket_trades
+    description: >-
+      One row per maker-order fill, the tick chart. shares are outcome tokens; usdc and fee_usdc are pUSD,
+      usdc before fees; price is usdc / shares, in pUSD per share.
+    columns:
+      - name: id
+        description: The OrderFilled log's key from the raw table.
+        data_tests: [unique, not_null]
+      - name: version
+        description: The exchange version that filled the order.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ctf_exchange_v2]
+      - name: exchange
+        description: The exchange contract that emitted the fill.
+        data_tests: [not_null]
+      - name: block_number
+        description: The block the fill was in.
+        data_tests: [not_null]
+      - name: block_timestamp
+        description: When that block was mined.
+      - name: tx_hash
+        description: The transaction the fill was in.
+      - name: log_index
+        description: The fill's position in that block's logs.
+      - name: condition_id
+        description: The market the token belongs to.
+        data_tests: [not_null]
+      - name: token_id
+        description: The outcome token traded.
+        data_tests: [not_null]
+      - name: outcome
+        description: Gamma's name for the token's outcome.
+      - name: maker
+        description: The maker order's owner, the proxy wallet or Safe that Polymarket shows as the trader.
+        data_tests: [not_null]
+      - name: taker
+        description: The taker order's owner.
+      - name: maker_side
+        description: buy or sell, for the maker.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [buy, sell]
+      - name: shares
+        description: Outcome tokens traded.
+      - name: usdc
+        description: pUSD paid or received, before fees.
+      - name: price
+        description: usdc / shares, in pUSD per share.
+      - name: fee_usdc
+        description: The maker's fee in pUSD.
+
+  - name: polymarket_price_candles
+    description: >-
+      One row per outcome token and minute, the price chart in 1-minute OHLC. Prices are pUSD per share. A
+      trade of one outcome of a two-outcome market also prices the other at 1 - price. trades and the
+      volumes count only the token's own trades.
+    columns:
+      - name: token_id
+        description: The outcome token.
+        data_tests: [not_null]
+      - name: minute
+        description: The minute the candle covers, from its start.
+        data_tests: [not_null]
+      - name: condition_id
+        description: The market the token belongs to.
+        data_tests: [not_null]
+      - name: outcome
+        description: Gamma's name for the token's outcome.
+      - name: open
+        description: The minute's first price.
+        data_tests: [not_null]
+      - name: high
+        description: The minute's highest price.
+        data_tests: [not_null]
+      - name: low
+        description: The minute's lowest price.
+        data_tests: [not_null]
+      - name: close
+        description: The minute's last price.
+        data_tests: [not_null]
+      - name: trades
+        description: The token's own trades in the minute; 0 when only the other outcome traded.
+        data_tests: [not_null]
+      - name: shares_volume
+        description: Shares of the token traded in the minute.
+        data_tests: [not_null]
+      - name: usdc_volume
+        description: pUSD paid for them, before fees.
+        data_tests: [not_null]
+
+  - name: polymarket_market_participants
+    description: >-
+      One row per market and wallet: every wallet that traded, split, merged, redeemed or converted in the
+      market, with its PnL in pUSD. pnl_usdc is the cash it got, after fees, plus what its shares are worth.
+    columns:
+      - name: condition_id
+        description: The market.
+        data_tests: [not_null]
+      - name: wallet
+        description: The proxy wallet or Safe that Polymarket shows as the trader.
+        data_tests: [not_null]
+      - name: trades
+        description: The wallet's fills in the market, as the maker of either order.
+        data_tests: [not_null]
+      - name: buy_usdc
+        description: pUSD the wallet paid for shares, before fees.
+        data_tests: [not_null]
+      - name: sell_usdc
+        description: pUSD the wallet got for shares, before fees.
+        data_tests: [not_null]
+      - name: fees_usdc
+        description: Fees the wallet paid on its fills, in pUSD.
+        data_tests: [not_null]
+      - name: net_cash_usdc
+        description: Cash the wallet got, less cash it paid, from trades, splits, merges, redemptions and conversions, after fees.
+        data_tests: [not_null]
+      - name: open_shares
+        description: Shares the wallet still holds, over all the market's outcomes.
+        data_tests: [not_null]
+      - name: position_value_usdc
+        description: >-
+          What those shares are worth: each outcome's shares times its payout fraction once resolved, else
+          the close of its last candle. Null when a held outcome has no price.
+      - name: pnl_usdc
+        description: net_cash_usdc + position_value_usdc; null when position_value_usdc is.
+      - name: first_activity_at
+        description: The wallet's first move in the market.
+      - name: last_activity_at
+        description: The wallet's last move in the market.
+      - name: resolved
+        description: True when the market has resolved.
+        data_tests: [not_null]
+      - name: history_complete
+        description: The market's history_complete; when false, PnL misses what happened before the window.
+        data_tests: [not_null]
+
+unit_tests:
+  - name: trades_keep_maker_fills_only
+    description: >-
+      Proof row 1, Gamma market 6764891 (XRP Up or Down, Nov 7 6:30-6:35PM ET): the maker sells 5.106383
+      Down for 4.8 pUSD; the taker order's own fill repeats the same trade and stays out.
+    model: polymarket_trades
+    given:
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows:
+          - {id: "96926000:403", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 403, wallet: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", counterparty: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", is_taker_order: false, token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", side: sell, shares: "5.106383", usdc: "4.800000", fee_usdc: "0.000000", price: "0.93999999608333334965"}
+          - {id: "96926000:405", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 405, wallet: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", counterparty: "0xe111180000d2663c0091e4f400237545b87b996b", is_taker_order: true, token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", side: buy, shares: "5.106383", usdc: "4.800000", fee_usdc: "0.020160", price: "0.93999999608333334965"}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 0, outcome: Up, complement_token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", market_id: "6764891", event_id: "1328154", neg_risk: false, protocol: ctf}
+          - {token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 1, outcome: Down, complement_token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285", market_id: "6764891", event_id: "1328154", neg_risk: false, protocol: ctf}
+    expect:
+      rows:
+        - {id: "96926000:403", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 403, condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", outcome: Down, maker: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", taker: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", maker_side: sell, shares: "5.106383", usdc: "4.800000", price: "0.93999999608333334965", fee_usdc: "0.000000"}
+
+  - name: a_no_trade_also_prices_yes
+    description: >-
+      Made up: YES trades at 0.68, then NO at 0.30 in the same minute, so YES closes at 0.70 and NO opens
+      at 0.32. In the next minute only NO trades, at 0.25: YES gets a candle at 0.75 with no trades and
+      no volume.
+    model: polymarket_price_candles
+    given:
+      - input: ref('polymarket_trades')
+        rows:
+          - {id: "1:1", block_number: 1, log_index: 1, block_timestamp: "2026-11-07 12:00:05+00", token_id: 1, shares: 10, usdc: "6.8", price: "0.68"}
+          - {id: "2:3", block_number: 2, log_index: 3, block_timestamp: "2026-11-07 12:00:30+00", token_id: 2, shares: 20, usdc: 6, price: "0.30"}
+          - {id: "3:1", block_number: 3, log_index: 1, block_timestamp: "2026-11-07 12:01:10+00", token_id: 2, shares: 4, usdc: 1, price: "0.25"}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: 1, condition_id: "0xc1", outcome_index: 0, outcome: "Yes", complement_token_id: 2}
+          - {token_id: 2, condition_id: "0xc1", outcome_index: 1, outcome: "No", complement_token_id: 1}
+    expect:
+      rows:
+        - {token_id: 1, minute: "2026-11-07 12:00:00+00", condition_id: "0xc1", outcome: "Yes", open: "0.68", high: "0.70", low: "0.68", close: "0.70", trades: 1, shares_volume: 10, usdc_volume: "6.8"}
+        - {token_id: 2, minute: "2026-11-07 12:00:00+00", condition_id: "0xc1", outcome: "No", open: "0.32", high: "0.32", low: "0.30", close: "0.30", trades: 1, shares_volume: 20, usdc_volume: 6}
+        - {token_id: 1, minute: "2026-11-07 12:01:00+00", condition_id: "0xc1", outcome: "Yes", open: "0.75", high: "0.75", low: "0.75", close: "0.75", trades: 0, shares_volume: 0, usdc_volume: 0}
+        - {token_id: 2, minute: "2026-11-07 12:01:00+00", condition_id: "0xc1", outcome: "No", open: "0.25", high: "0.25", low: "0.25", close: "0.25", trades: 1, shares_volume: 4, usdc_volume: 1}
+
+  - name: pnl_of_a_resolved_market
+    description: >-
+      Made up: a wallet buys 100 YES at 0.40, sells 40 at 0.55, and the market resolves YES with 60 not
+      redeemed. Cash is -40 + 22 = -18, the 60 shares are worth 60, and PnL is 42. The last candle's 0.55
+      does not count once the market resolved.
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:1", block_number: 100, log_index: 1, block_timestamp: "2026-10-10 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 100, usdc_delta: -40, fee_usdc: 0, zeroes_position: false}
+          - {id: "200:1", block_number: 200, log_index: 1, block_timestamp: "2026-10-11 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: -40, usdc_delta: 22, fee_usdc: 0, zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: &resolved_yes
+          select '0xc1' as condition_id, '2026-10-12 10:00:00+00'::timestamptz as resolved_at,
+              array[1, 0]::numeric[] as payout_fractions, true as history_complete
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: &yes_no_tokens
+          - {token_id: 1, condition_id: "0xc1", outcome_index: 0}
+          - {token_id: 2, condition_id: "0xc1", outcome_index: 1}
+      - input: ref('polymarket_price_candles')
+        rows: &last_trade_candle
+          - {token_id: 1, minute: "2026-10-11 10:00:00+00", close: "0.55"}
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 2, buy_usdc: 40, sell_usdc: 22, fees_usdc: 0, net_cash_usdc: -18, open_shares: 60, position_value_usdc: 60, pnl_usdc: 42, first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-11 10:00:00+00", resolved: true, history_complete: true}
+
+  - name: pnl_after_redemption_counts_cash_only
+    description: >-
+      The wallet of pnl_of_a_resolved_market redeems through ConditionalTokens, which names no shares and
+      burns the whole balance of both outcomes. It gets 60 in cash and holds nothing: the position is worth
+      0 and PnL stays 42.
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:1", block_number: 100, log_index: 1, block_timestamp: "2026-10-10 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 100, usdc_delta: -40, fee_usdc: 0, zeroes_position: false}
+          - {id: "200:1", block_number: 200, log_index: 1, block_timestamp: "2026-10-11 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: -40, usdc_delta: 22, fee_usdc: 0, zeroes_position: false}
+          - {id: "300:7:1", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "300:7:2", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "300:7:cash", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: 60, fee_usdc: null, zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: *resolved_yes
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: *yes_no_tokens
+      - input: ref('polymarket_price_candles')
+        rows: *last_trade_candle
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 2, buy_usdc: 40, sell_usdc: 22, fees_usdc: 0, net_cash_usdc: 42, open_shares: 0, position_value_usdc: 0, pnl_usdc: 42, first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-13 10:00:00+00", resolved: true, history_complete: true}
+
+  - name: only_shares_gained_after_a_redemption_count
+    description: >-
+      The wallet of pnl_after_redemption_counts_cash_only redeems, then splits 5 more (made up). It holds
+      only the 5 YES and 5 NO it gained after the redemption, not the 60 YES it held before: cash is
+      -18 + 60 - 5 = 37, the shares are worth 5, and PnL stays 42 (progress R32).
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:1", block_number: 100, log_index: 1, block_timestamp: "2026-10-10 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 100, usdc_delta: -40, fee_usdc: 0, zeroes_position: false}
+          - {id: "200:1", block_number: 200, log_index: 1, block_timestamp: "2026-10-11 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: -40, usdc_delta: 22, fee_usdc: 0, zeroes_position: false}
+          - {id: "300:7:1", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "300:7:2", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "300:7:cash", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: 60, fee_usdc: null, zeroes_position: false}
+          # Made up: a split after the redemption.
+          - {id: "400:3:1", block_number: 400, log_index: 3, block_timestamp: "2026-10-14 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 5, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "400:3:2", block_number: 400, log_index: 3, block_timestamp: "2026-10-14 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: 5, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "400:3:cash", block_number: 400, log_index: 3, block_timestamp: "2026-10-14 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: -5, fee_usdc: null, zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: *resolved_yes
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: *yes_no_tokens
+      - input: ref('polymarket_price_candles')
+        rows: *last_trade_candle
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 2, buy_usdc: 40, sell_usdc: 22, fees_usdc: 0, net_cash_usdc: 37, open_shares: 10, position_value_usdc: 5, pnl_usdc: 42, first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-14 10:00:00+00", resolved: true, history_complete: true}
+
+  - name: an_open_market_marks_at_its_last_close
+    description: >-
+      Made up. Before resolution the wallet of pnl_of_a_resolved_market marks its 60 YES at the close of
+      YES's last candle, 0.50; with a fee of 0.10 on the buy, PnL is -18.1 + 30 = 11.9. In a market where
+      only YES has a candle, a wallet that split 10 holds NO with no price, so its PnL is null, not -10 + 6;
+      a wallet that split and merged holds nothing and has PnL 0.
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:1", block_number: 100, log_index: 1, block_timestamp: "2026-10-10 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 100, usdc_delta: "-40.1", fee_usdc: "0.1", zeroes_position: false}
+          - {id: "200:1", block_number: 200, log_index: 1, block_timestamp: "2026-10-11 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: -40, usdc_delta: 22, fee_usdc: 0, zeroes_position: false}
+          - {id: "110:2:3", block_number: 110, log_index: 2, block_timestamp: "2026-10-10 11:00:00+00", kind: split, wallet: "0xbb", condition_id: "0xc2", token_id: 3, shares_delta: 10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "110:2:4", block_number: 110, log_index: 2, block_timestamp: "2026-10-10 11:00:00+00", kind: split, wallet: "0xbb", condition_id: "0xc2", token_id: 4, shares_delta: 10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "110:2:cash", block_number: 110, log_index: 2, block_timestamp: "2026-10-10 11:00:00+00", kind: split, wallet: "0xbb", condition_id: "0xc2", token_id: null, shares_delta: null, usdc_delta: -10, fee_usdc: null, zeroes_position: false}
+          - {id: "120:2:3", block_number: 120, log_index: 2, block_timestamp: "2026-10-10 12:00:00+00", kind: split, wallet: "0xcc", condition_id: "0xc2", token_id: 3, shares_delta: 10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "120:2:4", block_number: 120, log_index: 2, block_timestamp: "2026-10-10 12:00:00+00", kind: split, wallet: "0xcc", condition_id: "0xc2", token_id: 4, shares_delta: 10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "120:2:cash", block_number: 120, log_index: 2, block_timestamp: "2026-10-10 12:00:00+00", kind: split, wallet: "0xcc", condition_id: "0xc2", token_id: null, shares_delta: null, usdc_delta: -10, fee_usdc: null, zeroes_position: false}
+          - {id: "130:5:3", block_number: 130, log_index: 5, block_timestamp: "2026-10-10 13:00:00+00", kind: merge, wallet: "0xcc", condition_id: "0xc2", token_id: 3, shares_delta: -10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "130:5:4", block_number: 130, log_index: 5, block_timestamp: "2026-10-10 13:00:00+00", kind: merge, wallet: "0xcc", condition_id: "0xc2", token_id: 4, shares_delta: -10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "130:5:cash", block_number: 130, log_index: 5, block_timestamp: "2026-10-10 13:00:00+00", kind: merge, wallet: "0xcc", condition_id: "0xc2", token_id: null, shares_delta: null, usdc_delta: 10, fee_usdc: null, zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: |
+          select '0xc1' as condition_id, null::timestamptz as resolved_at, null::numeric[] as payout_fractions, true as history_complete
+          union all
+          select '0xc2', null, null, false
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: 1, condition_id: "0xc1", outcome_index: 0}
+          - {token_id: 2, condition_id: "0xc1", outcome_index: 1}
+          - {token_id: 3, condition_id: "0xc2", outcome_index: 0}
+          - {token_id: 4, condition_id: "0xc2", outcome_index: 1}
+      - input: ref('polymarket_price_candles')
+        rows:
+          - {token_id: 1, minute: "2026-10-11 10:00:00+00", close: "0.55"}
+          - {token_id: 1, minute: "2026-10-11 10:05:00+00", close: "0.50"}
+          - {token_id: 2, minute: "2026-10-11 10:06:00+00", close: "0.45"}
+          - {token_id: 3, minute: "2026-10-10 11:30:00+00", close: "0.60"}
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 2, buy_usdc: "40.0", sell_usdc: 22, fees_usdc: "0.1", net_cash_usdc: "-18.1", open_shares: 60, position_value_usdc: "30.00", pnl_usdc: "11.90", first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-11 10:00:00+00", resolved: false, history_complete: true}
+        - {condition_id: "0xc2", wallet: "0xbb", trades: 0, buy_usdc: 0, sell_usdc: 0, fees_usdc: 0, net_cash_usdc: -10, open_shares: 20, position_value_usdc: null, pnl_usdc: null, first_activity_at: "2026-10-10 11:00:00+00", last_activity_at: "2026-10-10 11:00:00+00", resolved: false, history_complete: false}
+        - {condition_id: "0xc2", wallet: "0xcc", trades: 0, buy_usdc: 0, sell_usdc: 0, fees_usdc: 0, net_cash_usdc: 0, open_shares: 0, position_value_usdc: 0, pnl_usdc: 0, first_activity_at: "2026-10-10 12:00:00+00", last_activity_at: "2026-10-10 13:00:00+00", resolved: false, history_complete: false}
+
+  - name: markets_without_a_preparation_are_incomplete
+    description: >-
+      Each market takes Gamma's names from int_polymarket_markets, and prepared_block and
+      history_complete from int_polygon_polymarket_ctf_conditions:
+      proof row 19's market (Gamma 6826443) is complete there, the made-up one is not. Proof row 20's
+      neg-risk market (Gamma 6205625) was prepared before the window, so it has no row there and is not
+      complete; it resolved NO at 96926001.
+    model: polymarket_markets
+    given:
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "97690210721343285135113880477164918849395456125491239725587863868110700451368", condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", outcome_index: 0, outcome: "Yes", market_id: "6826443", event_id: "1336094", neg_risk: false, protocol: ctf}
+          - {token_id: "64331318570952710688026624895940622574788618295500403288211305706557384277892", condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", outcome_index: 1, outcome: "No", market_id: "6826443", event_id: "1336094", neg_risk: false, protocol: ctf}
+          - {token_id: 11, condition_id: "0xaa", outcome_index: 0, outcome: "Yes", market_id: "1", event_id: "2", neg_risk: false, protocol: ctf}
+          - {token_id: 12, condition_id: "0xaa", outcome_index: 1, outcome: "No", market_id: "1", event_id: "2", neg_risk: false, protocol: ctf}
+          - {token_id: "18640736824860542941779666116822979171924696138941292601580729605723069794187", condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 0, outcome: "Yes", market_id: "6205625", event_id: "1253279", neg_risk: true, protocol: ctf}
+          - {token_id: "6736043638912433007548654670440630247988679940790306631041508691890339229986", condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 1, outcome: "No", market_id: "6205625", event_id: "1253279", neg_risk: true, protocol: ctf}
+      - input: ref('int_polymarket_markets')
+        format: sql
+        rows: |
+          select '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id, '6826443' as market_id,
+              'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
+              '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
+              false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date
+          union all
+          select '0xaa', '1', 'Made up?', 'made-up', '2', 'Made up', false, array['Yes', 'No'], '2026-10-31 00:00:00+00'
+          union all
+          select '0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac', '6205625',
+              'Exact Score: D.C. United SC 5 - 4 New York City FC?', 'mls-dcu-nyc-2026-11-07-exact-score-5-4', '1253279',
+              'D.C. United SC vs. New York City FC - Exact Score', true, array['Yes', 'No'], '2026-11-07 21:00:00+00'
+      - input: ref('int_polygon_polymarket_ctf_resolutions')
+        rows:
+          - {condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 0, payout_fraction: 0, resolved_block: 96926001, resolved_at: "2026-11-07 23:34:18+00"}
+          - {condition_id: "0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac", outcome_index: 1, payout_fraction: 1, resolved_block: 96926001, resolved_at: "2026-11-07 23:34:18+00"}
+      - input: ref('int_polygon_polymarket_ctf_conditions')
+        rows:
+          - {condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", prepared_block: 96926007, prepared_at: "2026-11-07 23:34:27+00", history_complete: true}
+          - {condition_id: "0xaa", prepared_block: 96900000, prepared_at: "2026-11-07 12:44:16+00", history_complete: false}
+    expect:
+      format: sql
+      rows: |
+        select '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id, '6826443' as market_id,
+            'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
+            '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
+            false as neg_risk, 'ctf' as protocol, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
+            96926007::bigint as prepared_block, null::timestamptz as resolved_at, null::numeric[] as payout_fractions,
+            true as history_complete
+        union all
+        select '0xaa', '1', 'Made up?', 'made-up', '2', 'Made up', false, 'ctf', array['Yes', 'No'],
+            '2026-10-31 00:00:00+00', 96900000, null, null, false
+        union all
+        select '0x683a63b988e74667692fbe974c32eb04212aa24c64e7995adf89a37b64c23fac', '6205625',
+            'Exact Score: D.C. United SC 5 - 4 New York City FC?', 'mls-dcu-nyc-2026-11-07-exact-score-5-4', '1253279',
+            'D.C. United SC vs. New York City FC - Exact Score', true, 'ctf', array['Yes', 'No'], '2026-11-07 21:00:00+00',
+            null, '2026-11-07 23:34:18+00', array[0, 1]::numeric[], false

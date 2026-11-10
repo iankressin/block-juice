@@ -28,3 +28,9 @@ test("without an API key, requests carry none", async (t) => {
   assert.equal(await finalizedHead(portalClient(url)), 42);
   assert.equal(requests[0]!["x-api-key"], undefined);
 });
+
+test("requests ask for gzip and never zstd", async (t) => {
+  const { url, requests } = await portal(t);
+  await finalizedHead(portalClient(url));
+  assert.equal(requests[0]!["accept-encoding"], "gzip");
+});

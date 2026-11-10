@@ -112,11 +112,13 @@ def address_filter(repo_root: Path, folder: Path) -> dict[str, list[str]]:
         addresses = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
         raise BadInput(f"could not read {label}: {error}") from None
-    if not isinstance(addresses, dict) or not all(
-        isinstance(values, list) and all(isinstance(value, str) for value in values) for values in addresses.values()
-    ):
-        raise BadInput(f"{label} must map each key to a list of addresses")
-    return addresses
+    if not isinstance(addresses, dict):
+        raise BadInput(f"{label} must map each key to an address or a list of addresses")
+    # A source may name one contract per key, such as polygon-polymarket-ctf's conditional_tokens.
+    lists = {key: [values] if isinstance(values, str) else values for key, values in addresses.items()}
+    if not all(isinstance(values, list) and all(isinstance(value, str) for value in values) for values in lists.values()):
+        raise BadInput(f"{label} must map each key to an address or a list of addresses")
+    return lists
 
 
 def read(repo_root: Path, name: str) -> Coverage:

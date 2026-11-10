@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: stg_polygon__polymarket_ctf
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: event
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - ctf.ConditionPreparation
+                  - ctf.ConditionResolution
+                  - ctf.PositionSplit
+                  - ctf.PositionsMerge
+                  - ctf.PayoutRedemption
+                  - neg_risk.MarketPrepared
+                  - neg_risk.QuestionPrepared
+                  - neg_risk.OutcomeReported
+                  - neg_risk.PositionSplit
+                  - neg_risk.PositionsMerge
+                  - neg_risk.PositionsConverted
+                  - neg_risk.PayoutRedemption
+                  - collateral_adapter.PositionSplit
+                  - collateral_adapter.PositionsMerged
+                  - collateral_adapter.PositionsRedeemed
+                  - collateral_adapter.PositionsConverted
+                  - auto_redeemer.BinaryRedemption
+                  - auto_redeemer.NegRiskRedemption
+
+  - name: stg_polygon__polymarket_ctf_exchange_v2
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: event
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - ctf_exchange_v2.OrderFilled
+      - name: block_number
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: contract
+        data_tests: [not_null]
+      - name: side
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
