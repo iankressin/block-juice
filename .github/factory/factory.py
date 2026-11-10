@@ -297,13 +297,48 @@ def encodings(secret: str) -> set[bytes]:
 
 def leaks(paths: list[Path], secrets: list[str]) -> list[str]:
     """The files among paths that hold a secret in any of its encodings. Trusted code runs it on the
-    files a patch produced, since masking the patch's text misses an encoded copy."""
+    files a patch produced, since masking the patch's text misses an encoded copy. A listed path that is
+    not a file is an error, not a skip: the list came from git, and a file the check cannot read is a
+    file it cannot clear."""
     forms = [form for secret in secrets if secret for form in encodings(secret)]
     found = []
     for path in paths:
-        if path.is_file() and any(form in path.read_bytes() for form in forms):
+        if not path.is_file():
+            raise Invalid(f"{path} is listed but is not a file the check can read")
+        if any(form in path.read_bytes() for form in forms):
             found.append(str(path))
     return found
+
+
+# What a factory PR never changes: the factory itself, git's own settings, and anything under .git.
+FORBIDDEN_PATH = re.compile(r"^\.github/|(^|/)\.git(attributes|modules|ignore)?$|^\.git/")
+DIFF_HEADER = re.compile(r'^diff --git (?:"a/((?:[^"\\]|\\.)*)"|a/(\S+)) (?:"b/((?:[^"\\]|\\.)*)"|b/(\S+))$')
+
+
+def patch_problems(patch: str) -> list[str]:
+    """Why a patch must not be applied: a binary file, a symlink, a mode change, a path git had to quote,
+    or a path the factory never changes. Parsed from the patch's own headers, and a header this cannot
+    read counts against the patch."""
+    problems = []
+    for line in patch.splitlines():
+        if line.startswith("GIT binary patch"):
+            problems.append("a binary file")
+        elif line.startswith(("new file mode 120000", "new mode 120000")):
+            problems.append("a symlink")
+        elif line.startswith("old mode "):
+            problems.append("a mode change")
+        elif line.startswith("diff --git "):
+            match = DIFF_HEADER.match(line)
+            if not match:
+                problems.append(f"a header this check cannot read: {line[:80]}")
+                continue
+            quoted_a, plain_a, quoted_b, plain_b = match.groups()
+            if quoted_a is not None or quoted_b is not None:
+                problems.append("a path git had to quote")
+            for path in (plain_a, plain_b):
+                if path and FORBIDDEN_PATH.search(path):
+                    problems.append(f"a file the factory never changes: {path}")
+    return sorted(set(problems))
 
 
 def scrub(folder: Path, secrets: list[str]) -> int:
@@ -403,9 +438,11 @@ def main(argv: list[str] | None = None) -> int:
     verdict_parser.add_argument("test")
     model_error_parser = commands.add_parser("model-error", help="print the error a Claude Code run ended with, from its execution log, or nothing")
     model_error_parser.add_argument("execution_file", type=Path)
-    leaks_parser = commands.add_parser("leaks", help="exit 1 and name the files listed in <list>, one path a line, that hold the value of a named environment variable in any common encoding")
+    leaks_parser = commands.add_parser("leaks", help="exit 1 and name the files listed in <list>, NUL-separated as `git diff -z` writes them, that hold the value of a named environment variable in any common encoding")
     leaks_parser.add_argument("list", type=Path)
     leaks_parser.add_argument("names", nargs="+", metavar="NAME")
+    patch_check = commands.add_parser("patch-check", help="exit 1 and say why when <patch> holds a binary file, a symlink, a mode change, a quoted path or a file the factory never changes")
+    patch_check.add_argument("patch", type=Path)
     scrub_parser = commands.add_parser("scrub", help="replace the values of the named environment variables with *** in every file under <dir>")
     scrub_parser.add_argument("dir", type=Path)
     scrub_parser.add_argument("names", nargs="+", metavar="NAME")
@@ -422,12 +459,20 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "model-error":
             output = model_error(args.execution_file)
         elif args.command == "leaks":
-            paths = [Path(line) for line in read_text(args.list).splitlines() if line.strip()]
+            if not args.list.is_file():
+                raise Invalid(f"{args.list} does not exist")
+            paths = [Path(os.fsdecode(part)) for part in args.list.read_bytes().split(b"\0") if part]
             found = leaks(paths, [os.environ.get(name, "") for name in args.names])
             if found:
                 print("a secret, or an encoding of one, is in: " + ", ".join(found), file=sys.stderr)
                 return 1
             output = f"no secret in {len(paths)} file(s)\n"
+        elif args.command == "patch-check":
+            problems = patch_problems(read_text(args.patch))
+            if problems:
+                print("; ".join(problems), file=sys.stderr)
+                return 1
+            output = "the patch changes only files the factory may change\n"
         else:
             output = f"scrubbed {scrub(args.dir, [os.environ.get(name, '') for name in args.names])} file(s) under {args.dir}\n"
     except Invalid as error:

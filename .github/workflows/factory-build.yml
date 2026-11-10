@@ -390,6 +390,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The checks below run from this copy of the default branch's glue, not from the ticket's branch.
+      - name: Keep the default branch's glue
+        id: glue
+        if: needs.work.result == 'success'
+        run: |
+          cp -R .github/factory "$RUNNER_TEMP/glue"
+          echo "dir=$RUNNER_TEMP/glue" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v4
         if: needs.work.result == 'success'
         with:
@@ -403,24 +411,28 @@ jobs:
         id: secrets
         if: needs.work.result == 'success'
         env:
+          GLUE: ${{ steps.glue.outputs.dir }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
         run: |
           cp "$RUNNER_TEMP/out/changes.patch" "$RUNNER_TEMP/changes.before"
-          python3 -I .github/factory/factory.py scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
+          python3 -I "$GLUE/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
           if ! cmp -s "$RUNNER_TEMP/changes.before" "$RUNNER_TEMP/out/changes.patch"; then
             echo "leaked=true" >> "$GITHUB_OUTPUT"
             echo "::error::the model's changes contain a secret, so nothing is pushed"
             exit 1
           fi
 
-      # A factory PR changes data files and code, never the factory itself, git's own settings or binaries,
-      # which a check cannot read. After the patch is applied, every changed file is searched for each
-      # secret and its common encodings. Either finding ends the run before anything is pushed.
+      # A factory PR changes data files and code, never the factory itself, git's own settings, binaries
+      # (which a check cannot read), symlinks or modes. The patch's own headers say which, and a header the
+      # check cannot read counts against it. After the patch is applied, every changed file is searched for
+      # each secret and its common encodings, with the list NUL-separated so a quoted path cannot hide a
+      # file. Any finding ends the run before anything is pushed.
       - name: Apply the model's changes
         id: apply
         if: needs.work.result == 'success'
         env:
+          GLUE: ${{ steps.glue.outputs.dir }}
           BASE_SHA: ${{ needs.work.outputs.base_sha }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
@@ -429,20 +441,14 @@ jobs:
           git checkout -B "$BRANCH" "$BASE_SHA"
           patch="$RUNNER_TEMP/out/changes.patch"
           if [ ! -s "$patch" ]; then exit 0; fi
-          if grep -q '^GIT binary patch' "$patch"; then
-            echo "forbidden=a binary file" >> "$GITHUB_OUTPUT"
-            echo "::error::the model's changes add a binary file, which the factory never pushes"
+          if ! problems=$(python3 -I "$GLUE/factory.py" patch-check "$patch" 2>&1 >/dev/null); then
+            echo "forbidden=$problems" >> "$GITHUB_OUTPUT"
+            echo "::error::the model's changes hold $problems"
             exit 1
           fi
-          touched=$(git apply --numstat "$patch" | cut -f3- | grep -E '^(\.github/|\.gitattributes$|\.gitmodules$)' || true)
-          if [ -n "$touched" ]; then
-            echo "forbidden=$(echo "$touched" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
-            echo "::error::the model's changes touch files the factory never changes: $touched"
-            exit 1
-          fi
-          git apply --index "$patch"
-          git diff --cached --name-only --diff-filter=AMR > "$RUNNER_TEMP/changed-files"
-          if ! python3 -I .github/factory/factory.py leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY; then
+          git -c core.hooksPath=/dev/null apply --index "$patch"
+          git diff --cached -z --name-only --diff-filter=AMR > "$RUNNER_TEMP/changed-files"
+          if ! python3 -I "$GLUE/factory.py" leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY; then
             echo "leaked=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -458,11 +464,14 @@ jobs:
         run: |
           if ! git diff --cached --quiet; then
             bot_id=$(gh api "/users/$BOT" --jq .id)
-            git -c user.name="$BOT" -c user.email="$bot_id+$BOT@users.noreply.github.com" \
+            git -c core.hooksPath=/dev/null -c user.name="$BOT" -c user.email="$bot_id+$BOT@users.noreply.github.com" \
               commit --no-verify -q -m "factory: build #$ISSUE $SLUG" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
           fi
+          # The token travels in a header, as actions/checkout sends it, never in the URL git prints.
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
           push_exit=0
-          git push "https://x-access-token:$GH_TOKEN@github.com/$GH_REPO.git" "HEAD:refs/heads/$BRANCH" 2> "$RUNNER_TEMP/push.log" || push_exit=$?
+          git -c core.hooksPath=/dev/null -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH" 2> "$RUNNER_TEMP/push.log" || push_exit=$?
           cat "$RUNNER_TEMP/push.log" >&2
           if [ "$push_exit" -ne 0 ]; then
             if grep -qF '[rejected]' "$RUNNER_TEMP/push.log"; then echo "rejected=true" >> "$GITHUB_OUTPUT"; fi

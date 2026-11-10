@@ -304,9 +304,53 @@ def test_leaks_finds_a_secret_as_is_or_encoded_and_only_then(tmp_path, monkeypat
     monkeypatch.setenv("EMPTY_SECRET", "")
     path = tmp_path / "file.txt"
     path.write_bytes(content)
-    (tmp_path / "list").write_text(f"{path}\n{tmp_path / 'missing.txt'}\n")
+    odd = tmp_path / "odd\nname.csv"
+    odd.write_bytes(b"clean")
+    (tmp_path / "list").write_bytes(f"{path}\0{odd}\0".encode())
     code = factory.main(["leaks", str(tmp_path / "list"), "PORTAL_API_KEY", "EMPTY_SECRET"])
     out, err = capsys.readouterr()
     assert code == (1 if found else 0)
     assert ("file.txt" in err) == found
     assert "sqd_prt_s3cret" not in out + err
+
+
+def test_leaks_fails_closed_on_a_listed_path_it_cannot_read(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PORTAL_API_KEY", "sqd_prt_s3cret")
+    (tmp_path / "list").write_bytes(f"{tmp_path / 'missing.txt'}\0".encode())
+    assert factory.main(["leaks", str(tmp_path / "list"), "PORTAL_API_KEY"]) == 1
+    assert "missing.txt" in capsys.readouterr().err
+
+
+CLEAN_PATCH = """diff --git a/transformation/analyses/x.sql b/transformation/analyses/x.sql
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/transformation/analyses/x.sql
+@@ -0,0 +1 @@
++select 1
+"""
+
+
+@pytest.mark.parametrize(
+    ("patch", "problem"),
+    [
+        (CLEAN_PATCH, None),
+        (CLEAN_PATCH.replace("new file mode 100644", "new file mode 100644\nGIT binary patch"), "a binary file"),
+        (CLEAN_PATCH.replace("new file mode 100644", "new file mode 120000"), "a symlink"),
+        (CLEAN_PATCH.replace("new file mode 100644", "old mode 100644\nnew mode 100755"), "a mode change"),
+        (CLEAN_PATCH.replace("transformation/analyses/x.sql", ".github/workflows/ci.yml"), "a file the factory never changes: .github/workflows/ci.yml"),
+        (CLEAN_PATCH.replace("transformation/analyses/x.sql", "transformation/.gitattributes"), "a file the factory never changes: transformation/.gitattributes"),
+        (CLEAN_PATCH.replace("transformation/analyses/x.sql", ".gitmodules"), "a file the factory never changes: .gitmodules"),
+        (CLEAN_PATCH.replace("diff --git a/transformation/analyses/x.sql b/transformation/analyses/x.sql", 'diff --git "a/odd\\nname.sql" "b/odd\\nname.sql"'), "a path git had to quote"),
+        (CLEAN_PATCH.replace("diff --git a/transformation/analyses/x.sql b/transformation/analyses/x.sql", "diff --git something else"), "a header this check cannot read"),
+    ],
+)
+def test_patch_check_refuses_what_the_factory_never_pushes(tmp_path, capsys, patch, problem):
+    path = tmp_path / "changes.patch"
+    path.write_text(patch)
+    code = factory.main(["patch-check", str(path)])
+    out, err = capsys.readouterr()
+    if problem is None:
+        assert code == 0 and "only files the factory may change" in out
+    else:
+        assert code == 1 and problem in err
