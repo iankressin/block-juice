@@ -69,9 +69,9 @@ type Walk = { call: MarketsWalkCall; cursor: string | undefined; page: number };
  * Walks every call to its last page, `concurrency` walks at once. A round fetches the next page of
  * each active walk together and yields one batch: its records, a market that two walks met once,
  * and the walks that failed in it. A walk ends on a page with no cursor, or with no markets, and its
- * slot goes to the next pending walk. A walk whose page fails after the client's retries stops
- * there: the pages it yielded stay, and its call waits as a dead letter, because a market is
- * written by id and so a walk again is safe.
+ * slot goes to the next pending walk. A walk whose page fails after the client's retries, or hands
+ * back the cursor it was asked for, stops there: the pages it yielded stay, and its call waits as a
+ * dead letter, because a market is written by id and so a walk again is safe.
  */
 export async function* walkMarkets(
   gamma: GammaClient,
@@ -117,6 +117,11 @@ export async function* walkMarkets(
         return;
       }
       const { markets, nextCursor } = outcome.value;
+      // A page that names itself as the next one would be asked for forever.
+      if (nextCursor !== undefined && nextCursor === walk.cursor) {
+        batch.failed.push({ id, call: walk.call, error: `Gamma repeated next_cursor ${nextCursor}` });
+        return;
+      }
       const last = nextCursor === undefined || markets.length === 0;
       // Only the last page's records carry the walk's id. The lib clears a dead letter when a record
       // carries its id, so an earlier page would clear the letter of a walk that fails later.

@@ -14,7 +14,7 @@ docs:
   - https://docs.polymarket.com/api-reference/markets/get-prices-history.md
   - https://docs.polymarket.com/api-reference/wallet/list-positions-for-a-user-or-market.md
 sources:
-  - ingestion/sources/polymarket-markets  # not built yet: Task 3. Nothing in the repo reads this field.
+  - ingestion/sources/polymarket-markets
 api:
   gamma:
     base_url: https://gamma-api.polymarket.com

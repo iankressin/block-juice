@@ -320,6 +320,31 @@ test("a bad GAMMA_END_DATE_FROM, page size or concurrency is refused", () => {
   assert.equal(env.safeParse({ ...ok, GAMMA_MAX_CONCURRENCY: "21" }).success, false);
 });
 
+test("a page that hands back the cursor it was asked for fails its walk", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeGamma(t, {
+    walks: { [DAY]: [[market(11), market(12)], [market(13)]] },
+    // Page p1 names itself as the next page. From the fourth ask it fails, so a walk that keeps
+    // following the cursor still ends and the test shows it.
+    reply: (walk, query, n) =>
+      walk === DAY && query.get("after_cursor") === "p1"
+        ? n <= 3
+          ? { status: 200, body: { markets: [market(13)], next_cursor: "p1" } }
+          : { status: 500, body: { error: "asked too often" } }
+        : undefined,
+    requests,
+  });
+
+  const batches = await run(envAt(url));
+
+  assert.deepEqual(batches.flatMap((batch) => batch.failed), [
+    { id: "markets:v1:closed:2026-11-07", call: day("2026-11-07"), error: "Gamma repeated next_cursor p1" },
+  ]);
+  const askedForP1 = requests.filter((request) => request.includes("end_date_min=2026-11-07") && request.includes("after_cursor=p1"));
+  assert.equal(askedForP1.length, 1);
+  assert.ok(!batches.flatMap((batch) => batch.succeededCallIds ?? []).includes("markets:v1:closed:2026-11-07"));
+});
+
 test("a walk that ends on an empty page reports its call id as a success", async (t) => {
   const url = await fakeGamma(t, { walks: { [OPEN]: [[market(1), market(2)], []] } });
 
