@@ -231,7 +231,7 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: ${{ steps.prompt.outputs.text }}
           claude_args: |
@@ -321,16 +321,16 @@ jobs:
         if: always()
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
           mkdir -p "$RUNNER_TEMP/transcript"
           if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
           if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" ANTHROPIC_API_KEY
-          uv run --project orchestration python "$FACTORY/factory.py" scrub answers ANTHROPIC_API_KEY
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" ANTHROPIC_API_KEY
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN
+          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN
 
       - uses: actions/upload-artifact@v4
         if: always()

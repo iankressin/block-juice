@@ -120,7 +120,7 @@ jobs:
         env:
           EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: ${{ steps.prompt.outputs.text }}
           claude_args: |
@@ -136,14 +136,14 @@ jobs:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
           mkdir -p "$RUNNER_TEMP/transcript"
           if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
           if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
-          uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/transcript" EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
-          uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
+          uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/transcript" EVM_RPC_URL DUNE_API_KEY CLAUDE_CODE_OAUTH_TOKEN
+          uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY CLAUDE_CODE_OAUTH_TOKEN
 
       # always(), so publish gets whatever the model wrote, even comment.md alone, plus how the model step ended
       # and the error it ended with, for the hand-off. Scrubbed, since artifacts of a public repo are open to any
@@ -155,7 +155,7 @@ jobs:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           for file in scope.yaml reference.csv comment.md; do
@@ -165,7 +165,7 @@ jobs:
             echo "$MODEL_OUTCOME"
             uv run --project orchestration python .github/factory/factory.py model-error "${EXECUTION_FILE:-/nonexistent}"
           } > "$RUNNER_TEMP/out/model.txt"
-          uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/out" EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
+          uv run --project orchestration python .github/factory/factory.py scrub "$RUNNER_TEMP/out" EVM_RPC_URL DUNE_API_KEY CLAUDE_CODE_OAUTH_TOKEN
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -230,8 +230,8 @@ jobs:
         env:
           EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY ANTHROPIC_API_KEY
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: uv run --project orchestration python .github/factory/factory.py scrub .factory EVM_RPC_URL DUNE_API_KEY CLAUDE_CODE_OAUTH_TOKEN
 
       - name: Check the scope and post the comment
         env:

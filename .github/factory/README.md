@@ -27,7 +27,7 @@ claude-code-action stops before the model runs when the person who added the lab
 | Secret | Used by |
 |---|---|
 | `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY` | both, to mint the App token |
-| `ANTHROPIC_API_KEY` | both. Take it from a Console workspace with a monthly spend limit |
+| `CLAUDE_CODE_OAUTH_TOKEN` | both. A Claude subscription token from `claude setup-token`. The action also takes `anthropic_api_key` from a Console workspace with purchased credits; swap the input and the scrub names in both workflows to use one |
 | `DUNE_API_KEY` | scope, in the Dune MCP config the workflow writes to the runner's temp folder |
 | `EVM_RPC_URL` | scope, for block-pinned reads. An Ethereum archive node |
 

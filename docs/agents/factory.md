@@ -48,4 +48,4 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 
 ## Secrets and setup
 
-Repository secrets: `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY`, `ANTHROPIC_API_KEY`, `DUNE_API_KEY`, `EVM_RPC_URL`. The App is installed on this repo only, with issues, pull requests and contents read and write, and metadata read. `.github/factory/README.md` has the dry-run procedure.
+Repository secrets: `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `DUNE_API_KEY`, `EVM_RPC_URL`. The App is installed on this repo only, with issues, pull requests and contents read and write, and metadata read. `.github/factory/README.md` has the dry-run procedure.
