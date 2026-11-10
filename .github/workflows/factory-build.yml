@@ -526,6 +526,10 @@ jobs:
           pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --body-file "$body"
+          elif [ "$(gh api "repos/$GH_REPO/compare/$BASE...$BRANCH" --jq .ahead_by)" = 0 ]; then
+            # The model changed nothing, so the branch equals the base and a PR cannot open. The ticket hears why.
+            echo "nothing=true" >> "$GITHUB_OUTPUT"
+            exit 0
           else
             gh pr create --draft --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$body"
           fi
@@ -550,6 +554,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ steps.pr.outputs.url }}
+          NOTHING: ${{ steps.pr.outputs.nothing }}
           CHECKS: ${{ needs.work.outputs.typecheck }} ${{ needs.work.outputs.package_tests }} ${{ needs.work.outputs.dbt_parse }} ${{ needs.work.outputs.pytest }}
         run: |
           checks="repo checks passed"
@@ -557,6 +562,11 @@ jobs:
           model=""
           if [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
             model=" The model step ended in $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt")."
+          fi
+          if [ "$NOTHING" = true ]; then
+            gh issue comment "$ISSUE" --body "Build run $RUN_URL changed nothing, so no PR opened. Verdict: $STATUS, $DETAIL; $checks.$model"
+            gh issue edit "$ISSUE" --add-label ready-for-human
+            exit 0
           fi
           gh issue comment "$ISSUE" --body "Build run: $PR_URL. Verdict: $STATUS, $DETAIL; $checks.$model"
           if [ "$STATUS" != passed ] || [ "$checks" != "repo checks passed" ]; then
@@ -582,6 +592,9 @@ jobs:
             message="The build run found no valid scope comment from the factory, so the ticket needs a scope run first: add \`scope\`. See run $RUN_URL."
           else
             message="The build run failed before it could report; see run $RUN_URL."
+          fi
+          if [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
+            message="$message The model step ended in $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt")."
           fi
           gh issue comment "$ISSUE" --body "$message"
           gh issue edit "$ISSUE" --add-label ready-for-human
