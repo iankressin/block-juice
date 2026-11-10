@@ -1,6 +1,39 @@
 version: 2
 
 seeds:
+  - name: attributed_addresses
+    description: >-
+      Addresses a public body attributes to an incident, one row per chain, address and incident.
+      binance-hack-2026-10-29: the 608 Ethereum addresses in the FBI alert "North Korea responsible for $6
+      billion Binance attack"
+      (https://www.fbi.gov/investigate/cyber/alerts/2026/north-korea-responsible-for-6-billion-binance-attack),
+      published 2026-10-31 and modified 2026-11-02, copied from ticket #41. published_address keeps the
+      alert's capitalization; address is lowercase. The same list is the wallets in
+      chains/ethereum/addresses.json of evm-wallet-transactions and evm-account-state: change all three
+      together.
+    config:
+      column_types:
+        chain: text
+        address: text
+        published_address: text
+        attribution: text
+        attributed_by: text
+        published: date
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || lower(address) || ':' || attribution"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      - name: address
+        data_tests: [not_null]
+      - name: attribution
+        data_tests: [not_null]
   - name: cex_addresses
     description: >-
       Dune's cex.addresses rows for the addresses that sent or received UNI on Arbitrum or Base in October

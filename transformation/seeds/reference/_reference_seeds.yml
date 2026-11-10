@@ -13,3 +13,18 @@ seeds:
         pool: text
         swaps: numeric
         uni_volume: numeric
+  - name: reference_binance_hack_fbi_eth_2026_11_01
+    description: >-
+      #41: for each FBI-attributed Binance hack address active on Ethereum blocks 26316189 to 26323364
+      (2026-11-01T00:00:00Z to 2026-11-02T00:00:00Z), seven metrics in wei in long form: sent_value_wei,
+      sent_fees_wei, sent_out_wei, received_wei over successful top-level transactions in the window, and
+      balance_wei, nonce and has_code at block 26323364 (has_code also at 26294680). From the dune oracle:
+      Dune query 9103455 (https://dune.com/queries/9103455, execution 01M732JJW5D0XSGMWE81A9T7K4) over seed
+      list query 9103371 (fingerprint check 9103457); balance_wei, nonce and has_code from eth_getBalance,
+      eth_getTransactionCount and eth_getCode on an Ethereum archive node pinned to block 26323364
+      (has_code also at 26294680); both sent transactions' receipts checked by RPC.
+    config:
+      column_types:
+        address: text
+        metric: text
+        amount: numeric

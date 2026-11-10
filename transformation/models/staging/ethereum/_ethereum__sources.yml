@@ -45,3 +45,13 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: wallet_transactions
+        identifier: ethereum_wallet_transactions
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: account_state
+        identifier: ethereum_account_state
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

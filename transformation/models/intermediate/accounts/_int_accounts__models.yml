@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: int_ethereum_wallet_transactions
+    columns:
+      - name: tx_hash
+        data_tests: [unique, not_null]
+  - name: int_ethereum_account_states
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "address || ':' || block_number"
+
+unit_tests:
+  - name: the_fee_is_gas_used_times_effective_gas_price_even_on_a_revert
+    description: >-
+      A reverted transaction still pays its fee, and only a blob transaction has a blob fee. The gas
+      figures are illustrative.
+    model: int_ethereum_wallet_transactions
+    given:
+      - input: ref('stg_ethereum__wallet_transactions')
+        rows:
+          - {block_number: 1, tx_hash: "0x01", from_address: "0xaa", to_address: "0xbb", value: 1000000000000000000, status: 1, tx_type: 2, gas_used: 21000, effective_gas_price: 41916860, blob_gas_used: null, blob_gas_price: null}
+          - {block_number: 2, tx_hash: "0x02", from_address: "0xaa", to_address: "0xbb", value: 5, status: 0, tx_type: 2, gas_used: 21000, effective_gas_price: 41916860, blob_gas_used: null, blob_gas_price: null}
+          - {block_number: 3, tx_hash: "0x03", from_address: "0xaa", to_address: "0xbb", value: 0, status: 1, tx_type: 3, gas_used: 21000, effective_gas_price: 2, blob_gas_used: 131072, blob_gas_price: 3}
+    expect:
+      rows:
+        - {tx_hash: "0x01", succeeded: true, fee_wei: 880254060000, blob_fee_wei: 0}
+        - {tx_hash: "0x02", succeeded: false, fee_wei: 880254060000, blob_fee_wei: 0}
+        - {tx_hash: "0x03", succeeded: true, fee_wei: 42000, blob_fee_wei: 393216}
+  - name: code_kind_tells_delegations_from_contracts
+    description: An EIP-7702 delegation is code 0xef0100 and a 20-byte address; other code is a contract.
+    model: int_ethereum_account_states
+    given:
+      - input: ref('stg_ethereum__account_state')
+        rows:
+          - {kind: code, block_number: 1, address: "0xaa", code: "0x", _loaded_at: "2026-11-10 00:00:00"}
+          - {kind: code, block_number: 1, address: "0xbb", code: "0xef01000000000000000000000000000000000000000001", _loaded_at: "2026-11-10 00:00:00"}
+          - {kind: code, block_number: 1, address: "0xcc", code: "0x6080604052", _loaded_at: "2026-11-10 00:00:00"}
+          - {kind: balance, block_number: 1, address: "0xaa", balance: 7, _loaded_at: "2026-11-10 00:00:00"}
+          - {kind: balance, block_number: 1, address: "0xaa", balance: 9, _loaded_at: "2026-11-11 00:00:00"}
+    expect:
+      rows:
+        - {address: "0xaa", block_number: 1, balance_wei: 9, code_kind: none}
+        - {address: "0xbb", block_number: 1, balance_wei: null, code_kind: eip7702_delegation}
+        - {address: "0xcc", block_number: 1, balance_wei: null, code_kind: contract}
