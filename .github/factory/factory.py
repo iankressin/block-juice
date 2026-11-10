@@ -242,21 +242,22 @@ def ticket(issue: dict, comments: list[dict], pull: dict | None = None) -> str:
     return "\n".join(parts)
 
 
-def verdict(run_results: dict, test: str) -> tuple[bool, str]:
-    """Passed only when dbt ran the test and it returned no rows. A test dbt never selected is a failure,
-    since `dbt test` exits 0 when its selection is empty. So is a pass with rows, which a `warn_if` or
-    `error_if` threshold on the test allows."""
+def verdict(run_results: dict, test: str) -> tuple[str, str]:
+    """The kind of verdict and its detail. `passed` only when dbt ran the test and it returned no rows.
+    `mismatch` when it ran and returned rows, which a `warn_if` or `error_if` threshold can dress as a pass.
+    `not_run` when dbt never selected it (`dbt test` exits 0 on an empty selection) or it ended in an error:
+    the pipeline is unproven, not wrong, and the PR says so with a label of its own."""
     found = [r for r in run_results.get("results", []) if r["unique_id"].startswith("test.") and r["unique_id"].rsplit(".", 1)[-1] == test]
     if not found:
-        return False, f"the test {test} did not run"
+        return "not_run", f"the test {test} did not run"
     result = found[0]
     failures = result.get("failures") or 0
     if result["status"] == "pass" and failures == 0:
-        return True, "0 mismatches over tolerance"
+        return "passed", "0 mismatches over tolerance"
     if result["status"] in ("pass", "warn", "fail") and failures:
-        return False, f"{failures} mismatches over tolerance"
+        return "mismatch", f"{failures} mismatches over tolerance"
     message = " ".join(str(result.get("message") or "").split())
-    return False, f"the test {test} ended in {result['status']}: {message}"
+    return "not_run", f"the test {test} ended in {result['status']}: {message}"
 
 
 def model_error(execution_file: Path) -> str:
@@ -348,8 +349,8 @@ def ticket_command(folder: Path) -> str:
 
 
 def verdict_command(run_results: Path, test: str) -> str:
-    passed, detail = verdict(read_json(run_results), test)
-    return f"status={'passed' if passed else 'failed'}\ndetail={detail}\n"
+    kind, detail = verdict(read_json(run_results), test)
+    return f"status={'passed' if kind == 'passed' else 'failed'}\nkind={kind}\ndetail={detail}\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -367,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         "pull.json, reviews.json, review_comments.json and pull_comments.json",
     )
     ticket_parser.add_argument("dir", type=Path)
-    verdict_parser = commands.add_parser("verdict", help="print status= and detail= for one test in dbt's run_results.json")
+    verdict_parser = commands.add_parser("verdict", help="print status=, kind= (passed, mismatch or not_run) and detail= for one test in dbt's run_results.json")
     verdict_parser.add_argument("run_results", type=Path)
     verdict_parser.add_argument("test")
     model_error_parser = commands.add_parser("model-error", help="print the error a Claude Code run ended with, from its execution log, or nothing")

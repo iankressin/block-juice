@@ -96,6 +96,7 @@ jobs:
       test: ${{ steps.scope.outputs.test }}
       base_sha: ${{ steps.branch.outputs.base_sha }}
       status: ${{ steps.verdict.outputs.status }}
+      kind: ${{ steps.verdict.outputs.kind }}
       detail: ${{ steps.verdict.outputs.detail }}
       typecheck: ${{ steps.typecheck.outcome }}
       package_tests: ${{ steps.package_tests.outcome }}
@@ -226,10 +227,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The verdict below decides, not the model's exit, so the PR opens even when this step fails.
+      # PORTAL_API_KEY reaches every stream source through loadEnv, which lets the process environment win.
+      # The public Portal paces anonymous streams, and a pool scan over millions of blocks needs the key.
       - name: Build the pipeline
         id: claude
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
+        env:
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
@@ -254,7 +259,7 @@ jobs:
           built=0
           uv run --project ../orchestration dbt build --select "+$TEST" --exclude-resource-type test --exclude-resource-type unit_test || built=$?
           if [ "$built" -ne 0 ]; then
-            printf "status=failed\ndetail=dbt build of the test's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
+            printf "status=failed\nkind=not_run\ndetail=dbt build of the test's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
           rm -f target/run_results.json
@@ -262,7 +267,7 @@ jobs:
           if [ -f target/run_results.json ]; then
             uv run --project ../orchestration python "$FACTORY/factory.py" verdict target/run_results.json "$TEST" | tee -a "$GITHUB_OUTPUT"
           else
-            printf 'status=failed\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
+            printf 'status=failed\nkind=not_run\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
           fi
 
       # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote answer.json.
@@ -322,15 +327,16 @@ jobs:
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
           FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           ls -laR ~/.claude/projects || echo "no session files under ~/.claude/projects"
           mkdir -p "$RUNNER_TEMP/transcript"
           if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
           if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN
-          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
+          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -365,6 +371,7 @@ jobs:
       SLUG: ${{ needs.work.outputs.slug }}
       TEST: ${{ needs.work.outputs.test }}
       STATUS: ${{ needs.work.outputs.status }}
+      KIND: ${{ needs.work.outputs.kind }}
       DETAIL: ${{ needs.work.outputs.detail }}
     steps:
       - name: Create the App token
@@ -452,11 +459,18 @@ jobs:
             gh pr create --draft --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$body"
           fi
           labels=$(gh pr view "$BRANCH" --json labels --jq '.labels[].name')
-          if [ "$STATUS" = passed ]; then
-            if grep -qx reference-mismatch <<<"$labels"; then gh pr edit "$BRANCH" --remove-label reference-mismatch; fi
-          else
-            gh pr edit "$BRANCH" --add-label reference-mismatch
-          fi
+          case "$KIND" in
+            passed) want="" ;;
+            mismatch) want=reference-mismatch ;;
+            *) want=not-verified ;;
+          esac
+          for label in reference-mismatch not-verified; do
+            if [ "$label" = "$want" ]; then
+              gh pr edit "$BRANCH" --add-label "$label"
+            elif grep -qx "$label" <<<"$labels"; then
+              gh pr edit "$BRANCH" --remove-label "$label"
+            fi
+          done
           echo "url=$(gh pr view "$BRANCH" --json url --jq .url)" >> "$GITHUB_OUTPUT"
 
       # A failed verdict or a failed repo check means a human must look before the PR is ready for review.

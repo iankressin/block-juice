@@ -9,7 +9,8 @@ How analysis tickets become pipeline PRs without a human at the keyboard. The de
 | `scope` | the Analysis issue form on filing, or a human to run scope again | a scope run starts |
 | `ready-for-agent` | a human, after reading the scope comment | a build run starts |
 | `ready-for-human` | a build run that failed, or a human | nothing. A human reads the ticket and the draft PR |
-| `reference-mismatch` | a build run, on the PR | the PR's pipeline did not match the reference within tolerance |
+| `reference-mismatch` | a build run, on the PR | the reference test ran and the pipeline did not match within tolerance |
+| `not-verified` | a build run, on the PR | the reference test never ran against data: the eval window did not load, or the upstream build failed. The pipeline is unproven, not wrong |
 
 A run's first write removes the label that started it. That is the claim. A second run on the same ticket queues behind the first and finds the label gone, so it exits at once.
 
@@ -19,7 +20,7 @@ Never add `scope` or `ready-for-agent` from inside a run. A run that needs a hum
 
 **Scope run.** Reads the ticket. Picks an eval window of a day or a few thousand blocks. Computes the reference from an oracle independent of SQD Portal, in the order protocol API, Dune, block-pinned RPC, with Portal MCP as the declared fallback. Estimates the full window's load. Posts one scope comment. Writes nothing in the repo.
 
-**Build run.** Reads the latest scope comment. Checks out `factory/<issue>-<slug>`, resuming it when it exists. Drives the bj skill to build what the analysis needs, ships the reference as a seed and a test, loads the eval window, and runs the test as its eval loop, three fix attempts at most. Opens or updates a draft PR. On a failed verdict the PR gets `reference-mismatch` and the ticket gets `ready-for-human`. The run never merges and never marks the PR ready for review.
+**Build run.** Reads the latest scope comment. Checks out `factory/<issue>-<slug>`, resuming it when it exists. Drives the bj skill to build what the analysis needs, ships the reference as a seed and a test, loads the eval window, and runs the test as its eval loop, three fix attempts at most. Opens or updates a draft PR. On a failed verdict the PR gets `reference-mismatch`, or `not-verified` when the test never ran, and the ticket gets `ready-for-human`. The run never merges and never marks the PR ready for review.
 
 Both run on GitHub Actions as the factory's GitHub App. The workflows are `.github/workflows/factory-scope.yml` and `factory-build.yml`; the prompts and glue are under `.github/factory/`.
 
@@ -48,4 +49,4 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 
 ## Secrets and setup
 
-Repository secrets: `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `DUNE_API_KEY`, `EVM_RPC_URL`. The App is installed on this repo only, with issues, pull requests and contents read and write, and metadata read. `.github/factory/README.md` has the dry-run procedure.
+Repository secrets: `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `DUNE_API_KEY`, `EVM_RPC_URL`, `PORTAL_API_KEY`. The App is installed on this repo only, with issues, pull requests and contents read and write, and metadata read. `.github/factory/README.md` has the dry-run procedure.

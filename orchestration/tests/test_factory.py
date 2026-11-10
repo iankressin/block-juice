@@ -245,15 +245,15 @@ def run_results(*results):
 @pytest.mark.parametrize(
     ("results", "output"),
     [
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 0}), "status=passed\ndetail=0 mismatches over tolerance\n"),
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "fail", "failures": 3}), "status=failed\ndetail=3 mismatches over tolerance\n"),
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 2}), "status=failed\ndetail=2 mismatches over tolerance\n"),
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "warn", "failures": 4}), "status=failed\ndetail=4 mismatches over tolerance\n"),
-        (run_results(), "status=failed\ndetail=the test x_matches_reference did not run\n"),
-        (run_results({"unique_id": "seed.transformation.x_matches_reference", "status": "success"}), "status=failed\ndetail=the test x_matches_reference did not run\n"),
+        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 0}), "status=passed\nkind=passed\ndetail=0 mismatches over tolerance\n"),
+        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "fail", "failures": 3}), "status=failed\nkind=mismatch\ndetail=3 mismatches over tolerance\n"),
+        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 2}), "status=failed\nkind=mismatch\ndetail=2 mismatches over tolerance\n"),
+        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "warn", "failures": 4}), "status=failed\nkind=mismatch\ndetail=4 mismatches over tolerance\n"),
+        (run_results(), "status=failed\nkind=not_run\ndetail=the test x_matches_reference did not run\n"),
+        (run_results({"unique_id": "seed.transformation.x_matches_reference", "status": "success"}), "status=failed\nkind=not_run\ndetail=the test x_matches_reference did not run\n"),
         (
             run_results({"unique_id": "test.transformation.x_matches_reference", "status": "error", "message": "relation\n does not exist"}),
-            "status=failed\ndetail=the test x_matches_reference ended in error: relation does not exist\n",
+            "status=failed\nkind=not_run\ndetail=the test x_matches_reference ended in error: relation does not exist\n",
         ),
     ],
 )
