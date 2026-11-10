@@ -80,6 +80,24 @@ def test_each_chain_of_an_evm_package_reads_its_own_folder(repo, monkeypatch):
     assert stream_sources(repo) == ["arbitrum.erc20_transfers", "ethereum.erc20_transfers"]
 
 
+def test_a_key_with_one_address_reads_as_a_list_of_one(repo, monkeypatch):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
+    folder = repo / "ingestion" / "sources" / "evm-erc20-transfers" / "chains" / "ethereum"
+    (folder / "addresses.json").write_text(json.dumps({"token": USDC, "wallets": [WALLET]}))
+
+    read = coverage.read(repo, "ethereum.erc20_transfers")
+    assert read.filter == {"token": [USDC], "wallets": [WALLET]}
+    assert read.gaps((100, 100), {"token": [USDC.lower()]}) == ["no run has saved a cursor"]
+
+
+def test_a_key_that_holds_neither_an_address_nor_a_list_of_them_is_bad_input(repo, monkeypatch):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
+    folder = repo / "ingestion" / "sources" / "evm-erc20-transfers" / "chains" / "ethereum"
+    (folder / "addresses.json").write_text(json.dumps({"tokens": {"usdc": USDC}}))
+    with pytest.raises(BadInput, match="must map each key to an address or a list of addresses"):
+        coverage.read(repo, "ethereum.erc20_transfers")
+
+
 def test_a_start_block_that_is_not_a_number_is_bad_input(repo, monkeypatch):
     monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
     (repo / "ingestion" / "sources" / "evm-erc20-transfers/chains/ethereum" / ".env").write_text("START_BLOCK=latest\n")
