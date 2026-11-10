@@ -420,9 +420,10 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
         run: |
-          cp "$RUNNER_TEMP/out/changes.patch" "$RUNNER_TEMP/changes.before"
+          # The mask runs whatever the artifact holds; a missing patch must not skip it.
+          if [ -f "$RUNNER_TEMP/out/changes.patch" ]; then cp "$RUNNER_TEMP/out/changes.patch" "$RUNNER_TEMP/changes.before"; fi
           python3 -I "$GLUE/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
-          if ! cmp -s "$RUNNER_TEMP/changes.before" "$RUNNER_TEMP/out/changes.patch"; then
+          if [ -f "$RUNNER_TEMP/changes.before" ] && ! cmp -s "$RUNNER_TEMP/changes.before" "$RUNNER_TEMP/out/changes.patch"; then
             echo "leaked=true" >> "$GITHUB_OUTPUT"
             echo "::error::the model's changes contain a secret, so nothing is pushed"
             exit 1
@@ -581,6 +582,7 @@ jobs:
           REJECTED: ${{ steps.push.outputs.rejected }}
           LEAKED: ${{ steps.secrets.outputs.leaked || steps.apply.outputs.leaked }}
           FORBIDDEN: ${{ steps.apply.outputs.forbidden }}
+          SCRUBBED: ${{ steps.secrets.outcome }}
         run: |
           if [ "$LEAKED" = true ]; then
             message="The build run's changes contained a secret, so nothing was pushed. Rotate the key and read the run: $RUN_URL."
@@ -593,7 +595,8 @@ jobs:
           else
             message="The build run failed before it could report; see run $RUN_URL."
           fi
-          if [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
+          # The model's diagnostic goes out only once the trusted mask above has run over it.
+          if [ "$SCRUBBED" = success ] && [ -s "$RUNNER_TEMP/out/model.txt" ] && [ "$(head -n 1 "$RUNNER_TEMP/out/model.txt")" != success ]; then
             message="$message The model step ended in $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt")."
           fi
           gh issue comment "$ISSUE" --body "$message"
