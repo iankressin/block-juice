@@ -399,7 +399,8 @@ unit_tests:
       Gamma market 6764951 (Task 1 proof row 2): outcomes ["Up", "Down"] and clobTokenIds in that order.
       Up is outcome 0 and Down outcome 1, each the other's complement. Event 1328177 comes from the
       staging test for the same market. A placeholder market with no clobTokenIds and the Protocol V2
-      market 6770019 give no rows. A market with three outcomes has no complement.
+      market 6770019 give no rows. A market with three outcomes has no complement. A made-up second
+      listing of the same condition, market 10000000, gives no rows: 6764951 is the lower id.
     model: int_polymarket_outcome_tokens
     given:
       - input: ref('stg_polymarket__markets')
@@ -409,6 +410,11 @@ unit_tests:
               array['Up', 'Down'] as outcomes,
               array[56491295322642479574009649190264906678337478953962544953766149611910922990327, 103688884060883873727013522652996002941410548793093120456496990699655719191268]::numeric[] as clob_token_ids,
               '1328177' as event_id, false as neg_risk, 'v1' as protocol_version
+          union all
+          -- Made up: Gamma lists the same condition and tokens again, under a higher id that sorts first as text.
+          select '10000000', '0xcf28ea01af1aedbbb96bb3f2ed8efd5b4c52faaf057c98e59b118b75cc0afc6a', array['Up', 'Down'],
+              array[56491295322642479574009649190264906678337478953962544953766149611910922990327, 103688884060883873727013522652996002941410548793093120456496990699655719191268]::numeric[],
+              '1', false, 'v1'
           union all
           -- Made up: a placeholder neg-risk market has no condition and no tokens.
           select '0', null, array['Yes', 'No'], null::numeric[], null, true, 'v1'
@@ -481,7 +487,7 @@ unit_tests:
       - input: ref('stg_polymarket__markets')
         format: sql
         rows: &no_gamma_markets |
-          select null::text as neg_risk_market_id, null::text as question_id, null::text as condition_id where false
+          select null::text as neg_risk_market_id, null::text as question_id, null::text as condition_id, null::timestamptz as created_at where false
       - input: ref('polymarket_contracts')
         rows: &polymarket_contracts
           - {address: "0xe111180000d2663c0091e4f400237545b87b996b", role: exchange, version: ctf_exchange_v2}
@@ -497,7 +503,7 @@ unit_tests:
           - {address: "0x1000008dd9001b968442c1000017eae6e0da00ba", role: module, version: protocol_v2}
           - {address: "0x200000900045e3b6259600682756002200028933", role: module, version: protocol_v2}
           - {address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", role: collateral, version: ctf}
-          - {address: "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", role: collateral, version: ctf}
+          - {address: "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", role: wrapped_collateral, version: ctf}
     expect:
       rows: []
 
@@ -694,18 +700,18 @@ unit_tests:
         format: sql
         rows: |
           select * from (values
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff001', '0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff002', '0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff003', '0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff004', '0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff005', '0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff006', '0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff007', '0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff008', '0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff009', '0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37'),
-              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff00a', '0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2')
-          ) as m(neg_risk_market_id, question_id, condition_id)
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0xb901c2288f5e1400581967ab8c0ed886857fe6c8af0f28a69fea5920676927cd', '2026-11-06 05:57:21.844994+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff001', '0x66362dff17cf4b2362a4f81f01c52ae9f3518a306ec21756d7f8adf93deb910c', '2026-11-06 05:57:22.058586+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff002', '0xcdf47dbd7771388f3560c78dbf0f79f624e365f2675a48f27f39de609fa4cf17', '2026-11-06 05:57:22.272136+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff003', '0x1f812b8981c2ebf9b20343b459bdf39fd4950f0fd6c35c67087d1ab30ee1980c', '2026-11-06 05:57:22.483732+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff004', '0xf1bcf03f8fd2db27bd38300a29a1c1af1c022f4fbfb3bb29d1a19f17ee18f8f8', '2026-11-06 05:57:22.697513+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff005', '0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea', '2026-11-06 05:57:22.939138+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff006', '0x2316301c7912fab0ac1d664a8124ea8931d1680c99d9000681c75339d540bec5', '2026-11-06 05:57:23.158873+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff007', '0x33949bf578ccd076406394deb31b0ee47565009dc14d2dcda0a8a34f8fefcd1e', '2026-11-06 05:57:23.363032+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff008', '0x5a72e578f5e74114857cafd9dee8d4f6f22d92980924abf07c9c383bd2892eb2', '2026-11-06 05:57:23.581505+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff009', '0x2ac1a510e78c4aeb7f6a3394703c05f1bc76f8be349b417199dad404dc7d5a37', '2026-11-06 05:57:23.807882+00'::timestamptz),
+              ('0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff000', '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff00a', '0xc997e88670b1bb32b5104361b7a722f7a9ac91515f6a08c182f24435f937a5e2', '2026-11-06 05:57:24.018711+00'::timestamptz)
+          ) as m(neg_risk_market_id, question_id, condition_id, created_at)
       - input: ref('polymarket_contracts')
         rows: *polymarket_contracts
     expect:
@@ -781,9 +787,12 @@ unit_tests:
 
   - name: ctf_rows_off_polymarket_positions_are_dropped
     description: >-
-      Made up on proof row 4's condition: the user splits on ConditionalTokens directly three times.
-      On pUSD, whose position ids are no Polymarket tokens (Q4), and under a parent collection, the
-      split gives no row. On USDC.e at the top level it counts.
+      Made up on proof row 4's binary condition and proof row 7's neg-risk one: the user calls
+      ConditionalTokens directly. On pUSD, whose position ids are no Polymarket tokens (Q4), and under a
+      parent collection, a split gives no row. So does a collateral that is not the one behind the
+      condition's tokens: a USDC.e redemption of the neg-risk condition, which would otherwise zero the
+      user's Gamma tokens, and a wrapped-collateral split of the binary one. A USDC.e split of the binary
+      condition counts, and so does a wrapped-collateral redemption of the neg-risk one.
     model: int_polygon_polymarket_ctf_position_changes
     given:
       - input: ref('stg_polygon__polymarket_ctf')
@@ -792,12 +801,17 @@ unit_tests:
           select * from jsonb_to_recordset('[
               {"note": "Made up: pUSD collateral.", "id": "96926020:1", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 1, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000},
               {"note": "Made up: a parent collection.", "id": "96926020:2", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 2, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x1111111111111111111111111111111111111111111111111111111111111111", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000},
-              {"note": "Made up: the split that counts.", "id": "96926020:3", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 3, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000}
+              {"note": "Made up: the split that counts.", "id": "96926020:3", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 3, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000},
+              {"note": "Made up: USDC.e on a neg-risk condition.", "id": "96926020:4", "event": "ctf.PayoutRedemption", "block_number": 96926020, "log_index": 4, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", "index_sets": [1, 2], "payout": 0},
+              {"note": "Made up: wrapped collateral on a binary condition.", "id": "96926020:5", "event": "ctf.PositionSplit", "block_number": 96926020, "log_index": 5, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", "index_sets": [1, 2], "amount": 1000000},
+              {"note": "Made up: the neg-risk redemption that counts.", "id": "96926020:6", "event": "ctf.PayoutRedemption", "block_number": 96926020, "log_index": 6, "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "stakeholder": "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", "collateral_token": "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", "parent_collection_id": "0x0000000000000000000000000000000000000000000000000000000000000000", "condition_id": "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", "index_sets": [1, 2], "payout": 1000000}
           ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
       - input: ref('int_polymarket_outcome_tokens')
         rows:
-          - {token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 0}
-          - {token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 1}
+          - {token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 0, neg_risk: false}
+          - {token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", outcome_index: 1, neg_risk: false}
+          - {token_id: "95633426929559386414395833072208682015109875747732563458545838665515892852807", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", outcome_index: 0, neg_risk: true}
+          - {token_id: "23384132564822851946016127677872947910725251513481968219731737373299759246737", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", outcome_index: 1, neg_risk: true}
       - input: ref('stg_polymarket__markets')
         format: sql
         rows: *no_gamma_markets
@@ -808,6 +822,9 @@ unit_tests:
         - {id: "96926020:3:cash", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: null, shares_delta: null, usdc_delta: "-1.000000", zeroes_position: false}
         - {id: "96926020:3:16586642815017495780917469003078506417521356854942357080913034941474823961026", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: "16586642815017495780917469003078506417521356854942357080913034941474823961026", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
         - {id: "96926020:3:110873771272925759008981515223715203606530125973324791599348343811525717421022", kind: "split", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52", token_id: "110873771272925759008981515223715203606530125973324791599348343811525717421022", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926020:6:cash", kind: "redeem", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: null, shares_delta: null, usdc_delta: "1.000000", zeroes_position: false}
+        - {id: "96926020:6:95633426929559386414395833072208682015109875747732563458545838665515892852807", kind: "redeem", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: "95633426929559386414395833072208682015109875747732563458545838665515892852807", shares_delta: null, usdc_delta: null, zeroes_position: true}
+        - {id: "96926020:6:23384132564822851946016127677872947910725251513481968219731737373299759246737", kind: "redeem", wallet: "0xa537aec79808a7c6f0bcc70eacca189e3f3477fe", condition_id: "0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95", token_id: "23384132564822851946016127677872947910725251513481968219731737373299759246737", shares_delta: null, usdc_delta: null, zeroes_position: true}
 
   - name: only_single_bit_index_sets_map_to_tokens
     description: >-
@@ -895,10 +912,10 @@ unit_tests:
         format: sql
         rows: |
           select * from (values
-              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c'),
-              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501', '0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4'),
-              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608502', '0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d')
-          ) as m(neg_risk_market_id, question_id, condition_id)
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c', '2026-11-07 22:59:02.890287+00'::timestamptz),
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501', '0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4', '2026-11-07 22:59:03.103099+00'::timestamptz),
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608502', '0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d', '2026-11-07 22:59:03.317515+00'::timestamptz)
+          ) as m(neg_risk_market_id, question_id, condition_id, created_at)
       - input: ref('polymarket_contracts')
         rows: *polymarket_contracts
     expect:
@@ -912,14 +929,15 @@ unit_tests:
     description: >-
       Proof row 18's market, with a made-up Gamma row that files row 8's question 5 under it. That
       question id does not start with row 18's market id, so its low byte is no index of this market and
-      a later made-up conversion of questions 0 and 1 pays YES of question 2 only.
+      a later made-up conversion of questions 0 and 1 pays YES of question 2 only. Gamma created that
+      question (2026-11-06) before the window's first block, so only its id keeps it out.
     model: int_polygon_polymarket_ctf_position_changes
     given:
       - input: ref('stg_polygon__polymarket_ctf')
         format: sql
         rows: |
           select * from jsonb_to_recordset('[
-              {"id": "96924595:85", "event": "neg_risk.MarketPrepared", "block_number": 96924595, "log_index": 85, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "oracle": "0x661992aebf6becf7ba5abb66f6b0bf62aa7a2e93", "fee_bips": 0},
+              {"id": "96924595:85", "event": "neg_risk.MarketPrepared", "block_number": 96924595, "log_index": 85, "block_timestamp": "2026-11-07 22:59:09+00", "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "oracle": "0x661992aebf6becf7ba5abb66f6b0bf62aa7a2e93", "fee_bips": 0},
               {"id": "96924595:88", "event": "ctf.ConditionPreparation", "block_number": 96924595, "log_index": 88, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "condition_id": "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", "oracle": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500"},
               {"id": "96924595:89", "event": "neg_risk.QuestionPrepared", "block_number": 96924595, "log_index": 89, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "question_index": 0},
               {"id": "96924595:92", "event": "ctf.ConditionPreparation", "block_number": 96924595, "log_index": 92, "tx_hash": "0xd678f65c0ad2f85f6886b4ab4aecf716fbb76cc5f4e253ae934ce79071eab8c8", "contract": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045", "condition_id": "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", "oracle": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "question_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501"},
@@ -943,7 +961,96 @@ unit_tests:
         rows: |
           -- Made up: row 8's question 5 filed under row 18's market.
           select '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500' as neg_risk_market_id, '0x7d0bd97d337485c07cd88ba4472550d70754736175642907c3bf2834b8bff005' as question_id,
-              '0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea' as condition_id
+              '0x1cf1a455e20b82b75cb329379435e7ac2d7ad7cc7393bf7cee16feb2679352ea' as condition_id,
+              '2026-11-06 05:57:22.939138+00'::timestamptz as created_at
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926100:1:10215802001490733933737236082194539027026170729497873704703736982332406798434", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: "10215802001490733933737236082194539027026170729497873704703736982332406798434", shares_delta: "-1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:1:cash:0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: null, shares_delta: null, usdc_delta: "0.500000", zeroes_position: false}
+        - {id: "96926100:1:61312451012901262701709173260572556297334903822611497200357532459899112519848", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", shares_delta: "-1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:1:cash:0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: null, shares_delta: null, usdc_delta: "0.500000", zeroes_position: false}
+        - {id: "96926100:1:57841252882656907063025446654114350432407641305100763931597581977133187669609", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", token_id: "57841252882656907063025446654114350432407641305100763931597581977133187669609", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: a_question_gamma_lists_twice_converts_once
+    description: >-
+      Proof row 18's market, with the window made to start after its preparation: no QuestionPrepared
+      log is in it, so its three questions come from Gamma (markets 6820119-6820121, created
+      2026-11-07). Gamma lists question 0 a second time (made up). A made-up conversion of 1 NO of
+      questions 0 and 1 burns each NO token once and pays 0.5 per NO condition, once, and YES of
+      question 2.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"note": "Made up: the window starts here, after the market and its three questions were prepared.", "id": "96926100:1", "event": "neg_risk.PositionsConverted", "block_number": 96926100, "log_index": 1, "block_timestamp": "2026-11-08 00:00:00+00", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "stakeholder": "0x00000000000000000000000000000000000000a1", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "index_set": 3, "amount": 1000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "8012334622748084164653169005463059428663198137210030745651002890982684086910", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", outcome_index: 0}
+          - {token_id: "10215802001490733933737236082194539027026170729497873704703736982332406798434", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", outcome_index: 1}
+          - {token_id: "95825530362527799605151851146544426628027460907081633667977149088231212180255", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", outcome_index: 0}
+          - {token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", outcome_index: 1}
+          - {token_id: "57841252882656907063025446654114350432407641305100763931597581977133187669609", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", outcome_index: 0}
+          - {token_id: "20005318708283133732984068641252676657784964983272455927377831789922193274176", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: |
+          select * from (values
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c', '2026-11-07 22:59:02.890287+00'::timestamptz),
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501', '0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4', '2026-11-07 22:59:03.103099+00'::timestamptz),
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608502', '0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d', '2026-11-07 22:59:03.317515+00'::timestamptz),
+              -- Made up: a second listing of question 0.
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c', '2026-11-07 22:59:02.890287+00'::timestamptz)
+          ) as m(neg_risk_market_id, question_id, condition_id, created_at)
+      - input: ref('polymarket_contracts')
+        rows: *polymarket_contracts
+    expect:
+      rows:
+        - {id: "96926100:1:10215802001490733933737236082194539027026170729497873704703736982332406798434", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: "10215802001490733933737236082194539027026170729497873704703736982332406798434", shares_delta: "-1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:1:cash:0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", token_id: null, shares_delta: null, usdc_delta: "0.500000", zeroes_position: false}
+        - {id: "96926100:1:61312451012901262701709173260572556297334903822611497200357532459899112519848", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", shares_delta: "-1.000000", usdc_delta: null, zeroes_position: false}
+        - {id: "96926100:1:cash:0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", token_id: null, shares_delta: null, usdc_delta: "0.500000", zeroes_position: false}
+        - {id: "96926100:1:57841252882656907063025446654114350432407641305100763931597581977133187669609", kind: "convert", wallet: "0x00000000000000000000000000000000000000a1", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", token_id: "57841252882656907063025446654114350432407641305100763931597581977133187669609", shares_delta: "1.000000", usdc_delta: null, zeroes_position: false}
+
+  - name: gamma_questions_created_after_the_window_starts_pay_nothing
+    description: >-
+      Proof row 18's market, with the window made to start after its preparation, as in
+      a_question_gamma_lists_twice_converts_once. Gamma also lists a made-up question 3, created
+      2026-11-09, after the window's first block. Gamma creates a question before the chain prepares it
+      (catalog/vendors/polymarket/NOTES.md), so question 3 did not exist at the conversion, and the
+      conversion of questions 0 and 1 pays YES of question 2 only.
+    model: int_polygon_polymarket_ctf_position_changes
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from jsonb_to_recordset('[
+              {"note": "Made up: the window starts here, after the market and its three questions were prepared.", "id": "96926100:1", "event": "neg_risk.PositionsConverted", "block_number": 96926100, "log_index": 1, "block_timestamp": "2026-11-08 00:00:00+00", "contract": "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", "stakeholder": "0x00000000000000000000000000000000000000a1", "neg_risk_market_id": "0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500", "index_set": 3, "amount": 1000000}
+          ]') as r(id text, event text, block_number bigint, block_timestamp timestamptz, tx_hash text, log_index integer, contract text, condition_id text, oracle text, question_id text, stakeholder text, initiator text, from_address text, collateral_token text, parent_collection_id text, index_sets numeric[], amount numeric, amount_out numeric, amounts numeric[], payout numeric, neg_risk_market_id text, index_set numeric, fee_bips numeric, question_index numeric)
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "8012334622748084164653169005463059428663198137210030745651002890982684086910", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", outcome_index: 0}
+          - {token_id: "10215802001490733933737236082194539027026170729497873704703736982332406798434", condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", outcome_index: 1}
+          - {token_id: "95825530362527799605151851146544426628027460907081633667977149088231212180255", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", outcome_index: 0}
+          - {token_id: "61312451012901262701709173260572556297334903822611497200357532459899112519848", condition_id: "0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4", outcome_index: 1}
+          - {token_id: "57841252882656907063025446654114350432407641305100763931597581977133187669609", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", outcome_index: 0}
+          - {token_id: "20005318708283133732984068641252676657784964983272455927377831789922193274176", condition_id: "0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d", outcome_index: 1}
+          - {token_id: "21", condition_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", outcome_index: 0}
+          - {token_id: "22", condition_id: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", outcome_index: 1}
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: |
+          select * from (values
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c', '2026-11-07 22:59:02.890287+00'::timestamptz),
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608501', '0xb4780395a3fa844987b04bbb7da312c78f2393e1f487a922ce515ad86637adb4', '2026-11-07 22:59:03.103099+00'::timestamptz),
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608502', '0x3dcea8f60c49f5a51ed18e345411f9fd5fa36295fde51f016e55b523b4ecb13d', '2026-11-07 22:59:03.317515+00'::timestamptz),
+              -- Made up: question 3, created after the window starts.
+              ('0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608500', '0xcc402e30ded2fe484f8e869debc48f69685a285fbce98ddaa5e2cfe2ba608503', '0x' || repeat('b', 64), '2026-11-09 00:00:00+00'::timestamptz)
+          ) as m(neg_risk_market_id, question_id, condition_id, created_at)
       - input: ref('polymarket_contracts')
         rows: *polymarket_contracts
     expect:
@@ -1180,18 +1287,18 @@ unit_tests:
         format: sql
         rows: |
           select * from (values
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x1fc7b50c9432485523708693ba1dd0ef2b45c15e505b27d861a5d66f14d25cc2'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a01', '0xaad58c131853720ac6843e50274f3e6327a6206a2bf1dc0d08082f4411e32b24'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a02', '0xd6bb41620ce8990f56d528b7be2647e1ac06241cb3a35cf8380642f14bd1d629'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a03', '0x03bbcea06b093dbd9c44f49fbffc37df950c199495ad7cecf2f7b3cf0ff99e64'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a04', '0xa995c08e1f14fdb22aacadc5f79b910f94ae36827615d3c6081a8934633cffea'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a05', '0x3eb24db8bd98e7f2d31d01f39173e4df92708a3b8502acab2116129b29e18c89'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a06', '0x5a761bace9ef1e1bc5ff35ec83013fb502ec5176f5bab75578affed6f9f67982'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a07', '0xcf6abde5a6aaa4a739748613c58715417faa552cacdfc66a94c96d266addec7b'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a08', '0xb459f132d97c466e80bbf75bb1fb5d79f3c58b5152d21b053a37c7fe35193c65'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a09', '0xa3adf2e8a837830fa1ddc3b852be729e558f8dbc4ea105d08c82bb37065057e5'),
-              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a0a', '0x265c5579e1f929eb78611fcaf246c3af766b974c7d3084f71c470f945a21b980')
-          ) as m(neg_risk_market_id, question_id, condition_id)
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x1fc7b50c9432485523708693ba1dd0ef2b45c15e505b27d861a5d66f14d25cc2', '2026-11-06 05:56:13.472096+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a01', '0xaad58c131853720ac6843e50274f3e6327a6206a2bf1dc0d08082f4411e32b24', '2026-11-06 05:56:13.689096+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a02', '0xd6bb41620ce8990f56d528b7be2647e1ac06241cb3a35cf8380642f14bd1d629', '2026-11-06 05:56:13.90508+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a03', '0x03bbcea06b093dbd9c44f49fbffc37df950c199495ad7cecf2f7b3cf0ff99e64', '2026-11-06 05:56:14.121405+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a04', '0xa995c08e1f14fdb22aacadc5f79b910f94ae36827615d3c6081a8934633cffea', '2026-11-06 05:56:14.342231+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a05', '0x3eb24db8bd98e7f2d31d01f39173e4df92708a3b8502acab2116129b29e18c89', '2026-11-06 05:56:14.557898+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a06', '0x5a761bace9ef1e1bc5ff35ec83013fb502ec5176f5bab75578affed6f9f67982', '2026-11-06 05:56:14.76437+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a07', '0xcf6abde5a6aaa4a739748613c58715417faa552cacdfc66a94c96d266addec7b', '2026-11-06 05:56:14.965617+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a08', '0xb459f132d97c466e80bbf75bb1fb5d79f3c58b5152d21b053a37c7fe35193c65', '2026-11-06 05:56:15.169687+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a09', '0xa3adf2e8a837830fa1ddc3b852be729e558f8dbc4ea105d08c82bb37065057e5', '2026-11-06 05:56:15.383509+00'::timestamptz),
+              ('0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a00', '0x0e8939bc6c4ed6d9b16a96d5a76c33708bb084b47fcfa848cd8cf98510e82a0a', '0x265c5579e1f929eb78611fcaf246c3af766b974c7d3084f71c470f945a21b980', '2026-11-06 05:56:15.58953+00'::timestamptz)
+          ) as m(neg_risk_market_id, question_id, condition_id, created_at)
       - input: ref('polymarket_contracts')
         rows: *polymarket_contracts
     expect:

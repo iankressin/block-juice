@@ -2,11 +2,14 @@
 -- (catalog/vendors/polymarket/NOTES.md), and that order matches the index set 1 << i (catalog Q6), so
 -- outcome_index is the position in clobTokenIds, counted from 0. A placeholder market has no tokens and
 -- gives no rows. Protocol V2 markets (Task 13) are not here yet.
+-- A condition Gamma lists in several markets gives its tokens once, from the market
+-- int_polymarket_markets keeps: the lowest id, as a number.
 with markets as (
-    select *
+    select distinct on (condition_id) *
     from {{ ref('stg_polymarket__markets') }}
     where protocol_version = 'v1'
         and clob_token_ids is not null
+    order by condition_id, length(market_id), market_id
 )
 
 select

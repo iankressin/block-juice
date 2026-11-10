@@ -5,8 +5,10 @@
 --   neg_risk.* event whose stakeholder or redeemer is a user (rows 6, 8), and every collateral_adapter.*
 --   (initiator, rows 4, 5, 12, 16, 21) and auto_redeemer.* event (from, rows 7, 14). The rest repeat
 --   those events or the exchange fills (row 2).
---   ctf.* events count only on USDC.e or wrapped collateral, the seed's collateral rows, and at the top
---   level (Q4). Index set 1 << i is outcome i (Q6); an index set of several outcomes maps to no token. A
+--   ctf.* events count only at the top level and on the collateral behind the condition's tokens (Q4):
+--   USDC.e (seed role collateral) for a binary market, wrapped collateral (role wrapped_collateral) for a
+--   neg-risk one, as Gamma's neg_risk says. On another collateral the position ids are not Gamma's
+--   tokens. Index set 1 << i is outcome i (Q6); an index set of several outcomes maps to no token. A
 --   split or merge whose index sets do not cover every outcome moves a position, not collateral, and
 --   gives no row.
 --   Each event gives a cash row and a row per token. A split pays amount for amount of each token, a
@@ -18,8 +20,9 @@
 --   amountOut YES of every other question of the market and (k - 1) x amountOut cash, split evenly over the
 --   k NO conditions (plan Decision 5). amountOut is the adapter event's, or amount - amount x feeBips /
 --   10000 with feeBips from MarketPrepared, 0 when the market was prepared before the window. A market's
---   questions come from QuestionPrepared, and from Gamma for a market prepared before the window; question
---   i's id is the market id with i in its low byte. A conversion books only questions prepared before it.
+--   questions come from QuestionPrepared, and from Gamma for a question prepared before the window, once
+--   each; question i's id is the market id with i in its low byte. A conversion books only questions
+--   prepared before it.
 --   A condition missing from int_polymarket_outcome_tokens (Gamma) drops out, cash too.
 --   Amounts are base units with 6 decimals, divided by 1e6 and kept at 6 places.
 -- Columns, for whoever sums them: a token row has usdc_delta null. A cash row has token_id and
@@ -33,12 +36,12 @@ with contracts as (
 ),
 
 tokens as (
-    select token_id, condition_id, outcome_index
+    select token_id, condition_id, outcome_index, neg_risk
     from {{ ref('int_polymarket_outcome_tokens') }}
 ),
 
 conditions as (
-    select condition_id, count(*) as outcome_count
+    select condition_id, count(*) as outcome_count, bool_or(neg_risk) as neg_risk
     from tokens
     group by condition_id
 ),
@@ -56,6 +59,7 @@ actions as (
         wallet,
         kind,
         condition_id,
+        collateral_token,
         index_sets,
         amount,
         amount_out,
@@ -94,25 +98,36 @@ actions as (
             -- The NegRiskAdapter called by a user.
             or (
                 event like 'neg_risk.%'
-                and stakeholder not in (select address from contracts where role <> 'collateral')
+                and stakeholder not in (
+                    select address from contracts where role not in ('collateral', 'wrapped_collateral')
+                )
             )
-            -- ConditionalTokens called by a user, on Polymarket's collateral, at the top level.
+            -- ConditionalTokens called by a user, at the top level. moves checks the collateral.
             or (
                 event like 'ctf.%'
-                and stakeholder not in (select address from contracts where role <> 'collateral')
-                and collateral_token in (select address from contracts where role = 'collateral')
+                and stakeholder not in (
+                    select address from contracts where role not in ('collateral', 'wrapped_collateral')
+                )
                 and parent_collection_id = '0x' || repeat('0', 64)
             )
         )
 ),
 
--- Splits, merges and redemptions of conditions Gamma knows. Only ctf.* events name index sets; a split's
--- or merge's must add up to every outcome, 2^n - 1.
+-- Splits, merges and redemptions of conditions Gamma knows. Only ctf.* events name a collateral and index
+-- sets. The collateral must be the one behind the condition's tokens, and a split's or merge's index sets
+-- must add up to every outcome, 2^n - 1.
 moves as (
     select a.*
     from actions as a
     inner join conditions as c on c.condition_id = a.condition_id
     where a.kind in ('split', 'merge', 'redeem')
+        and (
+            a.event not like 'ctf.%'
+            or a.collateral_token = (
+                select address from contracts
+                where role = case when c.neg_risk then 'wrapped_collateral' else 'collateral' end
+            )
+        )
         and (
             a.kind = 'redeem'
             or a.index_sets is null
@@ -153,20 +168,24 @@ prepared_questions as (
     where q.event = 'neg_risk.QuestionPrepared'
 ),
 
--- Gamma's questions that the chain did not prepare in the window were prepared before it.
+-- A Gamma question the chain did not prepare in the window was prepared before it when Gamma created it
+-- before the window's first block, since Gamma creates a question before the chain prepares it
+-- (catalog/vendors/polymarket/NOTES.md). Gamma's later questions were prepared after the window. Gamma
+-- can list a question more than once; distinct keeps one row.
 questions as (
     select neg_risk_market_id, question_index, condition_id, prepared_block, prepared_log_index
     from prepared_questions
     union all
-    select
+    select distinct
         g.neg_risk_market_id,
         ('x' || right(g.question_id, 2))::bit(8)::integer,
         g.condition_id,
-        null,
-        null
+        null::bigint,
+        null::integer
     from {{ ref('stg_polymarket__markets') }} as g
     where g.condition_id is not null
         and left(g.question_id, 64) = left(g.neg_risk_market_id, 64)
+        and g.created_at < (select min(block_timestamp) from {{ ref('stg_polygon__polymarket_ctf') }})
         and not exists (select 1 from prepared_questions as p where p.question_id = g.question_id)
 ),
 

@@ -84,6 +84,7 @@ Types come from 796 markets sampled in windows of 100 consecutive ids across the
 - The V2 `conditionId` is not a ConditionalTokens condition id. It ends in zero bytes (`0x01de77a1eabef176b40e662f3aaa0f0240000000000000000000000000000000`). It is the condition id the V2 modules emit (a `bytes31` topic with its zero 32nd byte), and the Protocol V2 Exchange's `OrderFilled.tokenId` equals `clobTokenIds[i]` (`catalog/protocols/polymarket/NOTES.md`, Q11, proof rows 26, 28 and 31).
 - Gamma's V2 list starts at its first V2 market (2026-10-13), but native V2 binary markets traded on chain from 2026-09-15. Samples of those early fills found 17 conditions with no Gamma row under `condition_ids`, `clob_token_ids` or `position_ids` (`catalog/protocols/polymarket/NOTES.md`, "Three kinds of V2 market", proof row 43).
 - Gamma lists no parlay (combinatorial, `0x03…`) market: `clob_token_ids`, `position_ids` and `condition_ids` lookups of a traded parlay returned `markets: []` on 2026-11-08.
+- Gamma creates a neg-risk question before the NegRiskAdapter prepares it on chain. Of the 66,688 `QuestionPrepared` logs from block 96526194 to 97032704 (2026-11-01 to 2026-11-09) whose `questionId` Gamma lists, none came before the Gamma market's `createdAt`. The chain came 2 s to 5 min 53 s later, 12 s at the median and 86 s at the 99th percentile. So a question Gamma created after a block was prepared after it too. Gamma's current list also holds questions prepared after any fixed window.
 
 ## Outcome order and winners
 
