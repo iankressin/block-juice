@@ -25,7 +25,7 @@ We run a software factory, in the sense of the software-factory skill: tasks who
 | Orchestrator | GitHub Actions on `issues: labeled`. One concurrency group per ticket, queued, never cancelled. |
 | Runner | GitHub-hosted standard runners with CI's Postgres service. The job that runs the model times out at four hours. A self-hosted runner is the escape hatch when a load outgrows them. |
 | Observability platform | None. Each run uploads two artifacts: the agent transcript and `answers/<slug>/`, kept seven days. |
-| Model | A dedicated Console workspace with a monthly spend limit. |
+| Model | A Claude subscription, through a Claude Code OAuth token. Amended 2026-11-09: the plan was a Console workspace with a spend limit, but the organization's only credit is promotional and does not cover Claude Code, which is what the GitHub Action bills as. The workspace route stands as the alternative once purchased credits exist. |
 
 ### Tasks
 
@@ -45,7 +45,7 @@ The reference lands in `transformation/seeds/reference/reference_<name>.csv`, wh
 
 ### Brakes
 
-Every PR passes CI. Only a human applies the label that starts a build run. Only a human merges. Caps: three fix attempts per build run, four hours per job, a spend limit on the workspace.
+Every PR passes CI. Only a human applies the label that starts a build run. Only a human merges. Caps: three fix attempts per build run, four hours per job, and the subscription's own usage limits in place of a workspace spend limit.
 
 ### Vocabulary
 
@@ -57,7 +57,7 @@ The glossary's **run** stays the source's: one execution of one source. The fact
 - The runner never holds more than the eval window, so it stays disposable and the six-hour ceiling is not a design constraint.
 - Each analysis adds a seed and a test. A reference goes stale only if the window's raw rows leave the warehouse, which shows up as a failing test with an obvious cause.
 - Two runs mean two round trips before any code exists. That is the price of catching a wrong definition before a pipeline is built on it.
-- Tokens cost money. The workspace limit caps it, and the Console's usage page is the cost view until a tracing platform earns its place.
+- Tokens cost usage. On a subscription the factory's runs share the plan's limits with the operator's own sessions, so a long build run can slow interactive work. The Console's usage page is the view until a tracing platform earns its place.
 - Deferred, in order of likely need: a build run triggered by a "changes requested" review, harness telemetry into the repo's Grafana, a retro task that proposes changes to the prompts.
 
 The first ticket is one whose answer the repo already knows, so the loop is proven before it is trusted with a new protocol.
