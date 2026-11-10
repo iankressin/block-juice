@@ -35,6 +35,7 @@ The model step holds two secrets in its environment: the model's own credential,
 | `DUNE_API_KEY` | scope, in the Dune MCP config the workflow writes to the runner's temp folder |
 | `EVM_RPC_URL` | scope, for block-pinned reads. An Ethereum archive node |
 | `PORTAL_API_KEY` | build, for every stream source the model runs. The public Portal paces anonymous streams, so a pool scan over millions of blocks needs it |
+| `PORTAL_HOST` | build, optional. A Portal other than the public one, as `https://host`. Each chain keeps its own dataset path; only the host changes, in the chain's gitignored `.env`. Masked in artifacts and searched for in the patch like a key. The scope run's Portal MCP stays on the public host |
 
 ## The App
 

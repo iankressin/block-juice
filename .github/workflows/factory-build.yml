@@ -362,9 +362,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/transcript"
           if [ -d ~/.claude/projects ]; then cp -R ~/.claude/projects/. "$RUNNER_TEMP/transcript/"; fi
           if [ -f "$EXECUTION_FILE" ]; then cp "$EXECUTION_FILE" "$RUNNER_TEMP/transcript/"; fi
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
-          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
-          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/transcript" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
+          uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
+          uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
 
       # Only after the mask above ended well: a failed mask must not publish what it was meant to hide.
       - uses: actions/upload-artifact@v4
@@ -443,10 +443,11 @@ jobs:
           GLUE: ${{ steps.glue.outputs.dir }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
         run: |
           # The mask runs whatever the artifact holds; a missing patch must not skip it.
           if [ -f "$RUNNER_TEMP/out/changes.patch" ]; then cp "$RUNNER_TEMP/out/changes.patch" "$RUNNER_TEMP/changes.before"; fi
-          python3 -I "$GLUE/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
+          python3 -I "$GLUE/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST
           if [ -f "$RUNNER_TEMP/changes.before" ] && ! cmp -s "$RUNNER_TEMP/changes.before" "$RUNNER_TEMP/out/changes.patch"; then
             echo "leaked=true" >> "$GITHUB_OUTPUT"
             echo "::error::the model's changes contain a secret, so nothing is pushed"
@@ -467,6 +468,7 @@ jobs:
           BASE_SHA: ${{ needs.work.outputs.base_sha }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          PORTAL_HOST: ${{ secrets.PORTAL_HOST }}
         run: |
           git fetch --depth 1 origin "$BASE_SHA"
           git checkout -B "$BRANCH" "$BASE_SHA"
@@ -488,7 +490,7 @@ jobs:
             exit 1
           fi
           git diff --cached -z --name-only --no-renames --diff-filter=AM > "$RUNNER_TEMP/changed-files"
-          if ! python3 -I "$GLUE/factory.py" leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY; then
+          if ! python3 -I "$GLUE/factory.py" leaks "$RUNNER_TEMP/changed-files" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY PORTAL_HOST; then
             echo "leaked=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi

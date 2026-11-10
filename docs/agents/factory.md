@@ -49,4 +49,4 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 
 ## Secrets and setup
 
-Repository secrets: `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `DUNE_API_KEY`, `EVM_RPC_URL`, `PORTAL_API_KEY`. The App is installed on this repo only, with issues, pull requests and contents read and write, and metadata read. `.github/factory/README.md` has the dry-run procedure.
+Repository secrets: `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_PRIVATE_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `DUNE_API_KEY`, `EVM_RPC_URL`, `PORTAL_API_KEY`, and `PORTAL_HOST` when the build run should read a Portal other than the public one. The App is installed on this repo only, with issues, pull requests and contents read and write, and metadata read. `.github/factory/README.md` has the dry-run procedure.
