@@ -326,6 +326,7 @@ jobs:
           } > "$RUNNER_TEMP/out/model.txt"
 
       - name: Collect the transcript
+        id: transcript
         if: always()
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
@@ -341,8 +342,9 @@ jobs:
           uv run --project orchestration python "$FACTORY/factory.py" scrub answers CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
           uv run --project orchestration python "$FACTORY/factory.py" scrub "$RUNNER_TEMP/out" CLAUDE_CODE_OAUTH_TOKEN PORTAL_API_KEY
 
+      # Only after the mask above ended well: a failed mask must not publish what it was meant to hide.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.transcript.outcome == 'success'
         with:
           name: factory-build-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
