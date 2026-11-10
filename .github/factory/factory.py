@@ -280,7 +280,9 @@ def model_error(execution_file: Path) -> str:
         return ""
     for message in data if isinstance(data, list) else [data]:
         if isinstance(message, dict) and message.get("type") == "result" and message.get("is_error"):
-            return " ".join(str(message.get("result") or "the run ended in an error with no message").split())
+            errors = message.get("errors")
+            text = message.get("result") or ("; ".join(str(e) for e in errors) if isinstance(errors, list) else "")
+            return " ".join(str(text or "the run ended in an error with no message").split())
     return ""
 
 

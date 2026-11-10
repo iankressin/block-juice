@@ -272,6 +272,7 @@ def test_the_verdict_passes_only_when_the_test_ran_and_returned_no_rows(tmp_path
         ([{"type": "system", "subtype": "init"}, {"type": "result", "subtype": "success", "is_error": True, "result": "Credit balance is too low"}], "Credit balance is too low"),
         ([{"type": "result", "subtype": "success", "is_error": False, "result": "Done."}], ""),
         ([{"type": "result", "subtype": "error_max_turns", "is_error": True, "result": None}], "the run ended in an error with no message"),
+        ([{"type": "result", "subtype": "error_during_execution", "is_error": True, "errors": ["Upstream API connection failed", "retry later"]}], "Upstream API connection failed; retry later"),
         ({"type": "result", "is_error": True, "result": "  two\n lines "}, "two lines"),
     ],
 )
