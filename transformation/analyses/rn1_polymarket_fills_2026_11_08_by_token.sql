@@ -1,5 +1,5 @@
--- RN1's fills per outcome token, side and role on Polygon blocks 96972629 to 96975028 (2026-11-08 19:00 to
--- 20:00 UTC): fills, shares, pUSD paid before fees, fees, and the share-weighted price in pUSD per share.
+-- RN1's fills per outcome token, side and role on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to
+-- 2026-11-10 00:00 UTC): fills, shares, pUSD paid before fees, fees, and the share-weighted price in pUSD per share.
 -- tests/reference/rn1_polymarket_fills_2026_11_08_matches_reference.sql checks the shares against the
 -- Polymarket Data API.
 select
@@ -17,6 +17,6 @@ select
 from {{ ref('polymarket_wallet_fills') }} as f
 left join {{ ref('polymarket_markets') }} as m on m.condition_id = f.condition_id
 where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
-    and f.block_number between 96972629 and 96975028
+    and f.block_number between 91743315 and 97042228
 group by f.token_id, f.side, f.role, f.condition_id, m.question, f.outcome
 order by shares desc, token_id, f.role

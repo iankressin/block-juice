@@ -1,5 +1,5 @@
--- RN1's complementary accumulation per two-outcome market on Polygon blocks 96972629 to 96975028
--- (2026-11-08 19:00 to 20:00 UTC). Amounts are pUSD; shares are outcome tokens.
+-- RN1's complementary accumulation per two-outcome market on Polygon blocks 91743315 to 97042228
+-- (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD; shares are outcome tokens.
 -- Per outcome (outcome_index 0 and 1): the shares RN1 bought and what they cost, fees included, so
 -- avg_cost is pUSD per share after fees.
 -- A complete pair is one share of each outcome; it redeems or merges for exactly 1 pUSD.
@@ -8,13 +8,13 @@
 --   pair_edge_usdc = pair_shares * (1 - pair_cost): the profit locked in by those pairs, before any
 --   disposal. It is negative when a pair cost more than 1.
 --   unmatched_shares sit on unmatched_outcome: directional exposure, worth its payout at resolution.
--- Only buys count: RN1 sold nothing in this window (sold_shares says so per market). Markets with more
--- than two outcomes have no complement token and stay out. game_start_time comes from Gamma.
+-- Only buys count; sold_shares shows what RN1 sold per market, which the pair figures leave out. Markets
+-- with more than two outcomes have no complement token and stay out. game_start_time comes from Gamma.
 with fills as (
     select f.*
     from {{ ref('polymarket_wallet_fills') }} as f
     where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
-        and f.block_number between 96972629 and 96975028
+        and f.block_number between 91743315 and 97042228
         and f.complement_token_id is not null
 ),
 
