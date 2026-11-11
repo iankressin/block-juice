@@ -224,6 +224,25 @@ test("a log that shares the event's signature but indexes other arguments is lef
   assert.deepEqual(page!.events.transfers.map((e) => e.logIndex), [1]);
 });
 
+test("an indexed string, bytes or array is only a hash in the log, and its value is that hash", async (t) => {
+  const named = parseAbiItem("event Named(string indexed name, bytes indexed tag, address[] indexed list, uint8 n)");
+  const [signature, name, tag] = encodeEventTopics({ abi: [named], args: { name: "héllo", tag: "0xcafe" } }) as string[];
+  const list = `0x${"ee".repeat(32)}`;
+  const row = {
+    ...transferIn(3),
+    topic0: signature!,
+    topic1: name!,
+    topic2: tag!,
+    topic3: list,
+    data: encodeAbiParameters([{ type: "uint8" }], [7]),
+  };
+  const { url } = await bloklake(t, { head: 100, logs: [row] });
+
+  const [page] = await collect(bloklakeClient(url, "k").events({ named: { event: named } }, { from: 1, to: 10 }));
+
+  assert.deepEqual(page!.events.named.map((e) => e.args), [{ name, tag, list, n: 7 }]);
+});
+
 test("an anonymous event, which has no signature topic, is read from its contract", async (t) => {
   const anonymous = {
     type: "event",

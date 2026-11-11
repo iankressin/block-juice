@@ -18,6 +18,9 @@ type Hex = `0x${string}`;
  * | `intN`, `uintN`, N >= 40 | bigint                                |
  * | `T[]`, `T[k]`            | array of T's value                    |
  * | tuple                    | object keyed by each component's name |
+ *
+ * An indexed `string`, `bytes`, array or tuple is only its keccak-256 hash in the log, so its value
+ * is that hash, as hex in lower case. Pipes gives the same.
  */
 export type Value = string | number | bigint | boolean | Value[] | { [name: string]: Value };
 
