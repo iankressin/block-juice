@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { encodeAbiParameters, encodeEventTopics, parseAbiItem, type AbiEvent } from "viem";
 import { defineAbi } from "@subsquid/pipes/evm";
-import { bloklakeClient } from "#src/bloklake.ts";
+import { bloklakeClient } from "#src/providers/bloklake/client.ts";
 
 type Row = Record<string, string | number | null>;
 type Filter = Record<string, string[]>;
