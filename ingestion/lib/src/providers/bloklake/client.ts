@@ -87,8 +87,10 @@ type LogFilter = Partial<
 >;
 
 const TRIES = 10;
-/** Too many requests, a fault on bloklake's side, and no free query slot: bloklake says to ask again. */
-const WORTH_ANOTHER_TRY = new Set([429, 500, 503]);
+/** The longest wait between two tries, whatever bloklake asks for, so ten tries end within minutes. */
+const WAIT_SECONDS_MAX = 30;
+/** Too many requests, no free query slot, and a fault on bloklake's side or in a gateway before it. */
+const WORTH_ANOTHER_TRY = new Set([429, 500, 502, 503, 504]);
 
 /**
  * A client for one chain of bloklake, at `url`: https://api.bloklake.com/v1/chains/<chain>.
@@ -123,7 +125,7 @@ export function bloklakeClient(url: string, apiKey: string, clock: Clock) {
           `bloklake answered ${response.status} to ${path}: ${await response.text()}`,
         ),
         final: !WORTH_ANOTHER_TRY.has(response.status),
-        retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
+        retryAfter: retryAfter >= 0 ? retryAfter : undefined,
       };
     } catch (error) {
       return { ok: false as const, error, final: false };
@@ -139,7 +141,10 @@ export function bloklakeClient(url: string, apiKey: string, clock: Clock) {
       const sent = await send(path, body);
       if (sent.ok) return answer.parse(sent.json);
       if (sent.final || attempt === TRIES) throw sent.error;
-      const seconds = sent.retryAfter ?? Math.min(2 ** (attempt - 1), 30);
+      const seconds = Math.min(
+        sent.retryAfter ?? 2 ** (attempt - 1),
+        WAIT_SECONDS_MAX,
+      );
       await clock.sleep(seconds * 1000);
     }
   }
@@ -181,8 +186,9 @@ export function bloklakeClient(url: string, apiKey: string, clock: Clock) {
           logs: named.map(({ filter }) => filter),
           fields: { log: LOG_FIELDS },
         });
-        // Past the head bloklake returns no blocks and repeats the block it was asked for.
-        if (page.next_block === from) return;
+        // Past the head bloklake returns no blocks and repeats the block it was asked for. A repeated
+        // block that comes with logs fails the check below instead of losing them.
+        if (page.next_block === from && page.logs.length === 0) return;
         if (page.to_block < from || page.next_block !== page.to_block + 1) {
           throw new Error(
             `bloklake answered blocks ${from} to ${page.to_block} with next_block ${page.next_block}`,

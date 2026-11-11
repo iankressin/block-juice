@@ -46,16 +46,18 @@ function log(block: number, logIndex: number, address: string, event: AbiEvent, 
  * blocks a response and filters as the API does: a log matches a filter when each of the filter's
  * fields lists the log's value, and it is returned when it matches any filter. `failures` are sent
  * first, one a request: a status and headers, or "drop" to break the connection. `skip` blocks are
- * left out between one response and the next, as a faulty server might.
+ * left out between one response and the next, and `stuck` repeats the block each request asked
+ * for, logs and all, as a faulty server might.
  */
 async function bloklake(
   t: TestContext,
-  { logs, head, blocksPerPage = 100, failures = [], skip = 0 }: {
+  { logs, head, blocksPerPage = 100, failures = [], skip = 0, stuck = false }: {
     logs: Row[];
     head: number;
     blocksPerPage?: number;
     failures?: ("drop" | { status: number; headers?: Record<string, string>; code: string })[];
     skip?: number;
+    stuck?: boolean;
   },
 ) {
   const requests: { path: string; headers: IncomingHttpHeaders; body?: Body }[] = [];
@@ -95,7 +97,7 @@ async function bloklake(
         finalized_block: head - 5,
         from_block: fromBlock,
         to_block: beyondHead ? head : to,
-        next_block: beyondHead ? fromBlock : to + 1 + skip,
+        next_block: beyondHead || stuck ? fromBlock : to + 1 + skip,
         objects: matching.length,
         to_block_hash: null,
         unavailable_fields: [],
@@ -148,6 +150,12 @@ test("a response whose next_block skips blocks fails the read instead of losing 
   const { url } = await bloklake(t, { logs: [1, 2, 3, 4, 5].map(transferIn), head: 100, blocksPerPage: 2, skip: 2 });
   const pages = bloklakeClient(url, "k", fakeClock()).events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 5 });
   await assert.rejects(collect(pages), /blocks 1 to 2 with next_block 5/);
+});
+
+test("a response that repeats the block it was asked for but holds logs fails the read instead of losing them", async (t) => {
+  const { url } = await bloklake(t, { logs: [transferIn(3)], head: 100, stuck: true });
+  const pages = bloklakeClient(url, "k", fakeClock()).events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 10 });
+  await assert.rejects(collect(pages), /blocks 1 to 10 with next_block 1/);
 });
 
 test("a page with no matching log still reports the blocks it covered", async (t) => {
@@ -282,6 +290,21 @@ test("it waits as long as bloklake says and asks again when the rate limit is hi
   assert.deepEqual(clock.waits, [3000]);
 });
 
+test("a Retry-After past 30 seconds waits 30, and a negative one falls back to the backoff", async (t) => {
+  const { url, requests } = await bloklake(t, {
+    logs: [],
+    head: 100,
+    failures: [
+      { status: 429, headers: { "retry-after": "2000000" }, code: "rate_limited" },
+      { status: 429, headers: { "retry-after": "-5" }, code: "rate_limited" },
+    ],
+  });
+  const clock = fakeClock();
+  assert.equal(await bloklakeClient(url, "k", clock).finalizedHead(), 95);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(clock.waits, [30_000, 2000]);
+});
+
 test("it asks again when the connection breaks", async (t) => {
   const { url, requests } = await bloklake(t, { logs: [transferIn(1)], head: 100, failures: ["drop"] });
   const clock = fakeClock();
@@ -291,11 +314,12 @@ test("it asks again when the connection breaks", async (t) => {
   assert.deepEqual(clock.waits, [1000]);
 });
 
-test("without a Retry-After each wait doubles up to 30 seconds, and the tenth failure is final", async (t) => {
-  const busy = { status: 503, code: "busy" };
-  const { url, requests } = await bloklake(t, { logs: [], head: 100, failures: Array.from({ length: 10 }, () => busy) });
+test("a 500, 502, 503 or 504 without a Retry-After waits twice as long each time, up to 30 seconds, and the tenth is final", async (t) => {
+  const statuses = [500, 502, 503, 504];
+  const failures = Array.from({ length: 10 }, (_, i) => ({ status: statuses[i % statuses.length]!, code: "busy" }));
+  const { url, requests } = await bloklake(t, { logs: [], head: 100, failures });
   const clock = fakeClock();
-  await assert.rejects(bloklakeClient(url, "k", clock).finalizedHead(), /503/);
+  await assert.rejects(bloklakeClient(url, "k", clock).finalizedHead(), /answered 502/);
   assert.equal(requests.length, 10);
   assert.deepEqual(clock.waits, [1, 2, 4, 8, 16, 30, 30, 30, 30].map((seconds) => seconds * 1000));
 });
