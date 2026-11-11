@@ -1,0 +1,102 @@
+version: 2
+
+models:
+  - name: int_ethereum_deployment_state_gas
+    description: Ethereum contract-deployment transactions with their EIP-8037 state gas, in the shape deployment_state_gas reads.
+    columns:
+      - name: tx_hash
+        data_tests: [unique, not_null]
+
+unit_tests:
+  - name: deployment_counts_standing_creates_accounts_and_slots
+    description: >-
+      Transaction 0xf0747bd0…41f6 in block 26367346, the one top-level deployment of the 2026-11-08 eval
+      window above 60M: a create of 23,214 code bytes whose constructor creates another of 16,291, both at
+      new addresses, and no new slot, so 1530 * (2 * 120 + 39505) = 60,809,850. In a made-up transaction, a
+      create under a reverted call does not count; a create at an address that already held a balance counts
+      its code but no new account; a create the state diffs do not list, created and deleted in the
+      transaction, counts a new account; a slot counts when it goes from zero or absent to nonzero, whatever
+      its kind. A failed transaction and one whose only create failed have no row.
+    model: int_ethereum_deployment_state_gas
+    given:
+      - input: ref('stg_ethereum__contract_deployments')
+        format: sql
+        rows: |
+          select id, block_number, '2026-11-08T03:05:47Z'::timestamptz as block_timestamp, transaction_index,
+              trace_type, trace_address::integer[] as trace_address, 0 as subtraces, error, create_from,
+              0::numeric as create_value, create_address, create_code, null::text as call_from,
+              null::text as call_to, null::text as call_type, null::text as call_sighash,
+              now() as _loaded_at
+          from (values
+              ('26367346:9:trace:', 26367346::bigint, 9, 'create', '{}', null,
+                  '0x7548658423753336b0225bd613085698aa45db94', '0x2d0d1e2a73c274930ccd50673f359f4253884ad7',
+                  '0x' || repeat('60', 23214)),
+              ('26367346:9:trace:0', 26367346::bigint, 9, 'create', '{0}', null,
+                  '0x2d0d1e2a73c274930ccd50673f359f4253884ad7', '0x0beaa794d04d7dd62f592fb2ee43bb3117438aa4',
+                  '0x' || repeat('60', 16291)),
+              ('1:0:trace:', 1::bigint, 0, 'call', '{}', null, null, null, null),
+              ('1:0:trace:0', 1::bigint, 0, 'call', '{0}', 'Reverted', null, null, null),
+              ('1:0:trace:0.0', 1::bigint, 0, 'create', '{0,0}', null,
+                  '0x00000000000000000000000000000000000000c0', '0x00000000000000000000000000000000000000a0', '0x6001'),
+              ('1:0:trace:1', 1::bigint, 0, 'create', '{1}', null,
+                  '0x00000000000000000000000000000000000000c0', '0x00000000000000000000000000000000000000a1', '0x6001'),
+              ('1:0:trace:2', 1::bigint, 0, 'create', '{2}', null,
+                  '0x00000000000000000000000000000000000000c0', '0x00000000000000000000000000000000000000a2', '0x'),
+              ('1:1:trace:', 1::bigint, 1, 'create', '{}', null,
+                  '0x00000000000000000000000000000000000000c1', '0x00000000000000000000000000000000000000a3', '0x6001'),
+              ('1:2:trace:', 1::bigint, 2, 'create', '{}', 'Reverted',
+                  '0x00000000000000000000000000000000000000c2', null, null)
+          ) as t (id, block_number, transaction_index, trace_type, trace_address, error, create_from,
+              create_address, create_code)
+      - input: ref('stg_ethereum__contract_deployments_transactions')
+        format: sql
+        rows: |
+          select id, block_number, '2026-11-08T03:05:47Z'::timestamptz as block_timestamp, transaction_index,
+              hash, from_address, to_address, null::text as sighash, 2 as transaction_type, status,
+              0::numeric as gas_used, now() as _loaded_at
+          from (values
+              ('tx:0xf0747bd0940223c360925f15bf4cdfd0d8d55ca5d9ab672f788c07fb9da441f6', 26367346::bigint, 9,
+                  '0xf0747bd0940223c360925f15bf4cdfd0d8d55ca5d9ab672f788c07fb9da441f6',
+                  '0x7548658423753336b0225bd613085698aa45db94', null::text, 1),
+              ('tx:0x01', 1::bigint, 0, '0x01', '0x00000000000000000000000000000000000000e0',
+                  '0x00000000000000000000000000000000000000c0', 1),
+              ('tx:0x02', 1::bigint, 1, '0x02', '0x00000000000000000000000000000000000000e0', null::text, 0),
+              ('tx:0x03', 1::bigint, 2, '0x03', '0x00000000000000000000000000000000000000e0', null::text, 1)
+          ) as t (id, block_number, transaction_index, hash, from_address, to_address, status)
+      - input: ref('stg_ethereum__contract_deployments_state_diffs')
+        format: sql
+        rows: |
+          select block_number || ':' || transaction_index || ':diff:' || address || ':' || key as id,
+              block_number, transaction_index, address, key, key like '0x%' as is_storage, diff_kind, prev, next,
+              now() as _loaded_at
+          from (values
+              (26367346::bigint, 9, '0x7548658423753336b0225bd613085698aa45db94', 'nonce', '*', '0x1f9', '0x1fa'),
+              (26367346::bigint, 9, '0x0beaa794d04d7dd62f592fb2ee43bb3117438aa4', 'balance', '+', null, '0x0'),
+              (26367346::bigint, 9, '0x0beaa794d04d7dd62f592fb2ee43bb3117438aa4', 'nonce', '+', null, '0x1'),
+              (26367346::bigint, 9, '0x2d0d1e2a73c274930ccd50673f359f4253884ad7', 'balance', '+', null, '0x0'),
+              (26367346::bigint, 9, '0x2d0d1e2a73c274930ccd50673f359f4253884ad7', 'nonce', '+', null, '0x2'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000a1', 'balance', '*', '0x5', '0x5'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000a1', 'nonce', '*', '0x0', '0x1'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000a1',
+                  '0x0000000000000000000000000000000000000000000000000000000000000001', '+', null,
+                  '0x0000000000000000000000000000000000000000000000000000000000000007'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000a1',
+                  '0x0000000000000000000000000000000000000000000000000000000000000002', '+', null,
+                  '0x0000000000000000000000000000000000000000000000000000000000000000'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000c0',
+                  '0x0000000000000000000000000000000000000000000000000000000000000001', '*',
+                  '0x0000000000000000000000000000000000000000000000000000000000000000',
+                  '0x0000000000000000000000000000000000000000000000000000000000000009'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000c0',
+                  '0x0000000000000000000000000000000000000000000000000000000000000002', '*',
+                  '0x0000000000000000000000000000000000000000000000000000000000000003',
+                  '0x0000000000000000000000000000000000000000000000000000000000000004'),
+              (1::bigint, 0, '0x00000000000000000000000000000000000000c0',
+                  '0x0000000000000000000000000000000000000000000000000000000000000003', '*',
+                  '0x0000000000000000000000000000000000000000000000000000000000000005',
+                  '0x0000000000000000000000000000000000000000000000000000000000000000')
+          ) as t (block_number, transaction_index, address, key, diff_kind, prev, next)
+    expect:
+      rows:
+        - {tx_hash: "0xf0747bd0940223c360925f15bf4cdfd0d8d55ca5d9ab672f788c07fb9da441f6", creates: 2, new_accounts: 2, code_bytes: 39505, new_slots: 0, state_gas: 60809850}
+        - {tx_hash: "0x01", creates: 2, new_accounts: 1, code_bytes: 2, new_slots: 2, state_gas: 382500}

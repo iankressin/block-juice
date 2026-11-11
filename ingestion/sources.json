@@ -87,6 +87,12 @@
   },
   {
     "name": "ethereum",
+    "table": "contract_deployments",
+    "package": "evm-contract-deployments",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
     "table": "erc20_balances",
     "package": "evm-erc20-balances",
     "settings": "chains/ethereum"

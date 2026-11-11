@@ -13,6 +13,7 @@ PIPELINES = {
     "tokens": "0 6 * * *",
     "polymarket": "0 6 * * *",
     "accounts": "0 6 * * *",
+    "deployments": "0 6 * * *",
 }
 
 jobs = [
