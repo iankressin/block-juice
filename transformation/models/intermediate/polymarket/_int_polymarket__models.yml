@@ -294,6 +294,19 @@ models:
       - name: end_date
         data_type: timestamp with time zone
         description: When Gamma says the market ends.
+      - name: is_sports
+        data_type: boolean
+        description: True when Gamma gives the market a sportsMarketType or a sports fee schedule (feeType sports_*).
+        data_tests: [not_null]
+      - name: sports_market_type
+        data_type: text
+        description: Gamma's sportsMarketType, such as moneyline, spreads or totals; null on other markets.
+      - name: series_slug
+        data_type: text
+        description: Gamma's series for the event, such as nfl-2026; it names the league.
+      - name: game_start_time
+        data_type: timestamp with time zone
+        description: When Gamma says the game starts; null on markets that are not about one game.
 
   - name: int_polygon_polymarket_ctf_conditions
     description: >-
@@ -1409,22 +1422,26 @@ unit_tests:
               'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
               '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
               false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
-              'v1' as protocol_version
+              'v1' as protocol_version, null::text as sports_market_type, 'mls-2026' as series_slug,
+              null::timestamptz as game_start_time, 'sports_fees_v3' as fee_type
           union all
           -- Made up: a second market on the same condition.
           select '10000000', '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a', 'Made up?', 'made-up',
-              '2', 'Made up', false, array['Yes', 'No'], '2026-11-09 00:00:00+00', 'v1'
+              '2', 'Made up', false, array['Yes', 'No'], '2026-11-09 00:00:00+00', 'v1', null, null, null, null
           union all
           -- Made up: a placeholder neg-risk market has no condition.
-          select '0', null, 'Placeholder', 'placeholder', '3', 'Made up', true, array['Yes', 'No'], null, 'v1'
+          select '0', null, 'Placeholder', 'placeholder', '3', 'Made up', true, array['Yes', 'No'], null, 'v1',
+              null, null, null, null
           union all
           -- Protocol V2 market 6770019, left out because it is not v1.
           select '6770019', '0x012022213b0b69c791e46cd2665350ea69000000000000000000000000000000', 'Made up?', 'made-up',
-              '1329404', 'Made up', false, array['Up', 'Down'], null, 'v2'
+              '1329404', 'Made up', false, array['Up', 'Down'], null, 'v2', null, null, null, 'crypto_fees_v2'
     expect:
       format: sql
       rows: |
         select '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a' as condition_id, '6826443' as market_id,
             'Jefferson Díaz: Anytime Goalscorer' as question, 'mls-min-sje-2026-11-07-ags-jefferson-diaz-90123923' as slug,
             '1336094' as event_id, 'Minnesota United FC vs. San Jose Earthquakes - Player Props' as event_title,
-            false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date
+            false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
+            true as is_sports, null::text as sports_market_type, 'mls-2026' as series_slug,
+            null::timestamptz as game_start_time

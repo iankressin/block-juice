@@ -28,3 +28,17 @@ seeds:
         address: text
         metric: text
         amount: numeric
+  - name: reference_rn1_polymarket_fills_2026_11_08
+    description: >-
+      #45: shares RN1 (Polymarket wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea) traded per outcome
+      token, side and maker/taker role on the CTF Exchange v2 exchanges, on Polygon blocks 96972629 to
+      96975028 (2026-11-08T19:00:00Z to 2026-11-08T20:00:00Z), from the protocol_api oracle: Polymarket
+      Data API GET https://data-api.polymarket.com/v2/activity?user=0x2005d16a84ceefa912d4e380cd32e7ff827875ea&start=1794164400&end=1794168000
+      (type TRADE, paged by cursor) for every fill, and GET /v2/trades with the same user, start and end
+      and the default taker-only filter for the taker fills; the rest are maker fills.
+    config:
+      column_types:
+        token_id: text
+        side: text
+        role: text
+        shares: numeric
