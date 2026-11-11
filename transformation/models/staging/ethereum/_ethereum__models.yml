@@ -1,6 +1,47 @@
 version: 2
 
 models:
+  - name: stg_ethereum__wallet_transactions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [unique, not_null]
+      - name: from_address
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+      - name: gas_used
+        data_tests: [not_null]
+      - name: effective_gas_price
+        data_tests: [not_null]
+  - name: stg_ethereum__account_state
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "block_number || ':' || kind || ':' || address"
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [balance, nonce, code]
+      - name: block_number
+        data_tests: [not_null]
+      - name: address
+        data_tests: [not_null]
   - name: stg_ethereum__eth_balances
     columns:
       - name: id

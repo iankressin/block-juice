@@ -75,6 +75,12 @@
   },
   {
     "name": "ethereum",
+    "table": "account_state",
+    "package": "evm-account-state",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
     "settings": "chains/ethereum"
@@ -119,6 +125,12 @@
     "name": "ethereum",
     "table": "uniswap_v4",
     "package": "evm-uniswap-v4",
+    "settings": "chains/ethereum"
+  },
+  {
+    "name": "ethereum",
+    "table": "wallet_transactions",
+    "package": "evm-wallet-transactions",
     "settings": "chains/ethereum"
   },
   {

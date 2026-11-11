@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: wallet_transactions
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || tx_hash"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      - name: block_number
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: from_address
+        data_tests: [not_null]
+      - name: value_wei
+        data_tests: [not_null]
+      - name: succeeded
+        data_tests: [not_null]
+      - name: fee_wei
+        data_tests: [not_null]
+  - name: account_states
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || address || ':' || block_number"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      - name: address
+        data_tests: [not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: code_kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [none, eip7702_delegation, contract]
+  - name: address_attributions
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || address || ':' || attribution"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      - name: address
+        data_tests: [not_null]
+      - name: attribution
+        data_tests: [not_null]
