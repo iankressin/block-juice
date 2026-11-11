@@ -59,7 +59,13 @@ export interface Source<E, C> extends SourceBase<E> {
  * run resumes after the last batch that committed.
  */
 export interface StreamSource<E> extends SourceBase<E> {
-  /** About this many blocks a run (it ends on the batch that passes it), so a long backfill spreads over several runs. 1,000,000 by default. */
+  /**
+   * Blocks one run reads before it stops, on the batch that passes the cap.
+   * `MAX_BLOCKS_PER_RUN` wins when it is set: the operator chose it for this run.
+   * When that variable is unset, this field applies. When neither is set, the run
+   * has no cap and continues to END_BLOCK or the finalized head. A failed run
+   * resumes from the cursor of the last batch that committed.
+   */
   maxBlocksPerRun?: number;
   stream(env: E): Promise<PortalStream<any, StreamRecords>>;
 }

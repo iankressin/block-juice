@@ -13,6 +13,17 @@ import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
 process.env.PUSHGATEWAY_URL = "";
 
+/** Sets MAX_BLOCKS_PER_RUN for one test. Undefined deletes it, which is no cap. Restored afterwards. */
+function useBlockCap(t: TestContext, value: string | undefined) {
+  const saved = process.env.MAX_BLOCKS_PER_RUN;
+  t.after(() => {
+    if (saved === undefined) delete process.env.MAX_BLOCKS_PER_RUN;
+    else process.env.MAX_BLOCKS_PER_RUN = saved;
+  });
+  if (value === undefined) delete process.env.MAX_BLOCKS_PER_RUN;
+  else process.env.MAX_BLOCKS_PER_RUN = value;
+}
+
 const token = "0x00000000000000000000000000000000000000aa";
 const wallet = "0x00000000000000000000000000000000000000bb";
 
@@ -33,7 +44,7 @@ async function chain(t: TestContext, last: number) {
 }
 
 /** Transfers from block 1 to `to`. `broken` gives the record of that block an id Postgres rejects. */
-function transfers(url: string, to: number, maxBlocksPerRun: number, broken = () => 0): StreamSource<unknown> {
+function transfers(url: string, to: number, maxBlocksPerRun?: number, broken = () => 0): StreamSource<unknown> {
   return {
     name: "test",
     table: "transfers",
@@ -67,6 +78,7 @@ const cursor = async (db: PGlite) =>
   (await db.query<{ n: string }>("select max(current_number) as n from raw._sync where id = 'test_transfers'")).rows[0]?.n;
 
 test("each run resumes after the last block the one before loaded, and stops after maxBlocksPerRun", async (t) => {
+  useBlockCap(t, undefined);
   const { db, warehouse } = await pgliteWarehouse(t);
   const source = transfers(await chain(t, 6), 6, 3);
 
@@ -85,6 +97,7 @@ test("each run resumes after the last block the one before loaded, and stops aft
 });
 
 test("a batch that fails to load commits neither its rows nor its block, so the next run reads it again", async (t) => {
+  useBlockCap(t, undefined);
   const { db, warehouse } = await pgliteWarehouse(t);
   const url = await chain(t, 4);
   let broken = 3;
@@ -99,4 +112,116 @@ test("a batch that fails to load commits neither its rows nor its block, so the 
   await runSource(transfers(url, 4, 100, () => broken), warehouse);
   assert.equal(process.exitCode, undefined);
   assert.deepEqual(await loaded(db), ["1", "2", "3", "4"]);
+});
+
+test("with MAX_BLOCKS_PER_RUN unset, a run has no cap and reads to the end block", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const source = transfers(await chain(t, 6), 6);
+
+  await runSource(source, warehouse);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4", "5", "6"]);
+  await runSource(source, warehouse);
+
+  assert.equal(process.exitCode, undefined, "both runs succeeded");
+  assert.equal(await cursor(db), "6");
+  const { rows } = await db.query<{ records_written: number }>(
+    "select records_written from ops.ingestion_runs order by started_at",
+  );
+  assert.deepEqual(
+    rows.map((r) => r.records_written),
+    [6, 0],
+    "every batch was reported, then the next run found nothing new",
+  );
+});
+
+test("an empty MAX_BLOCKS_PER_RUN counts as unset, so the run reads to the end block", async (t) => {
+  useBlockCap(t, "");
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const source = transfers(await chain(t, 6), 6);
+
+  await runSource(source, warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4", "5", "6"]);
+  assert.equal(await cursor(db), "6");
+});
+
+test("MAX_BLOCKS_PER_RUN caps the run when the source sets no maxBlocksPerRun", async (t) => {
+  useBlockCap(t, "3");
+  const { db, warehouse } = await pgliteWarehouse(t);
+
+  await runSource(transfers(await chain(t, 6), 6), warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4"], "the run stopped on the batch that passed 3 blocks");
+  assert.equal(await cursor(db), "4");
+});
+
+test("MAX_BLOCKS_PER_RUN wins over the source's maxBlocksPerRun", async (t) => {
+  useBlockCap(t, "3");
+  const { db, warehouse } = await pgliteWarehouse(t);
+
+  // The source would stop after 2 blocks. The env cap of 3 is what this run uses.
+  await runSource(transfers(await chain(t, 6), 6, 2), warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4"]);
+});
+
+test("the source's maxBlocksPerRun applies when MAX_BLOCKS_PER_RUN is unset", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+
+  await runSource(transfers(await chain(t, 6), 6, 2), warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2"]);
+  assert.equal(await cursor(db), "2");
+});
+
+test("MAX_BLOCKS_PER_RUN rejects 0, a negative, a decimal and text", async (t) => {
+  const saved = process.env.MAX_BLOCKS_PER_RUN;
+  t.after(() => {
+    if (saved === undefined) delete process.env.MAX_BLOCKS_PER_RUN;
+    else process.env.MAX_BLOCKS_PER_RUN = saved;
+    process.exitCode = undefined;
+  });
+  const url = await chain(t, 4);
+  for (const value of ["0", "-1", "1.5", "many"]) {
+    process.env.MAX_BLOCKS_PER_RUN = value;
+    process.exitCode = undefined;
+    const { db, warehouse } = await pgliteWarehouse(t);
+    await runSource(transfers(url, 4), warehouse);
+    assert.equal(process.exitCode, 1, `${value} fails the run`);
+    // The run fails before it opens the raw table, so the only record of it is the run log.
+    const { rows } = await db.query<{ error: string | null; records_written: number }>(
+      "select error, records_written from ops.ingestion_runs",
+    );
+    assert.equal(rows[0]?.records_written, 0, `${value} writes no records`);
+    const error = rows[0]?.error ?? "";
+    assert.match(error, /Invalid environment/, value);
+    assert.match(error, /MAX_BLOCKS_PER_RUN/, value);
+    assert.match(error, /positive whole number/, value);
+    assert.match(error, /unset for no cap/, value);
+  }
+});
+
+test("an uncapped run commits its cursor after each batch, so a failure resumes from the last one", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const url = await chain(t, 6);
+  let broken = 5;
+
+  await runSource(transfers(url, 6, undefined, () => broken), warehouse);
+  assert.equal(process.exitCode, 1, "the run failed");
+  process.exitCode = undefined;
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4"], "the two batches before the failure committed");
+  assert.equal(await cursor(db), "4");
+  const { rows } = await db.query<{ records_written: number }>(
+    "select records_written from ops.ingestion_runs order by started_at",
+  );
+  assert.deepEqual(rows.map((r) => r.records_written), [4], "progress counts only the batches that committed");
+
+  broken = 0;
+  await runSource(transfers(url, 6, undefined, () => broken), warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4", "5", "6"]);
+  assert.equal(await cursor(db), "6");
 });

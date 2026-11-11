@@ -7,8 +7,21 @@ import { pushRunMetrics } from "#src/run/metrics.ts";
 import type { Source, StreamSource } from "#src/source.ts";
 import { postgresWarehouse, type DeadLetterBacklog, type Warehouse } from "#src/warehouse/index.ts";
 
-const runEnv = z.object({ DAGSTER_RUN_ID: z.string().min(1).optional() });
-const MAX_BLOCKS_PER_RUN = 1_000_000;
+// A positive whole number of blocks, at most 15 digits, so it stays a safe integer.
+// Zero, a negative, a decimal or other text fails the run instead of meaning no cap.
+// Unset or empty means no cap: loadEnv treats an empty value as unset.
+const blockCount = z
+  .string()
+  .regex(
+    /^[1-9]\d{0,14}$/,
+    "Expected a positive whole number of blocks. Leave it unset for no cap.",
+  )
+  .transform(Number);
+
+const runEnv = z.object({
+  DAGSTER_RUN_ID: z.string().min(1).optional(),
+  MAX_BLOCKS_PER_RUN: blockCount.optional(),
+});
 
 /** What runSource reports when a run ends, to the Pushgateway and to ops.ingestion_runs. */
 export type RunReport = {
@@ -45,7 +58,6 @@ export async function runSource<E, C>(
   warehouse: Warehouse = postgresWarehouse(),
 ): Promise<void> {
   const runId = randomUUID();
-  const { DAGSTER_RUN_ID } = loadEnv(runEnv);
   const log = logger.child({ source: source.name, table: source.table });
   const startedAt = new Date();
   let retriedCalls = 0;
@@ -54,8 +66,13 @@ export async function runSource<E, C>(
   let loadSeconds = 0;
   let backlog: DeadLetterBacklog | undefined;
   let error: string | undefined;
+  let dagsterRunId: string | undefined;
 
   try {
+    // Inside the try so a bad MAX_BLOCKS_PER_RUN fails the run with one fatal log, like any other
+    // invalid environment, instead of reaching Node's own crash output.
+    const { DAGSTER_RUN_ID, MAX_BLOCKS_PER_RUN } = loadEnv(runEnv);
+    dagsterRunId = DAGSTER_RUN_ID;
     const env = loadEnv(source.env);
     const table = await warehouse.open(`${source.name}_${source.table}`);
     try {
@@ -64,7 +81,8 @@ export async function runSource<E, C>(
         const stream = await source.stream(env);
         await stream.pipeTo(
           table.pipesTarget({
-            maxBlocks: source.maxBlocksPerRun ?? MAX_BLOCKS_PER_RUN,
+            // The env var wins when it is set. Otherwise the source's own cap, or no cap at all.
+            maxBlocks: MAX_BLOCKS_PER_RUN ?? source.maxBlocksPerRun,
             onLoad({ records, seconds }) {
               loadSeconds += seconds;
               recordsWritten += records;
@@ -119,7 +137,7 @@ export async function runSource<E, C>(
 
   const report: RunReport = {
     runId,
-    dagsterRunId: DAGSTER_RUN_ID,
+    dagsterRunId,
     source: source.name,
     table: source.table,
     startedAt,
