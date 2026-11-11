@@ -224,6 +224,26 @@ test("a log that shares the event's signature but indexes other arguments is lef
   assert.deepEqual(page!.events.transfers.map((e) => e.logIndex), [1]);
 });
 
+test("an anonymous event, which has no signature topic, is read from its contract", async (t) => {
+  const anonymous = {
+    type: "event",
+    name: "Deposit",
+    anonymous: true,
+    inputs: [
+      { name: "who", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+  } as const satisfies AbiEvent;
+  const { url, requests } = await bloklake(t, { head: 100, logs: [log(4, 2, TOKEN, anonymous, { who: WALLET, amount: 9n })] });
+
+  const [page] = await collect(
+    bloklakeClient(url, "k").events({ deposits: { event: anonymous, contracts: [TOKEN] } }, { from: 1, to: 10 }),
+  );
+
+  assert.deepEqual(requests[0]!.body!.logs, [{ address: [TOKEN.toLowerCase()] }]);
+  assert.deepEqual(page!.events.deposits.map((e) => e.args), [{ who: WALLET.toLowerCase(), amount: 9n }]);
+});
+
 test("the finalized head comes from /status, and the key goes as a bearer token", async (t) => {
   const { url, requests } = await bloklake(t, { logs: [], head: 100 });
   assert.equal(await bloklakeClient(`${url}/`, "bl_live_test").finalizedHead(), 95);

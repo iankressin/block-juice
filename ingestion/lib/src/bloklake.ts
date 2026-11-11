@@ -187,7 +187,8 @@ function decode(event: AbiEvent, log: Log): DecodedEvent[] {
   const topics = [log.topic0, log.topic1, log.topic2, log.topic3].filter((topic) => topic !== null);
   // Another event can share the signature and index other arguments, as ERC-721's Transfer does
   // with ERC-20's. It is not this event.
-  if (topics.length !== 1 + event.inputs.filter((input) => input.indexed).length) return [];
+  const signature = event.anonymous ? 0 : 1;
+  if (topics.length !== signature + event.inputs.filter((input) => input.indexed).length) return [];
   const { args } = decodeEventLog({ abi: [event], topics: topics as [Hex, ...Hex[]], data: log.data });
   const decoded = args as unknown as Record<string, unknown>;
   return [
