@@ -69,6 +69,10 @@ async function bloklake(
     if (req.url === "/status") {
       return void res.end(JSON.stringify({ chain_id: 1, first_block: 0, archive_height: head, finalized_block: head - 5 }));
     }
+    if (req.url !== "/query/json") {
+      res.writeHead(404);
+      return void res.end(JSON.stringify({ error: { code: "not_found", message: `no route ${req.url}` } }));
+    }
 
     const { fromBlock, toBlock, logs: filters } = body!;
     const to = Math.min(fromBlock + blocksPerPage - 1, toBlock, head);
@@ -222,7 +226,7 @@ test("a log that shares the event's signature but indexes other arguments is lef
 
 test("the finalized head comes from /status, and the key goes as a bearer token", async (t) => {
   const { url, requests } = await bloklake(t, { logs: [], head: 100 });
-  assert.equal(await bloklakeClient(url, "bl_live_test").finalizedHead(), 95);
+  assert.equal(await bloklakeClient(`${url}/`, "bl_live_test").finalizedHead(), 95);
   assert.equal(requests[0]!.path, "/status");
   assert.equal(requests[0]!.headers.authorization, "Bearer bl_live_test");
 });

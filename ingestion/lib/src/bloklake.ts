@@ -95,9 +95,11 @@ const WORTH_ANOTHER_TRY = new Set([429, 500, 503]);
  * broken connection without hanging a run for good.
  */
 export function bloklakeClient(url: string, apiKey: string) {
+  const base = url.replace(/\/+$/, "");
+
   async function send(path: string, body?: unknown) {
     try {
-      const response = await fetch(`${url}${path}`, {
+      const response = await fetch(`${base}${path}`, {
         method: body ? "POST" : "GET",
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
