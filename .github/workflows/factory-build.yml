@@ -255,12 +255,17 @@ jobs:
       - name: Preserve the injected Portal key when sourcing .env
         run: sed --in-place '/^PORTAL_API_KEY=/d' .env
 
+      # The run is one turn, and the action exits when the model ends it. So the model gets no background jobs
+      # and no tool that waits for a later turn: neither would ever report back. A load runs in the foreground,
+      # for an hour at most.
       - name: Build the pipeline
         id: claude
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         env:
           PORTAL_API_KEY: ${{ secrets.PORTAL_API_KEY }}
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+          BASH_MAX_TIMEOUT_MS: "3600000"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
@@ -269,7 +274,7 @@ jobs:
             --model ${{ env.FACTORY_MODEL }}
             --max-turns ${{ env.FACTORY_MAX_TURNS }}
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(uv run *),Bash(pnpm *),Bash(psql *),Bash(set -a *),Bash(set +a *),Bash(. ./.env *),mcp__sqd-portal__*"
-            --disallowedTools "Bash(git push *),Bash(gh *)"
+            --disallowedTools "Bash(git push *),Bash(gh *),ScheduleWakeup,Monitor,CronCreate"
 
       # Builds what the reference test reads from the committed code, then runs only that test. A failed build
       # fails the verdict, since the test would read the tables the model's own loop left. dbt test exits 0

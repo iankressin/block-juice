@@ -18,7 +18,15 @@ A Postgres on this runner, empty apart from the run log tables. The environment 
 
 Load the eval window only, never the ticket's full window, however long the ticket's window is. The runner reads the public Portal, which paces anonymous streams, and the operator runs the full window on their own warehouse after the merge. A stream source reads from `START_BLOCK` to `END_BLOCK` in its `chains/<chain>/.env`, which git ignores: set both to `window.blocks`. A source with no `END_BLOCK` yet gets one, as `evm-chainlink-price-feeds` has.
 
-A scan that does not shrink with the window, such as a factory pattern's pool discovery from a token's first pool, is the exception. Before you start one, estimate it from the first minutes of the run. If it would not finish well inside this run, stop it, and write `result.md` with the scan's size, the rate you saw, and the two ways out: a `PORTAL_API_KEY` for the factory, or a way for the source to take the eval's contracts directly. Never widen the eval window or shrink the scan to make a load fit: a pool left out is a mismatch the test would hide.
+A scan that does not shrink with the window, such as a factory pattern's pool discovery from a token's first pool, is the exception. Before you run one in full, run it with a timeout of a few minutes and estimate it from how far it got. If it would not finish well inside this run, leave it, and write `result.md` with the scan's size, the rate you saw, and the two ways out: a `PORTAL_API_KEY` for the factory, or a way for the source to take the eval's contracts directly. Never widen the eval window or shrink the scan to make a load fit: a pool left out is a mismatch the test would hide.
+
+## One turn
+
+This run is one turn, and nobody reads your messages. When you end the turn the run ends, and the workflow steps take what the checkout holds. Nothing wakes you later.
+
+- Run every command in the foreground and wait for it. Never start a background job, schedule a wakeup or set a monitor.
+- Give a load a timeout that covers it, up to 60 minutes. The runner ends a command that runs longer.
+- Never end the turn with work you mean to come back to. `.factory/result.md` must exist before you end the turn. When the build is unfinished, it says what is left.
 
 ## Do
 
@@ -30,7 +38,8 @@ A scan that does not shrink with the window, such as a factory pattern's pool di
    - `cd transformation && uv run --project ../orchestration dbt seed --select reference_<name>`
    - `cd transformation && uv run --project ../orchestration dbt test --select tag:reference,<name>_matches_reference`
 5. When the test fails, find why, fix it and run the loop again. You get three fix attempts after the first mismatch. Then stop, even if it still fails. Never change the reference rows or widen the tolerance to make it pass: the reference is the human's, and a mismatch you cannot fix is a finding.
-6. Write `.factory/result.md`, the PR body, with these sections:
+6. Run `pnpm typecheck` in `ingestion/` and fix what it reports. The workflow runs it again after you, and CI runs it on the PR.
+7. Write `.factory/result.md`, the PR body, with these sections:
    - **What was built**: each file you added or changed, one line each.
    - **Answer**: the answer in one sentence, from `answer.md`.
    - **Comparison**: one row per reference row with the key, expected, got, and the tolerance. Get "got" by joining the seed to the `actual` CTE of the compiled test (`transformation/target/compiled/transformation/tests/reference/<name>_matches_reference.sql`), through `psql` or `dbt show --inline`. With more than 50 rows, show every mismatch and the first rows.

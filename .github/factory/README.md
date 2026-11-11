@@ -15,7 +15,7 @@ Each run is three jobs: `claim`, `work` and `publish`. The model never shares a 
 
 Each job joins a queue per ticket, and a job in progress is never cancelled. A run's first write removes the label that started it, and a run that finds the label gone stops. GitHub keeps one waiting job per queue, so a newer job replaces a waiting one. Wait for a run to end before you add its label again: jobs of two runs on one ticket can replace each other. A replaced `claim` leaves its label on the ticket. Remove that label and add it again.
 
-- **Scope run**: `claim` removes `scope`. `work` writes `.factory/issue.md` and `.factory/open-issues.json`, runs the model and uploads `scope.yaml`, `reference.csv` and `comment.md`. `publish` masks the secrets in them, checks them and posts the comment. If the check fails, it posts the model's prose for the human and adds `ready-for-human`. If the masking fails, it posts one line without the prose.
+- **Scope run**: `claim` removes `scope`. `work` writes `.factory/issue.md` and `.factory/open-issues.json`, runs the model and uploads `scope.yaml`, `reference.csv` and `comment.md`. `publish` masks the secrets in them, checks them and posts the comment. If the check fails, it posts the check's error and the model's prose for the human, and adds `ready-for-human`. If the masking fails, it posts one line without the prose.
 - **Build run**: `claim` removes `ready-for-agent`. `work` extracts the newest scope comment from the App, checks out `factory/<issue>-<slug>`, runs the model, runs the reference test as the verdict, records it with `bj check`, runs the repo's checks and saves the model's changes as a patch. `publish` applies the patch to the branch's commit from before the model, commits, pushes and opens the draft PR. It labels the PR `reference-mismatch` when the reference test ran and failed, and `not-verified` when the test produced no valid comparison (the window did not load, the upstream build failed, or the test ended in an error). It adds `ready-for-human` to the ticket when the verdict or a check failed. When someone pushed to the branch during the run, it does not force the push: it comments and adds `ready-for-human`.
 
 Both upload the transcript, with secrets masked, for seven days. When the model step fails, the error it ended with (a dead key, an empty credit balance, a bad model name) goes into the hand-off comment and the PR body, so nobody has to read the run's logs for it. The build run also uploads `answers/<slug>/`.
@@ -49,6 +49,10 @@ The model's tools come from `--allowedTools` in `claude_args`. Claude Code's [pe
 - Compound commands: "Every subcommand must be allowed for a compound command to run without a prompt." So the build run allows `set -a *`, `set +a *` and `. ./.env *` for the skill's dbt prefix. A `cd` inside the checkout needs no rule.
 - `mcp__sqd-portal__*` "matches every tool from" that server. The repo's `.mcp.json` registers it, and claude-code-action's docs say such tools "still need to be explicitly allowed".
 - `--disallowedTools "Bash(git push *),Bash(gh *)"`: a deny rule wins over any allow rule. It "isn't a security boundary around the program", which is why the model also gets no token that can write.
+
+Each run is one turn. The action exits when the model ends it, so nothing that waits for a later turn reports back. Both runs deny `ScheduleWakeup`, `Monitor` and `CronCreate`, and set `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which takes `run_in_background` off the Bash tool. `BASH_MAX_TIMEOUT_MS` ends a command after an hour in the build run, so a load runs in the foreground.
+
+The scope run works on the eval window only. There `BASH_MAX_TIMEOUT_MS` ends a command after five minutes, and the model step's `timeout-minutes` ends the step after 45. `publish` checks whatever files the model wrote by then.
 
 ## Dry run
 

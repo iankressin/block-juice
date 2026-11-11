@@ -113,12 +113,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The files decide, not the model's exit: publish checks them even when this step fails.
+      # The run is one turn, and the action exits when the model ends it. So the model gets no background jobs
+      # and no tool that waits for a later turn: neither would ever report back. A scope run works on the eval
+      # window only, so one command gets five minutes and the step gets 45.
       - name: Scope the ticket
         id: claude
         continue-on-error: true
+        timeout-minutes: 45
         uses: anthropics/claude-code-action@v1
         env:
           EVM_RPC_URL: ${{ secrets.EVM_RPC_URL }}
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+          BASH_MAX_TIMEOUT_MS: "300000"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
@@ -128,7 +134,7 @@ jobs:
             --max-turns ${{ env.FACTORY_MAX_TURNS }}
             --mcp-config ${{ runner.temp }}/dune-mcp.json
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(uv run *),mcp__sqd-portal__*,mcp__dune__*"
-            --disallowedTools "Bash(git push *),Bash(gh *)"
+            --disallowedTools "Bash(git push *),Bash(gh *),ScheduleWakeup,Monitor,CronCreate"
 
       - name: Collect the transcript
         id: transcript
@@ -240,11 +246,17 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
-          uv run --project orchestration python .github/factory/factory.py comment .factory > "$RUNNER_TEMP/scope-comment.md"
+          errors="$RUNNER_TEMP/scope-check.txt"
+          checked=0
+          uv run --project orchestration python .github/factory/factory.py comment .factory > "$RUNNER_TEMP/scope-comment.md" 2> "$errors" || checked=$?
+          cat "$errors" >&2
+          if [ "$checked" -ne 0 ]; then exit 1; fi
+          rm "$errors"
           gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/scope-comment.md"
 
       # The model writes only comment.md when it cannot scope the ticket, to ask the human what it needs. The
-      # prose goes out only once scrubbed.
+      # prose goes out only once scrubbed. The check's error is there only when the check ran, which is after
+      # the scrub passed.
       - name: Hand the ticket to a human
         if: failure()
         env:
@@ -256,6 +268,14 @@ jobs:
             if [ "$SCRUBBED" = success ] && [ -s .factory/model.txt ] && [ "$(head -n 1 .factory/model.txt)" != success ]; then
               echo
               echo "The model step ended in $(head -n 1 .factory/model.txt): $(tail -n +2 .factory/model.txt)"
+            fi
+            if [ -s "$RUNNER_TEMP/scope-check.txt" ]; then
+              echo
+              echo "The check said:"
+              echo
+              echo '```'
+              cat "$RUNNER_TEMP/scope-check.txt"
+              echo '```'
             fi
             if [ "$SCRUBBED" = success ] && [ -s .factory/comment.md ]; then
               echo
