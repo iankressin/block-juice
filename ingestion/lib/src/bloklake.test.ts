@@ -41,15 +41,17 @@ function log(block: number, logIndex: number, address: string, event: AbiEvent, 
  * A local bloklake with `logs` on a chain whose head is `head`. It answers at most `blocksPerPage`
  * blocks a response and filters as the API does: a log matches a filter when each of the filter's
  * fields lists the log's value, and it is returned when it matches any filter. `failures` are sent
- * first, one a request: a status and headers, or "drop" to break the connection.
+ * first, one a request: a status and headers, or "drop" to break the connection. `skip` blocks are
+ * left out between one response and the next, as a faulty server might.
  */
 async function bloklake(
   t: TestContext,
-  { logs, head, blocksPerPage = 100, failures = [] }: {
+  { logs, head, blocksPerPage = 100, failures = [], skip = 0 }: {
     logs: Row[];
     head: number;
     blocksPerPage?: number;
     failures?: ("drop" | { status: number; headers?: Record<string, string>; code: string })[];
+    skip?: number;
   },
 ) {
   const requests: { path: string; headers: IncomingHttpHeaders; body?: Body }[] = [];
@@ -89,7 +91,7 @@ async function bloklake(
         finalized_block: head - 5,
         from_block: fromBlock,
         to_block: beyondHead ? head : to,
-        next_block: beyondHead ? fromBlock : to + 1,
+        next_block: beyondHead ? fromBlock : to + 1 + skip,
         objects: matching.length,
         to_block_hash: null,
         unavailable_fields: [],
@@ -129,6 +131,12 @@ test("a range past the chain's head ends at the head", async (t) => {
   const { url } = await bloklake(t, { logs: [1, 2, 3].map(transferIn), head: 3, blocksPerPage: 2 });
   const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 10 }));
   assert.deepEqual(pages.map((page) => page.through), [2, 3]);
+});
+
+test("a response whose next_block skips blocks fails the read instead of losing them", async (t) => {
+  const { url } = await bloklake(t, { logs: [1, 2, 3, 4, 5].map(transferIn), head: 100, blocksPerPage: 2, skip: 2 });
+  const pages = bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 5 });
+  await assert.rejects(collect(pages), /blocks 1 to 2 with next_block 5/);
 });
 
 test("a page with no matching log still reports the blocks it covered", async (t) => {

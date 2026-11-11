@@ -159,7 +159,10 @@ export function bloklakeClient(url: string, apiKey: string) {
           fields: { log: LOG_FIELDS },
         });
         // Past the head bloklake returns no blocks and repeats the block it was asked for.
-        if (page.next_block <= from) return;
+        if (page.next_block === from) return;
+        if (page.to_block < from || page.next_block !== page.to_block + 1) {
+          throw new Error(`bloklake answered blocks ${from} to ${page.to_block} with next_block ${page.next_block}`);
+        }
         yield {
           events: Object.fromEntries(
             named.map(({ name, event, filter }) => [
