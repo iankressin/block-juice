@@ -11,7 +11,13 @@ select distinct on (condition_id)
     event_title,
     neg_risk,
     outcomes,
-    end_date
+    end_date,
+    -- A sports market: Gamma gives it a sportsMarketType, or charges it a sports fee schedule. Some
+    -- sports-fee markets, such as futures, have no sportsMarketType.
+    sports_market_type is not null or coalesce(fee_type like 'sports%', false) as is_sports,
+    sports_market_type,
+    series_slug,
+    game_start_time
 from {{ ref('stg_polymarket__markets') }}
 where protocol_version = 'v1'
     and condition_id is not null

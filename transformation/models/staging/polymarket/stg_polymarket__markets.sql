@@ -32,5 +32,10 @@ select
     (data ->> 'closed')::boolean as closed,
     nullif(data ->> 'createdAt', '')::timestamptz as created_at,
     nullif(data ->> 'updatedAt', '')::timestamptz as updated_at,
+    -- Set on sports markets only: moneyline, spreads, totals and the like, and the game's start.
+    nullif(data ->> 'sportsMarketType', '') as sports_market_type,
+    nullif(data ->> 'gameStartTime', '')::timestamptz as game_start_time,
+    nullif(event ->> 'seriesSlug', '') as series_slug,
+    nullif(data ->> 'feeType', '') as fee_type,
     _loaded_at
 from markets

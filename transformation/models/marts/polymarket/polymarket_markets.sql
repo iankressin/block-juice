@@ -11,7 +11,9 @@ with markets as (
 ),
 
 gamma as (
-    select condition_id, market_id, question, slug, event_id, event_title, neg_risk, outcomes, end_date
+    select
+        condition_id, market_id, question, slug, event_id, event_title, neg_risk, outcomes, end_date, is_sports,
+        sports_market_type, series_slug, game_start_time
     from {{ ref('int_polymarket_markets') }}
 ),
 
@@ -43,7 +45,11 @@ select
     c.prepared_block,
     r.resolved_at,
     r.payout_fractions,
-    coalesce(c.history_complete, false) as history_complete
+    coalesce(c.history_complete, false) as history_complete,
+    g.is_sports,
+    g.sports_market_type,
+    g.series_slug,
+    g.game_start_time
 from markets as m
 left join gamma as g on g.condition_id = m.condition_id
 left join conditions as c on c.condition_id = m.condition_id
