@@ -60,7 +60,7 @@ Also owns (PR A, with Orchestration/QG): `ingestion/scripts/generate-sources-jso
 
 **Goal:** Consultants shouldn’t expect dead letters from stream sources.
 
-**Verified on main:** call sources retry through dead letters (`run/index.ts`), `MAX_ATTEMPTS=5`, parking on schema mismatch. Stream sources: `warehouse/stream.ts` always returns `failed: []`; cursor in `<schema>._sync` commits in same transaction as the batch; `maxBlocksPerRun` defaults to 1e6; thrown error fails the run; next run resumes from last committed cursor.
+**Verified on main:** call sources retry through dead letters (`run/index.ts`), `MAX_ATTEMPTS=5`, parking on schema mismatch. Stream sources: `warehouse/stream.ts` always returns `failed: []`; cursor in `<schema>._sync` commits in same transaction as the batch; `MAX_BLOCKS_PER_RUN`, when set to a positive whole number, caps the run and wins over a source's `maxBlocksPerRun`; when neither is set there is no cap, so one long run reads to `END_BLOCK` or the finalized head; a thrown error fails the run and the next run resumes from the last committed batch's cursor.
 
 **Files:** `GLOSSARY.md` (Stream source / Dead letter: dead letters apply to call sources only); `README.md` “Add a source” stream paragraph (4–6 lines, plus how to reset by deleting the `_sync` row); optionally one sentence of JSDoc on `StreamSource` in `ingestion/lib/src/source.ts`.
 
