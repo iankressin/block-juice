@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import {
   buildEventTopics,
   getNormalizedEventParams,
@@ -7,6 +6,7 @@ import {
   type IndexedParamsInput,
 } from "@subsquid/pipes/evm";
 import * as z from "zod";
+import type { Clock } from "#src/clock.ts";
 
 type Hex = `0x${string}`;
 
@@ -98,7 +98,7 @@ const WORTH_ANOTHER_TRY = new Set([429, 500, 503]);
  * matter of course. Ten tries, each after the wait bloklake asks for, get past that and past a
  * broken connection without hanging a run for good.
  */
-export function bloklakeClient(url: string, apiKey: string) {
+export function bloklakeClient(url: string, apiKey: string, clock: Clock) {
   const base = url.replace(/\/+$/, "");
 
   async function send(path: string, body?: unknown) {
@@ -114,23 +114,19 @@ export function bloklakeClient(url: string, apiKey: string) {
       });
       if (response.ok)
         return { ok: true as const, json: (await response.json()) as unknown };
+      const retryAfter = Number.parseFloat(
+        response.headers.get("retry-after") ?? "",
+      );
       return {
         ok: false as const,
         error: new Error(
           `bloklake answered ${response.status} to ${path}: ${await response.text()}`,
         ),
         final: !WORTH_ANOTHER_TRY.has(response.status),
-        retryAfter: Number.parseFloat(
-          response.headers.get("retry-after") ?? "",
-        ),
+        retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
       };
     } catch (error) {
-      return {
-        ok: false as const,
-        error,
-        final: false,
-        retryAfter: Number.NaN,
-      };
+      return { ok: false as const, error, final: false };
     }
   }
 
@@ -143,10 +139,8 @@ export function bloklakeClient(url: string, apiKey: string) {
       const sent = await send(path, body);
       if (sent.ok) return answer.parse(sent.json);
       if (sent.final || attempt === TRIES) throw sent.error;
-      const seconds = Number.isNaN(sent.retryAfter)
-        ? Math.min(2 ** (attempt - 1), 30)
-        : sent.retryAfter;
-      await sleep(seconds * 1000);
+      const seconds = sent.retryAfter ?? Math.min(2 ** (attempt - 1), 30);
+      await clock.sleep(seconds * 1000);
     }
   }
 
