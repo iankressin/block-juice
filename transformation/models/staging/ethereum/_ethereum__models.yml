@@ -1,6 +1,32 @@
 version: 2
 
 models:
+  - name: stg_ethereum__cow_ethflow
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: contract
+        data_tests: [not_null]
+      - name: event
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [OrderPlacement, Trade, Transfer]
+  - name: stg_ethereum__cow_ethflow_traces
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: from_address
+        data_tests: [not_null]
+      - name: to_address
+        data_tests: [not_null]
   - name: stg_ethereum__wallet_transactions
     columns:
       - name: id

@@ -56,6 +56,9 @@ models:
       # Views, so each chain's deployments show up as their own step in Dagster.
       deployments:
         +materialized: view
+      # Views, so each source's orders, trades and transfers show up as their own step in Dagster.
+      cow:
+        +materialized: view
     marts:
       +materialized: table
       polymarket:

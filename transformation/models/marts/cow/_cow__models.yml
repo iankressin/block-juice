@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: cow_ethflow_orders
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || order_uid"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      - name: order_uid
+        description: The 56-byte GPv2 order UID, built from the order hash createOrder returned. Null means that call did not load.
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: owner
+        data_tests: [not_null]
+      - name: settled
+        data_tests: [not_null]

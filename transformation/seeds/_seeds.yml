@@ -94,6 +94,23 @@ seeds:
           - accepted_values:
               arguments:
                 values: [arbitrum, base]
+  - name: stablecoins
+    description: >-
+      The ERC-20 tokens that count as stablecoins when wallet_eth_outflows decides whether an ETH Flow
+      order was sold into a stablecoin. USDC, USDT and DAI are the stablecoins evm-erc20-transfers already
+      follows on Ethereum; USDS is the token the #49 wallet's CoW orders bought on 2026-11-10, read from
+      their OrderPlacement and Trade logs. source says where each address came from. A swap into a token
+      missing here is "sent out", not "sold".
+    config:
+      column_types:
+        chain: text
+        address: text
+        symbol: text
+        source: text
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || address"
   - name: arbitrum_token_gateways
     description: >-
       The rows are the default gateway and the gateways that the L2GatewayRouter, 0x5288c571fd7ad117bea99bf60fe0846c4e84f933, returned from getGateway for UNI,

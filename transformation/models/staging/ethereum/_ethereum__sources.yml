@@ -60,3 +60,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: cow_ethflow
+        identifier: ethereum_cow_ethflow
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

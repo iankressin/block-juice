@@ -1,0 +1,5 @@
+chain,address,symbol,source
+ethereum,0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,USDC,evm-erc20-transfers chains/ethereum/addresses.json
+ethereum,0xdac17f958d2ee523a2206206994597c13d831ec7,USDT,evm-erc20-transfers chains/ethereum/addresses.json
+ethereum,0x6b175474e89094c44da98b954eedeac495271d0f,DAI,evm-erc20-transfers chains/ethereum/addresses.json
+ethereum,0xdc035d45d973e3ec169d2276ddab16f1e407384f,USDS,"#49 scope: buyToken of the subject's ETH Flow orders on 2026-11-10, settled to it as USDS"

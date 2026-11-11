@@ -25,6 +25,26 @@ models:
         data_tests: [not_null]
       - name: fee_wei
         data_tests: [not_null]
+  - name: wallet_eth_outflows
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || tx_hash"
+    columns:
+      - name: chain
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: from_address
+        data_tests: [not_null]
+      - name: value_wei
+        data_tests: [not_null]
+      - name: outflow_class
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [sold, sent_to_exchange, sent_out]
   - name: account_states
     data_tests:
       - unique:
@@ -62,3 +82,41 @@ models:
         data_tests: [not_null]
       - name: attribution
         data_tests: [not_null]
+
+unit_tests:
+  - name: an_outflow_is_sold_only_with_a_stablecoin_settlement_back
+    description: >-
+      0x01 placed an ETH Flow order that settled into USDS back to it: sold. 0x02's order never settled,
+      0x03's settled into a token that is not a stablecoin, and 0x04's paid another receiver: all sent out.
+      0x05 went to a labelled exchange address: sent to exchange. 0x06 reverted and 0x07 carried no value:
+      neither is an outflow.
+    model: wallet_eth_outflows
+    given:
+      - input: ref('wallet_transactions')
+        rows:
+          - {chain: ethereum, tx_hash: "0x01", from_address: "0xa1", to_address: "0xef", value_wei: "1000000000000000000000", succeeded: true}
+          - {chain: ethereum, tx_hash: "0x02", from_address: "0xa1", to_address: "0xef", value_wei: 1, succeeded: true}
+          - {chain: ethereum, tx_hash: "0x03", from_address: "0xa1", to_address: "0xef", value_wei: 1, succeeded: true}
+          - {chain: ethereum, tx_hash: "0x04", from_address: "0xa1", to_address: "0xef", value_wei: 1, succeeded: true}
+          - {chain: ethereum, tx_hash: "0x05", from_address: "0xa1", to_address: "0xe1", value_wei: 1, succeeded: true}
+          - {chain: ethereum, tx_hash: "0x06", from_address: "0xa1", to_address: "0xe1", value_wei: 1, succeeded: false}
+          - {chain: ethereum, tx_hash: "0x07", from_address: "0xa1", to_address: "0xe1", value_wei: 0, succeeded: true}
+      - input: ref('cow_ethflow_orders')
+        rows:
+          - {chain: ethereum, tx_hash: "0x01", owner: "0xa1", receiver: "0xa1", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", settled: true, received_amount: 5}
+          - {chain: ethereum, tx_hash: "0x02", owner: "0xa1", receiver: "0xa1", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", settled: false, received_amount: null}
+          - {chain: ethereum, tx_hash: "0x03", owner: "0xa1", receiver: "0xa1", buy_token: "0x00000000000000000000000000000000000000cc", settled: true, received_amount: 5}
+          - {chain: ethereum, tx_hash: "0x04", owner: "0xa1", receiver: "0xb1", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", settled: true, received_amount: 0}
+      - input: ref('stablecoins')
+        rows:
+          - {chain: ethereum, address: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", symbol: USDS}
+      - input: ref('cex_addresses')
+        rows:
+          - {chain: ethereum, address: "0xE1", exchange: Binance}
+    expect:
+      rows:
+        - {tx_hash: "0x01", outflow_class: sold, venue: CoW Protocol, value_wei: "1000000000000000000000"}
+        - {tx_hash: "0x02", outflow_class: sent_out, venue: null, value_wei: 1}
+        - {tx_hash: "0x03", outflow_class: sent_out, venue: null, value_wei: 1}
+        - {tx_hash: "0x04", outflow_class: sent_out, venue: null, value_wei: 1}
+        - {tx_hash: "0x05", outflow_class: sent_to_exchange, venue: Binance, value_wei: 1}
