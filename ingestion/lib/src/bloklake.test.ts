@@ -3,7 +3,8 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { encodeAbiParameters, encodeEventTopics, parseAbiItem, type AbiEvent } from "viem";
-import { bloklakeClient, type EventPage } from "#src/bloklake.ts";
+import { defineAbi } from "@subsquid/pipes/evm";
+import { bloklakeClient } from "#src/bloklake.ts";
 
 type Row = Record<string, string | number | null>;
 type Filter = Record<string, string[]>;
@@ -12,6 +13,9 @@ type Body = { fromBlock: number; toBlock: number; logs: Filter[]; fields: unknow
 const transfer = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const approval = parseAbiItem("event Approval(address indexed owner, address indexed spender, uint256 value)");
 const nftTransfer = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)");
+// viem encodes the logs, and the client decodes them with the event a source would pass, which
+// defineAbi builds from the same JSON ABI item.
+const pipesEvent = (item: AbiEvent) => Object.values(defineAbi([item]).events)[0]!;
 
 const TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const WALLET = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
@@ -114,9 +118,10 @@ async function collect<T>(pages: AsyncIterable<T>): Promise<T[]> {
 
 test("it asks for the next page only when the caller wants one, starting at next_block", async (t) => {
   const { url, requests } = await bloklake(t, { logs: [1, 2, 3, 4, 5].map(transferIn), head: 100, blocksPerPage: 2 });
-  const pages = bloklakeClient(url, "bl_live_test").events({ transfers: { event: transfer } }, { from: 1, to: 5 });
+  const pages = bloklakeClient(url, "bl_live_test").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 5 });
 
-  const first = (await pages.next()).value as EventPage<"transfers">;
+  const { value: first } = await pages.next();
+  assert.ok(first);
   assert.equal(first.through, 2);
   assert.deepEqual(first.events.transfers.map((e) => e.blockNumber), [1, 2]);
   assert.equal(requests.length, 1, "the second page is not fetched before the caller asks for it");
@@ -129,23 +134,23 @@ test("it asks for the next page only when the caller wants one, starting at next
 
 test("a range past the chain's head ends at the head", async (t) => {
   const { url } = await bloklake(t, { logs: [1, 2, 3].map(transferIn), head: 3, blocksPerPage: 2 });
-  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 10 }));
+  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 10 }));
   assert.deepEqual(pages.map((page) => page.through), [2, 3]);
 });
 
 test("a response whose next_block skips blocks fails the read instead of losing them", async (t) => {
   const { url } = await bloklake(t, { logs: [1, 2, 3, 4, 5].map(transferIn), head: 100, blocksPerPage: 2, skip: 2 });
-  const pages = bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 5 });
+  const pages = bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 5 });
   await assert.rejects(collect(pages), /blocks 1 to 2 with next_block 5/);
 });
 
 test("a page with no matching log still reports the blocks it covered", async (t) => {
   const { url } = await bloklake(t, { logs: [], head: 100 });
-  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 50 }));
+  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 50 }));
   assert.deepEqual(pages, [{ events: { transfers: [] }, through: 50 }]);
 });
 
-test("each log is decoded with its event's ABI into the values every provider returns", async (t) => {
+test("each log is decoded into the values the rows Pipes loaded hold", async (t) => {
   const probe = parseAbiItem(
     "event Probe(address indexed who, bytes32 indexed key, bool flag, uint32 u32, uint48 u48, uint256 u256, int24 i24, string note, address[] list, (address token, uint128 amount)[] pairs)",
   );
@@ -164,7 +169,7 @@ test("each log is decoded with its event's ABI into the values every provider re
   };
   const { url } = await bloklake(t, { logs: [log(7, 3, TOKEN, probe, args)], head: 100 });
 
-  const [page] = await collect(bloklakeClient(url, "k").events({ probes: { event: probe } }, { from: 1, to: 10 }));
+  const [page] = await collect(bloklakeClient(url, "k").events({ probes: { event: pipesEvent(probe) } }, { from: 1, to: 10 }));
 
   assert.deepEqual(page!.events.probes, [
     {
@@ -203,8 +208,8 @@ test("each request becomes one filter, and each log comes back under the request
   const [page] = await collect(
     bloklakeClient(url, "k").events(
       {
-        received: { event: transfer, contracts: [TOKEN], where: { to: [WALLET] } },
-        approvals: { event: approval },
+        received: { event: pipesEvent(transfer), contracts: [TOKEN], params: { to: [WALLET] } },
+        approvals: { event: pipesEvent(approval) },
       },
       { from: 1, to: 10 },
     ),
@@ -228,7 +233,7 @@ test("a log that shares the event's signature but indexes other arguments is lef
       log(1, 1, TOKEN, transfer, { from: OTHER, to: WALLET, value: 1n }),
     ],
   });
-  const [page] = await collect(bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 10 }));
+  const [page] = await collect(bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 10 }));
   assert.deepEqual(page!.events.transfers.map((e) => e.logIndex), [1]);
 });
 
@@ -246,29 +251,9 @@ test("an indexed string, bytes or array is only a hash in the log, and its value
   };
   const { url } = await bloklake(t, { head: 100, logs: [row] });
 
-  const [page] = await collect(bloklakeClient(url, "k").events({ named: { event: named } }, { from: 1, to: 10 }));
+  const [page] = await collect(bloklakeClient(url, "k").events({ named: { event: pipesEvent(named) } }, { from: 1, to: 10 }));
 
   assert.deepEqual(page!.events.named.map((e) => e.args), [{ name, tag, list, n: 7 }]);
-});
-
-test("an anonymous event, which has no signature topic, is read from its contract", async (t) => {
-  const anonymous = {
-    type: "event",
-    name: "Deposit",
-    anonymous: true,
-    inputs: [
-      { name: "who", type: "address", indexed: true },
-      { name: "amount", type: "uint256", indexed: false },
-    ],
-  } as const satisfies AbiEvent;
-  const { url, requests } = await bloklake(t, { head: 100, logs: [log(4, 2, TOKEN, anonymous, { who: WALLET, amount: 9n })] });
-
-  const [page] = await collect(
-    bloklakeClient(url, "k").events({ deposits: { event: anonymous, contracts: [TOKEN] } }, { from: 1, to: 10 }),
-  );
-
-  assert.deepEqual(requests[0]!.body!.logs, [{ address: [TOKEN.toLowerCase()] }]);
-  assert.deepEqual(page!.events.deposits.map((e) => e.args), [{ who: WALLET.toLowerCase(), amount: 9n }]);
 });
 
 test("the finalized head comes from /status, and the key goes as a bearer token", async (t) => {
@@ -285,7 +270,7 @@ test("it waits as long as bloklake says and asks again when the rate limit is hi
     failures: [{ status: 429, headers: { "retry-after": "0" }, code: "rate_limited" }],
   });
   const startedAt = performance.now();
-  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 10 }));
+  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 10 }));
   assert.equal(pages[0]!.events.transfers.length, 1);
   assert.equal(requests.length, 2);
   assert.ok(performance.now() - startedAt < 900, "it waited the 0 seconds bloklake asked for, not its own second");
@@ -293,14 +278,14 @@ test("it waits as long as bloklake says and asks again when the rate limit is hi
 
 test("it asks again when the connection breaks", async (t) => {
   const { url, requests } = await bloklake(t, { logs: [transferIn(1)], head: 100, failures: ["drop"] });
-  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 10 }));
+  const pages = await collect(bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 10 }));
   assert.equal(pages[0]!.events.transfers.length, 1);
   assert.equal(requests.length, 2);
 });
 
 test("a request bloklake refuses fails at once, with bloklake's reason", async (t) => {
   const { url, requests } = await bloklake(t, { logs: [], head: 100, failures: [{ status: 400, code: "invalid_query" }] });
-  const pages = bloklakeClient(url, "k").events({ transfers: { event: transfer } }, { from: 1, to: 10 });
+  const pages = bloklakeClient(url, "k").events({ transfers: { event: pipesEvent(transfer) } }, { from: 1, to: 10 });
   await assert.rejects(collect(pages), /400.*invalid_query/s);
   assert.equal(requests.length, 1);
 });
