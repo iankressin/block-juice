@@ -1,6 +1,6 @@
--- Each ETH outflow of the wallet Lookonchain links to the Ethereum Foundation over Ethereum blocks 26380784
--- to 26387956 (2026-11-10 UTC): when, where to, its class, and for a sale the CoW settlement that filled it
--- and the stablecoin the wallet received, in the token's base units.
+-- Each ETH outflow of the wallet Lookonchain links to the Ethereum Foundation over the answer's window:
+-- when, where to, its class, and for a sale the CoW settlement that filled it and the stablecoin the wallet
+-- received, in the token's base units.
 select
     block_number,
     block_timestamp,
@@ -18,5 +18,5 @@ select
 from {{ ref('wallet_eth_outflows') }}
 where chain = 'ethereum'
     and from_address = '0x5cbc6299fab3320e7758ac97fd4ca45e5b722059'
-    and block_number between 26380784 and 26387956
+    and {{ in_window('block_number', 'ethereum') }}
 order by block_number, transaction_index

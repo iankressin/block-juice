@@ -25,6 +25,11 @@ alternatives:
   - Label exchanges from Binance's proof-of-reserves list rather than Dune's cex.addresses.
 window:
   chain: ethereum
+  from: 2024-11-11T00:00:00Z
+  to: 2026-11-11T00:00:00Z
+  blocks: [21160715, 26387956]
+eval_window:
+  chain: ethereum
   from: 2026-11-10T00:00:00Z
   to: 2026-11-11T00:00:00Z
   blocks: [26380784, 26387956]

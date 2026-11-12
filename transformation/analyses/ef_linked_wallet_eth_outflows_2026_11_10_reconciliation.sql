@@ -1,14 +1,14 @@
 -- The flow side of the reconciliation start_balance - outgoing - fees + incoming = end_balance + gap for
--- the wallet Lookonchain links to the Ethereum Foundation over Ethereum blocks 26380784 to 26387956
--- (2026-11-10 UTC), in ETH, from its top-level transactions: outgoing is the value of the successful ones it
--- sent, fees what every one it sent paid (reverted ones too, blob fees included), incoming the value of the
--- successful ones sent to it. Internal transfers to it, which only traces show, are not here. The balances
--- need account_states reads at blocks 26380783 and 26387956, which this build did not load.
+-- the wallet Lookonchain links to the Ethereum Foundation over the answer's window, in ETH, from its
+-- top-level transactions: outgoing is the value of the successful ones it sent, fees what every one it sent
+-- paid (reverted ones too, blob fees included), incoming the value of the successful ones sent to it.
+-- Internal transfers to it, which only traces show, are not here. The balances need account_states reads
+-- at the block before the window and at its last block, which this build did not load.
 with txs as (
     select *
     from {{ ref('wallet_transactions') }}
     where chain = 'ethereum'
-        and block_number between 26380784 and 26387956
+        and {{ in_window('block_number', 'ethereum') }}
 ),
 
 subject as (
