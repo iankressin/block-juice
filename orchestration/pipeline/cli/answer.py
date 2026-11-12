@@ -20,7 +20,7 @@ from dbt.version import __version__ as dbt_version
 
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
 from pipeline.cli.coverage import Coverage
-from pipeline.cli.question import Question, SourceInput, load_question
+from pipeline.cli.question import Question, SourceInput, WindowKey, load_question
 from pipeline.warehouse import connect, count_dead_letters
 
 # dbt's own logs and usage stats are off: the summary reports what matters, and the stats call the network.
@@ -178,12 +178,17 @@ def stream_inputs(
                 f"add an input with source: {read.name} and the filter it needs"
             )
     if declared and not question.blocks:
-        raise BadInput(f"{label}: inputs read the stream source {', '.join(sorted(named))}, so set window.blocks: [from, to]")
+        raise BadInput(
+            f"{label}: inputs read the stream source {', '.join(sorted(named))}, so set {question.window_key}.blocks: [from, to]"
+        )
     return declared
 
 
 def coverage_check(
-    inputs: Iterable[SourceInput], coverages: dict[str, Coverage], blocks: dict[str, tuple[int, int]]
+    inputs: Iterable[SourceInput],
+    coverages: dict[str, Coverage],
+    blocks: dict[str, tuple[int, int]],
+    window_key: WindowKey = "window",
 ) -> Check:
     """Passed when each stream input's source has loaded every block of the window on its chain, for the
     addresses its filter names."""
@@ -192,7 +197,7 @@ def coverage_check(
         loaded = coverages[i.source]
         span = f"loaded {loaded.start_block}-{loaded.cursor}" if loaded.cursor is not None else "nothing loaded"
         window = blocks.get(i.chain)
-        gaps = loaded.gaps(window, i.filter) if window else [f"window.blocks has no blocks for {i.chain}"]
+        gaps = loaded.gaps(window, i.filter) if window else [f"{window_key}.blocks has no blocks for {i.chain}"]
         passed = passed and not gaps
         details.append(
             f"{i.source} ({span}): {', '.join(gaps)}"
@@ -220,6 +225,7 @@ def answer_document(
         "definitions": question.definitions,
         "alternatives": list(question.alternatives),
         "window": jsonable(question.window),
+        "eval": question.window_key == "eval_window",
         "results": [
             {
                 "analysis": result.analysis,
@@ -258,9 +264,11 @@ def dbt_error(result: dbtRunnerResult) -> str:
     return " ".join(message.split()) or "unknown error"
 
 
-def compile_analyses(project: Path, names: Sequence[str]) -> tuple[dict, list[str]]:
-    """The manifest after `dbt compile`, and the unique id of each analysis."""
-    result = dbt(project, "compile", "--select", *names)
+def compile_analyses(project: Path, names: Sequence[str], blocks: dict[str, tuple[int, int]]) -> tuple[dict, list[str]]:
+    """The manifest after `dbt compile`, and the unique id of each analysis. The analyses read the window's
+    blocks through the in_window macro, from var('window')."""
+    variables = ("--vars", json.dumps({"window": blocks})) if blocks else ()
+    result = dbt(project, "compile", "--select", *names, *variables)
     if not result.success:
         raise BadInput(f"dbt compile failed: {dbt_error(result)}")
     manifest = json.loads((project / "target" / "manifest.json").read_text())
@@ -440,11 +448,11 @@ def write_answer(folder: Path, results: Sequence[Result], document: dict[str, An
     (folder / "answer.json").write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def run(repo_root: Path, slug: str) -> int:
-    question = load_question(repo_root, slug)
+def run(repo_root: Path, slug: str, window_key: WindowKey = "window") -> int:
+    question = load_question(repo_root, slug, window_key)
     require_env()
     project = repo_root / "transformation"
-    manifest, analysis_ids = compile_analyses(project, question.analyses)
+    manifest, analysis_ids = compile_analyses(project, question.analyses, question.blocks)
     inputs = upstream_inputs(manifest, analysis_ids)
     streams = stream_inputs(question, inputs, coverage.sources(repo_root), coverage.stream_sources(repo_root))
     coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
@@ -456,7 +464,7 @@ def run(repo_root: Path, slug: str) -> int:
     results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)
     checks = [tests, dead_letters_check(dead_letters), freshness_check(last_runs)]
     if streams:
-        checks.append(coverage_check(streams, coverages, question.blocks))
+        checks.append(coverage_check(streams, coverages, question.blocks, question.window_key))
     document = answer_document(
         question, datetime.now(timezone.utc), results, dead_letters, last_runs, checks, provenance(repo_root)
     )

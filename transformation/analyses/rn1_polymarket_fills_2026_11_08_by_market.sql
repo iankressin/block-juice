@@ -1,5 +1,5 @@
--- RN1's complementary accumulation per two-outcome market on Polygon blocks 91743315 to 97042228
--- (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD; shares are outcome tokens.
+-- RN1's complementary accumulation per two-outcome market on Polygon in the answer's window. Amounts are
+-- pUSD; shares are outcome tokens.
 -- Per outcome (outcome_index 0 and 1): the shares RN1 bought and what they cost, fees included, so
 -- avg_cost is pUSD per share after fees.
 -- A complete pair is one share of each outcome; it redeems or merges for exactly 1 pUSD.
@@ -14,7 +14,7 @@ with fills as (
     select f.*
     from {{ ref('polymarket_wallet_fills') }} as f
     where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
-        and f.block_number between 91743315 and 97042228
+        and {{ in_window('f.block_number', 'polygon') }}
         and f.complement_token_id is not null
 ),
 

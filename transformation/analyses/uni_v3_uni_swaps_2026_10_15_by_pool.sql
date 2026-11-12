@@ -1,4 +1,4 @@
--- Uniswap v3 swaps that traded UNI on Ethereum on 2026-10-15 UTC (blocks 26194189 to 26201364), per pool:
+-- Uniswap v3 swaps that traded UNI on Ethereum in the answer's window, per pool:
 -- the number of swaps and the sum of each swap's absolute UNI amount, in UNI. UNI is the swap's bought
 -- or sold token, so every pool that holds UNI counts, whatever the other token.
 select
@@ -13,6 +13,6 @@ inner join {{ ref('tokens') }} as uni
     and uni.token in (trades.token_bought, trades.token_sold)
 where trades.chain = 'ethereum'
     and trades.version = 'v3'
-    and trades.block_number between 26194189 and 26201364
+    and {{ in_window('trades.block_number', 'ethereum') }}
 group by trades.pool, uni.decimals
 order by swaps desc, trades.pool

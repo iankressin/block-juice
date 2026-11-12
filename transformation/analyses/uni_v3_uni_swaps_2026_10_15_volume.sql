@@ -1,5 +1,5 @@
--- The UNI volume of the Uniswap v3 swaps that traded UNI on Ethereum on 2026-10-15 UTC (blocks 26194189
--- to 26201364): the sum of each swap's absolute UNI amount, in UNI, with UNI's decimals from tokens.
+-- The UNI volume of the Uniswap v3 swaps that traded UNI on Ethereum in the answer's window: the sum of
+-- each swap's absolute UNI amount, in UNI, with UNI's decimals from tokens.
 select
     sum(case when trades.token_bought = uni.token then trades.amount_bought else trades.amount_sold end)
         / power(10::numeric, uni.decimals) as uni
@@ -10,5 +10,5 @@ inner join {{ ref('tokens') }} as uni
     and uni.token in (trades.token_bought, trades.token_sold)
 where trades.chain = 'ethereum'
     and trades.version = 'v3'
-    and trades.block_number between 26194189 and 26201364
+    and {{ in_window('trades.block_number', 'ethereum') }}
 group by uni.decimals

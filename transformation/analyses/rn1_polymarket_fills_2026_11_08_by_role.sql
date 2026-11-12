@@ -1,7 +1,7 @@
--- RN1's maker behaviour on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC), per
+-- RN1's maker behaviour on Polygon in the answer's window, per
 -- market kind (sports or not, from Gamma) and role: fills, the shares and pUSD (before fees), fees, the typical
 -- fill size, and the share-weighted price in pUSD per share. fills_per_minute spreads the fills over the
--- window's 132480 minutes (92 days). A market Gamma lacks counts as kind unknown.
+-- minutes from RN1's first to its last fill in the window. A market Gamma lacks counts as kind unknown.
 with fills as (
     select
         f.*,
@@ -9,7 +9,7 @@ with fills as (
     from {{ ref('polymarket_wallet_fills') }} as f
     left join {{ ref('polymarket_markets') }} as m on m.condition_id = f.condition_id
     where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
-        and f.block_number between 91743315 and 97042228
+        and {{ in_window('f.block_number', 'polygon') }}
 )
 
 select
@@ -27,7 +27,9 @@ select
     round(sum(usdc) / nullif(sum(shares), 0), 6) as avg_price,
     count(distinct token_id) as tokens,
     count(distinct condition_id) as markets,
-    round(count(*) / 132480.0, 2) as fills_per_minute
+    round(
+        count(*) / nullif((select extract(epoch from max(block_timestamp) - min(block_timestamp)) / 60 from fills), 0), 2
+    ) as fills_per_minute
 from fills
 group by kind, role, side
 order by kind, role, side

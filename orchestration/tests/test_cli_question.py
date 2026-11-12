@@ -92,7 +92,7 @@ def test_unknown_key_names_it_and_lists_the_allowed_keys(tmp_path):
     with pytest.raises(BadInput) as raised:
         load_question(tmp_path, "q")
     assert "unknown key 'answer'" in str(raised.value)
-    assert "allowed keys: question, asked, definitions, alternatives, window, inputs, marts, analyses" in str(raised.value)
+    assert "allowed keys: question, asked, definitions, alternatives, window, eval_window, inputs, marts, analyses" in str(raised.value)
 
 
 @pytest.mark.parametrize(
@@ -165,3 +165,29 @@ def test_bad_slug_exits_2_with_one_line(capsys):
     err = capsys.readouterr().err
     assert "slug '../etc' must match" in err
     assert err.count("\n") == 1
+
+
+TWO_WINDOWS = """question: q
+window: {chain: ethereum, from: 2026-08-12, to: 2026-11-10, blocks: [25735201, 26380783]}
+eval_window: {chain: ethereum, from: 2026-11-08, to: 2026-11-09, blocks: [26366424, 26373598]}
+"""
+
+
+def test_a_run_answers_over_the_window_or_the_eval_window(tmp_path):
+    write_question(tmp_path, "q", TWO_WINDOWS)
+    full = load_question(tmp_path, "q")
+    sliced = load_question(tmp_path, "q", "eval_window")
+    assert (full.window_key, full.blocks, full.window["from"].isoformat()) == ("window", {"ethereum": (25735201, 26380783)}, "2026-08-12")
+    assert (sliced.window_key, sliced.blocks, sliced.window["from"].isoformat()) == ("eval_window", {"ethereum": (26366424, 26373598)}, "2026-11-08")
+
+
+def test_an_eval_run_needs_an_eval_window(tmp_path):
+    write_question(tmp_path, "q", "question: q\nwindow: {chain: ethereum, blocks: [100, 200]}\n")
+    with pytest.raises(BadInput, match="has no 'eval_window'; run bj answer without --eval"):
+        load_question(tmp_path, "q", "eval_window")
+
+
+def test_a_bad_eval_window_fails_a_full_run_too(tmp_path):
+    write_question(tmp_path, "q", "question: q\nwindow: {chain: ethereum, blocks: [100, 200]}\neval_window: {blocks: [150, 160]}\n")
+    with pytest.raises(BadInput, match=re.escape("'eval_window.blocks' as [from, to] needs 'eval_window.chain'")):
+        load_question(tmp_path, "q")

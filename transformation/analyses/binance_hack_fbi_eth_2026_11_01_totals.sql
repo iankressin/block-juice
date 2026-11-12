@@ -1,9 +1,9 @@
 -- The FBI-attributed Binance hack addresses on Ethereum, in one row: how many there are, how many were
--- active over blocks 26316189 to 26323364 (2026-11-01 UTC), how many have code or unread code, the ETH the
+-- active over the answer's window, how many have code or unread code, the ETH the
 -- code-less ones sent out (value, fees, both) and all of them received in top-level transactions, and the
 -- ETH all of them hold at state_block, the window's last block. In ETH.
 with flows as (
-    {{ attributed_eth_flows('binance-hack-2026-10-29', 'ethereum', 26316189, 26323364, 26294680) }}
+    {{ attributed_eth_flows('binance-hack-2026-10-29', 'ethereum', window_start('ethereum'), window_end('ethereum'), 26294680) }}
 )
 
 select

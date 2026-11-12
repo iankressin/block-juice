@@ -1,5 +1,5 @@
 -- The distribution of EIP-8037 state gas, in gas and as a lower bound, over Ethereum contract-deployment
--- transactions in blocks 26366424 to 26369413 (2026-11-08 00:00 to 10:00 UTC), with the sums of its terms.
+-- transactions in the answer's window, with the sums of its terms.
 select
     count(*) as deployments,
     sum(creates) as creates,
@@ -14,4 +14,4 @@ select
     count(*) filter (where transaction_type = 4) as eip7702_transactions
 from {{ ref('deployment_state_gas') }}
 where chain = 'ethereum'
-    and block_number between 26366424 and 26369413
+    and {{ in_window('block_number', 'ethereum') }}
