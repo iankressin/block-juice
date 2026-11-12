@@ -38,6 +38,7 @@ const addresses = z.object({
   neg_risk_adapter: address,
   collateral_adapters: z.array(address).min(1),
   auto_redeemers: z.array(address).min(1),
+  wallets: z.array(address).min(1).optional(),
 });
 
 // Each record is one log as Portal returns it, unique by its block and its index in that block. Its event
@@ -69,6 +70,9 @@ const records = (prefix: string) => (logs: Record<string, DecodedEvent<Record<st
  * finalized head when the run starts: ConditionalTokens, the NegRiskAdapter, pUSD's collateral adapters
  * and the auto-redeemers, each decoded with its own ABI.
  *
+ * With `wallets` in addresses.json, a split, merge, redemption or conversion loads only when its wallet
+ * argument is listed. Conditions, resolutions and neg-risk markets always load whole.
+ *
  * A decoder reads one contract group, so a log is named by the group that emitted it. The collateral
  * adapter's PositionSplit has the NegRiskAdapter's topic0, and the address is the only way to tell them
  * apart. Which wallet, collateral or condition matters is left to dbt. The ConditionalTokens transfers
@@ -82,6 +86,9 @@ export const polygonPolymarketCtf: StreamSource<CtfEnv> = {
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const listed = addresses.parse(readJson("addresses.json"));
+    const wallets = listed.wallets?.map(toLower);
+    const byWallet = <E, P extends string>(event: E, param: P) =>
+      wallets ? { event, params: { [param]: wallets } as Record<P, string[]> } : event;
     const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
     const range = { from: env.START_BLOCK, to: Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal)) };
 
@@ -96,9 +103,9 @@ export const polygonPolymarketCtf: StreamSource<CtfEnv> = {
           events: {
             ConditionPreparation: ctf.ConditionPreparation!,
             ConditionResolution: ctf.ConditionResolution!,
-            PositionSplit: ctf.PositionSplit!,
-            PositionsMerge: ctf.PositionsMerge!,
-            PayoutRedemption: ctf.PayoutRedemption!,
+            PositionSplit: byWallet(ctf.PositionSplit!, "stakeholder"),
+            PositionsMerge: byWallet(ctf.PositionsMerge!, "stakeholder"),
+            PayoutRedemption: byWallet(ctf.PayoutRedemption!, "redeemer"),
           },
         }).pipe(records("ctf")),
         negRisk: evmEventDecoder({
@@ -108,28 +115,28 @@ export const polygonPolymarketCtf: StreamSource<CtfEnv> = {
             MarketPrepared: negRisk.MarketPrepared!,
             QuestionPrepared: negRisk.QuestionPrepared!,
             OutcomeReported: negRisk.OutcomeReported!,
-            PositionSplit: negRisk.PositionSplit!,
-            PositionsMerge: negRisk.PositionsMerge!,
-            PositionsConverted: negRisk.PositionsConverted!,
-            PayoutRedemption: negRisk.PayoutRedemption!,
+            PositionSplit: byWallet(negRisk.PositionSplit!, "stakeholder"),
+            PositionsMerge: byWallet(negRisk.PositionsMerge!, "stakeholder"),
+            PositionsConverted: byWallet(negRisk.PositionsConverted!, "stakeholder"),
+            PayoutRedemption: byWallet(negRisk.PayoutRedemption!, "redeemer"),
           },
         }).pipe(records("neg_risk")),
         collateralAdapters: evmEventDecoder({
           range,
           contracts: listed.collateral_adapters.map(toLower),
           events: {
-            PositionSplit: collateralAdapter.PositionSplit!,
-            PositionsMerged: collateralAdapter.PositionsMerged!,
-            PositionsRedeemed: collateralAdapter.PositionsRedeemed!,
-            PositionsConverted: collateralAdapter.PositionsConverted!,
+            PositionSplit: byWallet(collateralAdapter.PositionSplit!, "initiator"),
+            PositionsMerged: byWallet(collateralAdapter.PositionsMerged!, "initiator"),
+            PositionsRedeemed: byWallet(collateralAdapter.PositionsRedeemed!, "initiator"),
+            PositionsConverted: byWallet(collateralAdapter.PositionsConverted!, "initiator"),
           },
         }).pipe(records("collateral_adapter")),
         autoRedeemers: evmEventDecoder({
           range,
           contracts: listed.auto_redeemers.map(toLower),
           events: {
-            BinaryRedemption: autoRedeemer.BinaryRedemption!,
-            NegRiskRedemption: autoRedeemer.NegRiskRedemption!,
+            BinaryRedemption: byWallet(autoRedeemer.BinaryRedemption!, "from"),
+            NegRiskRedemption: byWallet(autoRedeemer.NegRiskRedemption!, "from"),
           },
         }).pipe(records("auto_redeemer")),
       },

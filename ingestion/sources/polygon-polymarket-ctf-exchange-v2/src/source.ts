@@ -26,7 +26,10 @@ const env = z.object({
 
 export type ExchangeEnv = z.infer<typeof env>;
 
-const addresses = z.object({ exchanges: z.array(address).min(1) });
+const addresses = z.object({
+  exchanges: z.array(address).min(1),
+  wallets: z.array(address).min(1).optional(),
+});
 
 // Each record is one log as Portal returns it, unique by its block and its index in that block. Its event
 // is the catalog's key for the ABI event.
@@ -50,7 +53,8 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
 
 /**
  * Every OrderFilled of the three CTF Exchange v2 contracts on Polygon, as emitted, from START_BLOCK to
- * Portal's finalized head when the run starts.
+ * Portal's finalized head when the run starts. With `wallets` in addresses.json, only the fills whose
+ * maker is listed.
  *
  * Each match emits one OrderFilled per maker order and one for the taker order, whose taker is the
  * exchange itself. Both are loaded; dbt keeps the right ones. Which side, price and fee a fill has is left
@@ -74,7 +78,11 @@ export const polygonPolymarketCtfExchangeV2: StreamSource<ExchangeEnv> = {
       outputs: evmEventDecoder({
         range,
         contracts: listed.exchanges.map(toLower),
-        events: { OrderFilled: events.OrderFilled! },
+        events: {
+          OrderFilled: listed.wallets
+            ? { event: events.OrderFilled!, params: { maker: listed.wallets.map(toLower) } }
+            : events.OrderFilled!,
+        },
       }).pipe((logs) =>
         Object.values(logs).flatMap((found) => found.map((log) => logRecord("ctf_exchange_v2.OrderFilled", log))),
       ),

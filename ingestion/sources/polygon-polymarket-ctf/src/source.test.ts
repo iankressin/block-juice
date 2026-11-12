@@ -21,6 +21,7 @@ const [adapter, negRiskAdapter] = addresses.collateral_adapters as [Hex, Hex];
 const [autoRedeem, redeemer] = addresses.auto_redeemers as [Hex, Hex];
 const stranger = "0x00000000000000000000000000000000000000bb" as Hex;
 const user = "0x00000000000000000000000000000000000000aa" as Hex;
+const wallet = "0x00000000000000000000000000000000000000dd" as Hex;
 const token = "0x00000000000000000000000000000000000000cc" as Hex;
 const condition = `0x${"11".repeat(32)}` as Hex;
 const question = `0x${"22".repeat(32)}` as Hex;
@@ -40,52 +41,63 @@ async function records(t: TestContext, logs: ReturnType<typeof log>[], env: { ST
   return read.sort((a, b) => Number(a.data.block_number) - Number(b.data.block_number));
 }
 
-const listed = [
+async function useAddresses(t: TestContext, listed: object) {
+  const dir = await mkdtemp(join(tmpdir(), "polygon-polymarket-ctf-"));
+  const cwd = process.cwd();
+  t.after(async () => {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true });
+  });
+  await writeFile(join(dir, "addresses.json"), JSON.stringify(listed));
+  process.chdir(dir);
+}
+
+const ledger = (owner: Hex) => [
   log(conditionalTokensAbi, "ConditionPreparation", ctf, { conditionId: condition, oracle: user, questionId: question, outcomeSlotCount: 2n }),
   log(conditionalTokensAbi, "ConditionResolution", ctf, { conditionId: condition, oracle: user, questionId: question, outcomeSlotCount: 2n, payoutNumerators: [1n, 0n] }),
-  log(conditionalTokensAbi, "PositionSplit", ctf, { stakeholder: user, collateralToken: token, parentCollectionId: zero, conditionId: condition, partition: [1n, 2n], amount: 5n }),
-  log(conditionalTokensAbi, "PositionsMerge", ctf, { stakeholder: user, collateralToken: token, parentCollectionId: zero, conditionId: condition, partition: [1n, 2n], amount: 6n }),
-  log(conditionalTokensAbi, "PayoutRedemption", ctf, { redeemer: user, collateralToken: token, parentCollectionId: zero, conditionId: condition, indexSets: [1n, 2n], payout: 7n }),
+  log(conditionalTokensAbi, "PositionSplit", ctf, { stakeholder: owner, collateralToken: token, parentCollectionId: zero, conditionId: condition, partition: [1n, 2n], amount: 5n }),
+  log(conditionalTokensAbi, "PositionsMerge", ctf, { stakeholder: owner, collateralToken: token, parentCollectionId: zero, conditionId: condition, partition: [1n, 2n], amount: 6n }),
+  log(conditionalTokensAbi, "PayoutRedemption", ctf, { redeemer: owner, collateralToken: token, parentCollectionId: zero, conditionId: condition, indexSets: [1n, 2n], payout: 7n }),
   log(negRiskAdapterAbi, "MarketPrepared", negRisk, { marketId: market, oracle: user, feeBips: 100n, data: "0x1234" }),
   log(negRiskAdapterAbi, "QuestionPrepared", negRisk, { marketId: market, questionId: question, index: 3n, data: "0x" }),
   log(negRiskAdapterAbi, "OutcomeReported", negRisk, { marketId: market, questionId: question, outcome: true }),
-  log(negRiskAdapterAbi, "PositionSplit", negRisk, { stakeholder: user, conditionId: condition, amount: 8n }),
-  log(negRiskAdapterAbi, "PositionsMerge", negRisk, { stakeholder: user, conditionId: condition, amount: 9n }),
-  log(negRiskAdapterAbi, "PositionsConverted", negRisk, { stakeholder: user, marketId: market, indexSet: 3n, amount: 10n }),
-  log(negRiskAdapterAbi, "PayoutRedemption", negRisk, { redeemer: user, conditionId: condition, amounts: [11n, 12n], payout: 13n }),
-  log(collateralAdapterAbi, "PositionSplit", adapter, { initiator: user, conditionId: condition, amount: 14n }),
-  log(collateralAdapterAbi, "PositionsMerged", adapter, { initiator: user, conditionId: condition, amount: 15n }),
-  log(collateralAdapterAbi, "PositionsRedeemed", negRiskAdapter, { initiator: user, conditionId: condition, amounts: [16n, 17n], payout: 18n }),
-  log(collateralAdapterAbi, "PositionsConverted", negRiskAdapter, { initiator: user, marketId: market, indexSet: 3n, amount: 19n, amountOut: 20n }),
-  log(autoRedeemerAbi, "BinaryRedemption", autoRedeem, { from: user, conditionId: condition, payout: 21n }),
-  log(autoRedeemerAbi, "NegRiskRedemption", redeemer, { from: user, conditionId: condition, payout: 22n }),
+  log(negRiskAdapterAbi, "PositionSplit", negRisk, { stakeholder: owner, conditionId: condition, amount: 8n }),
+  log(negRiskAdapterAbi, "PositionsMerge", negRisk, { stakeholder: owner, conditionId: condition, amount: 9n }),
+  log(negRiskAdapterAbi, "PositionsConverted", negRisk, { stakeholder: owner, marketId: market, indexSet: 3n, amount: 10n }),
+  log(negRiskAdapterAbi, "PayoutRedemption", negRisk, { redeemer: owner, conditionId: condition, amounts: [11n, 12n], payout: 13n }),
+  log(collateralAdapterAbi, "PositionSplit", adapter, { initiator: owner, conditionId: condition, amount: 14n }),
+  log(collateralAdapterAbi, "PositionsMerged", adapter, { initiator: owner, conditionId: condition, amount: 15n }),
+  log(collateralAdapterAbi, "PositionsRedeemed", negRiskAdapter, { initiator: owner, conditionId: condition, amounts: [16n, 17n], payout: 18n }),
+  log(collateralAdapterAbi, "PositionsConverted", negRiskAdapter, { initiator: owner, marketId: market, indexSet: 3n, amount: 19n, amountOut: 20n }),
+  log(autoRedeemerAbi, "BinaryRedemption", autoRedeem, { from: owner, conditionId: condition, payout: 21n }),
+  log(autoRedeemerAbi, "NegRiskRedemption", redeemer, { from: owner, conditionId: condition, payout: 22n }),
+];
+const listed = ledger(user);
+
+const ledgerRecords = [
+  ["ctf.ConditionPreparation", ctf],
+  ["ctf.ConditionResolution", ctf],
+  ["ctf.PositionSplit", ctf],
+  ["ctf.PositionsMerge", ctf],
+  ["ctf.PayoutRedemption", ctf],
+  ["neg_risk.MarketPrepared", negRisk],
+  ["neg_risk.QuestionPrepared", negRisk],
+  ["neg_risk.OutcomeReported", negRisk],
+  ["neg_risk.PositionSplit", negRisk],
+  ["neg_risk.PositionsMerge", negRisk],
+  ["neg_risk.PositionsConverted", negRisk],
+  ["neg_risk.PayoutRedemption", negRisk],
+  ["collateral_adapter.PositionSplit", adapter],
+  ["collateral_adapter.PositionsMerged", adapter],
+  ["collateral_adapter.PositionsRedeemed", negRiskAdapter],
+  ["collateral_adapter.PositionsConverted", negRiskAdapter],
+  ["auto_redeemer.BinaryRedemption", autoRedeem],
+  ["auto_redeemer.NegRiskRedemption", redeemer],
 ];
 
 test("each listed event becomes a record with its decoded args", async (t) => {
   const read = await records(t, listed);
-  assert.deepEqual(
-    read.map((r) => [r.data.event, r.data.contract]),
-    [
-      ["ctf.ConditionPreparation", ctf],
-      ["ctf.ConditionResolution", ctf],
-      ["ctf.PositionSplit", ctf],
-      ["ctf.PositionsMerge", ctf],
-      ["ctf.PayoutRedemption", ctf],
-      ["neg_risk.MarketPrepared", negRisk],
-      ["neg_risk.QuestionPrepared", negRisk],
-      ["neg_risk.OutcomeReported", negRisk],
-      ["neg_risk.PositionSplit", negRisk],
-      ["neg_risk.PositionsMerge", negRisk],
-      ["neg_risk.PositionsConverted", negRisk],
-      ["neg_risk.PayoutRedemption", negRisk],
-      ["collateral_adapter.PositionSplit", adapter],
-      ["collateral_adapter.PositionsMerged", adapter],
-      ["collateral_adapter.PositionsRedeemed", negRiskAdapter],
-      ["collateral_adapter.PositionsConverted", negRiskAdapter],
-      ["auto_redeemer.BinaryRedemption", autoRedeem],
-      ["auto_redeemer.NegRiskRedemption", redeemer],
-    ],
-  );
+  assert.deepEqual(read.map((r) => [r.data.event, r.data.contract]), ledgerRecords);
   const byEvent = Object.fromEntries(read.map((r) => [r.data.event, r]));
   assert.match(read[0]!.id, /^1:\d+$/, "a record's id is its block and log index");
   assert.equal(read[0]!.data.kind, "log");
@@ -147,17 +159,30 @@ test("the stream starts at START_BLOCK and stops at END_BLOCK", async (t) => {
   assert.deepEqual(read.map((r) => r.data.block_number), [2, 3]);
 });
 
+test("with wallets listed, another wallet's events are left out and every market event loads", async (t) => {
+  await useAddresses(t, { ...addresses, wallets: [wallet] });
+  const read = await records(t, ledger(user));
+  assert.deepEqual(
+    read.map((r) => r.data.event),
+    ["ctf.ConditionPreparation", "ctf.ConditionResolution", "neg_risk.MarketPrepared", "neg_risk.QuestionPrepared", "neg_risk.OutcomeReported"],
+  );
+});
+
+test("with wallets listed, every event of a listed wallet loads", async (t) => {
+  await useAddresses(t, { ...addresses, wallets: [wallet] });
+  const read = await records(t, ledger(wallet));
+  assert.deepEqual(read.map((r) => [r.data.event, r.data.contract]), ledgerRecords);
+});
+
+test("an empty wallets list fails the run", async (t) => {
+  await useAddresses(t, { ...addresses, wallets: [] });
+  await assert.rejects(records(t, listed), /wallets/);
+});
+
 for (const key of ["conditional_tokens", "neg_risk_adapter", "collateral_adapters", "auto_redeemers"] as const) {
   test(`an addresses.json without ${key} fails the run`, async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "polygon-polymarket-ctf-"));
-    const cwd = process.cwd();
-    t.after(async () => {
-      process.chdir(cwd);
-      await rm(dir, { recursive: true });
-    });
     const { [key]: _removed, ...rest } = addresses;
-    await writeFile(join(dir, "addresses.json"), JSON.stringify(rest));
-    process.chdir(dir);
+    await useAddresses(t, rest);
     await assert.rejects(records(t, listed), new RegExp(key));
   });
 }
