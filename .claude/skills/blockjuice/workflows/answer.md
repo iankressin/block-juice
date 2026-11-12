@@ -4,7 +4,7 @@ Each answer lives in `answers/<slug>/`. Pick a short slug that names the questio
 
 ## 1. Scope
 
-Write `answers/<slug>/question.yaml` in the format of [../references/question-spec.md](../references/question-spec.md).
+Write `answers/<slug>/question.yaml` in the format of [../references/question-spec.md](../references/question-spec.md). It is the one file in `answers/` that git tracks, so commit it with the analyses it names.
 
 - Define every word that could be counted two ways, such as "bought", "holder", "active" or "wallet". Pick the most literal reading, write it under `definitions`, and list the readings you passed over under `alternatives`.
 - Resolve every token, contract and wallet to an address on its chain. Take addresses from the repo (the `addresses.json` files, existing models) or from the user. Never use an address from memory alone.

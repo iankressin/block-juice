@@ -33,7 +33,7 @@ The repo is ELT. Ingestion extracts data and loads it raw. dbt does every transf
 
 ## Analyses and answers
 
-`transformation/analyses/<name>.sql` holds one question's filter, window and aggregation, over marts only. `answers/<slug>/` holds what `bj answer` writes and the `answer.md` you write.
+`transformation/analyses/<name>.sql` holds one question's filter, window and aggregation, over marts only. `answers/<slug>/` holds the `question.yaml` that names those analyses, what `bj answer` writes and the `answer.md` you write. Git tracks only `question.yaml`; commit it with the analyses it names.
 
 ## Where does it go?
 
