@@ -1,0 +1,106 @@
+question: Did daily ETH, USDT and USDC flows to and from Ethereum wallets labelled as MEXC change after FinCEN's 6 November 2026 Section 9714 order against MEXC Global?
+asked: 2026-11-11
+definitions:
+  MEXC-labelled wallets: >-
+    The 23 unique Ethereum owners in DefiLlama-Adapters cex/mexc-cex.js at commit 6d311eff62 (2026-11-05),
+    rows with entity MEXC in transformation/seeds/wallet_labels.csv. 14 also carry an Etherscan "MEXC N" tag;
+    the others are DefiLlama-only labels. No first-party MEXC list, no clustering, no hop-following.
+  Binance counterparty: >-
+    The other side of a flow is one of the 111 Ethereum addresses on Binance's Proof-of-Reserves endpoint,
+    snapshot 2026-11-11, rows with entity Binance in transformation/seeds/wallet_labels.csv.
+  tokens: >-
+    Native ETH, USDT 0xdac17f958d2ee523a2206206994597c13d831ec7 and USDC
+    0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 on Ethereum mainnet. Same-symbol tokens at other contracts
+    do not count.
+  ETH flow: >-
+    A successful top-level transaction with value > 0 whose from or to is a MEXC-labelled wallet. Internal
+    ETH, which only call traces show, is not counted; failed transactions move no ETH.
+  token flow: Every Transfer log of USDT or USDC whose from (topic1) or to (topic2) is a MEXC-labelled wallet.
+  inflow: The receiver is a MEXC-labelled wallet and the sender is not.
+  outflow: The sender is a MEXC-labelled wallet and the receiver is not.
+  intra: Both sides are MEXC-labelled wallets. Reported on its own and left out of inflow, outflow and net.
+  net: inflow - outflow, in whole tokens (ETH 18 decimals, USDT and USDC 6 from the tokens mart).
+  day: >-
+    The UTC day whose first block is the first at or after 00:00:00 UTC, assigned by block height.
+  after the order: >-
+    From 2026-11-06, the day of FinCEN's announcement, whose first block is 26352079. Before is the
+    pre-window, 2026-10-16 through 2026-11-05.
+alternatives:
+  - Count intra-set transfers in gross inflow and outflow (4,700 ETH, 286M USDT and 416M USDC on 2026-11-07).
+  - Count internal ETH from call traces (needs Portal traces).
+  - Sweep attribution, treating MEXC user deposit addresses that forward into the labelled wallets as MEXC.
+    Most Binance-to-MEXC flow lands on such deposit addresses first, so the Binance subset is a lower bound.
+  - Take the day from 2026-11-10 (Federal Register) or 2026-11-07 (Elliptic's reported reclassification)
+    as the break instead of the 2026-11-06 announcement.
+window:
+  chain: ethereum
+  from: 2026-11-07T00:00:00Z
+  to: 2026-11-08T00:00:00Z
+  blocks: [26359254, 26366423]
+inputs:
+  - name: mexc_eth_flows
+    strategy: history
+    source: ethereum.wallet_transactions
+    mart: labelled_wallet_flows
+    filter:
+      wallets:
+        - "0x3cc936b795a188f0e246cbb2d74c5bd190aecf18"
+        - "0x0162cd2ba40e23378bf0fd41f919e1be075f025f"
+        - "0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88"
+        - "0xee136c0389733849dd710ac7104e92c6bf497574"
+        - "0xe4e3ECA65460C14a5245b09fee15a92bA09458b6"
+        - "0xf016E1D45EF23Bdd414E7A2E4D46E1b34577b508"
+        - "0x12C5E4EEEaA20E25847b5453D23246983c512DB7"
+        - "0xD67f25Ef2399A0C769B1A35634C5Ce77166714dB"
+        - "0xc411aB12837f63935b71B6c6643d0f7000e55E4b"
+        - "0x1F7370792a057227024e7a8Cc15b40E3eD171FfC"
+        - "0xf95334a86d09A6eEc74D69Da344efaca424B13a9"
+        - "0x76bf215ADE956642B056B9043e014988941BbdDd"
+        - "0x469AfE803C54A36674C55231489Cf4b61da8c1bC"
+        - "0x9642b23ed1e01df1092b92641051881a322f5d4e"
+        - "0xb5a6fd438017dbb0a2e5fcdcca715da227582ce4"
+        - "0x1Ed0be7d0A9580e202F6b98c29725d5C11D10b71"
+        - "0x6e5a3b0021949452D31A43BE17D808De54752a44"
+        - "0x2fF5fc5b63f2bfCE5d6BB9Ea4d170cf1aa40693c"
+        - "0xBCB302A64ADB7f2C8697e17C1e948f5b058F0e49"
+        - "0xc906895C8833481571118F0C59877bFF6bE38aC1"
+        - "0x4ac71ec43df19581d95eab5596c6fadc89170989"
+        - "0x368bEFA55cb770ff9AAa419b919d1c8b5aF2c8cB"
+        - "0xb0E0cDa794cF6215b229dC6D2F9958eA7ad270d9"
+  - name: mexc_token_flows
+    strategy: history
+    source: ethereum.erc20_transfers
+    mart: labelled_wallet_flows
+    filter:
+      tokens:
+        - "0xdac17f958d2ee523a2206206994597c13d831ec7"
+        - "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+      wallets:
+        - "0x3cc936b795a188f0e246cbb2d74c5bd190aecf18"
+        - "0x0162cd2ba40e23378bf0fd41f919e1be075f025f"
+        - "0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88"
+        - "0xee136c0389733849dd710ac7104e92c6bf497574"
+        - "0xe4e3ECA65460C14a5245b09fee15a92bA09458b6"
+        - "0xf016E1D45EF23Bdd414E7A2E4D46E1b34577b508"
+        - "0x12C5E4EEEaA20E25847b5453D23246983c512DB7"
+        - "0xD67f25Ef2399A0C769B1A35634C5Ce77166714dB"
+        - "0xc411aB12837f63935b71B6c6643d0f7000e55E4b"
+        - "0x1F7370792a057227024e7a8Cc15b40E3eD171FfC"
+        - "0xf95334a86d09A6eEc74D69Da344efaca424B13a9"
+        - "0x76bf215ADE956642B056B9043e014988941BbdDd"
+        - "0x469AfE803C54A36674C55231489Cf4b61da8c1bC"
+        - "0x9642b23ed1e01df1092b92641051881a322f5d4e"
+        - "0xb5a6fd438017dbb0a2e5fcdcca715da227582ce4"
+        - "0x1Ed0be7d0A9580e202F6b98c29725d5C11D10b71"
+        - "0x6e5a3b0021949452D31A43BE17D808De54752a44"
+        - "0x2fF5fc5b63f2bfCE5d6BB9Ea4d170cf1aa40693c"
+        - "0xBCB302A64ADB7f2C8697e17C1e948f5b058F0e49"
+        - "0xc906895C8833481571118F0C59877bFF6bE38aC1"
+        - "0x4ac71ec43df19581d95eab5596c6fadc89170989"
+        - "0x368bEFA55cb770ff9AAa419b919d1c8b5aF2c8cB"
+        - "0xb0E0cDa794cF6215b229dC6D2F9958eA7ad270d9"
+  - name: token_decimals
+    strategy: state
+    mart: tokens
+marts: [labelled_wallet_flows, tokens]
+analyses: [mexc_labelled_flows_2026_11, mexc_labelled_flows_2026_11_by_period, mexc_labelled_flows_2026_11_by_day]

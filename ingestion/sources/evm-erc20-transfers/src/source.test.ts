@@ -34,8 +34,8 @@ const ethereumLogs = [
   transfer(otherToken, binance!, stranger, 5n), // a token not in addresses.json
 ];
 
-async function records(chain: string, url: string, startBlock: number) {
-  const stream = await forChain(chain).stream({ PORTAL_URL: url, START_BLOCK: startBlock });
+async function records(chain: string, url: string, startBlock: number, endBlock?: number) {
+  const stream = await forChain(chain).stream({ PORTAL_URL: url, START_BLOCK: startBlock, END_BLOCK: endBlock });
   const read: RawRecord[] = [];
   for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
   return read.map(({ id, data }) => ({ id, block: data.block_number, from: data.from, to: data.to, value: data.value }));
@@ -59,6 +59,11 @@ test("only transfers of listed tokens into or out of listed wallets become recor
 test("the stream starts at START_BLOCK", async (t) => {
   const read = await records("ethereum", await portal(t, ethereumLogs), 3);
   assert.deepEqual(read.map((r) => r.block), [3, 3]);
+});
+
+test("the stream stops at END_BLOCK", async (t) => {
+  const read = await records("ethereum", await portal(t, ethereumLogs), 1, 2);
+  assert.deepEqual(read.map((r) => r.block).sort(), [1, 2]);
 });
 
 test("a chain whose addresses.json lists no wallets reads every transfer of its tokens", async (t) => {

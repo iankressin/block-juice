@@ -51,9 +51,11 @@ ONE_READING = [(W, T, 50, 999), (W, T, 150, 15), (W, T, 200, 500)]
 
 
 def compile_tests(target: Path, variables: dict | None) -> dict[str, tuple[str, str]]:
-    """Each singular test downstream of erc20_transfers, by name: its severity and its compiled SQL."""
+    """Each singular test downstream of erc20_transfers, by name: its severity and its compiled SQL. The
+    factory's reference tests are left out, as bj answer leaves them out: they read seeds these tables lack."""
     args = [
-        "compile", "--select", "test_type:singular,erc20_transfers+", "--project-dir", str(PROJECT), "--profiles-dir",
+        "compile", "--select", "test_type:singular,erc20_transfers+", "--exclude", "tag:reference",
+        "--project-dir", str(PROJECT), "--profiles-dir",
         str(PROJECT), "--target-path", str(target), "--log-path", str(target), "--no-populate-cache", *DBT_FLAGS,
     ]
     result = dbtRunner().invoke([*args, "--vars", json.dumps(variables)] if variables else args)

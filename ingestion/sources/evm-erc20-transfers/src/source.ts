@@ -23,6 +23,8 @@ const env = z.object({
   PORTAL_API_KEY: z.string().optional(),
   // Where the first run starts. Later runs resume after the cursor Pipes keeps in the warehouse.
   START_BLOCK: z.coerce.number().int().nonnegative(),
+  // The last block to read, set only to check a short window. Unset, each run ends at Portal's finalized head.
+  END_BLOCK: z.coerce.number().int().positive().optional(),
 });
 
 export type TransfersEnv = z.infer<typeof env>;
@@ -73,7 +75,7 @@ export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
     }
     const wallets = addresses.wallets && validateEthAddressList(addresses.wallets).map((a: string) => a.toLowerCase());
     const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
-    const range = { from: env.START_BLOCK, to: await finalizedHead(portal) };
+    const range = { from: env.START_BLOCK, to: Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal)) };
 
     // One decoder per filter: Pipes refuses two filters on the same event in one decoder (E0004).
     const transfers = (params: IndexedParamsInput<typeof Transfer>) =>

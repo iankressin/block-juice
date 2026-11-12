@@ -1,6 +1,36 @@
 version: 2
 
 models:
+  - name: labelled_wallet_flows
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || id || ':' || entity"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum, arbitrum, base]
+      - name: id
+        data_tests: [not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: asset
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]
+      - name: entity
+        data_tests: [not_null]
+      - name: wallet
+        data_tests: [not_null]
+      - name: direction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [inflow, outflow, intra]
   - name: erc20_transfers
     data_tests:
       - unique:
@@ -96,3 +126,36 @@ unit_tests:
         - {chain: arbitrum, id: "1:9", from_kind: eoa, from_entity: "0xa1", from_group: eoa, to_kind: contract, to_entity: "0xc1", to_group: contract, category: contract}
         - {chain: arbitrum, id: "1:10", from_kind: eoa, from_entity: "0xa1", from_group: eoa, to_kind: eoa, to_entity: "0xa2", to_group: eoa, category: p2p}
         - {chain: base, id: "2:1", from_kind: unknown, from_entity: "0xd1", from_group: unknown, to_kind: unknown, to_entity: "0xa1", to_group: unknown, category: unknown}
+  - name: a_labelled_flow_takes_its_direction_and_counterparty
+    description: >-
+      0xm1 and 0xm2 are MEXC's, 0xb1 Binance's (labels as published, in mixed case). A Binance-to-MEXC
+      transfer is a MEXC inflow from Binance and a Binance outflow to MEXC. MEXC to an unlabelled address is
+      an outflow with no counterparty entity, and MEXC to MEXC one intra row. A native transaction counts
+      only when it succeeded with value: the reverted one and the zero-value one are left out. A transfer
+      that touches no label is left out.
+    model: labelled_wallet_flows
+    given:
+      - input: ref('wallet_labels')
+        rows:
+          - {chain: ethereum, address: "0xM1", entity: MEXC, list: test}
+          - {chain: ethereum, address: "0xm2", entity: MEXC, list: test}
+          - {chain: ethereum, address: "0xB1", entity: Binance, list: test}
+      - input: ref('wallet_transactions')
+        rows:
+          - {chain: ethereum, block_number: 1, tx_hash: "0xt1", from_address: "0xb1", to_address: "0xm1", value_wei: 5, succeeded: true}
+          - {chain: ethereum, block_number: 1, tx_hash: "0xt2", from_address: "0xm1", to_address: "0xa1", value_wei: 5, succeeded: false}
+          - {chain: ethereum, block_number: 1, tx_hash: "0xt3", from_address: "0xm1", to_address: "0xa1", value_wei: 0, succeeded: true}
+          - {chain: ethereum, block_number: 1, tx_hash: "0xt4", from_address: "0xm1", to_address: "0xm2", value_wei: 7, succeeded: true}
+      - input: ref('erc20_transfers')
+        rows:
+          - {chain: ethereum, id: "2:1", block_number: 2, token: "0xusdt", from_address: "0xm2", to_address: "0xa1", value: 3}
+          - {chain: ethereum, id: "2:2", block_number: 2, token: "0xusdt", from_address: "0xa1", to_address: "0xa2", value: 4}
+          - {chain: ethereum, id: "2:3", block_number: 2, token: "0xusdt", from_address: "0xm2", to_address: "0xb1", value: 6}
+    expect:
+      rows:
+        - {id: "tx:0xt1", asset: native, value: 5, entity: MEXC, direction: inflow, wallet: "0xm1", counterparty_address: "0xb1", counterparty_entity: Binance}
+        - {id: "tx:0xt1", asset: native, value: 5, entity: Binance, direction: outflow, wallet: "0xb1", counterparty_address: "0xm1", counterparty_entity: MEXC}
+        - {id: "tx:0xt4", asset: native, value: 7, entity: MEXC, direction: intra, wallet: "0xm1", counterparty_address: "0xm2", counterparty_entity: null}
+        - {id: "2:1", asset: "0xusdt", value: 3, entity: MEXC, direction: outflow, wallet: "0xm2", counterparty_address: "0xa1", counterparty_entity: null}
+        - {id: "2:3", asset: "0xusdt", value: 6, entity: MEXC, direction: outflow, wallet: "0xm2", counterparty_address: "0xb1", counterparty_entity: Binance}
+        - {id: "2:3", asset: "0xusdt", value: 6, entity: Binance, direction: inflow, wallet: "0xb1", counterparty_address: "0xm2", counterparty_entity: MEXC}
