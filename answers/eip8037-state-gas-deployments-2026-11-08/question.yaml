@@ -1,0 +1,46 @@
+question: How many Ethereum mainnet contract-deployment transactions since 12 August 2026 would have an EIP-8037 state-gas cost above each candidate Glamsterdam block gas limit (60M, 150M and 200M)?
+asked: 2026-11-10
+definitions:
+  deployment: >-
+    A successful transaction with at least one create or create2 trace that stood: neither the create nor
+    any frame above it has an error. Top-level contract creations count. One row per transaction, summed
+    over its creates.
+  state gas: >-
+    1530 * (120 * new_accounts + code_bytes + 64 * new_slots), EIP-8037 as in Last Call (cost per state
+    byte 1,530), as a lower bound.
+  code_bytes: The length of the runtime code each counted create deployed (Portal's createResultCode).
+  new_accounts: >-
+    Counted creates whose address did not exist before the transaction: no '*' or '-' state diff of the
+    address in that transaction. Value transfers to new non-contract accounts are left out.
+  new_slots: >-
+    Unique (address, slot) pairs in the transaction's state diff, in every contract it touched, whose prev
+    is zero or absent and next is nonzero, whatever the diff's kind.
+  above a limit: State gas strictly greater than the limit, in gas.
+  limits: >-
+    60M (current mainnet, about 59,999,943 at block 26,382,105), 150M (EIP-8037's reference limit) and 200M
+    (the floor on ethereum.org's Glamsterdam page). None is a finalized Glamsterdam setting.
+  Wildcat deployment: >-
+    A transaction that calls WildcatHooksFactory 0xdd7dd3b5076cf89440d05585ff56d246386207be with
+    deployMarket (0xe7ca86e3) or deployMarketAndHooks (0xad78e45a), or in which the HooksFactory runs a
+    create. Each transaction is measured on its own.
+alternatives:
+  - Count new slots by Portal's '+' kind alone, which undercounts by more than 90%
+  - Count only the slots of the newly created contracts
+  - Add 1530 * 23 per EIP-7702 authorization
+  - Add constructor execution, calldata, intrinsic gas and EIP-8038's execution-gas changes, which would raise every figure
+window:
+  chain: ethereum
+  from: 2026-11-08T00:00:00Z
+  to: 2026-11-08T10:00:00Z
+  blocks: [26366424, 26369413]
+inputs:
+  - name: contract_deployments
+    strategy: history
+    source: ethereum.contract_deployments
+    mart: deployment_state_gas
+marts: [deployment_state_gas]
+analyses:
+  - eip8037_state_gas_deployments_2026_11_08
+  - eip8037_state_gas_deployments_2026_11_08_by_threshold
+  - eip8037_state_gas_deployments_2026_11_08_distribution
+  - eip8037_state_gas_deployments_2026_11_08_wildcat

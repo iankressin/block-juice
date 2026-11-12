@@ -1,0 +1,40 @@
+question: How many Uniswap v3 swaps traded UNI on Ethereum on 2026-10-15, and what was their volume in UNI?
+asked: 2026-11-09
+definitions:
+  UNI: "The Uniswap token on Ethereum, 0x1f9840a85d5af5bf1d1762f925bdaddc4201f984 (ticket #32)"
+  swap: One Swap event of a Uniswap v3 pool whose token0 or token1 is UNI, as a row of dex_trades with version v3. Every pool counts, including pools against stablecoins and WETH.
+  volume: The sum of the absolute UNI amount of each swap, bought or sold, in UNI (18 decimals, from tokens), not USD
+  on 2026-10-15: Ethereum blocks 26194189 to 26201364, the first and last blocks of that UTC day
+alternatives:
+  - Count UNI on one side only, bought or sold, which would roughly halve the volume
+  - Count Uniswap v2 and v4 pools too, which dex_trades also holds
+  - Value the volume in USD
+window:
+  chain: ethereum
+  from: 2026-10-15T00:00:00Z
+  to: 2026-10-16T00:00:00Z
+  blocks: [26194189, 26201364]
+inputs:
+  - name: uni_v3_swaps
+    strategy: history
+    mart: dex_trades
+    source: ethereum.uniswap_v3
+    filter: {tokens: ["0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"]}
+  # dex_trades unions every version, so the analyses read v2 and v4 too, then keep only v3's rows. No
+  # UNI filter on these: their rows drop out of every analysis, so only their blocks need to load.
+  - name: v2_swaps
+    strategy: history
+    mart: dex_trades
+    source: ethereum.uniswap_v2
+  - name: v4_swaps
+    strategy: history
+    mart: dex_trades
+    source: ethereum.uniswap_v4
+  - name: uni_decimals
+    strategy: state
+    mart: tokens
+marts: [dex_trades, tokens]
+analyses:
+  - uni_v3_uni_swaps_2026_10_15
+  - uni_v3_uni_swaps_2026_10_15_volume
+  - uni_v3_uni_swaps_2026_10_15_by_pool
