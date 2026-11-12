@@ -1,0 +1,48 @@
+question: "How much ETH has the wallet Lookonchain links to the Ethereum Foundation (`0x5CBC6299faB3320E7758ac97fd4CA45E5B722059`) sent out, when, and where (on-chain swap, exchange deposit, or other)?"
+asked: 2026-11-11
+definitions:
+  subject: >-
+    0x5CBC6299faB3320E7758ac97fd4CA45E5B722059, as linked in Lookonchain's post of 2026-11-10, a
+    third-party label (ticket #49). The link to the Ethereum Foundation is Lookonchain's and Arkham's, not
+    a fact. Its Safe and other related wallets are left out.
+  outflow: >-
+    A successful top-level transaction with from = the subject and value > 0 (mart wallet_eth_outflows).
+    The fee is never part of an outflow.
+  sold: >-
+    The outflow placed a CoW Protocol ETH Flow order (to 0xba3cb449bd2b4adddbc894d8697f5170800eadec) with
+    the subject as receiver, a GPv2Settlement (0x9008d19f58aabd9ed0d60971565aa8510560ab41) Trade in a later
+    transaction carries the order's UID, the order bought a token in seeds/stablecoins, and the settlement
+    sent that token to the subject in the same transaction.
+  sent_to_exchange: >-
+    The outflow's to is an exchange address in seeds/cex_addresses (Dune's cex.addresses). It holds no
+    Ethereum rows yet, so no outflow can take this class until rows are added.
+  sent_out: Every other outflow, including an ETH Flow order with no matching settlement.
+  fees: gas_used * effective_gas_price of every transaction the subject sent, reverted ones too; reported for reconciliation, never counted as sent.
+  day: A UTC day, by the block's timestamp. Finalized blocks only.
+alternatives:
+  - Count fees as ETH sent out (adds 0.000723942957037540 ETH over the 4 transactions on 2026-11-10).
+  - Count any CoW swap as sold, whatever token it bought, rather than stablecoins only.
+  - Label exchanges from Binance's proof-of-reserves list rather than Dune's cex.addresses.
+window:
+  chain: ethereum
+  from: 2026-11-10T00:00:00Z
+  to: 2026-11-11T00:00:00Z
+  blocks: [26380784, 26387956]
+inputs:
+  - name: subject_transactions
+    strategy: history
+    source: ethereum.wallet_transactions
+    filter: {wallets: ["0x5CBC6299faB3320E7758ac97fd4CA45E5B722059"]}
+    mart: wallet_transactions
+  - name: subject_ethflow_orders
+    strategy: history
+    source: ethereum.cow_ethflow
+    filter: {wallets: ["0x5CBC6299faB3320E7758ac97fd4CA45E5B722059"]}
+    mart: cow_ethflow_orders
+marts: [wallet_eth_outflows, cow_ethflow_orders, wallet_transactions]
+analyses:
+  - ef_linked_wallet_eth_outflows_2026_11_10
+  - ef_linked_wallet_eth_outflows_2026_11_10_by_outflow
+  - ef_linked_wallet_eth_outflows_2026_11_10_by_class
+  - ef_linked_wallet_eth_outflows_2026_11_10_by_day
+  - ef_linked_wallet_eth_outflows_2026_11_10_reconciliation
