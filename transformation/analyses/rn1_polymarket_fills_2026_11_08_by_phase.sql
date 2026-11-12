@@ -1,5 +1,5 @@
--- RN1's fills in two-outcome markets by game phase on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00
--- to 2026-11-10 00:00 UTC), with how it balances inventory. Shares are outcome tokens; prices pUSD per share.
+-- RN1's fills in two-outcome markets by game phase on Polygon in the answer's window, with how it balances
+-- inventory. Shares are outcome tokens; prices pUSD per share.
 -- phase: pre_game before Gamma's game_start_time, in_game from it on, no_game_time when Gamma gives none.
 -- Inventory is what RN1 bought in this window only, fill by fill in (block, log index) order; holdings
 -- from before the window are not in it. A buy is of the underweight outcome when RN1 held fewer shares
@@ -17,7 +17,7 @@ with fills as (
     from {{ ref('polymarket_wallet_fills') }} as f
     left join {{ ref('polymarket_markets') }} as m on m.condition_id = f.condition_id
     where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
-        and f.block_number between 91743315 and 97042228
+        and {{ in_window('f.block_number', 'polygon') }}
         and f.complement_token_id is not null
 ),
 

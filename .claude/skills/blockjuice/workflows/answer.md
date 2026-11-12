@@ -25,7 +25,7 @@ Before you build a source or a pipeline, show the user the definitions, window a
 
 ## 3. Write the analysis
 
-Write `transformation/analyses/<name>.sql`, where `<name>` is the slug with `_` for `-`.
+Write `transformation/analyses/<name>.sql`, where `<name>` is the slug with `_` for `-`. Filter blocks with `{{ in_window('block_number', '<chain>') }}`, and pass `window_start('<chain>')` and `window_end('<chain>')` to a macro that takes the bounds. `bj answer` fills them from `question.yaml`; never write the window's blocks into the SQL.
 
 - Select from marts with `{{ ref() }}`, never from staging or raw tables.
 - Put the headline in the first analysis as one row and one column. `bj` records that cell as the answer's value.
