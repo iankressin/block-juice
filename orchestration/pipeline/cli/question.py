@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -16,6 +16,9 @@ SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 ANALYSIS = re.compile(r"^[A-Za-z0-9_]+$")
 SOURCE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 CHAIN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+# The question's own span, or the slice of it that bj answer --eval runs: a factory build's eval window.
+WindowKey = Literal["window", "eval_window"]
 
 
 @dataclass(frozen=True)
@@ -39,13 +42,15 @@ class Question:
     asked: str | None
     definitions: dict[str, str]
     alternatives: tuple[str, ...]
+    # The window this answer runs over: question.yaml's window, or its eval_window when window_key says so.
     window: dict[str, Any]
     inputs: tuple[dict[str, Any], ...]
     marts: tuple[str, ...]
     analyses: tuple[str, ...]
-    # window.blocks, by chain.
+    # The blocks of that window, by chain.
     blocks: dict[str, tuple[int, int]] = field(default_factory=dict)
     sources: tuple[SourceInput, ...] = ()
+    window_key: WindowKey = "window"
 
 
 def _strings(value: Any) -> bool:
@@ -65,8 +70,8 @@ def _block_range(value: Any) -> bool:
     )
 
 
-def _window_blocks(window: dict[str, Any], label: str) -> dict[str, tuple[int, int]]:
-    """window.blocks by chain: [from, to] on window.chain, or a map of each chain to its [from, to]."""
+def _window_blocks(window: dict[str, Any], label: str, key: WindowKey) -> dict[str, tuple[int, int]]:
+    """<key>.blocks by chain: [from, to] on <key>.chain, or a map of each chain to its [from, to]."""
     if "blocks" not in window:
         return {}
     blocks = window["blocks"]
@@ -74,13 +79,13 @@ def _window_blocks(window: dict[str, Any], label: str) -> dict[str, tuple[int, i
         return {chain: tuple(span) for chain, span in blocks.items()}
     if not _block_range(blocks):
         raise BadInput(
-            f"{label}: 'window.blocks' must be [from, to], two block numbers with from <= to,"
+            f"{label}: '{key}.blocks' must be [from, to], two block numbers with from <= to,"
             " or map each chain to its [from, to]"
         )
     if "chain" not in window:
-        raise BadInput(f"{label}: 'window.blocks' as [from, to] needs 'window.chain'; for several chains, map each to its [from, to]")
+        raise BadInput(f"{label}: '{key}.blocks' as [from, to] needs '{key}.chain'; for several chains, map each to its [from, to]")
     if not isinstance(window["chain"], str) or not CHAIN.match(window["chain"]):
-        raise BadInput(f"{label}: 'window.chain' must be a chain name, such as ethereum")
+        raise BadInput(f"{label}: '{key}.chain' must be a chain name, such as ethereum")
     return {window["chain"]: tuple(blocks)}
 
 
@@ -99,6 +104,7 @@ FIELDS: dict[str, tuple[Callable[[Any], bool], str]] = {
     "definitions": (_string_map, "a map of strings to strings"),
     "alternatives": (_strings, "a list of strings"),
     "window": (lambda v: isinstance(v, dict), "a map"),
+    "eval_window": (lambda v: isinstance(v, dict), "a map"),
     "inputs": (lambda v: isinstance(v, list) and all(isinstance(item, dict) for item in v), "a list of maps"),
     "marts": (_strings, "a list of strings"),
     "analyses": (_analyses, f"a non-empty list of dbt analysis names matching {ANALYSIS.pattern}"),
@@ -114,7 +120,7 @@ def answer_dir(repo_root: Path, slug: str) -> Path:
     return folder
 
 
-def load_question(repo_root: Path, slug: str) -> Question:
+def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") -> Question:
     path = answer_dir(repo_root, slug) / "question.yaml"
     label = f"answers/{slug}/question.yaml"
     if not path.is_file():
@@ -133,8 +139,10 @@ def load_question(repo_root: Path, slug: str) -> Question:
             raise BadInput(f"{label}: {key!r} must be {kind}")
     if "question" not in raw:
         raise BadInput(f"{label}: 'question' is required")
-    window = raw.get("window", {})
-    blocks = _window_blocks(window, label)
+    if window_key == "eval_window" and "eval_window" not in raw:
+        raise BadInput(f"{label} has no 'eval_window'; run bj answer without --eval")
+    # Both windows are checked whichever one this run uses.
+    blocks = {key: _window_blocks(raw.get(key, {}), label, key) for key in ("window", "eval_window")}
     sources = []
     for index, item in enumerate(raw.get("inputs", [])):
         if "source" not in item:
@@ -154,10 +162,11 @@ def load_question(repo_root: Path, slug: str) -> Question:
         asked=asked.isoformat() if isinstance(asked, date) else asked,
         definitions=raw.get("definitions", {}),
         alternatives=tuple(raw.get("alternatives", [])),
-        window=window,
+        window=raw.get(window_key, {}),
         inputs=tuple(raw.get("inputs", [])),
         marts=tuple(raw.get("marts", [])),
         analyses=tuple(raw.get("analyses", [slug.replace("-", "_")])),
-        blocks=blocks,
+        blocks=blocks[window_key],
         sources=tuple(sources),
+        window_key=window_key,
     )

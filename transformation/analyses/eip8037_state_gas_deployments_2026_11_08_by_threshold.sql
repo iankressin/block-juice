@@ -1,13 +1,13 @@
--- Ethereum contract-deployment transactions in blocks 26366424 to 26369413 (2026-11-08 00:00 to 10:00 UTC)
--- whose EIP-8037 state gas, as a lower bound, is strictly above each threshold, in gas, with their share of
--- all deployments in the window. 60M is the current mainnet block gas limit, 150M EIP-8037's reference limit
--- and 200M the floor on ethereum.org's Glamsterdam page; none is a finalized Glamsterdam setting. The other
--- thresholds show the shape of the distribution.
+-- Ethereum contract-deployment transactions in the answer's window whose EIP-8037 state gas, as a lower
+-- bound, is strictly above each threshold, in gas, with their share of all deployments in the window.
+-- 60M is the current mainnet block gas limit, 150M EIP-8037's reference limit and 200M the floor on
+-- ethereum.org's Glamsterdam page; none is a finalized Glamsterdam setting. The other thresholds show the
+-- shape of the distribution.
 with deployments as (
     select state_gas
     from {{ ref('deployment_state_gas') }}
     where chain = 'ethereum'
-        and block_number between 26366424 and 26369413
+        and {{ in_window('block_number', 'ethereum') }}
 ),
 
 thresholds as (

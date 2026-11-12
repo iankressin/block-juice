@@ -18,13 +18,18 @@ definitions:
     eth_getBalance of each address at the window's last block, read from an archive RPC. Nonce and code are
     read at the same block.
   since 29 October 2026: >-
-    This eval answers over 2026-11-01 UTC only, the scope's eval window. The full window starts at block
-    26294680, the first block at or after 2026-10-29 00:00 UTC, and runs to Portal's finalized head.
+    From block 26294680, the first block at or after 2026-10-29 00:00 UTC, to 2026-11-10 15:38 UTC,
+    Portal's finalized head when the ticket was scoped. eval_window is 2026-11-01 UTC only.
 alternatives:
   - Count internal transfers from call traces too. Over the eval window this adds 200,000,000 wei received by 0xf5aaadf3bd81f81b97b4389b5c6c6242d8c8f421.
   - Follow the ETH past the listed addresses (hop-following), or add vendor lists such as Elliptic's or Arkham's.
   - Count the share of the stolen ETH that moved, which needs traces or an archive balance at the start block.
 window:
+  chain: ethereum
+  from: 2026-10-29T00:00:00Z
+  to: 2026-11-10T15:38:00Z
+  blocks: [26294680, 26385456]
+eval_window:
   chain: ethereum
   from: 2026-11-01T00:00:00Z
   to: 2026-11-02T00:00:00Z

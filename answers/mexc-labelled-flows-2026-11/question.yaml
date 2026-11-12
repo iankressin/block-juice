@@ -34,6 +34,11 @@ alternatives:
     as the break instead of the 2026-11-06 announcement.
 window:
   chain: ethereum
+  from: 2026-10-16T00:00:00Z
+  to: 2026-11-11T00:00:00Z
+  blocks: [26201365, 26387956]
+eval_window:
+  chain: ethereum
   from: 2026-11-07T00:00:00Z
   to: 2026-11-08T00:00:00Z
   blocks: [26359254, 26366423]

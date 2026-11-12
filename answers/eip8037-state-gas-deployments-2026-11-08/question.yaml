@@ -30,6 +30,11 @@ alternatives:
   - Add constructor execution, calldata, intrinsic gas and EIP-8038's execution-gas changes, which would raise every figure
 window:
   chain: ethereum
+  from: 2026-08-12T00:00:00Z
+  to: 2026-11-10T00:00:00Z
+  blocks: [25735201, 26380783]
+eval_window:
+  chain: ethereum
   from: 2026-11-08T00:00:00Z
   to: 2026-11-08T10:00:00Z
   blocks: [26366424, 26369413]

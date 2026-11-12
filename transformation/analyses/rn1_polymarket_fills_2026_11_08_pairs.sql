@@ -1,6 +1,5 @@
 -- RN1's complementary accumulation summed over its two-outcome markets, per market kind (sports or not,
--- from Gamma), on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts
--- are pUSD.
+-- from Gamma), on Polygon in the answer's window. Amounts are pUSD.
 -- The per-market figures and their rules are in rn1_polymarket_fills_2026_11_08_by_market.sql:
 -- pair_shares = least(shares bought of each outcome), pair_cost = the sum of the two average costs after
 -- fees, pair_edge = pair_shares * (1 - pair_cost). pairs_below_1_pct weights each market by its pairs.
@@ -8,7 +7,7 @@ with fills as (
     select f.*
     from {{ ref('polymarket_wallet_fills') }} as f
     where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
-        and f.block_number between 91743315 and 97042228
+        and {{ in_window('f.block_number', 'polygon') }}
         and f.complement_token_id is not null
 ),
 

@@ -162,12 +162,13 @@ def test_answer_document_has_the_documented_shape(tmp_path):
     write_question(tmp_path)
     doc = document(tmp_path, datetime(2026, 11, 4, 19, 0, 0, 123456, tzinfo=timezone.utc))
     assert list(doc) == [
-        "question", "slug", "answered_at", "value", "definitions", "alternatives", "window",
+        "question", "slug", "answered_at", "value", "definitions", "alternatives", "window", "eval",
         "results", "inputs", "checks", "provenance",
     ]
     assert doc["answered_at"] == "2026-11-04T19:00:00Z"
     assert doc["value"] == "131322925334691899062636"
     assert doc["window"] == {"at": "2026-11-01"}
+    assert doc["eval"] is False
     assert doc["results"] == [
         {"analysis": "eth_total", "path": "results/eth_total.csv", "columns": ["total"], "rows": 1, "sql": "select 1"}
     ]
@@ -211,7 +212,7 @@ def test_an_analysis_dbt_does_not_know_is_bad_input(tmp_path, monkeypatch):
     (tmp_path / "target" / "manifest.json").write_text(json.dumps({"nodes": {}, "sources": {}}))
     monkeypatch.setattr(answer, "dbt", lambda project, *args: SimpleNamespace(success=True))
     with pytest.raises(BadInput, match="write transformation/analyses/eth_total.sql"):
-        answer.compile_analyses(tmp_path, ["eth_total"])
+        answer.compile_analyses(tmp_path, ["eth_total"], {})
 
 
 @pytest.fixture
@@ -219,7 +220,7 @@ def offline(monkeypatch):
     """answer.run with dbt and the warehouse replaced by fixed results."""
     for name in REQUIRED_ENV:
         monkeypatch.setenv(name, "x")
-    monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
+    monkeypatch.setattr(answer, "compile_analyses", lambda project, names, blocks: (MANIFEST, ["analysis.t.holders"]))
     dbt_coverages = []
 
     def run_dbt_tests(project, names, coverages, upstream=()):
@@ -282,16 +283,23 @@ def test_missing_settings_are_bad_input_before_any_write(tmp_path, offline, monk
 def history(tmp_path, offline, monkeypatch):
     """Answers a question whose analysis reads the stream source, which loaded blocks 100 to 180."""
     offline(parked=0)
-    monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.flows"]))
+    compiled = []
 
-    def ask(window, inputs):
+    def compile_analyses(project, names, blocks):
+        compiled.append(blocks)
+        return MANIFEST, ["analysis.t.flows"]
+
+    monkeypatch.setattr(answer, "compile_analyses", compile_analyses)
+
+    def ask(window, inputs, extra="", window_key="window"):
         folder = tmp_path / "answers" / "usdc-flows"
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / "question.yaml").write_text(f"question: How much USDC moved?\nwindow: {window}\ninputs: {inputs}\n")
-        code = answer.run(tmp_path, "usdc-flows")
+        (folder / "question.yaml").write_text(f"question: How much USDC moved?\nwindow: {window}\ninputs: {inputs}\n{extra}")
+        code = answer.run(tmp_path, "usdc-flows", window_key)
         checks = json.loads((folder / "answer.json").read_text())["checks"]
         return code, {c["name"]: (c["status"], c["detail"]) for c in checks}
 
+    ask.compiled = compiled
     return ask
 
 
@@ -319,7 +327,7 @@ def test_a_new_answer_drops_the_checks_the_agent_added(tmp_path, history):
 def test_dbt_tests_get_what_the_stream_inputs_loaded_and_state_answers_get_nothing(tmp_path, history, offline, monkeypatch):
     history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
     write_question(tmp_path)
-    monkeypatch.setattr(answer, "compile_analyses", lambda project, names: (MANIFEST, ["analysis.t.holders"]))
+    monkeypatch.setattr(answer, "compile_analyses", lambda project, names, blocks: (MANIFEST, ["analysis.t.holders"]))
     answer.run(tmp_path, "eth-total")
     assert offline.dbt_coverages == [{TRANSFERS: LOADED}, {}]
 
@@ -569,3 +577,41 @@ def test_an_input_naming_no_sources_entry_is_bad_input_before_any_write(tmp_path
 def test_a_stream_input_needs_window_blocks(history):
     with pytest.raises(BadInput, match="inputs read the stream source ethereum.erc20_transfers, so set window.blocks"):
         history("{chain: ethereum}", USDC_FLOWS)
+
+
+def test_the_window_reaches_dbt_compile_as_a_var_only_when_it_has_blocks(tmp_path, monkeypatch):
+    (tmp_path / "target").mkdir()
+    manifest = {"nodes": {"analysis.t.usdc_flows": {"name": "usdc_flows", "resource_type": "analysis"}}, "sources": {}}
+    (tmp_path / "target" / "manifest.json").write_text(json.dumps(manifest))
+    calls = []
+
+    def dbt(project, *args):
+        calls.append(args)
+        return SimpleNamespace(success=True)
+
+    monkeypatch.setattr(answer, "dbt", dbt)
+    answer.compile_analyses(tmp_path, ["usdc_flows"], {"ethereum": (100, 180), "base": (5, 9)})
+    answer.compile_analyses(tmp_path, ["usdc_flows"], {})
+    flows, latest = calls
+    assert flows[: flows.index("--vars")] == ("compile", "--select", "usdc_flows")
+    assert json.loads(flows[flows.index("--vars") + 1]) == {"window": {"ethereum": [100, 180], "base": [5, 9]}}
+    assert latest == ("compile", "--select", "usdc_flows")
+
+
+EVAL_SLICE = "eval_window: {chain: ethereum, blocks: [100, 180]}\n"
+
+
+def test_an_eval_run_compiles_checks_coverage_and_records_the_eval_window(tmp_path, history):
+    code, checks = history("{chain: ethereum, blocks: [100, 500]}", USDC_FLOWS, EVAL_SLICE, "eval_window")
+    assert code == 0
+    assert history.compiled == [{"ethereum": (100, 180)}]
+    assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
+    doc = json.loads((tmp_path / "answers" / "usdc-flows" / "answer.json").read_text())
+    assert (doc["window"], doc["eval"]) == ({"chain": "ethereum", "blocks": [100, 180]}, True)
+
+
+def test_a_full_run_of_the_same_question_needs_the_whole_window_loaded(history):
+    code, checks = history("{chain: ethereum, blocks: [100, 500]}", USDC_FLOWS, EVAL_SLICE)
+    assert code == 1
+    assert history.compiled == [{"ethereum": (100, 500)}]
+    assert checks["coverage"][0] == "failed"

@@ -38,7 +38,7 @@ def utc_iso(moment: datetime) -> str:
 def _answer(args: argparse.Namespace) -> int:
     from pipeline.cli import answer
 
-    return answer.run(REPO_ROOT, args.slug)
+    return answer.run(REPO_ROOT, args.slug, "eval_window" if args.eval else "window")
 
 
 def _blocks(args: argparse.Namespace) -> int:
@@ -107,6 +107,7 @@ def parser() -> argparse.ArgumentParser:
         "read, and writes answers/<slug>/results/ and answer.json. Exits 1 when a check fails.",
     )
     answer.add_argument("slug")
+    answer.add_argument("--eval", action="store_true", help="answer over question.yaml's eval_window, not its window")
     answer.set_defaults(run=_answer)
 
     blocks = commands.add_parser(

@@ -31,10 +31,10 @@ This run is one turn, and nobody reads your messages. When you end the turn the 
 ## Do
 
 1. Write `transformation/seeds/reference/reference_<name>.csv` with the exact contents of `.factory/reference.csv`. Register it in `transformation/seeds/reference/_reference_seeds.yml` with a description that names the oracle (`oracle.kind` and `oracle.ref`), the window (chain, blocks and times) and the ticket number. Give key columns that hold addresses `text` in `column_types`.
-2. Write `transformation/tests/reference/<name>_matches_reference.sql`, tagged `reference`, as the README's example shows. Its `actual` CTE is the analysis SQL restricted to `window.blocks`. Pass `reference.key`, `reference.value`, `tolerance.kind` and `tolerance.value` from `scope.yaml` to `reference_mismatches`.
-3. Follow the bj skill's answer workflow to build what is missing: sources, marts, the analysis. Write `answers/<slug>/question.yaml` with the ticket's question and the scope's window, then `answers/<slug>/answer.md` as the workflow says.
+2. Write `transformation/tests/reference/<name>_matches_reference.sql`, tagged `reference`, as the README's example shows. Its `actual` CTE is the analysis SQL with `window.blocks` written as numbers in place of the window macros: the reference covers that window only, and `dbt test` passes no window. Pass `reference.key`, `reference.value`, `tolerance.kind` and `tolerance.value` from `scope.yaml` to `reference_mismatches`.
+3. Follow the bj skill's answer workflow to build what is missing: sources, marts, the analysis. Write `answers/<slug>/question.yaml` with the ticket's question, `full_window` as `window` (its block range from `bj blocks <chain> <from> <to>`) and the scope's `window` as `eval_window`, then `answers/<slug>/answer.md` as the workflow says.
 4. Run the eval loop:
-   - `uv run --project orchestration bj answer <slug>`
+   - `uv run --project orchestration bj answer <slug> --eval`
    - `cd transformation && uv run --project ../orchestration dbt seed --select reference_<name>`
    - `cd transformation && uv run --project ../orchestration dbt test --select tag:reference,<name>_matches_reference`
 5. When the test fails, find why, fix it and run the loop again. You get three fix attempts after the first mismatch. Then stop, even if it still fails. Never change the reference rows or widen the tolerance to make it pass: the reference is the human's, and a mismatch you cannot fix is a finding.
