@@ -1,0 +1,23 @@
+version: 2
+
+unit_tests:
+  - name: an_ethflow_order_uid_is_hash_owner_and_valid_to
+    description: >-
+      The subject's order of 2026-11-10 00:17 UTC (catalog/protocols/cow-protocol/NOTES.md): createOrder
+      returned 0x21249cf5…5179, and the OrderPlacement's validTo is 2^32 - 1, so the UID is that hash, the
+      ETH Flow contract and ffffffff, the UID in settlement 0x4ccf…48b3's Trade. A placement from another
+      wallet in the same transaction does not take the call's output.
+    model: int_ethereum_cow_ethflow_orders
+    given:
+      - input: ref('stg_ethereum__cow_ethflow')
+        rows:
+          - {block_number: 26380868, transaction_index: 89, log_index: 266, tx_hash: "0x53ed", event: OrderPlacement, contract: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", order_sender: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", order_valid_to: 4294967295}
+          - {block_number: 26380868, transaction_index: 89, log_index: 267, tx_hash: "0x53ed", event: OrderPlacement, contract: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", order_sender: "0x00000000000000000000000000000000000000aa", order_valid_to: 4294967295}
+          - {block_number: 26380873, transaction_index: 10, log_index: 155, tx_hash: "0x4ccf", event: Trade, contract: "0x9008d19f58aabd9ed0d60971565aa8510560ab41"}
+      - input: ref('stg_ethereum__cow_ethflow_traces')
+        rows:
+          - {tx_hash: "0x53ed", trace_address: "[]", error: null, from_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", to_address: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", value: "1000000000000000000000", output: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179"}
+    expect:
+      rows:
+        - {log_index: 266, order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "1000000000000000000000"}
+        - {log_index: 267, order_uid: null, eth_value_wei: null}

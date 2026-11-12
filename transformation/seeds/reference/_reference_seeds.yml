@@ -42,6 +42,21 @@ seeds:
         side: text
         role: text
         shares: numeric
+  - name: reference_ef_linked_wallet_eth_outflows_2026_11_10
+    description: >-
+      #49: each top-level ETH outflow (successful transaction with value > 0) from the wallet Lookonchain
+      links to the Ethereum Foundation, 0x5CBC6299faB3320E7758ac97fd4CA45E5B722059, with its class (sold,
+      sent to an exchange, or sent out) and its value in ETH, on Ethereum blocks 26380784 to 26387956
+      (2026-11-10T00:00:00Z to 2026-11-11T00:00:00Z). From the dune oracle: Dune query 9109965
+      (https://dune.com/queries/9109965; ethereum.transactions and erc20_ethereum.evt_Transfer for the
+      wallet on 2026-11-10), with a block-pinned RPC check (.factory/rpc_check.py, .factory/uid_match.py
+      of the scope run): receipts, each CoW ETH Flow OrderPlacement matched to a GPv2Settlement Trade by
+      recomputed order UID, and eth_getBalance, eth_getCode and nonce at blocks 26380783 and 26387956.
+    config:
+      column_types:
+        tx_hash: text
+        outflow_class: text
+        eth: numeric
   - name: reference_eip8037_state_gas_deployments_2026_11_08
     description: >-
       #42: Ethereum contract-deployment transactions whose EIP-8037 state gas,
