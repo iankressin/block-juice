@@ -1,0 +1,48 @@
+question: How much native ETH have the Ethereum addresses the FBI attributes to the Binance hack sent out since 29 October 2026, and how much do they hold at the latest finalized block?
+asked: 2026-11-10
+definitions:
+  addresses the FBI attributes to the Binance hack: >-
+    The 608 Ethereum addresses in the FBI alert on the 2026-10-29 Binance hack (published 2026-10-31,
+    modified 2026-11-02), as ticket #41 lists them. They are in transformation/seeds/attributed_addresses.csv
+    with attribution binance-hack-2026-10-29, compared lowercase. No clustering, no hop-following, no vendor lists.
+  sent out: >-
+    For each address with no code at block 26294680 and at the window's last block (an ordinary EOA, with no
+    EIP-7702 delegation), the value of its successful top-level transactions plus gasUsed * effectiveGasPrice
+    on every transaction it sent, failed ones included. A code-less EOA moves ETH only through transactions it
+    signs, so this is complete for those addresses.
+  addresses with code: >-
+    A contract, or an EOA whose code starts with 0xef0100 (an EIP-7702 delegation), at either block. Listed
+    apart in the _with_code analysis and left out of the sent-out total, since internal calls would need traces.
+  received: The value of successful top-level transactions to the address.
+  held: >-
+    eth_getBalance of each address at the window's last block, read from an archive RPC. Nonce and code are
+    read at the same block.
+  since 29 October 2026: >-
+    This eval answers over 2026-11-01 UTC only, the scope's eval window. The full window starts at block
+    26294680, the first block at or after 2026-10-29 00:00 UTC, and runs to Portal's finalized head.
+alternatives:
+  - Count internal transfers from call traces too. Over the eval window this adds 200,000,000 wei received by 0xf5aaadf3bd81f81b97b4389b5c6c6242d8c8f421.
+  - Follow the ETH past the listed addresses (hop-following), or add vendor lists such as Elliptic's or Arkham's.
+  - Count the share of the stolen ETH that moved, which needs traces or an archive balance at the start block.
+window:
+  chain: ethereum
+  from: 2026-11-01T00:00:00Z
+  to: 2026-11-02T00:00:00Z
+  blocks: [26316189, 26323364]
+inputs:
+  - name: wallet_transactions
+    strategy: history
+    source: ethereum.wallet_transactions
+    mart: wallet_transactions
+  - name: account_states
+    strategy: state
+    mart: account_states
+  - name: address_attributions
+    strategy: state
+    mart: address_attributions
+marts: [wallet_transactions, account_states, address_attributions]
+analyses:
+  - binance_hack_fbi_eth_2026_11_01
+  - binance_hack_fbi_eth_2026_11_01_totals
+  - binance_hack_fbi_eth_2026_11_01_by_address
+  - binance_hack_fbi_eth_2026_11_01_with_code

@@ -72,3 +72,21 @@ seeds:
       column_types:
         threshold_gas: numeric
         deployments_above: numeric
+  - name: reference_mexc_labelled_flows_2026_11
+    description: >-
+      #48: daily ETH, USDT (0xdac17f958d2ee523a2206206994597c13d831ec7) and USDC
+      (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48) flows to and from the 23 Ethereum wallets DefiLlama labels
+      as MEXC (cex/mexc-cex.js at commit 6d311eff62), in long form: inflow, outflow, net and intra (MEXC to
+      MEXC) in whole tokens and their transfer counts, for every counterparty (all) and for the 111 Binance
+      Proof-of-Reserves addresses of 2026-11-11 (binance). ETH is successful top-level transactions with
+      value; USDT and USDC are Transfer logs. On Ethereum blocks 26359254 to 26366423 (2026-11-07T00:00:00Z
+      to 2026-11-08T00:00:00Z), from the dune oracle: Dune query 9109979 (https://dune.com/queries/9109979),
+      execution 01M75DKQASX0PE7K7FEG9MVH09, over ethereum.transactions and erc20_ethereum.evt_Transfer; the
+      Binance subset was checked by query 9109993.
+    config:
+      column_types:
+        day: date
+        token: text
+        counterparty: text
+        metric: text
+        amount: numeric

@@ -23,10 +23,10 @@ const metadata = `0x${"33".repeat(32)}` as Hex;
 const log = (eventName: string, address: Hex, args: Record<string, unknown>) =>
   encodeEvent({ abi: exchangeAbi as Abi, eventName, address, args: args as never });
 
-const filled = (address: Hex, tokenId = 7n) =>
+const filled = (address: Hex, tokenId = 7n, orderMaker = maker) =>
   log("OrderFilled", address, {
     orderHash,
-    maker,
+    maker: orderMaker,
     taker: address,
     side: 1,
     tokenId,
@@ -44,6 +44,17 @@ async function records(t: TestContext, logs: ReturnType<typeof log>[], env: { ST
   const read: RawRecord[] = [];
   for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
   return read.sort((a, b) => Number(a.data.block_number) - Number(b.data.block_number));
+}
+
+async function useAddresses(t: TestContext, listed: object) {
+  const dir = await mkdtemp(join(tmpdir(), "polygon-polymarket-ctf-exchange-v2-"));
+  const cwd = process.cwd();
+  t.after(async () => {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true });
+  });
+  await writeFile(join(dir, "addresses.json"), JSON.stringify(listed));
+  process.chdir(dir);
 }
 
 test("OrderFilled from each listed exchange becomes a record", async (t) => {
@@ -91,16 +102,23 @@ test("START_BLOCK and END_BLOCK bound the stream", async (t) => {
   assert.deepEqual(read.map((r) => r.data.block_number), [2, 3]);
 });
 
+test("with wallets listed, only the fills whose maker is listed load", async (t) => {
+  await useAddresses(t, { ...addresses, wallets: [maker] });
+  const read = await records(t, [filled(exchange, 1n, stranger), filled(exchange, 2n), filled(negRiskA, 3n, stranger)]);
+  assert.deepEqual(
+    read.map((r) => [r.data.block_number, (r.data.args as { maker: string }).maker]),
+    [[2, maker]],
+  );
+});
+
 test("an empty exchanges list fails the run", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "polygon-polymarket-ctf-exchange-v2-"));
-  const cwd = process.cwd();
-  t.after(async () => {
-    process.chdir(cwd);
-    await rm(dir, { recursive: true });
-  });
-  await writeFile(join(dir, "addresses.json"), JSON.stringify({ exchanges: [] }));
-  process.chdir(dir);
+  await useAddresses(t, { exchanges: [] });
   await assert.rejects(records(t, [filled(exchange)]), /exchanges/);
+});
+
+test("an empty wallets list fails the run", async (t) => {
+  await useAddresses(t, { ...addresses, wallets: [] });
+  await assert.rejects(records(t, [filled(exchange)]), /wallets/);
 });
 
 test("every exchange and adapter in addresses.json has a row in the polymarket_contracts seed", () => {

@@ -9,8 +9,8 @@ seeds:
       (https://www.fbi.gov/investigate/cyber/alerts/2026/north-korea-responsible-for-6-billion-binance-attack),
       published 2026-10-31 and modified 2026-11-02, copied from ticket #41. published_address keeps the
       alert's capitalization; address is lowercase. The same list is the wallets in
-      chains/ethereum/addresses.json of evm-wallet-transactions and evm-account-state: change all three
-      together.
+      chains/ethereum/addresses.json of evm-account-state and the first 608 wallets of
+      evm-wallet-transactions' (the rest are wallet_labels' MEXC wallets): change all three together.
     config:
       column_types:
         chain: text
@@ -33,6 +33,39 @@ seeds:
       - name: address
         data_tests: [not_null]
       - name: attribution
+        data_tests: [not_null]
+  - name: wallet_labels
+    description: >-
+      Wallets an outside list labels as an exchange's, one row per chain and address, address as published.
+      entity is the exchange; list names where the label comes from. defillama-mexc-cex-6d311eff62: the 23
+      unique Ethereum owners in DefiLlama-Adapters cex/mexc-cex.js at commit 6d311eff62 (2026-11-05), labelled
+      MEXC. binance-por-2026-11-11: the 111 valid Ethereum addresses on Binance's Proof-of-Reserves endpoint
+      GET https://www.binance.com/bapi/apex/v1/public/apex/market/por/address, snapshot 2026-11-11, labelled
+      Binance. Both copied from ticket #48. The MEXC wallets are also in the wallets of
+      chains/ethereum/addresses.json of evm-wallet-transactions and evm-erc20-transfers, which load their
+      flows: an entity whose wallets no source follows has only the flows that touch another followed wallet.
+    config:
+      column_types:
+        chain: text
+        address: text
+        entity: text
+        list: text
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || lower(address)"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ethereum]
+      - name: address
+        data_tests: [not_null]
+      - name: entity
+        data_tests: [not_null]
+      - name: list
         data_tests: [not_null]
   - name: cex_addresses
     description: >-

@@ -6,8 +6,11 @@ import type { Batch, StreamRecords } from "#src/source.ts";
 import type { Query } from "#src/warehouse/index.ts";
 
 export type PipesTargetOptions = {
-  /** About this many blocks a run: the run ends on the batch that passes it. */
-  maxBlocks: number;
+  /**
+   * Blocks one run reads before it stops, on the batch that passes the cap.
+   * Unset means no cap: the source stream runs on to its own end.
+   */
+  maxBlocks?: number;
   onLoad(load: { records: number; seconds: number }): void;
 };
 
@@ -48,7 +51,16 @@ export function pipesTarget({
     ...pipes,
     requiresFinalizedStream: true,
     write: (writer) =>
-      pipes.write({ ...writer, read: (state, options) => upTo(maxBlocks, state, writer.read(state, options)) }),
+      pipes.write({
+        ...writer,
+        read: (state, options) => {
+          const batches = writer.read(state, options);
+          // No cap: leave Pipes' own read loop in place. It ends when the source stream ends,
+          // at END_BLOCK or the finalized head, and each batch still commits and reports.
+          if (maxBlocks === undefined) return batches;
+          return upTo(maxBlocks, state, batches);
+        },
+      }),
   };
 }
 
