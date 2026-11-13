@@ -58,6 +58,7 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
 export const source: StreamSource<TokenBridgeEnv> = {
   name: "arbitrum",
   table: "token_bridge",
+  coverage: { unrestricted: [] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

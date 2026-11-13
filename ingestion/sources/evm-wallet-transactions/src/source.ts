@@ -107,6 +107,7 @@ export function transactionRecord(header: Header, tx: Tx): RawRecord {
 export const forChain = (chain: string): StreamSource<WalletTransactionsEnv> => ({
   name: chainName.parse(chain),
   table: "wallet_transactions",
+  coverage: { unrestricted: [] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

@@ -161,6 +161,7 @@ export function blockRecords(block: Block, f: Filter): RawRecord[] {
 export const forChain = (chain: string): StreamSource<CowEthFlowEnv> => ({
   name: chainName.parse(chain),
   table: "cow_ethflow",
+  coverage: { unrestricted: [] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

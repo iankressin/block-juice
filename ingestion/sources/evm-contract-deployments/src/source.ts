@@ -135,6 +135,7 @@ export function blockRecords(block: Block): RawRecord[] {
 export const forChain = (chain: string): StreamSource<ContractDeploymentsEnv> => ({
   name: chainName.parse(chain),
   table: "contract_deployments",
+  coverage: { unrestricted: [] },
   env,
   async stream(env) {
     const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);

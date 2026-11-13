@@ -82,6 +82,7 @@ const records = (prefix: string) => (logs: Record<string, DecodedEvent<Record<st
 export const polygonPolymarketCtf: StreamSource<CtfEnv> = {
   name: "polygon",
   table: "polymarket_ctf",
+  coverage: { unrestricted: ["wallets"] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

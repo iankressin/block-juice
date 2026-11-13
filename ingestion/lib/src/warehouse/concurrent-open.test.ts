@@ -58,6 +58,19 @@ test("warehouses that open at once on an empty schema all succeed", async (t) =>
     const failed = results.filter((r) => r.status === "rejected").map((r) => String(r.reason));
     assert.deepEqual(failed, [], `round ${round}`);
   }
+
+  const warehouse = postgresWarehouse({ schema: "singleflight", connect: () => connect(scratch) });
+  const first = await warehouse.open("shared_source");
+  let opened = false;
+  const waiting = warehouse.open("shared_source").then((table) => { opened = true; return table; });
+  const independent = await warehouse.open("independent_source");
+  await independent.close();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(opened, false, "the same source waits through extraction, while another source can run");
+  await first.close();
+  const second = await waiting;
+  assert.equal(opened, true, "closing the connection releases the source lock");
+  await second.close();
 });
 
 test("Postgres exposes API progress and records together only after COMMIT", async (t) => {

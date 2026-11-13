@@ -4,6 +4,8 @@ import { describeError } from "#src/calls.ts";
 import { loadEnv } from "#src/env.ts";
 import { logger } from "#src/logger.ts";
 import { pushProgressMetrics, pushRunMetrics, type RunProgress } from "#src/run/metrics.ts";
+import { captureJsonReads } from "#src/json.ts";
+import { streamProvenance } from "#src/warehouse/provenance.ts";
 import type { Source, StreamSource } from "#src/source.ts";
 import { transportSnapshot, withTransportMetrics } from "#src/transport-metrics.ts";
 import { postgresWarehouse, type DeadLetterBacklog, type Warehouse } from "#src/warehouse/index.ts";
@@ -22,6 +24,7 @@ const blockCount = z
 const runEnv = z.object({
   DAGSTER_RUN_ID: z.string().min(1).optional(),
   MAX_BLOCKS_PER_RUN: blockCount.optional(),
+  SOURCE_BACKFILL_ID: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/).optional(),
 });
 
 /** What runSource reports when a run ends, to the Pushgateway and to ops.ingestion_runs. */
@@ -104,9 +107,13 @@ async function run<E, C>(source: Source<E, C> | StreamSource<E>, warehouse: Ware
     try {
       if ("stream" in source) {
         log.info({ runId }, "Run started");
-        const stream = await source.stream(env);
+        const { value: stream, inputs } = await captureJsonReads(() => source.stream(env));
+        const provenance = streamProvenance(source, env, inputs);
+        const cursorId = provenance ? await table.configureStream(provenance) : undefined;
         await stream.pipeTo(
           table.pipesTarget({
+            provenance,
+            cursorId,
             // The env var wins when it is set. Otherwise the source's own cap, or no cap at all.
             maxBlocks: MAX_BLOCKS_PER_RUN ?? source.maxBlocksPerRun,
             onLoad({ records, seconds, writeSeconds: executed, committedBlock: block }) {

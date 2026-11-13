@@ -19,13 +19,14 @@ import { readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-type SourceEntry = { name: string; table: string; package: string; settings?: string };
+type Coverage = { unrestricted: string[]; defaults?: Record<string, number> };
+type SourceEntry = { name: string; table: string; package: string; settings?: string; coverage?: Coverage };
 
 const ingestionDir = path.resolve(import.meta.dirname, "..");
 const sourcesDir = path.join(ingestionDir, "sources");
 const out = path.resolve(process.argv[2] ?? path.join(ingestionDir, "sources.json"));
 
-function isSource(value: unknown): value is { name: string; table: string } {
+function isSource(value: unknown): value is { name: string; table: string; coverage?: Coverage } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -60,7 +61,8 @@ async function sourcesOf(pkg: string): Promise<SourceEntry[]> {
       if (!isSource(source) || source.name !== chain) {
         throw new Error(`forChain("${chain}") in ${label} must return a Source named ${chain}`);
       }
-      return { name: source.name, table: source.table, package: pkg, settings: `chains/${chain}` };
+      return { name: source.name, table: source.table, package: pkg, settings: `chains/${chain}`,
+        ...(source.coverage ? { coverage: source.coverage } : {}) };
     });
   }
   const sources = Object.entries(exports).filter(([, value]) => isSource(value));
@@ -68,8 +70,9 @@ async function sourcesOf(pkg: string): Promise<SourceEntry[]> {
     const found = sources.map(([key]) => key).join(", ") || "none";
     throw new Error(`${label} must export exactly one Source, found ${found}`);
   }
-  const [[, source]] = sources as [[string, { name: string; table: string }]];
-  return [{ name: source.name, table: source.table, package: pkg }];
+  const [[, source]] = sources as [[string, { name: string; table: string; coverage?: Coverage }]];
+  return [{ name: source.name, table: source.table, package: pkg,
+    ...(source.coverage ? { coverage: source.coverage } : {}) }];
 }
 
 const entries: SourceEntry[] = [];

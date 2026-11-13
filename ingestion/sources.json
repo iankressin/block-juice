@@ -9,7 +9,10 @@
     "name": "arbitrum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
-    "settings": "chains/arbitrum"
+    "settings": "chains/arbitrum",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "arbitrum",
@@ -21,12 +24,20 @@
     "name": "arbitrum",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
-    "settings": "chains/arbitrum"
+    "settings": "chains/arbitrum",
+    "coverage": {
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "arbitrum",
     "table": "token_bridge",
-    "package": "arbitrum-token-bridge"
+    "package": "arbitrum-token-bridge",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "base",
@@ -38,7 +49,10 @@
     "name": "base",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
-    "settings": "chains/base"
+    "settings": "chains/base",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "base",
@@ -50,13 +64,21 @@
     "name": "base",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
-    "settings": "chains/base"
+    "settings": "chains/base",
+    "coverage": {
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "base",
     "table": "op_standard_bridge",
     "package": "evm-op-standard-bridge",
-    "settings": "chains/base"
+    "settings": "chains/base",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "binance",
@@ -83,19 +105,28 @@
     "name": "ethereum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "ethereum",
     "table": "contract_deployments",
     "package": "evm-contract-deployments",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "ethereum",
     "table": "cow_ethflow",
     "package": "evm-cow-ethflow",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "ethereum",
@@ -113,7 +144,12 @@
     "name": "ethereum",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "ethereum",
@@ -125,35 +161,66 @@
     "name": "ethereum",
     "table": "uniswap_v2",
     "package": "evm-uniswap-v2",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": [],
+      "defaults": {
+        "POOLS_START_BLOCK": 10000835
+      }
+    }
   },
   {
     "name": "ethereum",
     "table": "uniswap_v3",
     "package": "evm-uniswap-v3",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": [],
+      "defaults": {
+        "POOLS_START_BLOCK": 12369621
+      }
+    }
   },
   {
     "name": "ethereum",
     "table": "uniswap_v4",
     "package": "evm-uniswap-v4",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": [],
+      "defaults": {
+        "POOLS_START_BLOCK": 21688329
+      }
+    }
   },
   {
     "name": "ethereum",
     "table": "wallet_transactions",
     "package": "evm-wallet-transactions",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "unrestricted": []
+    }
   },
   {
     "name": "polygon",
     "table": "polymarket_ctf",
-    "package": "polygon-polymarket-ctf"
+    "package": "polygon-polymarket-ctf",
+    "coverage": {
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "polygon",
     "table": "polymarket_ctf_exchange_v2",
-    "package": "polygon-polymarket-ctf-exchange-v2"
+    "package": "polygon-polymarket-ctf-exchange-v2",
+    "coverage": {
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "polymarket",

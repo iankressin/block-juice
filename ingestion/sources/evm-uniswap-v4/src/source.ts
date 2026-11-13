@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import {
   finalizedHead,
+  factoryCachePath,
   logger,
   portalClient,
   readJson,
@@ -101,6 +102,7 @@ export const forChain = (chain: string): StreamSource<PoolManagerSourceEnv> => {
   return {
     name: chain,
     table: "uniswap_v4",
+    coverage: { unrestricted: [], defaults: { POOLS_START_BLOCK: poolManager.deployedBlock } },
     env: envFor(chain, poolManager.deployedBlock),
     async stream(env) {
       // Read inside the run, not at import, so runSource reports a bad addresses.json.
@@ -108,7 +110,8 @@ export const forChain = (chain: string): StreamSource<PoolManagerSourceEnv> => {
       const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
       const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
       const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
-      const storeIsNew = !existsSync(env.FACTORY_DB);
+      const factoryDb = factoryCachePath(env.FACTORY_DB, env, { tokens });
+      const storeIsNew = !existsSync(factoryDb);
       // Opened, and so created, only once the check in `start` below passes. A run that check stops leaves
       // no new file for the next run to trust.
       let store: Awaited<ReturnType<typeof contractFactorySqliteStore>>;
@@ -146,7 +149,7 @@ export const forChain = (chain: string): StreamSource<PoolManagerSourceEnv> => {
                 "before the cursor are gone, so their Swaps would be missed. Reset the source and load it again.",
             );
           }
-          store = await contractFactorySqliteStore({ path: env.FACTORY_DB });
+          store = await contractFactorySqliteStore({ path: factoryDb });
           await store.migrate();
           // Only the pools of the tokens in addresses.json now, as the v2 and v3 factories check each lookup.
           for (const currency of ["currency0", "currency1"]) {
