@@ -35,5 +35,3 @@ def source_env_values(path: Path) -> dict[str, str]:
         return parse_source_env(path.read_text())
     except FileNotFoundError:
         return {}
-
-

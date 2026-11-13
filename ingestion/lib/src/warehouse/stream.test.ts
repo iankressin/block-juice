@@ -313,3 +313,23 @@ test("empty event batches still commit their verified block interval", async (t)
   assert.deepEqual((await db.query("select from_block, to_block from raw._coverage")).rows,
     [{ from_block: 1, to_block: 4 }]);
 });
+
+test("configured gaps between query ranges are never certified as ingested blocks", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const url = await chain(t, 6);
+  const source = transfers(url, 6);
+  source.stream = async () => evmPortalStream({
+    id: "test", portal: new PortalClient({ url, finalized: true, maxBytes: 1 }), logger: "silent",
+    outputs: Object.fromEntries([[1, 2], [5, 6]].map(([from, to], i) => [String(i), evmEventDecoder({
+      range: { from: from!, to: to! }, contracts: [token], events: { transfers: commonAbis.erc20.events.Transfer },
+    }).pipe(({ transfers }) => transfers.map((event) => ({
+      id: String(event.block.number), callId: String(event.block.number), data: { block: event.block.number },
+    })))])),
+  });
+  await runSource(source, warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "5", "6"]);
+  assert.deepEqual((await db.query("select from_block, to_block from raw._coverage order by from_block")).rows,
+    [{ from_block: 1, to_block: 2 }, { from_block: 5, to_block: 6 }]);
+});

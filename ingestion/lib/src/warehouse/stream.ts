@@ -44,7 +44,7 @@ export function pipesTarget({
   write(q: Query, batch: Batch): Promise<void>;
 }): Target<StreamRecords> {
   let written = { records: 0, writeSeconds: 0 };
-  let range: [number, number, boolean] | undefined;
+  let ranges: [number, number, boolean][] = [];
   const pipes = drizzleTarget<StreamRecords>({
     db,
     tables: [],
@@ -54,8 +54,10 @@ export function pipesTarget({
       const startedAt = performance.now();
       try {
         await write(within(tx), { records, failed: [] });
-        if (provenance && range) {
-          await recordCoverage(within(tx), `"${schema}"`, id, provenance, ...range);
+        if (provenance) {
+          for (const range of ranges) {
+            await recordCoverage(within(tx), `"${schema}"`, id, provenance, ...range);
+          }
         }
         written.records = records.length;
       } finally {
@@ -82,7 +84,7 @@ export function pipesTarget({
       pipes.write({
         ...writer,
         read: (state, options) => {
-          const batches = trackRanges(writer.read(state, options), state, (value) => { range = value; });
+          const batches = trackRanges(writer.read(state, options), state, (value) => { ranges = value; });
           // No cap: leave Pipes' own read loop in place. It ends when the source stream ends,
           // at END_BLOCK or the finalized head, and each batch still commits and reports.
           const limited = maxBlocks === undefined ? batches : upTo(maxBlocks, state, batches);
@@ -95,12 +97,22 @@ export function pipesTarget({
 /** The target asks for the next batch only after committing the previous one. Retries reuse its range. */
 async function* trackRanges<T>(
   batches: AsyncIterable<PortalBatch<T>>, state: TargetState | undefined,
-  setRange: (range: [number, number, boolean]) => void,
+  setRanges: (ranges: [number, number, boolean][]) => void,
 ) {
   let previous = state?.latest.number;
   for await (const batch of batches) {
-    const { initial, current } = batch.ctx.stream.state;
-    setRange([previous === undefined ? initial : previous + 1, current.number, previous === undefined]);
+    const { initial, current, ranges } = batch.ctx.stream.state;
+    const first = previous === undefined ? initial : previous + 1;
+    const confirmed: [number, number, boolean][] = [];
+    for (const range of [...ranges].sort((a, b) => a.from - b.from)) {
+      const begin = Math.max(first, range.from);
+      const end = Math.min(current.number, range.to ?? Infinity);
+      if (begin > end) continue;
+      const last = confirmed.at(-1);
+      if (last && begin <= last[1] + 1) last[1] = Math.max(last[1], end);
+      else confirmed.push([begin, end, previous === undefined]);
+    }
+    setRanges(confirmed);
     yield batch;
     previous = current.number;
   }
