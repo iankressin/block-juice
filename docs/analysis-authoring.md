@@ -82,8 +82,10 @@ inputs:
 ```
 
 Quote addresses in YAML. Apply the same window in SQL with `in_window('block_number', 'ethereum')`.
-Changing a source filter does not backfill its prior cursor automatically. Follow the coverage
-workflow in [source provenance](source-provenance.md) before claiming the changed dataset is complete.
+After a source configuration has been recorded, changed filters use an independent backfill
+generation while retaining existing rows and cursors. Legacy history with unknown filters needs
+the explicit nondestructive `SOURCE_BACKFILL_ID` recovery. Follow the coverage workflow in
+[source provenance](source-provenance.md) before claiming the changed dataset is complete.
 For summaries of whatever is loaded, declare `window: {scope: loaded}` explicitly. That records
 the source inventory without asserting complete historical coverage. The Polymarket overview
 uses this mode because its current-position metrics cannot be restricted by a trade-date filter.
