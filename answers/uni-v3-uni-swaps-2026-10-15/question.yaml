@@ -38,3 +38,9 @@ analyses:
   - uni_v3_uni_swaps_2026_10_15
   - uni_v3_uni_swaps_2026_10_15_volume
   - uni_v3_uni_swaps_2026_10_15_by_pool
+expected_columns:
+  uni_v3_uni_swaps_2026_10_15: [swaps]
+  uni_v3_uni_swaps_2026_10_15_volume: [uni]
+  uni_v3_uni_swaps_2026_10_15_by_pool: [pool, swaps, uni_volume]
+grain:
+  uni_v3_uni_swaps_2026_10_15_by_pool: [pool]

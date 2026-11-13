@@ -71,3 +71,19 @@ def test_every_repository_analysis_belongs_to_one_supported_question():
     sql = list((root / "transformation" / "analyses").rglob("*.sql"))
     assert len(owned) == len(set(owned))
     assert set(owned) == {path.stem for path in sql}
+
+
+def test_shipped_contracts_cover_every_query_and_token_default_window():
+    from pipeline.cli.question import load_question
+
+    root = Path(__file__).resolve().parents[2]
+    for manifest in (root / "answers").glob("*/question.yaml"):
+        question = load_question(root, manifest.parent.name)
+        assert set(question.expected_columns) == set(question.analyses)
+        if not question.slug.startswith("token-"):
+            continue
+        windows = question.parameters["token"]["windows"]
+        assert {window["chain"]: tuple(window["blocks"]) for window in windows} == question.blocks
+        filters = {source.source: source.filter for source in question.sources}
+        for window in windows:
+            assert filters[f"{window['chain']}.erc20_transfers"]["tokens"] == [window["token"]]

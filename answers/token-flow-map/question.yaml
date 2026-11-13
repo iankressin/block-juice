@@ -1,8 +1,8 @@
 question: How does the configured token move between address groups and exchanges across its configured
   chains?
 definitions:
-  token: 'UNI by default: the token mapping, decimals and inclusive chain block windows in transformation/dbt_project.yml
-    vars.token. Override the complete token mapping together when following another asset.'
+  token: 'UNI by default: the token mapping, decimals and inclusive chain block windows in this question''s
+    parameters.token default. Override the complete token mapping together when following another asset.'
   amounts: Whole tokens after applying the configured decimals. Chain token contracts represent the same
     asset; no USD prices are applied.
   scope: Only loaded data for the configured token and chain windows. Configure and build the transfers
@@ -43,3 +43,51 @@ inputs:
 - name: base_bridge
   strategy: history
   source: base.op_standard_bridge
+parameters:
+  token:
+    type: object
+    properties:
+      ethereum:
+        type: string
+        required: true
+      decimals:
+        type: integer
+        required: true
+      windows:
+        type: array
+        required: true
+        items:
+          type: object
+          properties:
+            chain:
+              type: string
+              required: true
+            token:
+              type: string
+              required: true
+            blocks:
+              type: array
+              items: integer
+              required: true
+    default:
+      ethereum: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+      decimals: 18
+      windows:
+      - chain: arbitrum
+        token: '0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0'
+        blocks:
+        - 510496864
+        - 520129273
+      - chain: base
+        token: '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'
+        blocks:
+        - 52011727
+        - 53350926
+expected_columns:
+  token_flow_map: [cross_exchange_wallets]
+  token_flow_map_cross_exchange: [wallet, wallet_kind, took_from, paid_into, amount_from_exchanges, amount_to_exchanges]
+  token_flow_map_edges: [source, source_group, target, target_group, chain, category, amount, transfers]
+  token_flow_map_groups: [source_group, target_group, amount, transfers, sources, targets]
+grain:
+  token_flow_map_cross_exchange: [wallet]
+  token_flow_map_groups: [source_group, target_group]

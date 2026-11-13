@@ -83,12 +83,39 @@ inputs:
 
 Quote addresses in YAML. Apply the same window in SQL with `in_window('block_number', 'ethereum')`.
 Changing a source filter does not backfill its prior cursor automatically. Follow the coverage
-workflow before claiming the changed dataset is complete.
+workflow in [source provenance](source-provenance.md) before claiming the changed dataset is complete.
+For summaries of whatever is loaded, declare `window: {scope: loaded}` explicitly. That records
+the source inventory without asserting complete historical coverage. The Polymarket overview
+uses this mode because its current-position metrics cannot be restricted by a trade-date filter.
 
-The existing `token-*` bundles share `vars.token` for the Ethereum token, decimals and chain-specific
-token addresses and windows. The default is UNI on Arbitrum and Base. When using direct dbt commands,
-override the complete mapping with `--vars '{token: {...}}'`. Keep the question's block windows and
-source filters aligned with the token mapping; changing only the label does not change the SQL.
+Each `token-*` bundle now owns a typed `parameters.token` default for the Ethereum token, decimals
+and chain-specific token addresses and windows. The default is UNI on Arbitrum and Base. Put an
+override in the question's `values.token` map; the runner validates it and supplies it as a dbt
+variable. The old `vars.token` project default remains for direct dbt users, who can override it
+with `--vars '{token: {...}}'`. Keep the question's block windows, source filters and expected output
+columns aligned with the token mapping; changing only a label does not change the SQL. Graph and
+accumulator detail queries produce chain-specific columns, so a changed chain set needs a changed
+column contract too.
+
+All shipped queries declare their ordered `expected_columns`, and detail queries with a stable
+unique key also declare `grain`. New questions can add typed parameters, result contracts and a
+freshness policy:
+
+```yaml
+parameters:
+  threshold: {type: integer, default: 100}
+values: {threshold: 200}
+expected_columns:
+  my_question: [{name: eth, type: numeric}]
+execution: {statement_timeout_ms: 900000, lock_timeout_ms: 10000, fetch_size: 1000}
+freshness: {max_age_hours: 24, require_model_build: true}
+```
+
+Use only parameters your SQL actually reads. Choose freshness and row limits for the question's
+purpose; a historical snapshot need not satisfy a live dashboard's age policy. The
+[analysis runtime contract](analysis-runtime.md) describes immutable runs, streaming results,
+snapshot consistency, parameter schemas and the precise checks. For ingestion/backfill policy
+and live progress, see [ingestion performance](ingestion-performance.md).
 
 Validate with `bj questions --check`, `dbt compile --select <analysis-name>` and the relevant model
 tests. Compare results against a small independent fixture, including empty input and late data.

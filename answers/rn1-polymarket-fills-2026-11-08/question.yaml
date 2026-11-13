@@ -38,3 +38,21 @@ inputs:
 - name: market_metadata
   strategy: state
   source: polymarket.markets
+expected_columns:
+  rn1_polymarket_fills_2026_11_08: [maker_fill_pct]
+  rn1_polymarket_fills_2026_11_08_by_market: [condition_id, question, event_title, is_sports, sports_market_type,
+    series_slug, game_start_time, outcomes, fills, maker_fills, shares_0, cost_0, avg_cost_0, shares_1,
+    cost_1, avg_cost_1, sold_shares, pair_shares, bought_both, pair_cost, pair_edge_usdc, unmatched_shares,
+    unmatched_outcome, unmatched_cost_usdc, first_fill_at, last_fill_at]
+  rn1_polymarket_fills_2026_11_08_by_phase: [phase, fills, maker_fill_pct, shares, usdc, avg_price, markets,
+    underweight_buys, overweight_buys, balanced_buys, underweight_buy_pct]
+  rn1_polymarket_fills_2026_11_08_by_role: [kind, role, side, fills, pct_of_fills, shares, usdc, fee_usdc,
+    avg_fill_shares, median_fill_shares, avg_fill_usdc, avg_price, tokens, markets, fills_per_minute]
+  rn1_polymarket_fills_2026_11_08_by_token: [token_id, side, role, condition_id, question, outcome, fills,
+    shares, usdc, fee_usdc, avg_price]
+  rn1_polymarket_fills_2026_11_08_pairs: [kind, markets, markets_bought_both, markets_bought_both_pct,
+    cost_usdc, pair_shares, pair_cost_usdc, avg_pair_cost, markets_pair_below_1, pairs_below_1_pct, pair_edge_usdc,
+    unmatched_shares, unmatched_cost_usdc]
+grain:
+  rn1_polymarket_fills_2026_11_08_by_market: [condition_id]
+  rn1_polymarket_fills_2026_11_08_by_token: [token_id, side, role]

@@ -13,3 +13,8 @@ inputs:
     mart: latest_balances
 marts: [latest_balances]
 analyses: [tracked_wallets_sol, tracked_wallets_sol_by_wallet]
+expected_columns:
+  tracked_wallets_sol: [sol]
+  tracked_wallets_sol_by_wallet: [wallet, block_number, sol, lamports]
+grain:
+  tracked_wallets_sol_by_wallet: [wallet]
