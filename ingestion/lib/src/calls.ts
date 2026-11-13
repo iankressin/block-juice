@@ -22,11 +22,15 @@ export const chunk = <T>(items: readonly T[], size: number): T[][] =>
     items.slice(i * size, (i + 1) * size),
   );
 
+// Bound the transport's waiting queue while retaining same-tick calls for RPC batching.
+const CALL_BATCH_SIZE = 100;
+
 /**
  * Makes each distinct call once. A call that resolves becomes a record, one that rejects
  * becomes a failed call for the next run. Both carry the call's id, and `rowId` sets the
- * record's own id when the reply adds to it. Every `read` starts in the same tick, which
- * is what lets the RPC clients batch them.
+ * record's own id when the reply adds to it. Reads start in the same tick within a bounded
+ * chunk, so RPC clients can batch them without queuing the entire input at the transport.
+ * Inputs and the returned batch still occupy memory proportional to the number of calls.
  */
 export async function settleCalls<C, D extends Record<string, unknown>>(
   calls: readonly C[],
@@ -35,13 +39,18 @@ export async function settleCalls<C, D extends Record<string, unknown>>(
   rowId: (call: C, data: D) => string = id,
 ): Promise<Batch<C>> {
   const unique = uniqueBy(calls, id);
-  const outcomes = await Promise.allSettled(unique.map((call) => read(call)));
   const batch: Batch<C> = { records: [], failed: [] };
-  unique.forEach((call, i) => {
-    const outcome = outcomes[i]!;
-    if (outcome.status === "fulfilled")
-      batch.records.push({ id: rowId(call, outcome.value), callId: id(call), data: outcome.value });
-    else batch.failed.push({ id: id(call), call, error: describeError(outcome.reason) });
-  });
+  for (let offset = 0; offset < unique.length; offset += CALL_BATCH_SIZE) {
+    const part = unique.slice(offset, offset + CALL_BATCH_SIZE);
+    const outcomes = await Promise.allSettled(part.map((call) => read(call)));
+    part.forEach((call, i) => {
+      const outcome = outcomes[i]!;
+      if (outcome.status === "fulfilled") {
+        batch.records.push({
+          id: rowId(call, outcome.value), callId: id(call), data: outcome.value,
+        });
+      } else batch.failed.push({ id: id(call), call, error: describeError(outcome.reason) });
+    });
+  }
   return batch;
 }
