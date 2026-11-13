@@ -97,6 +97,7 @@ def model_builds(cursor, manifest, analysis_ids):
                    "order by unique_id, finished_at desc, invocation_id", (ids,))
     builds = {uid: {"invocation_id": invocation, "started_at": utc_iso(started) if started else None,
                     "finished_at": utc_iso(finished), "status": status,
+                    "evidence_scope": "latest recorded invocation; unrecorded external writes are not detected",
                     "version": {"status": "unknown", "reason": "no recorded build-version evidence"}}
               for uid, invocation, started, finished, status in cursor.fetchall()}
     cursor.execute("select to_regclass('ops.dbt_node_versions')")
@@ -112,6 +113,32 @@ def model_builds(cursor, manifest, analysis_ids):
             if builds[uid]["invocation_id"] == invocation:
                 builds[uid]["version"] = {"status": "recorded", **evidence}
     return builds
+
+
+def ingestion_inputs(cursor, runs):
+    """Evidence for these exact successful ingestion runs, never a claim about all older raw rows."""
+    result = {name: {**run, "status": "unknown", "scope": "ingestion_run",
+                     "reason": "no recorded input evidence for this ingestion run"} for name, run in runs.items()}
+    if not runs:
+        return result
+    relation = sql.Identifier(os.environ["RAW_SCHEMA"], "_ingestion_inputs")
+    cursor.execute("select to_regclass(%s)", (relation.as_string(cursor),))
+    table = cursor.fetchone()[0]
+    if table is None:
+        return result
+    cursor.execute("select has_table_privilege(%s, 'SELECT')", (table,))
+    if not cursor.fetchone()[0]:
+        return result
+    cursor.execute(sql.SQL("select run_id, source_table, config_hash, evidence from {} where run_id = any(%s) "
+                          "and source_table = any(%s)").format(relation),
+                   ([run["run_id"] for run in runs.values()], [run["source_table"] for run in runs.values()]))
+    by_key = {(run["run_id"], run["source_table"]): name for name, run in runs.items()}
+    for run_id, source_table, config_hash, evidence in cursor.fetchall():
+        name = by_key.get((run_id, source_table))
+        if name is not None:
+            result[name] = {"run_id": run_id, "source_table": source_table, "status": "recorded",
+                            "scope": "ingestion_run", "config_hash": config_hash, "evidence": evidence}
+    return result
 
 
 def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):
@@ -144,12 +171,16 @@ def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expe
                     generations[f"{schema}.{name}"] = {"oid": oid, "relfilenode": filenode, "kind": kind}
                 results.context["relation_generations"] = generations
                 last_runs = {}
+                input_runs = {}
                 for source in inputs:
-                    cursor.execute("select finished_at, records_written, dagster_run_id from ops.ingestion_runs "
+                    cursor.execute("select finished_at, records_written, dagster_run_id, run_id::text from ops.ingestion_runs "
                                    "where source = %s and table_name = %s and succeeded order by finished_at desc limit 1",
                                    (source.source, source.table))
                     row = cursor.fetchone()
-                    last_runs[source] = LastRun(*row) if row else None
+                    last_runs[source] = LastRun(*row[:3]) if row else None
+                    if row:
+                        input_runs[source.name] = {"run_id": row[3], "source_table": source.source_table}
+                results.context["ingestion_inputs"] = ingestion_inputs(cursor, input_runs)
                 dead_letters = {source: count_dead_letters(cursor, source.source_table) for source in inputs}
             for uid in analysis_ids:
                 node = manifest["nodes"][uid]
