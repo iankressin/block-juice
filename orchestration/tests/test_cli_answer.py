@@ -607,10 +607,6 @@ EVAL_SLICE = "eval_window: {chain: ethereum, blocks: [100, 180]}\n"
 
 
 def test_eval_answer_and_factory_check_leave_the_full_answer_unchanged(tmp_path, offline, monkeypatch):
-    import shlex
-
-    import yaml
-
     from pipeline.cli import main
 
     folder = write_question(tmp_path, extra=EVAL_SLICE)
@@ -624,19 +620,8 @@ def test_eval_answer_and_factory_check_leave_the_full_answer_unchanged(tmp_path,
     evaluation = folder / "eval" / "answer.json"
     assert json.loads(evaluation.read_text())["eval"] is True
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", tmp_path)
-    workflow = yaml.safe_load(
-        (Path(__file__).resolve().parents[2] / ".github/workflows/factory-build.yml").read_text()
-    )
-    verdict = next(
-        step["run"] for job in workflow["jobs"].values() for step in job.get("steps", [])
-        if "bj check" in step.get("run", "")
-    )
-    arguments = shlex.split(verdict)
-    replacements = {"$SLUG": "eth-total", "$STATUS": "passed", "$DETAIL": "matches oracle"}
-    arguments = arguments[arguments.index("bj") + 1:]
-    for variable, value in replacements.items():
-        arguments = [argument.replace(variable, value) for argument in arguments]
-    assert main(arguments) == 0
+    # The workflow's shell steps and legacy CLI branch are covered in test_factory_eval_compatibility.
+    assert main(["check", "eth-total", "--eval", "reference_match", "passed", "matches oracle"]) == 0
     assert json.loads(evaluation.read_text())["checks"][-1]["name"] == "reference_match"
     assert (folder / "answer.json").read_bytes() == before
 

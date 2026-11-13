@@ -205,6 +205,22 @@ jobs:
           uv run --project orchestration bj install
           psql -v ON_ERROR_STOP=1 -q -f infra/postgres/ops.sql
 
+      # An existing ticket branch can predate isolated eval artifacts. Probe its CLI after checkout;
+      # the default branch's prompt and verdict step must follow the layout that CLI actually writes.
+      - name: Detect the ticket branch's evaluation layout
+        id: answer_layout
+        env:
+          SLUG: ${{ steps.scope.outputs.slug }}
+        run: |
+          check_help=$(uv run --project orchestration bj check --help)
+          if grep -q -- '--eval' <<< "$check_help"; then
+            echo "answer_dir=answers/$SLUG/eval" >> "$GITHUB_OUTPUT"
+            echo "check_eval=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "answer_dir=answers/$SLUG" >> "$GITHUB_OUTPUT"
+            echo "check_eval=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # A Portal other than the public one, as a secret since its name need not be public. Only the host
       # changes: each chain keeps its own dataset path, written into the chain's gitignored .env, which
       # loadEnv reads before the chain's .env.example. Without the secret the sources read the public Portal.
@@ -236,6 +252,7 @@ jobs:
           NAME: ${{ steps.scope.outputs.name }}
           BRANCH: ${{ steps.scope.outputs.branch }}
           PR: ${{ steps.review.outputs.pr }}
+          ANSWER_DIR: ${{ steps.answer_layout.outputs.answer_dir }}
         run: |
           {
             echo "text<<FACTORY_PROMPT_END"
@@ -246,6 +263,7 @@ jobs:
             echo "- Ticket: #$ISSUE"
             echo "- Slug: \`$SLUG\`; name: \`$NAME\`"
             echo "- Branch: \`$BRANCH\`${PR:+, with open PR #$PR}"
+            echo "- Evaluation answer directory: \`$ANSWER_DIR\` (the \`<eval-dir>\` used above)"
             echo "FACTORY_PROMPT_END"
           } >> "$GITHUB_OUTPUT"
 
@@ -301,15 +319,19 @@ jobs:
             printf 'status=failed\nkind=not_run\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
           fi
 
-      # Record against the eval answer, without replacing a result over the full question window.
+      # Older ticket branches write eval results at the root and do not support bj check --eval.
       # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote the eval answer.
-      - name: Record the verdict in eval/answer.json
+      - name: Record the verdict in the evaluation answer
         continue-on-error: true
         env:
           SLUG: ${{ steps.scope.outputs.slug }}
           STATUS: ${{ steps.verdict.outputs.status }}
           DETAIL: ${{ steps.verdict.outputs.detail }}
-        run: uv run --project orchestration bj check "$SLUG" --eval reference_match "$STATUS" "$DETAIL; see PR"
+          CHECK_EVAL: ${{ steps.answer_layout.outputs.check_eval }}
+        run: |
+          check_args=()
+          if [ "$CHECK_EVAL" = true ]; then check_args+=(--eval); fi
+          uv run --project orchestration bj check "$SLUG" "${check_args[@]}" reference_match "$STATUS" "$DETAIL; see PR"
 
       - name: pnpm typecheck
         id: typecheck
