@@ -37,7 +37,7 @@ export type RunReport = {
   retriedCalls: number;
   recordsWritten: number;
   failedCalls: number;
-  /** Time spent writing records and dead letters to the warehouse. The rest went to extraction. */
+  /** Warehouse transaction time, including statement execution, locks, retries and commit. */
   loadSeconds: number;
   /** Undefined when the run failed before it counted its dead letters. */
   backlog: DeadLetterBacklog | undefined;
@@ -72,9 +72,10 @@ export async function runSource<E, C>(
   let batchesCommitted = 0;
   let callsCompleted = 0;
   let committedBlock: number | undefined;
+  let finishedAt: Date | undefined;
   let activePush: Promise<void> | undefined;
   const progress = (inProgress: boolean): RunProgress => ({
-    source: source.name, table: source.table, startedAt, inProgress,
+    source: source.name, table: source.table, startedAt, finishedAt, inProgress,
     recordsWritten, failedCalls, retriedCalls, callsCompleted, batchesCommitted,
     loadSeconds, writeSeconds, commitSeconds, committedBlock,
   });
@@ -172,6 +173,7 @@ export async function runSource<E, C>(
     error = describeError(err);
     process.exitCode = 1;
   } finally {
+    finishedAt = new Date();
     clearInterval(progressTimer);
     await activePush;
     await pushProgressMetrics(progress(false), log);
@@ -183,7 +185,7 @@ export async function runSource<E, C>(
     source: source.name,
     table: source.table,
     startedAt,
-    finishedAt: new Date(),
+    finishedAt: finishedAt ?? new Date(),
     error,
     retriedCalls,
     recordsWritten,

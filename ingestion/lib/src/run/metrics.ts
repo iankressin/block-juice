@@ -66,7 +66,7 @@ export async function pushRunMetrics(report: RunReport, log: Logger): Promise<vo
 
 
 export type RunProgress = {
-  source: string; table: string; startedAt: Date; inProgress: boolean;
+  source: string; table: string; startedAt: Date; finishedAt?: Date; inProgress: boolean;
   recordsWritten: number; failedCalls: number; retriedCalls: number; callsCompleted: number;
   batchesCommitted: number; loadSeconds: number; writeSeconds: number; commitSeconds: number;
   committedBlock?: number;
@@ -78,7 +78,7 @@ export function progressMetrics(progress: RunProgress): Registry {
   const values: [string, string, number][] = [
     ["active", "1 while a run is active, 0 after it ends.", progress.inProgress ? 1 : 0],
     ["timestamp_seconds", "When progress was last reported.", Date.now() / 1000],
-    ["elapsed_seconds", "Elapsed wall time of the current run.", (Date.now() - progress.startedAt.getTime()) / 1000],
+    ["elapsed_seconds", "Elapsed wall time of the current run.", ((progress.finishedAt?.getTime() ?? Date.now()) - progress.startedAt.getTime()) / 1000],
     ["records_written", "Records in committed batches of the current run.", progress.recordsWritten],
     ["failed_calls", "Failed calls saved in committed batches.", progress.failedCalls],
     ["retried_calls", "Previously failed calls supplied to the source.", progress.retriedCalls],
