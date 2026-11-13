@@ -194,4 +194,3 @@ def test_facts_match_full_refresh_after_corrections(fact_project, strategy):
             query.execute(sql.SQL("truncate raw.{}").format(sql.Identifier(table)))
     dbt(project, "run", "--select", *FACTS)
     assert snapshot(connection) == {name: [] for name in FACTS}
-
