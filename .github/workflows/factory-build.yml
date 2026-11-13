@@ -301,14 +301,15 @@ jobs:
             printf 'status=failed\nkind=not_run\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
           fi
 
-      # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote answer.json.
-      - name: Record the verdict in answer.json
+      # Record against the eval answer, without replacing a result over the full question window.
+      # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote the eval answer.
+      - name: Record the verdict in eval/answer.json
         continue-on-error: true
         env:
           SLUG: ${{ steps.scope.outputs.slug }}
           STATUS: ${{ steps.verdict.outputs.status }}
           DETAIL: ${{ steps.verdict.outputs.detail }}
-        run: uv run --project orchestration bj check "$SLUG" reference_match "$STATUS" "$DETAIL; see PR"
+        run: uv run --project orchestration bj check "$SLUG" --eval reference_match "$STATUS" "$DETAIL; see PR"
 
       - name: pnpm typecheck
         id: typecheck

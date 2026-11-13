@@ -32,7 +32,7 @@ This run is one turn, and nobody reads your messages. When you end the turn the 
 
 1. Write `transformation/seeds/reference/reference_<name>.csv` with the exact contents of `.factory/reference.csv`. Register it in `transformation/seeds/reference/_reference_seeds.yml` with a description that names the oracle (`oracle.kind` and `oracle.ref`), the window (chain, blocks and times) and the ticket number. Give key columns that hold addresses `text` in `column_types`.
 2. Write `transformation/tests/reference/<name>_matches_reference.sql`, tagged `reference`, as the README's example shows. Its `actual` CTE is the analysis SQL with `window.blocks` written as numbers in place of the window macros: the reference covers that window only, and `dbt test` passes no window. Pass `reference.key`, `reference.value`, `tolerance.kind` and `tolerance.value` from `scope.yaml` to `reference_mismatches`.
-3. Follow the bj skill's answer workflow to build what is missing: sources, marts, the analysis. Write `answers/<slug>/question.yaml` with the ticket's question, `full_window` as `window` (its block range from `bj blocks <chain> <from> <to>`) and the scope's `window` as `eval_window`, then `answers/<slug>/answer.md` as the workflow says.
+3. Follow the bj skill's answer workflow to build what is missing: sources, marts, the analysis. Write `answers/<slug>/question.yaml` with the ticket's question, `full_window` as `window` (its block range from `bj blocks <chain> <from> <to>`) and the scope's `window` as `eval_window`. After the eval loop, write its narrative to `answers/<slug>/eval/answer.md` from `eval/answer.json` and `eval/results/`, leaving any full-window answer intact.
 4. Run the eval loop:
    - `uv run --project orchestration bj answer <slug> --eval`
    - `cd transformation && uv run --project ../orchestration dbt seed --select reference_<name>`
@@ -41,7 +41,7 @@ This run is one turn, and nobody reads your messages. When you end the turn the 
 6. Run `pnpm typecheck` in `ingestion/` and fix what it reports. The workflow runs it again after you, and CI runs it on the PR.
 7. Write `.factory/result.md`, the PR body, with these sections:
    - **What was built**: each file you added or changed, one line each.
-   - **Answer**: the answer in one sentence, from `answer.md`.
+   - **Answer**: the answer in one sentence, from `eval/answer.md`.
    - **Comparison**: one row per reference row with the key, expected, got, and the tolerance. Get "got" by joining the seed to the `actual` CTE of the compiled test (`transformation/target/compiled/transformation/tests/reference/<name>_matches_reference.sql`), through `psql` or `dbt show --inline`. With more than 50 rows, show every mismatch and the first rows.
    - **Verified window**: chain, blocks and times.
    - **Full window**: `full_window` from `scope.yaml`, with the load estimate.
