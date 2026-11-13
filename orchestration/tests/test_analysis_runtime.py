@@ -178,12 +178,18 @@ def test_loaded_question_hash_survives_edit_while_queries_are_running(tmp_path):
 
 def test_all_existing_compiled_analyses_have_complete_declared_lineage():
     import json
+    import os
     from pipeline.analysis.lineage import unknown_lineage
-    target = Path(__file__).resolve().parents[2] / "transformation" / "target" / "manifest.json"
-    manifest = json.loads(target.read_text())
-    analyses = [uid for uid, node in manifest["nodes"].items() if node["resource_type"] == "analysis"]
-    assert analyses
-    assert unknown_lineage(manifest, analyses) == []
+    from pipeline.cli.answer import compile_analyses
+    if not all(os.environ.get(key) for key in ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_DB", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD", "RAW_SCHEMA", "DBT_SCHEMA")):
+        pytest.skip("catalog lineage validation compiles real SQL against disposable WAREHOUSE_* configuration")
+    project = Path(__file__).resolve().parents[2] / "transformation"
+    manifest = json.loads((project / "target" / "manifest.json").read_text())
+    names = [node["name"] for node in manifest["nodes"].values() if node["resource_type"] == "analysis"]
+    compiled, analyses = compile_analyses(project, names, {})
+    assert len(analyses) == len(names) and analyses
+    assert all(compiled["nodes"][uid].get("compiled_code") for uid in analyses)
+    assert unknown_lineage(compiled, analyses) == []
 
 
 def test_lock_backend_on_windows_retries_and_releases(tmp_path, monkeypatch):
@@ -209,3 +215,25 @@ def test_real_pg_grain_uses_numeric_equality_not_decimal_display_scale(pg):
     manifest, ids = manifest_for(schema, 'select amount from (values (1.0::numeric), (1.00::numeric)) t(amount)')
     with pytest.raises(BadInput, match="duplicate grain"):
         read_warehouse(connect, manifest, ids, [], grain={"q0": ["amount"]})
+
+
+@pytest.mark.parametrize("contract", ["expected_columns: {typo: [amount]}", "grain: {typo: [amount]}"])
+def test_contract_keys_must_name_a_resolved_analysis(tmp_path, contract):
+    from pipeline.cli.question import load_question
+    folder = tmp_path / "answers" / "my-analysis"
+    folder.mkdir(parents=True)
+    (folder / "question.yaml").write_text(f"question: Q\n{contract}\n")
+    with pytest.raises(BadInput, match="undeclared analyses: typo"):
+        load_question(tmp_path, "my-analysis")
+    (folder / "question.yaml").write_text(f"question: Q\n{contract.replace('typo', 'my_analysis')}\n")
+    assert load_question(tmp_path, "my-analysis").analyses == ("my_analysis",)
+
+
+def test_lineage_folds_only_unquoted_postgres_identifiers():
+    from pipeline.analysis.lineage import unknown_lineage
+    manifest, ids = manifest_for("raw", "select * from RAW.FACTS")
+    assert unknown_lineage(manifest, ids) == []
+    manifest["nodes"][ids[0]]["compiled_code"] = 'select * from "RAW"."FACTS"'
+    assert "undeclared relation" in unknown_lineage(manifest, ids)[0]
+    manifest["nodes"][ids[0]].pop("compiled_code")
+    assert "compiled SQL is missing" in unknown_lineage(manifest, ids)[0]

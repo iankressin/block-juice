@@ -37,7 +37,7 @@ LOADED = Coverage("ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers",
 
 
 def source(name, table):
-    return {"source_name": name, "name": table, "schema": "raw", "identifier": f"{name}_{table}"}
+    return {"resource_type": "source", "source_name": name, "name": table, "schema": "raw", "identifier": f"{name}_{table}"}
 
 
 MANIFEST = {
@@ -48,7 +48,7 @@ MANIFEST = {
         "source.t.ethereum.erc20_transfers": source("ethereum", "erc20_transfers"),
     },
     "nodes": {
-        "analysis.t.holders": {"depends_on": {"nodes": ["model.t.latest", "model.t.stg_eth"]}},
+        "analysis.t.holders": {"compiled_code": "select * from raw.ethereum_eth_balances", "depends_on": {"nodes": ["model.t.latest", "model.t.stg_eth"]}},
         "model.t.latest": {"depends_on": {"nodes": ["model.t.int_eth", "model.t.int_sol", "seed.t.labels"]}},
         "model.t.int_eth": {"depends_on": {"nodes": ["model.t.stg_eth"]}},
         "model.t.int_sol": {"depends_on": {"nodes": ["model.t.stg_sol"]}},
@@ -56,7 +56,7 @@ MANIFEST = {
         "model.t.stg_sol": {"depends_on": {"nodes": ["source.t.solana.sol_balances"]}},
         "seed.t.labels": {"depends_on": {"nodes": []}},
         "model.t.stg_btc": {"depends_on": {"nodes": ["source.t.bitcoin.btc_balances"]}},
-        "analysis.t.flows": {"depends_on": {"nodes": ["source.t.ethereum.erc20_transfers"]}},
+        "analysis.t.flows": {"compiled_code": "select * from raw.ethereum_erc20_transfers", "depends_on": {"nodes": ["source.t.ethereum.erc20_transfers"]}},
     },
 }
 

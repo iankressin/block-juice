@@ -15,7 +15,7 @@ from typing import Any
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
-from pipeline.analysis.store import RunStore
+from pipeline.analysis.store import RunStore, answer_lock
 from pipeline.analysis.domain import Input, LastRun, Result, Check, jsonable, cell_text, headline
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
 from pipeline.cli.coverage import Coverage
@@ -349,10 +349,11 @@ def write_answer(folder: Path, results: Sequence[Result], document: dict[str, An
             (prepared / name).write_text(content if isinstance(content, str) else json.dumps(jsonable(content), indent=2) + "\n", encoding="utf-8")
         # This is the remote document's identity, not report content. Retain it so a later gdoc
         # publication updates that document rather than creating a second one.
-        for state in (folder / "reports").glob("*.gdoc.json"):
-            (prepared / "reports").mkdir(exist_ok=True)
-            shutil.copy2(state, prepared / "reports" / state.name)
-        RunStore(folder).publish(prepared)
+        with answer_lock(folder):
+            for state in (folder / "reports").glob("*.gdoc.json"):
+                (prepared / "reports").mkdir(exist_ok=True)
+                shutil.copy2(state, prepared / "reports" / state.name)
+            RunStore(folder).publish(prepared)
 
 
 def run(repo_root: Path, slug: str, window_key: WindowKey = "window") -> int:

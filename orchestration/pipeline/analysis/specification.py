@@ -167,6 +167,11 @@ def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") 
             )
         sources.append(SourceInput(item["source"], item.get("filter", {})))
     resolved_parameters, policy = validate_contracts(raw)
+    analysis_names = tuple(raw.get("analyses", [slug.replace("-", "_")]))
+    for field_name in ("expected_columns", "grain"):
+        unknown = set(raw.get(field_name, {})) - set(analysis_names)
+        if unknown:
+            raise BadInput(f"{label}: {field_name} names undeclared analyses: {', '.join(sorted(unknown))}")
     asked = raw.get("asked")
     return Question(
         slug=slug,
@@ -177,7 +182,7 @@ def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") 
         window=raw.get(window_key, {}),
         inputs=tuple(raw.get("inputs", [])),
         marts=tuple(raw.get("marts", [])),
-        analyses=tuple(raw.get("analyses", [slug.replace("-", "_")])),
+        analyses=analysis_names,
         blocks=blocks[window_key],
         sources=tuple(sources),
         window_key=window_key,

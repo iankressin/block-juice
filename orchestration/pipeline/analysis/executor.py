@@ -95,9 +95,23 @@ def model_builds(cursor, manifest, analysis_ids):
     cursor.execute("select distinct on (unique_id) unique_id, invocation_id::text, started_at, finished_at, status "
                    "from ops.dbt_node_runs where unique_id = any(%s) and finished_at is not null "
                    "order by unique_id, finished_at desc, invocation_id", (ids,))
-    return {uid: {"invocation_id": invocation, "started_at": utc_iso(started) if started else None,
-                  "finished_at": utc_iso(finished), "status": status}
-            for uid, invocation, started, finished, status in cursor.fetchall()}
+    builds = {uid: {"invocation_id": invocation, "started_at": utc_iso(started) if started else None,
+                    "finished_at": utc_iso(finished), "status": status,
+                    "version": {"status": "unknown", "reason": "no recorded build-version evidence"}}
+              for uid, invocation, started, finished, status in cursor.fetchall()}
+    cursor.execute("select to_regclass('ops.dbt_node_versions')")
+    version_table = cursor.fetchone()[0]
+    if version_table is not None and builds:
+        cursor.execute("select has_table_privilege(%s, 'SELECT')", (version_table,))
+        if not cursor.fetchone()[0]:
+            return builds
+        cursor.execute("select invocation_id::text, unique_id, provenance from ops.dbt_node_versions "
+                       "where unique_id = any(%s) and invocation_id = any(%s::uuid[])",
+                       (list(builds), [build["invocation_id"] for build in builds.values()]))
+        for invocation, uid, evidence in cursor.fetchall():
+            if builds[uid]["invocation_id"] == invocation:
+                builds[uid]["version"] = {"status": "recorded", **evidence}
+    return builds
 
 
 def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):

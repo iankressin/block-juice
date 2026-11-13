@@ -224,3 +224,34 @@ def test_reusing_an_existing_run_id_never_deletes_or_rewrites_it(tmp_path):
     with pytest.raises(BadInput, match="already exists"):
         answer.write_answer(folder, [result(2)], {**doc, "value": 2})
     assert files(folder) == before
+
+
+def test_concurrent_report_identity_update_cannot_be_lost_during_answer_publication(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import shutil
+    from pipeline.analysis.store import answer_lock
+    folder = tmp_path / "total"
+    saved_answer(folder)
+    identity = folder / "reports" / "total.gdoc.json"
+    copied, updated = Event(), Event()
+    original_copy = shutil.copy2
+    def interleave_copy(source, target, *args, **kwargs):
+        result = original_copy(source, target, *args, **kwargs)
+        if Path(source) == identity:
+            copied.set()
+            # Without a shared publication lock the report updates now, and the later
+            # answer swap would replace that new identity with this stale copy.
+            updated.wait(0.1)
+        return result
+    def report_update():
+        assert copied.wait(5)
+        with answer_lock(folder):
+            identity.write_text('{"id": "new-document"}')
+        updated.set()
+    monkeypatch.setattr(shutil, "copy2", interleave_copy)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(report_update)
+        answer.write_answer(folder, [result(200)], document(200))
+        pending.result(timeout=5)
+    assert json.loads(identity.read_text())["id"] == "new-document"

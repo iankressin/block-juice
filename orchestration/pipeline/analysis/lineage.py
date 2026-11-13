@@ -15,6 +15,7 @@ def unknown_lineage(manifest, analysis_ids):
             continue
         code = node.get("compiled_code")
         if not code:
+            failures.append(f"{name}: compiled SQL is missing")
             continue
         declared = set(relations(manifest, [uid]))
         try:
@@ -26,7 +27,12 @@ def unknown_lineage(manifest, analysis_ids):
                 for table in scope.sources.values():
                     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
                         continue
-                    if (table.db, table.name) not in declared:
+                    def identifier(key):
+                        part = table.args.get(key)
+                        if not isinstance(part, exp.Identifier):
+                            return ""
+                        return part.name if part.args.get("quoted") else part.name.lower()
+                    if (identifier("db"), identifier("this")) not in declared:
                         failures.append(f"{name}: undeclared relation {table.sql(dialect='postgres')}")
         except ParseError as error:
             failures.append(f"{name}: lineage could not be parsed ({str(error).splitlines()[0]})")
