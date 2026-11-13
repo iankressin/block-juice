@@ -18,3 +18,4 @@ expected_columns:
   tracked_wallets_sol_by_wallet: [wallet, block_number, sol, lamports]
 grain:
   tracked_wallets_sol_by_wallet: [wallet]
+freshness: {max_age_hours: 48, require_model_build: true}
