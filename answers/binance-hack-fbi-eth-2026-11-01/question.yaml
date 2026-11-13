@@ -51,3 +51,16 @@ analyses:
   - binance_hack_fbi_eth_2026_11_01_totals
   - binance_hack_fbi_eth_2026_11_01_by_address
   - binance_hack_fbi_eth_2026_11_01_with_code
+expected_columns:
+  binance_hack_fbi_eth_2026_11_01: [sent_out_eth]
+  binance_hack_fbi_eth_2026_11_01_totals: [addresses, active_addresses, addresses_with_code, addresses_with_unread_code,
+    addresses_with_unread_balance, sent_value_eth, sent_fees_eth, sent_out_eth, received_eth, state_block,
+    held_eth]
+  binance_hack_fbi_eth_2026_11_01_by_address: [address, active, has_code, code_kind, sent_txs, sent_failed_txs,
+    sent_value_wei, sent_fees_wei, sent_out_wei, received_txs, received_wei, state_block, balance_wei,
+    nonce, sent_out_eth, received_eth, balance_eth]
+  binance_hack_fbi_eth_2026_11_01_with_code: [address, has_code, code_kind, sent_out_wei, received_wei,
+    state_block, balance_wei, nonce]
+grain:
+  binance_hack_fbi_eth_2026_11_01_by_address: [address]
+  binance_hack_fbi_eth_2026_11_01_with_code: [address]

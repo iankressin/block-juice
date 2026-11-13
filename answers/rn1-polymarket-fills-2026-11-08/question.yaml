@@ -1,0 +1,58 @@
+question: "What share of RN1's Polymarket fills were maker-side in Polygon blocks 96972629\u201396975028,\
+  \ and how do those fills break down?"
+definitions:
+  RN1: The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea.
+  maker-side: The wallet's order rested on the book, as recorded by the exchange OrderFilled role; this
+    is not the buy/sell direction.
+  window: The existing reference fixture covers Polygon blocks 96972629 through 96975028 on 2026-11-08.
+    This is a bounded reference window, not a claim to cover the full UTC day.
+  amounts: Whole shares and pUSD; fee_usdc is kept separate from the pre-fee traded amount.
+marts:
+- polymarket_wallet_fills
+- polymarket_markets
+analyses:
+- rn1_polymarket_fills_2026_11_08
+- rn1_polymarket_fills_2026_11_08_by_market
+- rn1_polymarket_fills_2026_11_08_by_phase
+- rn1_polymarket_fills_2026_11_08_by_role
+- rn1_polymarket_fills_2026_11_08_by_token
+- rn1_polymarket_fills_2026_11_08_pairs
+window:
+  chain: polygon
+  blocks: &id001
+  - 96972629
+  - 96975028
+eval_window:
+  chain: polygon
+  blocks: *id001
+inputs:
+- name: wallet_fills
+  strategy: history
+  source: polygon.polymarket_ctf_exchange_v2
+  filter:
+    wallets:
+    - '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
+- name: conditions
+  strategy: history
+  source: polygon.polymarket_ctf
+- name: market_metadata
+  strategy: state
+  source: polymarket.markets
+expected_columns:
+  rn1_polymarket_fills_2026_11_08: [maker_fill_pct]
+  rn1_polymarket_fills_2026_11_08_by_market: [condition_id, question, event_title, is_sports, sports_market_type,
+    series_slug, game_start_time, outcomes, fills, maker_fills, shares_0, cost_0, avg_cost_0, shares_1,
+    cost_1, avg_cost_1, sold_shares, pair_shares, bought_both, pair_cost, pair_edge_usdc, unmatched_shares,
+    unmatched_outcome, unmatched_cost_usdc, first_fill_at, last_fill_at]
+  rn1_polymarket_fills_2026_11_08_by_phase: [phase, fills, maker_fill_pct, shares, usdc, avg_price, markets,
+    underweight_buys, overweight_buys, balanced_buys, underweight_buy_pct]
+  rn1_polymarket_fills_2026_11_08_by_role: [kind, role, side, fills, pct_of_fills, shares, usdc, fee_usdc,
+    avg_fill_shares, median_fill_shares, avg_fill_usdc, avg_price, tokens, markets, fills_per_minute]
+  rn1_polymarket_fills_2026_11_08_by_token: [token_id, side, role, condition_id, question, outcome, fills,
+    shares, usdc, fee_usdc, avg_price]
+  rn1_polymarket_fills_2026_11_08_pairs: [kind, markets, markets_bought_both, markets_bought_both_pct,
+    cost_usdc, pair_shares, pair_cost_usdc, avg_pair_cost, markets_pair_below_1, pairs_below_1_pct, pair_edge_usdc,
+    unmatched_shares, unmatched_cost_usdc]
+grain:
+  rn1_polymarket_fills_2026_11_08_by_market: [condition_id]
+  rn1_polymarket_fills_2026_11_08_by_token: [token_id, side, role]

@@ -89,6 +89,18 @@ def _report(args: argparse.Namespace) -> int:
     return report.run(REPO_ROOT, args.slug, args.format)
 
 
+def _questions(args: argparse.Namespace) -> int:
+    from pipeline.cli import catalog
+
+    return catalog.run(REPO_ROOT, args.slug, as_json=args.json, check=args.check)
+
+
+def _demo(args: argparse.Namespace) -> int:
+    from pipeline import demo
+
+    return demo.run(REPO_ROOT, args.output)
+
+
 def _run(args: argparse.Namespace) -> int:
     from pipeline.cli import run
 
@@ -98,6 +110,21 @@ def _run(args: argparse.Namespace) -> int:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="The mechanical steps of answering a question about chain data.")
     commands = root.add_subparsers(dest="command", required=True, metavar="<command>")
+
+    questions = commands.add_parser(
+        "questions", help="list supported question bundles and their authored SQL; no warehouse needed"
+    )
+    questions.add_argument("slug", nargs="?", help="show one question")
+    output = questions.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true", help="print the catalog as JSON")
+    output.add_argument("--check", action="store_true", help="validate that every analysis has one question")
+    questions.set_defaults(run=_questions)
+
+    demo = commands.add_parser(
+        "demo", help="build and answer a synthetic balance example in temporary Docker Postgres"
+    )
+    demo.add_argument("--output", type=Path, help="new directory for saved results (default: .demo/<id>)")
+    demo.set_defaults(run=_demo)
 
     answer = commands.add_parser(
         "answer",

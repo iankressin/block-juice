@@ -4,5 +4,5 @@ with classified as (
     {{ token_transfers(ref('classified_transfers')) }}
 )
 
-select round(100 * sum(value) filter (where category = 'exchange') / sum(value), 2) as exchange_share_pct
+select round(100 * sum(value) filter (where category = 'exchange') / nullif(sum(value), 0), 2) as exchange_share_pct
 from classified

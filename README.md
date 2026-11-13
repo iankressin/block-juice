@@ -24,6 +24,8 @@ When something breaks, you can see it. `bj doctor` checks your env and services 
 
 ## Quick start
 
+Try the [deterministic local demo](docs/demo.md) with `uv run --project orchestration bj demo` to build a small synthetic dataset and export its answer. For existing analyses, run `bj questions`; the [analysis authoring guide](docs/analysis-authoring.md) covers the complete workflow without an assistant.
+
 You need Node 24 and [pnpm](https://pnpm.io) (both pinned in `mise.toml`), [uv](https://docs.astral.sh/uv/) and Docker.
 
 First, set up the checkout:
@@ -432,3 +434,7 @@ Orchestration tests fail if an asset belongs to no scheduled pipeline, so nothin
 ## Status
 
 BlockJuice is in active development. For now the framework is this repository: clone it, fill in `.env` and run your own warehouse. We're working on thinner packaging for customer apps. The parts analysts touch (`name`/`table`, mart shapes, `bj`) should stay the same when it ships.
+
+## License
+
+BlockJuice is licensed under the [Apache License 2.0](LICENSE). Dependencies and externally sourced data retain their respective licenses and terms.

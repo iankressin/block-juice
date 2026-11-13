@@ -273,6 +273,27 @@ def test_all_checks_passing_exits_0(tmp_path, offline):
     assert answer.run(tmp_path, "eth-total") == 0
 
 
+@pytest.mark.parametrize("rows, row_count, message", [
+    ([(None,)], None, "value: null"),
+    ([(0,)], None, "value: 0"),
+    ([], None, "value: none (the first analysis is not one row of one column)"),
+    ([(1,), (2,)], None, "value: none (the first analysis is not one row of one column)"),
+    ([(None,)], 2, "value: none (the first analysis is not one row of one column)"),
+])
+def test_cli_distinguishes_sql_null_from_a_non_scalar_result(tmp_path, offline, monkeypatch, capsys, rows, row_count, message):
+    write_question(tmp_path)
+    offline(parked=0)
+    original = answer.read_warehouse
+
+    def read(*args, **kwargs):
+        results, dead_letters, last_runs = original(*args, **kwargs)
+        return [replace(results[0], rows=rows, row_count=row_count)], dead_letters, last_runs
+
+    monkeypatch.setattr(answer, "read_warehouse", read)
+    assert answer.run(tmp_path, "eth-total") == 0
+    assert capsys.readouterr().out.splitlines()[0] == message
+
+
 def test_missing_settings_are_bad_input_before_any_write(tmp_path, offline, monkeypatch):
     folder = write_question(tmp_path)
     offline(parked=0)

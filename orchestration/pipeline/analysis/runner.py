@@ -89,7 +89,10 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
             results.close()
 
     value = document["value"]
-    print(f"value: {value if value is not None else 'none (the first analysis is not one row of one column)'}")
+    first = results[0]
+    scalar = len(first.columns) == 1 and (first.row_count if first.row_count is not None else len(first.rows)) == 1
+    missing = "null" if scalar else "none (the first analysis is not one row of one column)"
+    print(f"value: {value if value is not None else missing}")
     for check in checks:
         print(f"{check.name}: {'passed' if check.passed else 'FAILED'} ({check.detail})")
     relative = folder.relative_to(repo_root)

@@ -1,0 +1,81 @@
+question: Which addresses gained the most of the configured token across its chain windows?
+definitions:
+  token: 'UNI by default: the token mapping, decimals and inclusive chain block windows in this question''s
+    parameters.token default. Override the complete token mapping together when following another asset.'
+  amounts: Whole tokens after applying the configured decimals. Chain token contracts represent the same
+    asset; no USD prices are applied.
+  scope: Only loaded data for the configured token and chain windows. Configure and build the transfers
+    pipeline before running; flows involving bridges also require the bridges and labels pipelines.
+marts:
+- erc20_transfers
+analyses:
+- token_net_accumulators
+- token_net_accumulators_by_wallet
+window:
+  blocks:
+    arbitrum:
+    - 510496864
+    - 520129273
+    base:
+    - 52011727
+    - 53350926
+inputs:
+- name: arbitrum_transfers
+  strategy: history
+  source: arbitrum.erc20_transfers
+  filter:
+    tokens:
+    - '0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0'
+- name: base_transfers
+  strategy: history
+  source: base.erc20_transfers
+  filter:
+    tokens:
+    - '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'
+parameter_scope: token_windows
+parameters:
+  token:
+    type: object
+    properties:
+      ethereum:
+        type: string
+        required: true
+      decimals:
+        type: integer
+        required: true
+      windows:
+        type: array
+        required: true
+        items:
+          type: object
+          properties:
+            chain:
+              type: string
+              required: true
+            token:
+              type: string
+              required: true
+            blocks:
+              type: array
+              items: integer
+              required: true
+    default:
+      ethereum: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+      decimals: 18
+      windows:
+      - chain: arbitrum
+        token: '0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0'
+        blocks:
+        - 510496864
+        - 520129273
+      - chain: base
+        token: '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'
+        blocks:
+        - 52011727
+        - 53350926
+expected_columns:
+  token_net_accumulators: [top_accumulator]
+  token_net_accumulators_by_wallet: [address, net_amount, arbitrum_net_amount, base_net_amount, received_amount,
+    sent_amount, transfers_in, transfers_out]
+grain:
+  token_net_accumulators_by_wallet: [address]

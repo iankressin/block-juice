@@ -50,7 +50,7 @@ classified as (
 select
     phase,
     count(*) as fills,
-    round(100.0 * count(*) filter (where role = 'maker') / count(*), 2) as maker_fill_pct,
+    round(100.0 * count(*) filter (where role = 'maker') / nullif(count(*), 0), 2) as maker_fill_pct,
     sum(shares) as shares,
     sum(usdc) as usdc,
     round(sum(usdc) / nullif(sum(shares), 0), 6) as avg_price,

@@ -27,3 +27,6 @@ answers/*/*
 
 # The files a factory run passes between its steps and the model (.github/factory/README.md)
 .factory/
+
+# Isolated synthetic demo output.
+.demo/
