@@ -2,6 +2,8 @@
 
 `erc20_transfers`, `dex_trades`, `oracle_prices` and `token_prices` keep complete table builds by default. Each build runs `ANALYZE`, so downstream queries see current statistics immediately. Extra indexes and incremental writes are opt-in: measured read benefits come with model-build costs. Uniqueness checks remain in the existing dbt tests.
 
+Run the shell examples below from the repository root with your warehouse settings exported.
+
 Existing staging and intermediate views remain live. After ingestion, `dbt run --select erc20_transfers` still reads the new raw records without requiring an upstream rebuild. Source names, model names, output columns and numeric precision are unchanged.
 
 ## Optional indexes for repeated window queries
@@ -9,7 +11,8 @@ Existing staging and intermediate views remain live. After ingestion, `dbt run -
 Pass the YAML boolean `fact_indexes: true` to create `(chain, token, block_number)` on transfers, matching `token_transfers()`, and `(chain, version, block_number)` on DEX trades, matching the UNI swap analyses:
 
 ```sh
-dbt run --select erc20_transfers dex_trades --vars '{fact_indexes: true}'
+uv run --project orchestration dbt run --project-dir transformation --profiles-dir transformation \
+  --select erc20_transfers dex_trades --vars '{fact_indexes: true}'
 ```
 
 These are the only added read indexes. They made selective queries much faster on the synthetic workload, but index construction made table builds slower, so they are disabled by default. Reconciliation can reuse them with `--vars '{fact_strategy: reconcile, fact_indexes: true}'`. Existing indexes survive reconciliation; a normal table build or `--full-refresh` with `fact_indexes: false` removes the optional indexes.
@@ -19,7 +22,8 @@ These are the only added read indexes. They made selective queries much faster o
 On the repository's PostgreSQL 16 stack, pass `fact_strategy: reconcile` to update only changed fact rows:
 
 ```sh
-dbt run --select erc20_transfers dex_trades oracle_prices token_prices \
+uv run --project orchestration dbt run --project-dir transformation --profiles-dir transformation \
+  --select erc20_transfers dex_trades oracle_prices token_prices \
   --vars '{fact_strategy: reconcile}'
 ```
 
