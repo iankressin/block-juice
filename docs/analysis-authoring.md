@@ -92,10 +92,18 @@ Each `token-*` bundle now owns a typed `parameters.token` default for the Ethere
 and chain-specific token addresses and windows. The default is UNI on Arbitrum and Base. Put an
 override in the question's `values.token` map; the runner validates it and supplies it as a dbt
 variable. The old `vars.token` project default remains for direct dbt users, who can override it
-with `--vars '{token: {...}}'`. Keep the question's block windows, source filters and expected output
-columns aligned with the token mapping; changing only a label does not change the SQL. Graph and
+with `--vars '{token: {...}}'`. The shipped bundles declare `parameter_scope: token_windows`:
+the runner rejects token windows or transfer/bridge filters that disagree with the resolved token
+parameters before compiling or running SQL. Update the block windows and source filters together
+with a changed token mapping. Changing only a label does not change the SQL. Graph and
 accumulator detail queries produce chain-specific columns, so a changed chain set needs a changed
 column contract too.
+
+For a token question's smaller `eval_window`, declare a complete typed `eval_values.token` override
+whose chain ranges match that evaluation window. `values.token` and the defaults remain the full
+answer's parameters. An evaluation that still supplies full-window parameters is rejected; it
+cannot certify a smaller slice while querying the full history. Arbitrum bridge filters identify
+the Ethereum token, while Base OP bridge filters identify its Base token address.
 
 All shipped queries declare their ordered `expected_columns`, and detail queries with a stable
 unique key also declare `grain`. New questions can add typed parameters, result contracts and a

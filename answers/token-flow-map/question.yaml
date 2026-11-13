@@ -7,6 +7,9 @@ definitions:
     asset; no USD prices are applied.
   scope: Only loaded data for the configured token and chain windows. Configure and build the transfers
     pipeline before running; flows involving bridges also require the bridges and labels pipelines.
+  bridge edges: An observed pair is anchored by a withdrawal in the configured window; its deposit may
+    occur outside that window. Pairing uses amount and timing, not proof of the Ethereum leg, and does
+    not establish that every possible later counterpart has been loaded.
 marts:
 - classified_transfers
 - bridge_pairs
@@ -40,9 +43,14 @@ inputs:
 - name: arbitrum_bridge
   strategy: history
   source: arbitrum.token_bridge
+  filter:
+    tokens: ["0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"]
 - name: base_bridge
   strategy: history
   source: base.op_standard_bridge
+  filter:
+    tokens: ["0xc3de830ea07524a0761646a6a4e4be0e114a3c83"]
+parameter_scope: token_windows
 parameters:
   token:
     type: object

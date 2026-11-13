@@ -1,7 +1,9 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
+import yaml
 
 from pipeline import cli
 from pipeline.cli import BadInput
@@ -87,3 +89,58 @@ def test_shipped_contracts_cover_every_query_and_token_default_window():
         filters = {source.source: source.filter for source in question.sources}
         for window in windows:
             assert filters[f"{window['chain']}.erc20_transfers"]["tokens"] == [window["token"]]
+
+
+def token_question(root):
+    repo = Path(__file__).resolve().parents[2]
+    slug = "token-flow-map"
+    document = yaml.safe_load((repo / "answers" / slug / "question.yaml").read_text())
+    folder = root / "answers" / slug
+    folder.mkdir(parents=True)
+    return document, folder / "question.yaml"
+
+
+@pytest.mark.parametrize("change", ["blocks", "token", "ethereum"])
+def test_changed_token_values_cannot_run_with_old_coverage(tmp_path, monkeypatch, change):
+    from pipeline.cli import answer
+
+    document, path = token_question(tmp_path)
+    token = deepcopy(document["parameters"]["token"]["default"])
+    if change == "blocks":
+        token["windows"][0]["blocks"] = [1, 2]
+    elif change == "token":
+        token["windows"][0]["token"] = "0x0000000000000000000000000000000000000001"
+    else:
+        token["ethereum"] = "0x0000000000000000000000000000000000000001"
+    document["values"] = {"token": token}
+    path.write_text(yaml.safe_dump(document, sort_keys=False))
+    monkeypatch.setattr(answer, "compile_analyses", lambda *a, **k: pytest.fail("must reject before compile"))
+    with pytest.raises(BadInput, match="token"):
+        answer.run(tmp_path, "token-flow-map")
+
+
+def test_aligned_token_override_and_separate_eval_values(tmp_path):
+    from pipeline.cli.question import load_question
+
+    document, path = token_question(tmp_path)
+    token = deepcopy(document["parameters"]["token"]["default"])
+    for window in token["windows"]:
+        window["blocks"] = [100, 200]
+        document["window"]["blocks"][window["chain"]] = [100, 200]
+    token["windows"][0]["token"] = "0x0000000000000000000000000000000000000001"
+    for source in document["inputs"]:
+        if source["source"] == "arbitrum.erc20_transfers":
+            source["filter"]["tokens"] = [token["windows"][0]["token"]]
+    document["values"] = {"token": token}
+    document["eval_window"] = {"blocks": {w["chain"]: [100, 110] for w in token["windows"]}}
+    path.write_text(yaml.safe_dump(document, sort_keys=False))
+    assert load_question(tmp_path, "token-flow-map").parameters["token"] == token
+    with pytest.raises(BadInput, match="token"):
+        load_question(tmp_path, "token-flow-map", "eval_window")
+    evaluation = deepcopy(token)
+    for window in evaluation["windows"]:
+        window["blocks"] = [100, 110]
+    document["eval_values"] = {"token": evaluation}
+    path.write_text(yaml.safe_dump(document, sort_keys=False))
+    assert load_question(tmp_path, "token-flow-map", "eval_window").parameters["token"] == evaluation
+    assert load_question(tmp_path, "token-flow-map").parameters["token"] == token

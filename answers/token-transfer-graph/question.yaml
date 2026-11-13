@@ -33,6 +33,7 @@ inputs:
   filter:
     tokens:
     - '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'
+parameter_scope: token_windows
 parameters:
   token:
     type: object
