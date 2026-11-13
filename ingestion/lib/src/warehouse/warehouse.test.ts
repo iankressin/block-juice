@@ -160,3 +160,60 @@ test("a run log row that cannot be written only warns", async () => {
 
   assert.deepEqual(warnings, ["Could not record the run in ops.ingestion_runs"]);
 });
+
+test("retry keyset pages survive successes, failures and new dead letters without skipping or looping", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  const ids = Array.from({ length: 1203 }, (_, i) => String(i).padStart(5, "0"));
+  await table.load({ records: [], failed: ids.map((id) => failure(id)) });
+  const pages = table.retryPages(wallet);
+  const seen: string[] = [];
+  const sizes: number[] = [];
+  for await (const page of pages) {
+    sizes.push(page.calls.length);
+    seen.push(...page.calls.map((c) => c.wallet));
+    // Half succeed, half fail again; neither deletion nor an attempt update can move
+    // the cursor backwards. A newly added failure waits until the next run.
+    await table.load({ records: page.calls.filter((_, i) => i % 2 === 0).map((c) => record(c.wallet)),
+      failed: [...page.calls.filter((_, i) => i % 2 === 1).map((c) => failure(c.wallet)), failure("new")] });
+  }
+  assert.deepEqual(sizes, [500, 500, 203]);
+  assert.deepEqual(seen, ids);
+  assert.ok((await table.retries(wallet)).calls.some((c) => c.wallet === "new"));
+});
+
+test("a complete malformed retry page is parked and does not hide the next valid page", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [], failed: [failure("a", {}), failure("b", {}), failure("c")] });
+  const pages = [];
+  for await (const page of table.retryPages(wallet, 2)) pages.push(page);
+  assert.deepEqual(pages, [{ calls: [], parked: 2 }, { calls: [{ wallet: "c" }], parked: 0 }]);
+});
+
+test("API checkpoints commit with records and dead letters and roll back on any failed batch", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [record("a")], failed: [failure("b")], checkpoints: [{ key: "history", value: { next: 20 } }] });
+  assert.deepEqual(await table.getCheckpoint("history"), { next: 20 });
+  await assert.rejects(table.load({ records: [record("c")], failed: [{ id: "bad", call: undefined, error: "bad" }],
+    checkpoints: [{ key: "history", value: { next: 50 } }] }));
+  assert.deepEqual(await table.getCheckpoint("history"), { next: 20 });
+  assert.deepEqual(await table.backlog(), { pending: 1, parked: 0 });
+  const other = await warehouse.open("other_wallets");
+  assert.equal(await other.getCheckpoint("history"), undefined);
+});
+
+test("unchanged JSON still refreshes observation time and corrections still replace data", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [record("a", { v: 1 })], failed: [] });
+  await db.query("update raw.test_wallets set _loaded_at = '2000-01-01'::timestamptz");
+  const timing = await table.load({ records: [record("a", { v: 1 })], failed: [] });
+  const { rows } = await db.query<{ data: { v: number }; recent: boolean }>(
+    "select data, _loaded_at > '2026-01-01'::timestamptz as recent from raw.test_wallets");
+  assert.deepEqual(rows, [{ data: { v: 1 }, recent: true }]);
+  assert.ok(timing.seconds >= timing.writeSeconds + timing.commitSeconds);
+  await table.load({ records: [record("a", { v: 2 })], failed: [] });
+  assert.deepEqual((await db.query("select data from raw.test_wallets")).rows, [{ data: { v: 2 } }]);
+});

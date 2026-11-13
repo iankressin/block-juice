@@ -1,4 +1,4 @@
-import { readJson, settleCalls, type Source } from "@ingestion/lib";
+import { callBatches, readJson, settleCalls, type Source } from "@ingestion/lib";
 import {
   address,
   connect,
@@ -114,11 +114,18 @@ export const forChain = (chain: string): Source<EvmEnv, MetadataCall> => ({
   table: "erc20_metadata",
   env: evmEnv,
   call: metadataCallSchema,
-  async *extract(env, retry) {
+  async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const list = readJson(`chains/${chain}/addresses.json`);
     const tokens = validateEthAddressList(list.tokens);
     const { client, block } = await connect(env);
-    yield await fetchMetadata(client, [...metadataCallsAt(block, tokens), ...retry]);
+    const selected = new Set(tokens.map((value) => value.toLowerCase()));
+    function* fresh() {
+      for (const value of selected) yield* metadataCallsAt(block, [value as typeof tokens[number]]);
+    }
+    for await (const part of callBatches(fresh(), retry, (call) => `${call.block}:${call.token}`,
+      (call) => call.block === block && selected.has(call.token), context)) {
+      yield await fetchMetadata(client, part);
+    }
   },
 });

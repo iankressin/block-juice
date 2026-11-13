@@ -1,4 +1,4 @@
-import { describeError, type Batch, type RawRecord } from "@ingestion/lib";
+import { describeError, type Batch, type Checkpoint, type RawRecord } from "@ingestion/lib";
 import * as z from "zod";
 import type { GammaClient, Market } from "#src/gamma.ts";
 
@@ -35,32 +35,22 @@ const DAY_MS = 86_400_000;
  * closed markets of each UTC end date from `from` to the day of `now`; and the closed markets that
  * end after today, which exist.
  */
-export function walkCalls(from: number, now: number): MarketsWalkCall[] {
+export const openWalkCalls = (): MarketsWalkCall[] => version.options.map((v) => ({
+  kind: "markets_walk", version: v, closed: false, end_date_min: null, end_date_max: null,
+}));
+
+export function* closedWalkCalls(v: MarketsWalkCall["version"], from: number, now: number): Generator<MarketsWalkCall> {
   const start = Math.floor(from / DAY_MS) * DAY_MS;
   const today = Math.floor(now / DAY_MS) * DAY_MS;
-  const calls: MarketsWalkCall[] = [];
-  for (const v of version.options) {
-    calls.push({ kind: "markets_walk", version: v, closed: false, end_date_min: null, end_date_max: null });
-    // Gamma's end_date_min and end_date_max both include their bound (catalog/vendors/polymarket/NOTES.md),
-    // so a market that ends at midnight is in two windows and none is lost.
-    for (let t = start; t <= today; t += DAY_MS) {
-      calls.push({
-        kind: "markets_walk",
-        version: v,
-        closed: true,
-        end_date_min: utc(t),
-        end_date_max: utc(t + DAY_MS),
-      });
-    }
-    calls.push({
-      kind: "markets_walk",
-      version: v,
-      closed: true,
-      end_date_min: utc(today + DAY_MS),
-      end_date_max: null,
-    });
+  // Both bounds are inclusive, retaining a market that ends exactly at midnight.
+  for (let t = start; t <= today; t += DAY_MS) {
+    yield { kind: "markets_walk", version: v, closed: true, end_date_min: utc(t), end_date_max: utc(t + DAY_MS) };
   }
-  return calls;
+  yield { kind: "markets_walk", version: v, closed: true, end_date_min: utc(today + DAY_MS), end_date_max: null };
+}
+
+export function walkCalls(from: number, now: number): MarketsWalkCall[] {
+  return [...openWalkCalls(), ...version.options.flatMap((v) => [...closedWalkCalls(v, from, now)])];
 }
 
 type Walk = { call: MarketsWalkCall; cursor: string | undefined; page: number };
@@ -75,22 +65,23 @@ type Walk = { call: MarketsWalkCall; cursor: string | undefined; page: number };
  */
 export async function* walkMarkets(
   gamma: GammaClient,
-  calls: readonly MarketsWalkCall[],
-  { limit, concurrency }: { limit: number; concurrency: number },
+  calls: readonly MarketsWalkCall[] | AsyncIterable<MarketsWalkCall>,
+  { limit, concurrency, onProgress }: { limit: number; concurrency: number;
+    onProgress?: (remaining: readonly MarketsWalkCall[]) => Checkpoint[] },
 ): AsyncGenerator<Batch<MarketsWalkCall>> {
   // Open walks first. A closed walk waits for them, so a market that closes mid-run is seen open (the
   // open walk reached it before it closed) or closed (it closed before any closed walk began), never missed.
-  const pending = [...calls.filter((call) => !call.closed), ...calls.filter((call) => call.closed)].map(
-    (call): Walk => ({ call, cursor: undefined, page: 0 }),
-  );
+  const ordered = Array.isArray(calls)
+    ? (async function* () { yield* calls.filter((call) => !call.closed); yield* calls.filter((call) => call.closed); })()
+    : calls as AsyncIterable<MarketsWalkCall>;
+  const pending = ordered[Symbol.asyncIterator]();
+  let queued = await pending.next();
   let active: Walk[] = [];
-  while (pending.length > 0 || active.length > 0) {
-    while (
-      active.length < concurrency &&
-      pending.length > 0 &&
-      (!pending[0]!.call.closed || !active.some((walk) => !walk.call.closed))
-    ) {
-      active.push(pending.shift()!);
+  while (!queued.done || active.length > 0) {
+    while (active.length < concurrency && !queued.done
+      && (!queued.value.closed || !active.some((walk) => !walk.call.closed))) {
+      active.push({ call: queued.value, cursor: undefined, page: 0 });
+      queued = await pending.next();
     }
     await gamma.waitForRate();
     const outcomes = await Promise.allSettled(
@@ -132,6 +123,9 @@ export async function* walkMarkets(
     });
     batch.records.push(...records.values());
     active = next;
+    if (onProgress) batch.checkpoints = onProgress([
+      ...active.map((walk) => walk.call), ...(queued.done ? [] : [queued.value]),
+    ]);
     yield batch;
   }
 }

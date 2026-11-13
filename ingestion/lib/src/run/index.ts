@@ -3,7 +3,7 @@ import * as z from "zod";
 import { describeError } from "#src/calls.ts";
 import { loadEnv } from "#src/env.ts";
 import { logger } from "#src/logger.ts";
-import { pushRunMetrics } from "#src/run/metrics.ts";
+import { pushProgressMetrics, pushRunMetrics, type RunProgress } from "#src/run/metrics.ts";
 import type { Source, StreamSource } from "#src/source.ts";
 import { postgresWarehouse, type DeadLetterBacklog, type Warehouse } from "#src/warehouse/index.ts";
 
@@ -67,6 +67,24 @@ export async function runSource<E, C>(
   let backlog: DeadLetterBacklog | undefined;
   let error: string | undefined;
   let dagsterRunId: string | undefined;
+  let writeSeconds = 0;
+  let commitSeconds = 0;
+  let batchesCommitted = 0;
+  let callsCompleted = 0;
+  let committedBlock: number | undefined;
+  let activePush: Promise<void> | undefined;
+  const progress = (inProgress: boolean): RunProgress => ({
+    source: source.name, table: source.table, startedAt, inProgress,
+    recordsWritten, failedCalls, retriedCalls, callsCompleted, batchesCommitted,
+    loadSeconds, writeSeconds, commitSeconds, committedBlock,
+  });
+  const publish = () => {
+    if (!activePush) activePush = pushProgressMetrics(progress(true), log).finally(() => { activePush = undefined; });
+    return activePush;
+  };
+  const progressTimer = setInterval(() => { void publish(); }, 15_000);
+  progressTimer.unref();
+
 
   try {
     // Inside the try so a bad MAX_BLOCKS_PER_RUN fails the run with one fatal log, like any other
@@ -83,28 +101,43 @@ export async function runSource<E, C>(
           table.pipesTarget({
             // The env var wins when it is set. Otherwise the source's own cap, or no cap at all.
             maxBlocks: MAX_BLOCKS_PER_RUN ?? source.maxBlocksPerRun,
-            onLoad({ records, seconds }) {
+            onLoad({ records, seconds, writeSeconds: executed, committedBlock: block }) {
               loadSeconds += seconds;
+              writeSeconds += executed;
               recordsWritten += records;
-              log.info({ target: table.name, records }, "Batch written");
+              batchesCommitted++;
+              committedBlock = block;
+              log.info({ target: table.name, records, committedBlock, loadSeconds: seconds,
+                writeSeconds: executed, transactionOverheadSeconds: seconds - executed,
+                rssBytes: process.memoryUsage().rss }, "Batch committed");
             },
           }),
         );
       } else {
-        const { calls: retry, parked } = await table.retries(source.call);
-        if (parked > 0) {
-          log.warn(
-            { parked, deadLetters: table.deadLetters },
+        const pages = table.retryPages(source.call);
+        const notePage = (page: { calls: C[]; parked: number }) => {
+          retriedCalls += page.calls.length;
+          if (page.parked > 0) log.warn(
+            { parked: page.parked, deadLetters: table.deadLetters },
             "Some dead letters no longer match the source's call schema and wait for a person",
           );
+          return page.calls;
+        };
+        const first = await pages.next();
+        const retry = first.done ? [] : notePage(first.value);
+        async function* remaining() {
+          for await (const page of pages) yield notePage(page);
         }
-        retriedCalls = retry.length;
         log.info({ runId, retriedCalls }, "Run started");
 
-        for await (const batch of source.extract(env, retry)) {
-          const loadStartedAt = performance.now();
-          await table.load(batch);
-          loadSeconds += (performance.now() - loadStartedAt) / 1000;
+        for await (const batch of source.extract(env, retry, { retryPages: remaining(), getCheckpoint: table.getCheckpoint })) {
+          const timing = await table.load(batch);
+          loadSeconds += timing.seconds;
+          writeSeconds += timing.writeSeconds;
+          commitSeconds += timing.commitSeconds;
+          batchesCommitted++;
+          callsCompleted += new Set([...batch.records.map((record) => record.callId),
+            ...batch.failed.map((failed) => failed.id), ...(batch.succeededCallIds ?? [])]).size;
           recordsWritten += batch.records.length;
           failedCalls += batch.failed.length;
           log.info(
@@ -112,8 +145,10 @@ export async function runSource<E, C>(
               target: table.name,
               records: batch.records.length,
               failedCalls: batch.failed.length,
+              ...timing,
+              rssBytes: process.memoryUsage().rss,
             },
-            "Batch written",
+            "Batch committed",
           );
         }
       }
@@ -133,6 +168,10 @@ export async function runSource<E, C>(
     log.fatal({ err }, "Run failed");
     error = describeError(err);
     process.exitCode = 1;
+  } finally {
+    clearInterval(progressTimer);
+    await activePush;
+    await pushProgressMetrics(progress(false), log);
   }
 
   const report: RunReport = {

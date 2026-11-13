@@ -63,3 +63,43 @@ export async function pushRunMetrics(report: RunReport, log: Logger): Promise<vo
     log.warn({ err: error }, "Could not push metrics");
   }
 }
+
+
+export type RunProgress = {
+  source: string; table: string; startedAt: Date; inProgress: boolean;
+  recordsWritten: number; failedCalls: number; retriedCalls: number; callsCompleted: number;
+  batchesCommitted: number; loadSeconds: number; writeSeconds: number; commitSeconds: number;
+  committedBlock?: number;
+};
+
+/** Separate current-run gauges never overwrite the previous completed run's success. */
+export function progressMetrics(progress: RunProgress): Registry {
+  const registry = new Registry();
+  const values: [string, string, number][] = [
+    ["active", "1 while a run is active, 0 after it ends.", progress.inProgress ? 1 : 0],
+    ["timestamp_seconds", "When progress was last reported.", Date.now() / 1000],
+    ["elapsed_seconds", "Elapsed wall time of the current run.", (Date.now() - progress.startedAt.getTime()) / 1000],
+    ["records_written", "Records in committed batches of the current run.", progress.recordsWritten],
+    ["failed_calls", "Failed calls saved in committed batches.", progress.failedCalls],
+    ["retried_calls", "Previously failed calls supplied to the source.", progress.retriedCalls],
+    ["calls_completed", "Distinct call outcomes across committed batches, including failed calls.", progress.callsCompleted],
+    ["batches_committed", "Batches whose transactions have committed.", progress.batchesCommitted],
+    ["load_seconds", "Warehouse transaction time including locks, retries and commit.", progress.loadSeconds],
+    ["write_seconds", "Time executing raw-data and retry statements in committed batches.", progress.writeSeconds],
+    ["commit_seconds", "Time awaiting explicit COMMIT for call sources; stream commit is included in load_seconds.", progress.commitSeconds],
+    ["memory_rss_bytes", "Current process resident memory in bytes.", process.memoryUsage().rss],
+  ];
+  if (progress.committedBlock !== undefined) values.push(["committed_block", "Last stream block confirmed committed.", progress.committedBlock]);
+  for (const [name, help, value] of values) new Gauge({ name: `ingestion_current_${name}`, help, registers: [registry] }).set(value);
+  return registry;
+}
+
+/** A metrics outage must not fail a pipeline or create overlapping pushes. The runner serializes calls. */
+export async function pushProgressMetrics(progress: RunProgress, log: Logger): Promise<void> {
+  try {
+    const { PUSHGATEWAY_URL } = loadEnv(metricsEnv);
+    if (!PUSHGATEWAY_URL) return;
+    const gateway = new Pushgateway(PUSHGATEWAY_URL, { timeout: 5000 }, progressMetrics(progress));
+    await gateway.pushAdd({ jobName: "ingestion", groupings: { source: progress.source, table: progress.table } });
+  } catch (err) { log.warn({ err }, "Could not push ingestion progress"); }
+}

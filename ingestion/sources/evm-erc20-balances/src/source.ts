@@ -1,4 +1,4 @@
-import { readJson, type Source } from "@ingestion/lib";
+import { callBatches, readJson, type Source } from "@ingestion/lib";
 import { connect, evmEnv, validateEthAddressList, type EvmEnv } from "@ingestion/lib/evm";
 import * as z from "zod";
 import {
@@ -21,12 +21,23 @@ export const forChain = (chain: string): Source<EvmEnv, BalanceCall> => ({
   table: "erc20_balances",
   env: evmEnv,
   call: balanceCallSchema,
-  async *extract(env, retry) {
+  async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const addresses = readJson(`chains/${chain}/addresses.json`);
     const wallets = validateEthAddressList(addresses.wallets);
     const tokens = validateEthAddressList(addresses.tokens);
     const { client, block } = await connect(env);
-    yield await fetchBalances(client, [...balanceCallsAt(block, wallets, tokens), ...retry]);
+    const selectedWallets = new Set(wallets.map((value) => value.toLowerCase()));
+    const selectedTokens = new Set(tokens.map((value) => value.toLowerCase()));
+    function* fresh() {
+      for (const token of selectedTokens) for (const wallet of selectedWallets) {
+        yield* balanceCallsAt(block, [wallet as typeof wallets[number]], [token as typeof tokens[number]]);
+      }
+    }
+    for await (const part of callBatches(fresh(), retry,
+      (call) => `${call.block}:${call.token}:${call.wallet}`,
+      (call) => call.block === block && selectedWallets.has(call.wallet) && selectedTokens.has(call.token), context)) {
+      yield await fetchBalances(client, part);
+    }
   },
 });

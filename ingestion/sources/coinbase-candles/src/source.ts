@@ -1,4 +1,4 @@
-import { chunk, uniqueBy, type Source } from "@ingestion/lib";
+import { callBatches, chunk, historyKey, historyPlan, historyState, type Source } from "@ingestion/lib";
 import * as z from "zod";
 import { createCoinbaseClient, systemClock, type Clock } from "#src/coinbase.ts";
 import {
@@ -8,7 +8,9 @@ import {
   fetchWindows,
   interval,
   parseTokens,
-  windowCalls,
+  iterateWindowCalls,
+  windowSpan,
+  bucketStart,
   type CandleCall,
 } from "#src/candles.ts";
 
@@ -26,6 +28,9 @@ const coinbaseEnv = z.object({
   COINBASE_API_URL: z.url().default("https://api.exchange.coinbase.com"),
   CANDLE_INTERVAL: interval.default("1h"),
   START_TIME: startTime,
+  HISTORY_OVERLAP_DAYS: z.coerce.number().int().nonnegative().optional(),
+  HISTORY_REFRESH_DAYS: z.coerce.number().int().positive().optional(),
+  HISTORY_FULL_REFRESH: z.enum(["0", "1"]).optional(),
   // A chunk sends this many requests at once, one chunk a second, so it must stay within Coinbase's
   // 10 public requests a second.
   COINBASE_MAX_CONCURRENCY: z.coerce.number().int().positive().max(10).default(5),
@@ -33,14 +38,14 @@ const coinbaseEnv = z.object({
 
 export type CoinbaseEnv = z.infer<typeof coinbaseEnv>;
 
-// Every closed candle of each token in tokens.json since START_TIME, one window of up to 300
-// candles per call, plus the windows that failed in earlier runs.
+// Backfill each token from START_TIME, then refresh recent windows and periodic historical
+// corrections. Each call holds at most 300 candles; failed windows retain their own retries.
 export const candlesSource = (clock: Clock = systemClock): Source<CoinbaseEnv, CandleCall> => ({
   name: "coinbase",
   table: "candles",
   env: coinbaseEnv,
   call: candleCallSchema,
-  async *extract(env, retry) {
+  async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad tokens.json.
     const { default: tokens } = await import("../tokens.json", { with: { type: "json" } });
     const markets = parseTokens(tokens);
@@ -51,12 +56,34 @@ export const candlesSource = (clock: Clock = systemClock): Source<CoinbaseEnv, C
       await Promise.all(part.map((market) => checkMarket(coinbase, market)));
     }
     const now = clock.now();
-    const calls = markets.flatMap((market) => windowCalls(market, env.CANDLE_INTERVAL, env.START_TIME, now));
-
-    // A new call comes after its retried twin, so it is the one kept.
-    for (const part of chunk(uniqueBy([...retry, ...calls], callId), env.COINBASE_MAX_CONCURRENCY)) {
+    const span = windowSpan(env.CANDLE_INTERVAL);
+    const plans = new Map<string, ReturnType<typeof historyPlan>>();
+    for (const market of markets) {
+      const key = historyKey(["coinbase", env.COINBASE_API_URL, market, env.CANDLE_INTERVAL, env.START_TIME]);
+      const saved = historyState(await context?.getCheckpoint?.(key));
+      const origin = saved?.origin ?? bucketStart(env.START_TIME, env.CANDLE_INTERVAL);
+      plans.set(market.product_id, historyPlan(key, origin, span, now, saved, env));
+    }
+    function* fresh() {
+      for (const market of markets) yield* iterateWindowCalls(market, env.CANDLE_INTERVAL, plans.get(market.product_id)!.from, now);
+    }
+    const isFresh = (call: CandleCall) => {
+      const plan = plans.get(call.product_id);
+      return !!plan && call.interval === env.CANDLE_INTERVAL && call.start_time >= plan.from && call.start_time <= now
+        && (call.start_time - plan.from) % span === 0;
+    };
+    for await (const part of callBatches(fresh(), retry, callId, isFresh, context, env.COINBASE_MAX_CONCURRENCY, true)) {
       await coinbase.waitForRate();
-      yield await fetchWindows(coinbase, part, clock);
+      const batch = await fetchWindows(coinbase, part, clock);
+      if (context?.getCheckpoint) {
+        const progress = new Map<string, ReturnType<ReturnType<typeof historyPlan>["checkpoint"]>>();
+        for (const call of part) if (isFresh(call)) {
+          const checkpoint = plans.get(call.product_id)!.checkpoint(call.end_time + 1);
+          progress.set(checkpoint.key, checkpoint);
+        }
+        batch.checkpoints = [...progress.values()];
+      }
+      yield batch;
     }
   },
 });

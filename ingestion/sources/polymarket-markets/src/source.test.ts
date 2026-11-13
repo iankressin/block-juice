@@ -449,3 +449,43 @@ test("a retried open walk also finishes before any closed walk starts", async (t
   const firstClosed = requests.findIndex((request) => request.includes("closed=true"));
   assert.ok(lastOpen < firstClosed, requests.join("\n"));
 });
+
+test("Gamma keeps active walks and recent closed days fresh without replaying every historical day", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeGamma(t, { walks: {}, requests });
+  const env = envAt(url, { GAMMA_END_DATE_FROM: Date.UTC(2026, 9, 1), GAMMA_MAX_CONCURRENCY: 3 });
+  const state = new Map<string, unknown>();
+  const context = { getCheckpoint: async (key: string) => state.get(key) };
+  for await (const batch of marketsSource(fakeClock(NOW)).extract(env, [], context)) {
+    for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  const initial = requests.length;
+  requests.length = 0;
+  for await (const batch of marketsSource(fakeClock(NOW)).extract(env, [], context)) {
+    for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  assert.equal(requests.length, 12, "two open walks, eight overlapping closed days, and two future-closed walks");
+  assert.ok(initial > requests.length * 5);
+  requests.length = 0;
+  for await (const _ of marketsSource(fakeClock(NOW)).extract({ ...env, HISTORY_FULL_REFRESH: "1" }, [], context)) {}
+  assert.equal(requests.length, initial);
+});
+
+test("an old failed future walk retains its broad lower bound outside the recent overlap", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeGamma(t, { walks: {}, requests });
+  const env = envAt(url, { GAMMA_END_DATE_FROM: Date.UTC(2026, 9, 1), HISTORY_REFRESH_DAYS: 100 });
+  const state = new Map<string, unknown>();
+  const context = { getCheckpoint: async (key: string) => state.get(key) };
+  for await (const batch of marketsSource(fakeClock(NOW)).extract(env, [], context)) {
+    for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  requests.length = 0;
+  const oldFuture: MarketsWalkCall = { kind: "markets_walk", version: "v1", closed: true,
+    end_date_min: "2026-10-05T00:00:00Z", end_date_max: null };
+  const retryContext = { ...context, retryPages: (async function* () { yield [oldFuture]; })() };
+  for await (const _ of marketsSource(fakeClock(NOW)).extract(env, [], retryContext)) {}
+  const future = requests.filter((request) => request.includes("version=v1&closed=true") && !request.includes("end_date_max"));
+  assert.equal(future.length, 1);
+  assert.ok(decodeURIComponent(future[0]!).includes("end_date_min=2026-10-05T00:00:00Z"));
+});

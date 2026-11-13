@@ -1,4 +1,4 @@
-import { readJson, type Source } from "@ingestion/lib";
+import { retryPages, readJson, type Source } from "@ingestion/lib";
 import {
   bitcoinEnv,
   createBitcoinClient,
@@ -19,11 +19,15 @@ export const bitcoinBtcBalances: Source<BitcoinEnv, BalanceCall> = {
   table: "btc_balances",
   env: bitcoinEnv,
   call: balanceCallSchema,
-  async *extract(env, retry) {
+  async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const addresses = readJson("addresses.json");
     const wallets = validateBitcoinAddressList(addresses.wallets);
     const client = createBitcoinClient(env.DSHACKLE_URL);
-    yield await fetchBalances(client, [...balanceCalls(wallets), ...retry]);
+    const selected = new Set(wallets);
+    for await (const page of retryPages(retry, context)) for (const call of page) selected.add(call.wallet);
+    // scantxoutset scans the entire UTXO set once and returns one shared height. Splitting
+    // wallets would repeat that expensive scan and mix snapshots, so keep its native batch.
+    yield await fetchBalances(client, balanceCalls([...selected]));
   },
 };

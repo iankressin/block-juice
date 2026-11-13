@@ -103,13 +103,17 @@ export async function firstOpenTime(
 }
 
 /** The windows of the market from `first`, the last one starting at or before `now`. */
-export function windowCalls(market: Market, interval: Interval, first: number, now: number): CandleCall[] {
-  const span = WINDOW_CANDLES * INTERVAL_MS[interval];
-  const calls: CandleCall[] = [];
+export const windowSpan = (interval: Interval) => WINDOW_CANDLES * INTERVAL_MS[interval];
+
+export function* iterateWindowCalls(market: Market, interval: Interval, first: number, now: number): Generator<CandleCall> {
+  const span = windowSpan(interval);
   for (let start = first; start <= now; start += span) {
-    calls.push({ kind: "candles", ...market, interval, start_time: start, end_time: start + span - 1 });
+    yield { kind: "candles", ...market, interval, start_time: start, end_time: start + span - 1 };
   }
-  return calls;
+}
+
+export function windowCalls(market: Market, interval: Interval, first: number, now: number): CandleCall[] {
+  return [...iterateWindowCalls(market, interval, first, now)];
 }
 
 const record = (call: CandleCall, candle: Candle): RawRecord => ({
@@ -148,10 +152,11 @@ export async function fetchWindows(
       return candles.filter((candle) => candle.close_time < cutoff);
     }),
   );
-  const batch: Batch<CandleCall> = { records: [], failed: [] };
+  const batch: Batch<CandleCall> = { records: [], failed: [], succeededCallIds: [] };
   calls.forEach((call, i) => {
     const outcome = outcomes[i]!;
     if (outcome.status === "fulfilled") {
+      batch.succeededCallIds!.push(callId(call));
       batch.records.push(...outcome.value.map((candle) => record(call, candle)));
     } else if (outcome.reason instanceof BinanceError && outcome.reason.banned) {
       throw outcome.reason;

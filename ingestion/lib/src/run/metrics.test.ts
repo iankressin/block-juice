@@ -53,3 +53,17 @@ test("a failed run leaves out the success time and the backlog, so the Pushgatew
   assert.equal(failed.has("ingestion_last_success_timestamp_seconds"), false);
   assert.equal([...failed.keys()].some((k) => k.startsWith("ingestion_dead_letters")), false);
 });
+
+test("live progress exposes committed work and memory without overwriting last success", async () => {
+  const { progressMetrics } = await import("#src/run/metrics.ts");
+  const registry = progressMetrics({ source: "ethereum", table: "transfers", startedAt: new Date(), inProgress: true,
+    recordsWritten: 12, failedCalls: 2, retriedCalls: 3, callsCompleted: 14, batchesCommitted: 2,
+    loadSeconds: 1.2, writeSeconds: 0.8, commitSeconds: 0.2, committedBlock: 99 });
+  const metrics = new Map((await registry.getMetricsAsJSON()).map((metric) => [metric.name, metric.values[0]!.value]));
+  assert.equal(metrics.get("ingestion_current_active"), 1);
+  assert.equal(metrics.get("ingestion_current_committed_block"), 99);
+  assert.equal(metrics.get("ingestion_current_records_written"), 12);
+  assert.equal(metrics.get("ingestion_current_commit_seconds"), 0.2);
+  assert.ok(metrics.get("ingestion_current_memory_rss_bytes")! > 0);
+  assert.ok(!metrics.has("ingestion_last_success_timestamp_seconds"));
+});
