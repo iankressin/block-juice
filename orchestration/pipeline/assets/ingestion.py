@@ -10,6 +10,7 @@ from typing import TextIO
 import dagster as dg
 
 from pipeline.project import INGESTION_DIR, REPO_ROOT
+from pipeline.concurrency import warehouse_slot
 from pipeline.sources import SOURCES_FILE, read_sources
 from pipeline.warehouse import count_dead_letters
 
@@ -131,14 +132,15 @@ def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
         kinds={"typescript", "postgres"},
     )
     def _ingest(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
-        returncode, errors, stderr = run_ingestion_process(
-            ["pnpm", "--silent", "ingest"],
-            cwd=package_dir(source, table),
-            # The source writes the run id into ops.ingestion_runs, next to the dbt results of the same run.
-            # CHAIN tells a package that loads several chains which one this asset is.
-            env={**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source},
-            log=context.log,
-        )
+        with warehouse_slot("ingestion", context.log):
+            returncode, errors, stderr = run_ingestion_process(
+                ["pnpm", "--silent", "ingest"],
+                cwd=package_dir(source, table),
+                # The source writes the run id next to the dbt results of the same run.
+                # CHAIN tells a package that loads several chains which one this asset is.
+                env={**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source},
+                log=context.log,
+            )
         if returncode != 0:
             raise dg.Failure(
                 description=f"Ingestion for {source} exited with code {returncode}",
