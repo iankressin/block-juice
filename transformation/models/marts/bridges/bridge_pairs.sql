@@ -20,6 +20,33 @@ deposits as (
         row_number() over (partition by chain, ethereum_address, ethereum_token, amount order by block_timestamp, id) as n
     from {{ ref('bridge_transfers') }}
     where direction = 'from_ethereum'
+),
+
+-- Count ready withdrawals once along the timeline, rather than rescan every withdrawal for
+-- each paired deposit. RANGE includes all withdrawals ready at the deposit's exact timestamp.
+-- Subtract the deposit chain's count: only another chain can fund it.
+events as (
+    select ethereum_address, ethereum_token, amount, chain, ready_at as at,
+        true as withdrawal, null::text as deposit_id
+    from withdrawals
+    union all
+    select ethereum_address, ethereum_token, amount, chain, block_timestamp as at,
+        false as withdrawal, id as deposit_id
+    from deposits
+),
+
+counts as (
+    select
+        chain,
+        deposit_id,
+        count(*) filter (where withdrawal) over (
+            partition by ethereum_address, ethereum_token, amount order by at
+            range between unbounded preceding and current row
+        ) - count(*) filter (where withdrawal) over (
+            partition by ethereum_address, ethereum_token, amount, chain order by at
+            range between unbounded preceding and current row
+        ) as candidates
+    from events
 )
 
 select
@@ -36,11 +63,7 @@ select
     d.id as deposit_id,
     d.block_timestamp as deposited_at,
     d.tx_hash as deposit_tx_hash,
-    (
-        select count(*) from withdrawals as c
-        where c.ethereum_address = d.ethereum_address and c.ethereum_token = d.ethereum_token
-            and c.amount = d.amount and c.chain <> d.chain and c.ready_at <= d.block_timestamp
-    ) as candidates
+    c.candidates
 from withdrawals as w
 join deposits as d
     on d.ethereum_address = w.ethereum_address
@@ -49,3 +72,4 @@ join deposits as d
     and d.n = w.n
     and d.chain <> w.chain
     and d.block_timestamp >= w.ready_at
+join counts as c on c.chain = d.chain and c.deposit_id = d.id
