@@ -4,6 +4,8 @@
 -- recipient are the pool's own fields, often a router; v4 has no recipient. pool is the pool's address,
 -- or its id in v4. One trade can show up in two versions' rows in the same transaction, such as a v4
 -- hook that fills a swap from a v2 pair. Each version's intermediate model brings its rows in this shape.
+{{ fact_config(['chain', 'id'], indexes=[{'columns': ['chain', 'version', 'block_number']}]) }}
+
 {%- set columns -%}
     id, chain, protocol, version, pool, block_number, block_timestamp, tx_hash, log_index, tx_from,
     sender, recipient, hooks, token_bought, amount_bought, token_sold, amount_sold
