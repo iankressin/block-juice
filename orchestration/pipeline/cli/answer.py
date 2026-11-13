@@ -2,73 +2,28 @@
 
 import csv
 import json
-import math
 import shutil
 import subprocess
 from collections import Counter
 from collections.abc import Collection, Iterable, Sequence
-from contextlib import closing
-from dataclasses import asdict, dataclass, replace
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-import psycopg2
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
-from pipeline.answer_artifacts import publish
+from pipeline.analysis.store import RunStore, answer_lock
+from pipeline.analysis.domain import Input, LastRun, Result, Check, jsonable, cell_text, headline
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
 from pipeline.cli.coverage import Coverage
 from pipeline.cli.question import Question, SourceInput, WindowKey, load_question
-from pipeline.warehouse import connect, count_dead_letters
+from pipeline.warehouse import connect
 
 # dbt's own logs and usage stats are off: the summary reports what matters, and the stats call the network.
 DBT_FLAGS = ("--log-level", "none", "--no-send-anonymous-usage-stats")
-# JSON readers parse numbers as doubles, which hold integers exactly only up to here.
-MAX_SAFE_INTEGER = 2**53 - 1
-
-
-@dataclass(frozen=True, order=True)
-class Input:
-    """A raw table an answer reads, found through the dbt sources its analyses depend on."""
-
-    source: str
-    table: str
-    raw_table: str
-
-    @property
-    def name(self) -> str:
-        return f"{self.source}.{self.table}"
-
-    @property
-    def source_table(self) -> str:
-        """The key of the input's dead letters."""
-        return f"{self.source}_{self.table}"
-
-
-@dataclass(frozen=True)
-class LastRun:
-    finished_at: datetime
-    records_written: int
-    dagster_run_id: str | None
-
-
-@dataclass(frozen=True)
-class Result:
-    analysis: str
-    sql: str
-    columns: list[str]
-    rows: list[tuple]
-
-
-@dataclass(frozen=True)
-class Check:
-    name: str
-    passed: bool
-    detail: str
 
 
 def upstream_inputs(manifest: dict, unique_ids: Iterable[str]) -> list[Input]:
@@ -85,47 +40,6 @@ def upstream_inputs(manifest: dict, unique_ids: Iterable[str]) -> list[Input]:
         else:
             stack.extend(manifest["nodes"].get(unique_id, {}).get("depends_on", {}).get("nodes", []))
     return sorted(found)
-
-
-def jsonable(value: Any) -> Any:
-    """A value JSON can hold without losing precision: big integers and decimals become strings."""
-    if value is None or isinstance(value, (bool, str)):
-        return value
-    if isinstance(value, int):
-        return value if abs(value) <= MAX_SAFE_INTEGER else str(value)
-    if isinstance(value, float):
-        return value if math.isfinite(value) else str(value)
-    if isinstance(value, Decimal):
-        return format(value, "f")
-    if isinstance(value, datetime):
-        return utc_iso(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {str(key): jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [jsonable(item) for item in value]
-    return str(value)
-
-
-def cell_text(value: Any) -> str:
-    """A warehouse value as CSV text, written exactly: no float conversion, None as empty."""
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (dict, list)):
-        return json.dumps(jsonable(value))
-    converted = jsonable(value)
-    return converted if isinstance(converted, str) else str(converted)
-
-
-def headline(results: Sequence[Result]) -> Any:
-    """The first analysis's only cell, when it returns exactly one row of one column."""
-    first = results[0]
-    if len(first.columns) == 1 and len(first.rows) == 1:
-        return first.rows[0][0]
-    return None
 
 
 def dbt_tests_check(statuses: Iterable[tuple[str, str]]) -> Check:
@@ -179,7 +93,7 @@ def stream_inputs(
                 f"{label}: the analyses read the stream source {read.name}; "
                 f"add an input with source: {read.name} and the filter it needs"
             )
-    if declared and not question.blocks:
+    if declared and not question.blocks and question.window.get("scope") != "loaded":
         raise BadInput(
             f"{label}: inputs read the stream source {', '.join(sorted(named))}, so set {question.window_key}.blocks: [from, to]"
         )
@@ -233,7 +147,7 @@ def answer_document(
                 "analysis": result.analysis,
                 "path": f"results/{result.analysis}.csv",
                 "columns": result.columns,
-                "rows": len(result.rows),
+                "rows": result.row_count if result.row_count is not None else len(result.rows),
                 "sql": result.sql,
             }
             for result in results
@@ -253,7 +167,11 @@ def answer_document(
 
 
 def dbt(project: Path, *args: str) -> dbtRunnerResult:
-    return dbtRunner().invoke([*args, "--project-dir", str(project), "--profiles-dir", str(project), *DBT_FLAGS])
+    arguments = [*args, "--project-dir", str(project), "--profiles-dir", str(project), *DBT_FLAGS]
+    if "--target-path" in args:
+        return dbtRunner().invoke(arguments)
+    with TemporaryDirectory(prefix="bj-dbt-check-") as temporary:
+        return dbtRunner().invoke([*arguments, "--target-path", temporary, "--log-path", str(Path(temporary) / "logs")])
 
 
 def dbt_error(result: dbtRunnerResult) -> str:
@@ -266,26 +184,9 @@ def dbt_error(result: dbtRunnerResult) -> str:
     return " ".join(message.split()) or "unknown error"
 
 
-def compile_analyses(project: Path, names: Sequence[str], blocks: dict[str, tuple[int, int]]) -> tuple[dict, list[str]]:
-    """The manifest after `dbt compile`, and the unique id of each analysis. The analyses read the window's
-    blocks through the in_window macro, from var('window')."""
-    variables = ("--vars", json.dumps({"window": blocks})) if blocks else ()
-    # Each invocation owns its artifacts: bj run or another answer can parse with different
-    # variables concurrently without replacing the manifest this invocation consumes.
-    with TemporaryDirectory(prefix="bj-answer-") as temporary:
-        target = Path(temporary)
-        result = dbt(
-            project, "compile", "--select", *names, *variables,
-            "--target-path", str(target), "--log-path", str(target / "logs"),
-        )
-        if not result.success:
-            raise BadInput(f"dbt compile failed: {dbt_error(result)}")
-        manifest = json.loads((target / "manifest.json").read_text())
-    analyses = {node["name"]: uid for uid, node in manifest["nodes"].items() if node["resource_type"] == "analysis"}
-    for name in names:
-        if name not in analyses:
-            raise BadInput(f"no dbt analysis named {name}: write transformation/analyses/{name}.sql")
-    return manifest, [analyses[name] for name in names]
+def compile_analyses(project: Path, names: Sequence[str], blocks: dict[str, tuple[int, int]], parameters=None):
+    from pipeline.analysis.compiler import QueryCompiler
+    return QueryCompiler(dbt, dbt_error).compile(project, names, blocks, parameters)
 
 
 @dataclass(frozen=True)
@@ -370,7 +271,7 @@ def dagster_history(manifest: dict, tests: dict[str, list[str]]) -> tuple[dict[s
 
 
 def run_dbt_tests(
-    project: Path, names: Sequence[str], coverages: dict[str, Coverage], upstream: Sequence[str] = ()
+    project: Path, names: Sequence[str], coverages: dict[str, Coverage], upstream: Sequence[str] = (), parameters=None
 ) -> Check:
     """The dbt tests on the marts the analyses read, the tests tagged `coverage` upstream of them, and
     `upstream`: the other tests above the marts that have not passed since the marts were built (stale_tests).
@@ -381,7 +282,10 @@ def run_dbt_tests(
     Tests tagged `reference` are left out: dbt's eager selection would pull in every factory ticket's
     reference test that shares a mart with the analysis, over windows this warehouse may not hold."""
     loaded = {name: c.to_json() for name, c in coverages.items()}
-    variables = ("--vars", json.dumps({"coverage": loaded})) if loaded else ()
+    values = dict(parameters or {})
+    if loaded:
+        values["coverage"] = loaded
+    variables = ("--vars", json.dumps(values)) if values else ()
     selection = [selector for name in names for selector in (f"1+{name}", f"+{name},tag:coverage")]
     selection += list(upstream)
     result = dbt(project, "test", "--select", *selection, "--exclude", "tag:reference", *variables)
@@ -400,34 +304,9 @@ def last_successful_run(cursor, source: Input) -> LastRun | None:
     return LastRun(*row) if row else None
 
 
-def read_warehouse(manifest: dict, analysis_ids: Sequence[str], inputs: Sequence[Input]):
-    try:
-        connection = connect()
-    except psycopg2.Error as error:
-        raise BadInput(f"could not connect to the warehouse: {' '.join(str(error).split())}") from None
-    with closing(connection):
-        # Analyses only read; a read-only session makes sure of it.
-        connection.set_session(readonly=True)
-        results = []
-        for unique_id in analysis_ids:
-            node = manifest["nodes"][unique_id]
-            with connection.cursor() as cursor:
-                try:
-                    cursor.execute(node["compiled_code"])
-                except psycopg2.Error as error:
-                    raise BadInput(f"analysis {node['name']} failed: {' '.join(str(error).split())}") from None
-                if cursor.description is None:
-                    raise BadInput(f"analysis {node['name']} returned no columns: an analysis must be a select")
-                columns = [column.name for column in cursor.description]
-                results.append(Result(node["name"], node["compiled_code"], columns, cursor.fetchall()))
-            connection.rollback()
-        try:
-            with connection.cursor() as cursor:
-                last_runs = {i: last_successful_run(cursor, i) for i in inputs}
-            dead_letters = {i: count_dead_letters(i.source_table) for i in inputs}
-        except psycopg2.Error as error:
-            raise BadInput(f"could not read the run log or dead letters: {' '.join(str(error).split())}") from None
-    return results, dead_letters, last_runs
+def read_warehouse(manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):
+    from pipeline.analysis.executor import read_warehouse as execute
+    return execute(connect, manifest, analysis_ids, inputs, policy=policy, expected_columns=expected_columns, grain=grain)
 
 
 def git(repo_root: Path, *args: str) -> str | None:
@@ -446,7 +325,7 @@ def provenance(repo_root: Path) -> dict[str, Any]:
     }
 
 
-def write_answer(folder: Path, results: Sequence[Result], document: dict[str, Any]) -> None:
+def write_answer(folder: Path, results: Sequence[Result], document: dict[str, Any], *, artifacts=None) -> None:
     # Prepare every file before touching an existing answer. The previous narrative and reports
     # belong to those previous results; retaining them beside new rows would misrepresent the answer.
     with TemporaryDirectory(prefix=".answer-", dir=folder.parent) as temporary:
@@ -454,6 +333,9 @@ def write_answer(folder: Path, results: Sequence[Result], document: dict[str, An
         results_dir = prepared / "results"
         results_dir.mkdir()
         for result in results:
+            if result.csv_path is not None:
+                shutil.copyfile(result.csv_path, results_dir / f"{result.analysis}.csv")
+                continue
             with open(results_dir / f"{result.analysis}.csv", "w", newline="", encoding="utf-8") as file:
                 writer = csv.writer(file, lineterminator="\n")
                 writer.writerow(result.columns)
@@ -461,43 +343,20 @@ def write_answer(folder: Path, results: Sequence[Result], document: dict[str, An
         (prepared / "answer.json").write_text(
             json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
+        for name, content in (artifacts or {}).items():
+            if name not in {"question.yaml", "spec.json", "manifest.json"}:
+                raise BadInput(f"unsupported execution artifact {name}")
+            (prepared / name).write_text(content if isinstance(content, str) else json.dumps(jsonable(content), indent=2) + "\n", encoding="utf-8")
         # This is the remote document's identity, not report content. Retain it so a later gdoc
         # publication updates that document rather than creating a second one.
-        for state in (folder / "reports").glob("*.gdoc.json"):
-            (prepared / "reports").mkdir(exist_ok=True)
-            shutil.copy2(state, prepared / "reports" / state.name)
-        publish(folder, prepared)
+        with answer_lock(folder):
+            for state in (folder / "reports").glob("*.gdoc.json"):
+                (prepared / "reports").mkdir(exist_ok=True)
+                shutil.copy2(state, prepared / "reports" / state.name)
+            RunStore(folder).publish(prepared)
 
 
 def run(repo_root: Path, slug: str, window_key: WindowKey = "window") -> int:
-    question = load_question(repo_root, slug, window_key)
-    require_env()
-    project = repo_root / "transformation"
-    manifest, analysis_ids = compile_analyses(project, question.analyses, question.blocks)
-    inputs = upstream_inputs(manifest, analysis_ids)
-    streams = stream_inputs(question, inputs, coverage.sources(repo_root), coverage.stream_sources(repo_root))
-    coverages = {name: coverage.read(repo_root, name) for name in sorted({i.source for i in streams})}
-    above = upstream_tests(manifest, analysis_ids)
-    stale = stale_tests(above, *dagster_history(manifest, above))
-    tests = run_dbt_tests(project, question.analyses, coverages, [manifest["nodes"][t]["name"] for t in stale])
-    if len(stale) < len(above):
-        tests = replace(tests, detail=f"{tests.detail}; {len(above) - len(stale)} upstream passed since the marts were built")
-    results, dead_letters, last_runs = read_warehouse(manifest, analysis_ids, inputs)
-    checks = [tests, dead_letters_check(dead_letters), freshness_check(last_runs)]
-    if streams:
-        checks.append(coverage_check(streams, coverages, question.blocks, question.window_key))
-    document = answer_document(
-        question, datetime.now(timezone.utc), results, dead_letters, last_runs, checks, provenance(repo_root)
-    )
-    folder = repo_root / "answers" / slug
-    if window_key == "eval_window":
-        folder = folder / "eval"
-    write_answer(folder, results, document)
-
-    value = document["value"]
-    print(f"value: {value if value is not None else 'none (the first analysis is not one row of one column)'}")
-    for check in checks:
-        print(f"{check.name}: {'passed' if check.passed else 'FAILED'} ({check.detail})")
-    relative = folder.relative_to(repo_root)
-    print(f"wrote {relative}/answer.json and {len(results)} CSV file(s) in {relative}/results/")
-    return 0 if all(check.passed for check in checks) else 1
+    import sys
+    from pipeline.analysis.runner import run as run_analysis
+    return run_analysis(sys.modules[__name__], repo_root, slug, window_key)
