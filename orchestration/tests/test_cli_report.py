@@ -880,3 +880,15 @@ def test_the_other_formats_never_load_the_google_client(answered):
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
     assert result.stdout.splitlines()[-1] == "[]"
+
+
+def test_xlsx_renders_structured_runtime_provenance(answered):
+    root, folder = answered
+    import json
+    answer = json.loads((folder / "answer.json").read_text())
+    answer["provenance"]["snapshot"] = {"isolation": "repeatable read", "model_builds": {"m": {"status": "success"}}}
+    (folder / "answer.json").write_text(json.dumps(answer))
+    assert run(root, "top-wallets", "xlsx") == 0
+    book = openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx")
+    values = {row[0].value: row[1].value for row in book["Answer"].iter_rows() if row[0].value}
+    assert json.loads(values["snapshot"])["isolation"] == "repeatable read"

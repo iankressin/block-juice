@@ -2173,6 +2173,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "requests" },
+    { name = "sqlglot" },
 ]
 
 [package.dev-dependencies]
@@ -2199,6 +2200,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "requests", specifier = ">=2.34.2" },
+    { name = "sqlglot", specifier = ">=30.29,<31" },
 ]
 
 [package.metadata.requires-dev]

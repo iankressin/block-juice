@@ -226,7 +226,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names, blocks: (MANIFEST, ["analysis.t.holders"]))
     dbt_coverages = []
 
-    def run_dbt_tests(project, names, coverages, upstream=()):
+    def run_dbt_tests(project, names, coverages, upstream=(), **kwargs):
         dbt_coverages.append(coverages)
         return Check("dbt_tests", True, "3 passed")
 
@@ -246,7 +246,7 @@ def offline(monkeypatch):
         )
 
     def use(parked):
-        monkeypatch.setattr(answer, "read_warehouse", lambda *args: read_warehouse(*args, parked=parked))
+        monkeypatch.setattr(answer, "read_warehouse", lambda *args, **kwargs: read_warehouse(*args, parked=parked))
 
     use.dbt_coverages = dbt_coverages
     return use
