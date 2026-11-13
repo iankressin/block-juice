@@ -3,6 +3,7 @@ import * as z from "zod";
 import { loadEnv } from "#src/env.ts";
 import type { Logger } from "#src/logger.ts";
 import type { RunReport } from "#src/run/index.ts";
+import type { TransportMetrics } from "#src/transport-metrics.ts";
 
 /**
  * A source runs as a short job, so Prometheus cannot scrape it. Each run pushes these
@@ -70,6 +71,7 @@ export type RunProgress = {
   recordsWritten: number; failedCalls: number; retriedCalls: number; callsCompleted: number;
   batchesCommitted: number; loadSeconds: number; writeSeconds: number; commitSeconds: number;
   committedBlock?: number;
+  transport?: TransportMetrics;
 };
 
 /** Separate current-run gauges never overwrite the previous completed run's success. */
@@ -89,6 +91,18 @@ export function progressMetrics(progress: RunProgress): Registry {
     ["commit_seconds", "Time awaiting explicit COMMIT for call sources; stream commit is included in load_seconds.", progress.commitSeconds],
     ["memory_rss_bytes", "Current process resident memory in bytes.", process.memoryUsage().rss],
   ];
+  const transport = progress.transport;
+  if (transport) values.push(
+    ["requests_started", "Transport attempts started in this run, including retries.", transport.requestsStarted],
+    ["requests_completed", "Transport attempts completed, including failures.", transport.requestsCompleted],
+    ["requests_failed", "Transport exceptions and HTTP error responses; excludes application-level errors.", transport.requestsFailed],
+    ["requests_active", "Transport attempts currently awaiting a response.", transport.activeRequests],
+    ["request_seconds", "Sum of transport attempt durations; fetch measures through response headers.", transport.requestSeconds],
+    ["queue_tasks", "Tasks currently waiting for a client concurrency slot.", transport.queuedTasks],
+    ["queue_wait_seconds", "Sum of completed waits for client concurrency slots.", transport.queueWaitSeconds],
+    ["delay_tasks", "Tasks currently in client rate-limit or retry-backoff delays.", transport.delayedTasks],
+    ["delay_seconds", "Sum of completed client rate-limit and retry-backoff delay durations.", transport.delaySeconds],
+  );
   if (progress.committedBlock !== undefined) values.push(["committed_block", "Last stream block confirmed committed.", progress.committedBlock]);
   for (const [name, help, value] of values) new Gauge({ name: `ingestion_current_${name}`, help, registers: [registry] }).set(value);
   return registry;

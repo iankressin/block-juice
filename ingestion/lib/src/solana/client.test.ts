@@ -9,6 +9,7 @@ import {
 } from "@solana/kit";
 import { settleCalls } from "#src/calls.ts";
 import { createSolanaClient } from "#src/solana/client.ts";
+import { transportSnapshot, withTransportMetrics } from "#src/transport-metrics.ts";
 
 /** A JSON-RPC endpoint that answers every request with `error`. Returns its URL. */
 async function failingRpc(t: TestContext, error: { code: number; message: string }) {
@@ -57,4 +58,14 @@ test("a JSON-RPC error code that kit knows stays a SolanaError", async (t) => {
     createSolanaClient(url).getTokenAccountsByOwner(owner, { mint: owner }).send(),
     (error) => isSolanaError(error, code),
   );
+});
+
+test("transport metrics distinguish a received JSON-RPC failure from a transport failure", async (t) => {
+  const url = await failingRpc(t, { code: -32000, message: "provider refused" });
+  await withTransportMetrics(async () => {
+    assert.match(await failedCall(url), /provider refused/);
+    assert.equal(transportSnapshot().requestsCompleted, 1);
+    assert.equal(transportSnapshot().requestsFailed, 0);
+    assert.equal(transportSnapshot().activeRequests, 0);
+  });
 });

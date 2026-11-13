@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { connect, createEvmClient, resolveBlock } from "#src/evm/client.ts";
+import { transportSnapshot, withTransportMetrics } from "#src/transport-metrics.ts";
 
 type Request = { id: number; method: string; params: unknown[] };
 
@@ -84,4 +85,21 @@ test("connect holds at most RPC_MAX_CONCURRENCY requests in flight", async (t) =
   await Promise.all(wallets.map((address) => client.getBalance({ address, blockNumber: BigInt(block) })));
 
   assert.equal(load.most, 1);
+});
+
+test("transport telemetry counts HTTP batches and preserves the concurrency bound", async (t) => {
+  const { url, load, httpRequests } = await fakeRpc(t, 21_000_000);
+  await withTransportMetrics(async () => {
+    const client = createEvmClient(url, { retryCount: 0, batchSize: 2, maxConcurrency: 1 });
+    const wallets = [1, 2, 3, 4, 5].map((n) => `0x${String(n).padStart(40, "0")}` as const);
+    assert.deepEqual(await Promise.all(wallets.map((address) => client.getBalance({ address, blockNumber: 5n }))), [0n, 0n, 0n, 0n, 0n]);
+    assert.equal(load.most, 1);
+    assert.deepEqual(httpRequests.map((batch) => batch.length).sort(), [1, 2, 2]);
+    const snapshot = transportSnapshot();
+    assert.equal(snapshot.requestsCompleted, 3);
+    assert.equal(snapshot.requestsFailed, 0);
+    assert.equal(snapshot.activeRequests, 0);
+    assert.equal(snapshot.queuedTasks, 0);
+    assert.ok(snapshot.queueWaitSeconds > 0);
+  });
 });

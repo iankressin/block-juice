@@ -4,6 +4,7 @@ export { loadEnv } from "#src/env.ts";
 export { readJson } from "#src/json.ts";
 export { chunk, describeError, settleCalls, uniqueBy } from "#src/calls.ts";
 export { logger, type Logger } from "#src/logger.ts";
+export { observedFetch, observeDelay } from "#src/transport-metrics.ts";
 export { runSource } from "#src/run/index.ts";
 export { batches, callBatches, retryPages } from "#src/batches.ts";
 export { DAY_MS, historyKey, historyState, historyPlan, type HistorySettings } from "#src/history.ts";

@@ -8,6 +8,7 @@ import {
 } from "@solana/kit";
 import * as kit from "@solana/kit";
 import { createLimiter } from "#src/concurrency.ts";
+import { observeDelay, observeRequest } from "#src/transport-metrics.ts";
 
 export type SolanaClient = ReturnType<typeof createSolanaClient>;
 
@@ -27,7 +28,7 @@ async function withRetry<T>(request: () => Promise<T>, retryCount: number): Prom
       return await request();
     } catch (error) {
       if (attempt >= retryCount || !retryable(error)) throw error;
-      await sleep(150 * 2 ** attempt);
+      await observeDelay(() => sleep(150 * 2 ** attempt));
     }
   }
 }
@@ -62,7 +63,7 @@ export function createSolanaClient(
   const send = createDefaultRpcTransport({ url });
   const limit = createLimiter(maxConcurrency);
   const transport: RpcTransport = async <T>(config: Parameters<RpcTransport>[0]) => {
-    const reply = await limit(() => withRetry(() => send<T>(config), retryCount));
+    const reply = await limit(() => withRetry(() => observeRequest(() => send<T>(config)), retryCount));
     throwUnnamedRpcError(reply);
     return reply;
   };

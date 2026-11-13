@@ -42,3 +42,14 @@ Every observation still refreshes `_loaded_at`, including identical values, pres
 Structured `Batch committed` logs include committed counts, transaction/write duration, and RSS memory. Stream progress is published after rows and the block cursor commit, so a failed commit never inflates durable counts. `load_seconds` includes transaction overhead, locking, retries, and commit; call sources also report explicit `commit_seconds`. Streams expose transaction overhead separately because Pipes owns their commit; it is not mislabeled as pure commit time.
 
 When `PUSHGATEWAY_URL` is configured, `ingestion_current_*` gauges refresh every 15 seconds while a run is active and once when it ends. They expose committed batches/records, call outcomes, retries, elapsed/load/write/commit time, memory, and the last committed stream block. They do not overwrite the previous completed run's success metric. A metrics failure only warns. After abrupt termination, use the progress timestamp to identify stale gauges.
+
+Call clients also expose per-run transport and wait gauges:
+
+| Gauge suffix (after `ingestion_current_`) | Meaning |
+|---|---|
+| `requests_started`, `requests_completed`, `requests_failed`, `requests_active` | Transport attempts, including retries, and currently active attempts. Failed means a transport exception or HTTP error response; JSON-RPC and other application errors still use the existing call-outcome reporting. |
+| `request_seconds` | Sum of completed transport-attempt durations, which can exceed wall time when requests overlap. Fetch clients measure through response headers; Solana measures through its transport's response parsing. |
+| `queue_tasks`, `queue_wait_seconds` | Tasks waiting for the EVM/Solana concurrency limiter, and the total elapsed time of completed waits. |
+| `delay_tasks`, `delay_seconds` | Tasks in the existing Binance/Coinbase/Gamma rate-limit or retry delays and Solana retry backoff, and the total elapsed time of completed delays. |
+
+Binance, Coinbase, Gamma, Bitcoin, and EVM count HTTP attempts; an EVM batch counts once regardless of its number of logical calls. Solana counts each transport send attempt. These gauges describe the ingestion clients, not requests made by an RPC proxy to its upstream providers. Stream SDK traffic and proxy retries remain observable through eRPC/Dshackle metrics. Viem-managed retry delays are not included in the delay gauges. The measurements retain only nine numeric fields per run, with no endpoint, wallet, token, or request labels, and reset for each run. They do not change request bodies, responses, retries, concurrency limits, or rate-limit decisions.

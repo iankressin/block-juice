@@ -5,6 +5,7 @@ import { loadEnv } from "#src/env.ts";
 import { logger } from "#src/logger.ts";
 import { pushProgressMetrics, pushRunMetrics, type RunProgress } from "#src/run/metrics.ts";
 import type { Source, StreamSource } from "#src/source.ts";
+import { transportSnapshot, withTransportMetrics } from "#src/transport-metrics.ts";
 import { postgresWarehouse, type DeadLetterBacklog, type Warehouse } from "#src/warehouse/index.ts";
 
 // A positive whole number of blocks, at most 15 digits, so it stays a safe integer.
@@ -57,6 +58,10 @@ export async function runSource<E, C>(
   source: Source<E, C> | StreamSource<E>,
   warehouse: Warehouse = postgresWarehouse(),
 ): Promise<void> {
+  return withTransportMetrics(() => run(source, warehouse));
+}
+
+async function run<E, C>(source: Source<E, C> | StreamSource<E>, warehouse: Warehouse): Promise<void> {
   const runId = randomUUID();
   const log = logger.child({ source: source.name, table: source.table });
   const startedAt = new Date();
@@ -77,15 +82,13 @@ export async function runSource<E, C>(
   const progress = (inProgress: boolean): RunProgress => ({
     source: source.name, table: source.table, startedAt, finishedAt, inProgress,
     recordsWritten, failedCalls, retriedCalls, callsCompleted, batchesCommitted,
-    loadSeconds, writeSeconds, commitSeconds, committedBlock,
+    loadSeconds, writeSeconds, commitSeconds, committedBlock, transport: transportSnapshot(),
   });
   const publish = () => {
     if (!activePush) activePush = pushProgressMetrics(progress(true), log).finally(() => { activePush = undefined; });
     return activePush;
   };
-  const progressTimer = setInterval(() => { void publish(); }, 15_000);
-  progressTimer.unref();
-
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
 
   try {
     // Inside the try so a bad MAX_BLOCKS_PER_RUN fails the run with one fatal log, like any other
@@ -94,6 +97,10 @@ export async function runSource<E, C>(
     dagsterRunId = DAGSTER_RUN_ID;
     const env = loadEnv(source.env);
     const table = await warehouse.open(`${source.name}_${source.table}`);
+    // open() may wait for another run's source lock. Only the owner publishes this
+    // source/table's current gauges; a waiting run must not replace them with zeroes.
+    progressTimer = setInterval(() => { void publish(); }, 15_000);
+    progressTimer.unref();
     try {
       if ("stream" in source) {
         log.info({ runId }, "Run started");
@@ -166,17 +173,24 @@ export async function runSource<E, C>(
         );
       }
     } finally {
-      await table.close();
+      // Finish progress while this run still owns the source lock. A delayed push
+      // must not overwrite gauges from the next owner after close() releases it.
+      finishedAt = new Date();
+      clearInterval(progressTimer);
+      try {
+        await activePush;
+        await pushProgressMetrics(progress(false), log);
+      } finally {
+        await table.close();
+      }
     }
   } catch (err) {
     log.fatal({ err }, "Run failed");
     error = describeError(err);
     process.exitCode = 1;
   } finally {
-    finishedAt = new Date();
+    finishedAt ??= new Date();
     clearInterval(progressTimer);
-    await activePush;
-    await pushProgressMetrics(progress(false), log);
   }
 
   const report: RunReport = {

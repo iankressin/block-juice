@@ -58,12 +58,23 @@ test("live progress exposes committed work and memory without overwriting last s
   const { progressMetrics } = await import("#src/run/metrics.ts");
   const registry = progressMetrics({ source: "ethereum", table: "transfers", startedAt: new Date(), inProgress: true,
     recordsWritten: 12, failedCalls: 2, retriedCalls: 3, callsCompleted: 14, batchesCommitted: 2,
-    loadSeconds: 1.2, writeSeconds: 0.8, commitSeconds: 0.2, committedBlock: 99 });
+    loadSeconds: 1.2, writeSeconds: 0.8, commitSeconds: 0.2, committedBlock: 99,
+    transport: { requestsStarted: 8, requestsCompleted: 5, requestsFailed: 2, activeRequests: 3,
+      requestSeconds: 1.5, queuedTasks: 4, queueWaitSeconds: 0.6, delayedTasks: 1, delaySeconds: 0.7 } });
   const metrics = new Map((await registry.getMetricsAsJSON()).map((metric) => [metric.name, metric.values[0]!.value]));
   assert.equal(metrics.get("ingestion_current_active"), 1);
   assert.equal(metrics.get("ingestion_current_committed_block"), 99);
   assert.equal(metrics.get("ingestion_current_records_written"), 12);
   assert.equal(metrics.get("ingestion_current_commit_seconds"), 0.2);
+  assert.equal(metrics.get("ingestion_current_requests_started"), 8);
+  assert.equal(metrics.get("ingestion_current_requests_completed"), 5);
+  assert.equal(metrics.get("ingestion_current_requests_failed"), 2);
+  assert.equal(metrics.get("ingestion_current_requests_active"), 3);
+  assert.equal(metrics.get("ingestion_current_request_seconds"), 1.5);
+  assert.equal(metrics.get("ingestion_current_queue_tasks"), 4);
+  assert.equal(metrics.get("ingestion_current_queue_wait_seconds"), 0.6);
+  assert.equal(metrics.get("ingestion_current_delay_tasks"), 1);
+  assert.equal(metrics.get("ingestion_current_delay_seconds"), 0.7);
   assert.ok(metrics.get("ingestion_current_memory_rss_bytes")! > 0);
   assert.ok(!metrics.has("ingestion_last_success_timestamp_seconds"));
 });
