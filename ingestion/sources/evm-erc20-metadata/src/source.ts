@@ -114,6 +114,7 @@ export const forChain = (chain: string): Source<EvmEnv, MetadataCall> => ({
   table: "erc20_metadata",
   env: evmEnv,
   call: metadataCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const list = readJson(`chains/${chain}/addresses.json`);

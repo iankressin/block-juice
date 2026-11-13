@@ -19,6 +19,7 @@ export const solanaSplBalances: Source<SolanaEnv, BalanceCall> = {
   table: "spl_balances",
   env: solanaEnv,
   call: balanceCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const addresses = readJson("addresses.json");

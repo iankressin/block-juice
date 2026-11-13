@@ -30,6 +30,7 @@ export const marketsSource = (clock: Clock = systemClock): Source<GammaEnv, Mark
   table: "markets",
   env: gammaEnv,
   call: marketsWalkCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     const gamma = createGammaClient(env.GAMMA_API_URL, clock);
     const now = clock.now();

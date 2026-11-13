@@ -58,6 +58,8 @@ interface SourceBase<E> {
  * parses is parked.
  */
 export interface Source<E, C> extends SourceBase<E> {
+  /** Opt in only when extract consumes context.retryPages; absent retains the full legacy retry array. */
+  retryMode?: "paged";
   call: z.ZodType<C>;
   extract(env: E, retry: C[], context?: ExtractionContext<C>): AsyncIterable<Batch<C>>;
 }

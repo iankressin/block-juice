@@ -21,6 +21,7 @@ export const forChain = (chain: string): Source<EvmEnv, BalanceCall> => ({
   table: "erc20_balances",
   env: evmEnv,
   call: balanceCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const addresses = readJson(`chains/${chain}/addresses.json`);

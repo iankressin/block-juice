@@ -45,6 +45,7 @@ export const forChain = (chain: string): Source<EvmEnv, CodeCall> => ({
   table: "address_code",
   env: evmEnv,
   call: codeCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const list = readJson(`chains/${chain}/addresses.json`);

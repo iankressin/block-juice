@@ -114,7 +114,10 @@ export async function runSource<E, C>(
           }),
         );
       } else {
-        const pages = table.retryPages(source.call);
+        // Existing custom extract(env, retry) implementations receive the same complete
+        // array as before. Built-ins explicitly opt into consuming every bounded page.
+        const pages = source.retryMode === "paged" ? table.retryPages(source.call)
+          : (async function* () { yield await table.retries(source.call); })();
         const notePage = (page: { calls: C[]; parked: number }) => {
           retriedCalls += page.calls.length;
           if (page.parked > 0) log.warn(

@@ -45,6 +45,7 @@ export const candlesSource = (clock: Clock = systemClock): Source<CoinbaseEnv, C
   table: "candles",
   env: coinbaseEnv,
   call: candleCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad tokens.json.
     const { default: tokens } = await import("../tokens.json", { with: { type: "json" } });

@@ -91,3 +91,20 @@ test("an invalid environment fails the run, and the run log says why", async (t)
   assert.equal(row?.succeeded, false);
   assert.match(String(row?.error), /Invalid environment[\s\S]*RUN_TEST_ENDPOINT/);
 });
+
+test("legacy two-argument sources still receive every retry when the backlog exceeds one page", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  const calls = Array.from({ length: 1003 }, (_, i) => ({ wallet: String(i).padStart(5, "0") }));
+  await table.load({ records: [], failed: calls.map((call) => ({ id: call.wallet, call, error: "old timeout" })) });
+  await table.close();
+  let seen: Wallet[] = [];
+  await runSource(source(async function* (retry) {
+    seen = retry;
+    yield { records: [], failed: [], succeededCallIds: retry.map((call) => call.wallet) };
+  }), warehouse);
+  assert.deepEqual(seen, calls);
+  const [run] = await runLog(db);
+  assert.equal(run?.retried_calls, 1003);
+  assert.equal(run?.dead_letters_pending, 0);
+});

@@ -69,6 +69,7 @@ export const forChain = (chain: string): Source<AccountStateEnv, StateCall> => (
   table: "account_state",
   env,
   call: stateCallSchema,
+  retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const path = `chains/${chain}/addresses.json`;
