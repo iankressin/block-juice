@@ -78,3 +78,40 @@ test("importing the lib, which reads LOG_LEVEL, still lets the chain's settings 
   assert.equal(child.status, 0, child.stderr);
   assert.equal(child.stdout.trim(), "chain");
 });
+
+test("local proxy URLs follow root ports while explicit providers win", async (t) => {
+  const dir = await packageWith(t, {
+    "ingestion/sources.json": "[]",
+    ".env": "ERPC_PORT=4444\nDSHACKLE_PORT=9555\n",
+    "ingestion/sources/example/chains/base/.env.example": "EVM_RPC_URL=\n",
+  });
+  const args = ["--import", import.meta.resolve("tsx"), "--input-type=module", "--eval",
+    `import { loadEnv } from ${JSON.stringify(import.meta.resolve("#src/env.ts"))};
+     import * as z from ${JSON.stringify(import.meta.resolve("zod"))};
+     console.log(JSON.stringify(loadEnv(z.object({EVM_RPC_URL:z.url(),DSHACKLE_URL:z.url()}))));`];
+  const child = spawnSync(process.execPath, args,
+    { cwd: join(dir, "ingestion/sources/example"), env: { PATH: process.env.PATH, CHAIN: "base" }, encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout), {
+    EVM_RPC_URL: "http://localhost:4444/main/evm/8453", DSHACKLE_URL: "http://localhost:9555/bitcoin",
+  });
+  const explicit = spawnSync(process.execPath, args,
+    { cwd: join(dir, "ingestion/sources/example"), env: { PATH: process.env.PATH, CHAIN: "base",
+      EVM_RPC_URL: "https://remote.example/rpc", ERPC_PORT: "invalid-unused-port" }, encoding: "utf8" });
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.equal(JSON.parse(explicit.stdout).EVM_RPC_URL, "https://remote.example/rpc");
+});
+
+test("direct ingestion retains source-local settings even when a repository root .env differs", async (t) => {
+  const dir = await packageWith(t, {
+    "ingestion/sources.json": "[]", ".env": "ENV_TEST_A=root\n",
+    "ingestion/sources/example/chains/base/.env.example": "ENV_TEST_A=source\n",
+  });
+  const child = spawnSync(process.execPath, ["--import", import.meta.resolve("tsx"), "--input-type=module", "--eval",
+    `import { loadEnv } from ${JSON.stringify(import.meta.resolve("#src/env.ts"))};
+     import * as z from ${JSON.stringify(import.meta.resolve("zod"))};
+     console.log(loadEnv(z.object({ENV_TEST_A:z.string()})).ENV_TEST_A);`],
+    { cwd: join(dir, "ingestion/sources/example"), env: { PATH: process.env.PATH, CHAIN: "base" }, encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.trim(), "source");
+});

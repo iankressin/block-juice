@@ -2,6 +2,7 @@ export type { Batch, Checkpoint, ExtractionContext, Failed, RawRecord, Source, S
 export { finalizedHead, portalClient } from "#src/portal.ts";
 export { loadEnv } from "#src/env.ts";
 export { readJson } from "#src/json.ts";
+export { factoryCachePath } from "#src/factory-cache.ts";
 export { chunk, describeError, settleCalls, uniqueBy } from "#src/calls.ts";
 export { logger, type Logger } from "#src/logger.ts";
 export { observedFetch, observeDelay } from "#src/transport-metrics.ts";

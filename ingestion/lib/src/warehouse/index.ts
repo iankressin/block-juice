@@ -7,6 +7,8 @@ import type { Logger } from "#src/logger.ts";
 import type { RunReport } from "#src/run/index.ts";
 import type { Batch } from "#src/source.ts";
 import { pipesTarget, type PipesTargetOptions } from "#src/warehouse/stream.ts";
+import { configureStream, prepareProvenance, type StreamProvenance } from "#src/warehouse/provenance.ts";
+import { prepareInputEvidence, recordInputEvidence, type InputEvidence } from "#src/warehouse/input-evidence.ts";
 
 /**
  * Pending dead letters are retried next run. Parked ones failed too often, or no longer match
@@ -103,6 +105,8 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       const deadLetters = `${raw}."_dead_letters"`;
       const checkpoints = `${raw}."_checkpoints"`;
       const db = await connect();
+      let capturedInputs: { runId: string; read: (complete: boolean) => InputEvidence } | undefined;
+      let inputEvidenceAvailable = false;
       try {
         // IF NOT EXISTS fails when two sessions create the same object at once, and Dagster opens
         // a pipeline's sources at once, so they take turns here. The key has two parts: Postgres
@@ -135,7 +139,12 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
           updated_at timestamptz not null default now(), primary key (source_table, key))`);
         await db.query(`create index if not exists "_dead_letters_retry_page" on ${deadLetters}
           (source_table, first_failed_at, id) where not parked`);
+        await prepareProvenance(db, raw);
+        inputEvidenceAvailable = await prepareInputEvidence(db, raw);
         await db.query("commit");
+        // Serialize a whole source run (including call extraction), not just individual batches.
+        // DDL's transaction lock is already released; Pipes takes its cursor lock only afterwards.
+        await db.query("select pg_advisory_lock(hashtext('ingestion.source'), hashtext($1))", [`${schema}.${sourceTable}`]);
       } catch (error) {
         await db.query("rollback").catch(() => {});
         await db.close();
@@ -181,6 +190,9 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
             on conflict (source_table, key) do update set value = excluded.value, updated_at = now()`,
             [sourceTable, checkpoint.key, toJson(checkpoint.value)]);
         }
+        if (inputEvidenceAvailable && capturedInputs) {
+          inputEvidenceAvailable = await recordInputEvidence(q, raw, sourceTable, capturedInputs.runId, capturedInputs.read(false));
+        }
       };
 
       async function* retryPages<C>(call: z.ZodType<C>, size = 500): AsyncGenerator<{ calls: C[]; parked: number }> {
@@ -225,6 +237,13 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       return {
         name: table,
         deadLetters,
+        configureStream: (config: StreamProvenance) => configureStream(db, raw, sourceTable, config),
+        trackInputs(runId: string, read: (complete: boolean) => InputEvidence) { capturedInputs = { runId, read }; },
+        async finishInputs() {
+          if (inputEvidenceAvailable && capturedInputs) {
+            inputEvidenceAvailable = await recordInputEvidence(db, raw, sourceTable, capturedInputs.runId, capturedInputs.read(true), false);
+          }
+        },
         async getCheckpoint(key: string): Promise<unknown> {
           const { rows } = await db.query<{ value: unknown }>(
             `select value from ${checkpoints} where source_table = $1 and key = $2`, [sourceTable, key]);

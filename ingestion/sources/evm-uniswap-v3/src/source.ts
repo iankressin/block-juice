@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import {
   finalizedHead,
+  factoryCachePath,
   logger,
   portalClient,
   readJson,
@@ -101,6 +102,7 @@ export const forChain = (chain: string): StreamSource<FactorySourceEnv> => {
   return {
     name: chain,
     table: "uniswap_v3",
+    coverage: { unrestricted: [], defaults: { POOLS_START_BLOCK: factory.deployedBlock } },
     env: envFor(chain, factory.deployedBlock),
     async stream(env) {
       // Read inside the run, not at import, so runSource reports a bad addresses.json.
@@ -108,12 +110,13 @@ export const forChain = (chain: string): StreamSource<FactorySourceEnv> => {
       const tokens = validateEthAddressList(addresses.tokens).map((a) => a.toLowerCase());
       const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
       const to = Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal));
-      const storeIsNew = !existsSync(env.FACTORY_DB);
+      const factoryDb = factoryCachePath(env.FACTORY_DB, env, { tokens });
+      const storeIsNew = !existsSync(factoryDb);
       // The factories wait for the store, which opens, and so creates its file, only once the check in
       // `start` below passes. A run that check stops leaves no new file for the next run to trust.
       let openStore = () => {};
       const database = new Promise<Awaited<ReturnType<typeof contractFactorySqliteStore>>>((resolve) => {
-        openStore = () => resolve(contractFactorySqliteStore({ path: env.FACTORY_DB }));
+        openStore = () => resolve(contractFactorySqliteStore({ path: factoryDb }));
       });
 
       // A pool holds a token as token0 or token1, and a filter names one side, so each side gets its own

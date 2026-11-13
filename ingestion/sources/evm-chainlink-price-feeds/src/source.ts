@@ -45,6 +45,7 @@ function logRecord(log: DecodedEvent<Record<string, unknown>>): RawRecord {
 export const forChain = (chain: string): StreamSource<PriceFeedsEnv> => ({
   name: chainName.parse(chain),
   table: "chainlink_price_feeds",
+  coverage: { unrestricted: [] },
   env,
   async stream(env) {
     // AnswerUpdated names no feed, only the aggregator that emitted it, so dbt maps each aggregator to its

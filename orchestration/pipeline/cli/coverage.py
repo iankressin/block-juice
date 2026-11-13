@@ -1,24 +1,19 @@
-"""bj coverage: the blocks each stream source has loaded, from its START_BLOCK to the cursor Pipes keeps.
-
-Pipes resumes a stream after its cursor and never reads a block twice. Coverage assumes the effective
-START_BLOCK and addresses.json still describe the history loaded under that cursor. The cursor does
-not retain their old values: after changing either, follow the documented source reset/backfill
-procedure before trusting coverage. This command never resets a source or changes its data.
-"""
+"""bj coverage: committed block intervals and the source contracts that actually produced them."""
 
 import json
 import os
 import re
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import psycopg2
-from dotenv import dotenv_values
 
 from pipeline.cli import BadInput, require_env
 from pipeline.sources import SOURCES_FILE, read_sources
-from pipeline.warehouse import read_cursor
+from pipeline.warehouse import read_cursor, read_coverage, read_configuration_cursor
+from pipeline.source_config import JS_WHITESPACE, source_env_values
 
 
 # Only these shipped sources define an omitted wallets key as unrestricted. A missing key on an
@@ -41,6 +36,11 @@ class Coverage:
     start_block_file: str
     cursor: int | None
     filter: dict[str, list[str]]
+    # None preserves the public constructor's legacy in-memory contract. read() always supplies
+    # actual evidence, including an empty tuple for an untracked legacy warehouse.
+    evidence: tuple[dict[str, Any], ...] | None = None
+    dataset_hash: str | None = None
+    settings: dict[str, int] | None = None
 
     @property
     def name(self) -> str:
@@ -48,11 +48,49 @@ class Coverage:
 
     @property
     def covered(self) -> tuple[int, int] | None:
+        if self.evidence is not None:
+            ranges = self.verified_ranges(self.filter)
+            return ranges[0] if len(ranges) == 1 else None
         return (self.start_block, self.cursor) if self.cursor is not None else None
+
+    def verified_ranges(self, wanted: dict[str, list[str]]) -> list[tuple[int, int]]:
+        wanted = {**self.filter, **wanted}
+        ranges = []
+        for item in self.evidence or ():
+            config = item["config"]
+            if not item["verified"] or (self.dataset_hash is not None and config["datasetHash"] != self.dataset_hash):
+                continue
+            required_pool_start = (self.settings or {}).get("POOLS_START_BLOCK")
+            if required_pool_start is not None and config.get("settings", {}).get("POOLS_START_BLOCK", 2**53) > required_pool_start:
+                continue
+            loaded = config["filter"]
+            # Removing an optional restriction requests all values; a previous restricted
+            # generation cannot establish that coverage merely because the key is absent now.
+            if any(key not in wanted for key in loaded):
+                continue
+            if any(key not in loaded and key not in config["unrestricted"]
+                   or key in loaded and not {value.lower() for value in values} <= set(loaded[key])
+                   for key, values in wanted.items()):
+                continue
+            first = max(item["first"], config["startBlock"])
+            if first <= item["last"]:
+                ranges.append((first, item["last"]))
+        merged = []
+        for first, last in sorted(ranges):
+            if merged and first <= merged[-1][1] + 1:
+                merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
+            else:
+                merged.append((first, last))
+        return merged
 
     def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]]) -> list[str]:
         """What the loaded data lacks for these blocks and this subset of addresses.json. Empty when it has it all."""
         first, last = blocks
+        if self.evidence is not None:
+            if any(begin <= first and end >= last for begin, end in self.verified_ranges(wanted)):
+                return []
+            return [f"no verified ingestion contract covers blocks {first}–{last} and the requested filters; "
+                    "legacy or changed-filter history needs a SOURCE_BACKFILL_ID backfill"]
         gaps = []
         if self.start_block > first:
             gaps.append(f"START_BLOCK {self.start_block} is after {first}")
@@ -73,7 +111,7 @@ class Coverage:
         return gaps
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        result = {
             "source": self.name,
             "raw_table": self.raw_table,
             "start_block": self.start_block,
@@ -82,6 +120,11 @@ class Coverage:
             "filter": self.filter,
             "covered": list(self.covered) if self.covered else None,
         }
+        if self.evidence is not None:
+            result.update(provenance="verified" if self.covered else "unverified",
+                          verified_ranges=[list(pair) for pair in self.verified_ranges(self.filter)],
+                          generations=list(self.evidence))
+        return result
 
 
 def folders(repo_root: Path) -> dict[str, Path]:
@@ -104,7 +147,7 @@ def stream_sources(repo_root: Path) -> list[str]:
     return [
         name
         for name, folder in folders(repo_root).items()
-        if dotenv_values(folder / ".env.example").get("START_BLOCK")
+        if source_env_values(folder / ".env.example").get("START_BLOCK")
     ]
 
 
@@ -120,7 +163,7 @@ def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
     if folder.parent.name == "chains":
         paths.append(folder.parents[1] / ".env")
     candidates.extend(
-        (str(path.relative_to(repo_root)), dotenv_values(path, interpolate=False).get("START_BLOCK"))
+        (str(path.relative_to(repo_root)), source_env_values(path).get("START_BLOCK"))
         for path in paths
     )
     for origin, value in candidates:
@@ -135,7 +178,7 @@ def parse_start_block(value: str, origin: str) -> int:
     Restrict the syntax before float/int: Python also accepts underscores, which Number rejects.
     loadEnv removes an empty string, but a whitespace-only value reaches Number and becomes zero.
     """
-    text = value.strip()
+    text = value.strip(JS_WHITESPACE)
     try:
         if not value:
             raise ValueError
@@ -186,7 +229,39 @@ def read(repo_root: Path, name: str) -> Coverage:
     loaded_filter = address_filter(
         repo_root, folder, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
     )
-    return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter)
+    try:
+        evidence = tuple(read_coverage(f"{source}_{table}"))
+    except psycopg2.Error as error:
+        raise BadInput(f"could not read ingestion provenance in {schema}: {' '.join(str(error).split())}") from None
+    settings = {}
+    paths = [folder / ".env", folder / ".env.example"]
+    if folder.parent.name == "chains":
+        paths.append(folder.parents[1] / ".env")
+    for path in reversed(paths):
+        settings.update(source_env_values(path))
+    settings.update(os.environ)
+    portal = settings.get("PORTAL_URL")
+    dataset_hash = hashlib.sha256(portal.encode()).hexdigest() if portal else ""
+    pool_start = settings.get("POOLS_START_BLOCK")
+    entry = next(entry for entry in read_sources((repo_root / SOURCES_FILE).read_text())
+                 if (entry.name, entry.table) == (source, table))
+    contract = entry.coverage or {}
+    contract_settings = dict(contract.get("defaults", {}))
+    if pool_start:
+        contract_settings["POOLS_START_BLOCK"] = parse_start_block(pool_start, "POOLS_START_BLOCK")
+    expected = dict(version=1, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
+                    filter={key: sorted({value.lower() for value in values}) for key, values in loaded_filter.items()},
+                    unrestricted=contract.get("unrestricted", []), settings=contract_settings)
+    if settings.get("SOURCE_BACKFILL_ID"):
+        expected["backfill"] = settings["SOURCE_BACKFILL_ID"]
+    try:
+        tracked, current_cursor = read_configuration_cursor(f"{source}_{table}", expected)
+    except psycopg2.Error as error:
+        raise BadInput(f"could not read the configuration cursor in {schema}: {' '.join(str(error).split())}") from None
+    if tracked:
+        cursor = current_cursor
+    return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
+                    evidence, dataset_hash, contract_settings)
 
 
 def run(repo_root: Path, name: str | None) -> int:

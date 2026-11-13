@@ -2,11 +2,13 @@
 -- its chain's source read. That block is the source's Pipes cursor in _sync, which keeps moving when no
 -- feed posts, so feeds that all stop at once still show up. A feed with no round at all counts from the
 -- chain's first round.
+-- Raw prices retain every generation. Use their furthest observed horizon for this freshness warning;
+-- this is not the current configuration's coverage certificate (which bj coverage reports separately).
 {{ config(severity='warn') }}
 with cursors as (
-    select id, max("current_timestamp") as read_to
+    select regexp_replace(id, '_[0-9a-f]{24}$', '') as id, max("current_timestamp") as read_to
     from "{{ env_var('RAW_SCHEMA', 'raw') }}"._sync
-    group by id
+    group by regexp_replace(id, '_[0-9a-f]{24}$', '')
 ),
 
 feeds as (

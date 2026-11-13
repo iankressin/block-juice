@@ -64,6 +64,7 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
 export const polygonPolymarketCtfExchangeV2: StreamSource<ExchangeEnv> = {
   name: "polygon",
   table: "polymarket_ctf_exchange_v2",
+  coverage: { unrestricted: ["wallets"] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

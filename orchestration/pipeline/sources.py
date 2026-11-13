@@ -22,6 +22,7 @@ class SourceEntry:
     # For a package that loads one table on several chains: the chain's folder in the package,
     # chains/<name>, which holds its .env.example and addresses.json. Empty for any other package.
     settings: str = ""
+    coverage: dict | None = None
 
     def folder(self, repo_root: Path) -> Path:
         """The folder with this source's .env, .env.example and addresses.json."""
@@ -33,12 +34,20 @@ def read_sources(text: str) -> list[SourceEntry]:
     try:
         entries = [SourceEntry(**entry) for entry in json.loads(text)]
     except (json.JSONDecodeError, TypeError) as error:
-        raise BadInput(f"{SOURCES_FILE} must be a list of {{name, table, package[, settings]}} objects: {error}") from None
+        raise BadInput(f"{SOURCES_FILE} must be a list of {{name, table, package[, settings, coverage]}} objects: {error}") from None
     for entry in entries:
         if not all(isinstance(value, str) and value for value in (entry.name, entry.table, entry.package)):
             raise BadInput(f"{SOURCES_FILE} has an entry whose name, table or package is not a string: {entry}")
         if not isinstance(entry.settings, str):
             raise BadInput(f"{SOURCES_FILE} has an entry whose settings is not a string: {entry}")
+        if entry.coverage is not None:
+            contract = entry.coverage
+            if (not isinstance(contract, dict) or not isinstance(contract.get("unrestricted"), list)
+                    or not all(isinstance(key, str) for key in contract["unrestricted"])
+                    or not isinstance(contract.get("defaults", {}), dict)
+                    or not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                               for value in contract.get("defaults", {}).values())):
+                raise BadInput(f"{SOURCES_FILE} has an invalid coverage contract for {entry.name}.{entry.table}")
     pairs = [(entry.name, entry.table) for entry in entries]
     repeated = sorted({pair for pair in pairs if pairs.count(pair) > 1})
     if repeated:

@@ -22,6 +22,8 @@ def repo(tmp_path, monkeypatch):
     """A repo with one stream source and one call source, each in a package that loads several chains."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     monkeypatch.delenv("START_BLOCK", raising=False)
+    monkeypatch.setattr(coverage, "read_coverage", lambda source_table: [])
+    monkeypatch.setattr(coverage, "read_configuration_cursor", lambda source_table, config: (False, None))
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
     for entry, env in ((TRANSFERS, "START_BLOCK=100\n"), (BALANCES, "BLOCK_NUMBER=latest\n")):
         folder = tmp_path / "ingestion" / "sources" / entry["package"] / entry.get("settings", "")
@@ -70,8 +72,8 @@ def test_process_start_block_wins_over_both_files_and_changes_coverage(repo, mon
 
     read = coverage.read(repo, "ethereum.erc20_transfers")
     assert (read.start_block, read.start_block_file) == (200, "environment")
-    assert read.gaps((100, 150), {}) == ["START_BLOCK 200 is after 100"]
-    assert read.to_json()["covered"] == [200, 300]
+    assert "no verified ingestion contract" in read.gaps((100, 150), {})[0]
+    assert read.to_json()["covered"] is None
 
 
 @pytest.mark.parametrize("value", ["", "latest", "-1", "1.5", "1_0", "9007199254740992"])
@@ -141,7 +143,7 @@ def test_a_key_with_one_address_reads_as_a_list_of_one(repo, monkeypatch):
 
     read = coverage.read(repo, "ethereum.erc20_transfers")
     assert read.filter == {"token": [USDC], "wallets": [WALLET]}
-    assert read.gaps((100, 100), {"token": [USDC.lower()]}) == ["no run has saved a cursor"]
+    assert "no verified ingestion contract" in read.gaps((100, 100), {"token": [USDC.lower()]})[0]
 
 
 def test_a_key_that_holds_neither_an_address_nor_a_list_of_them_is_bad_input(repo, monkeypatch):
@@ -186,7 +188,10 @@ def test_prints_each_stream_source_with_its_blocks_and_filter(repo, monkeypatch,
             "start_block_file": "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example",
             "cursor": 180,
             "filter": {"wallets": [WALLET], "tokens": [USDC]},
-            "covered": [100, 180],
+            "covered": None,
+            "provenance": "unverified",
+            "verified_ranges": [],
+            "generations": [],
         }
     ]
 
@@ -255,3 +260,75 @@ def test_explicit_empty_wallets_do_not_cover_a_requested_wallet():
     assert read.gaps((100, 180), {"wallets": [WALLET]}) == [
         f"wallets not in addresses.json: {WALLET}"
     ]
+
+
+def evidence(first, last, filters=None, verified=True):
+    return {"first": first, "last": last, "verified": verified, "config": {
+        "version": 1, "source": "ethereum", "table": "erc20_transfers", "startBlock": first,
+        "datasetHash": "dataset", "filter": filters or {"tokens": [USDC.lower()]},
+        "unrestricted": ["wallets"], "settings": {},
+    }}
+
+
+def test_committed_contract_not_edited_files_establishes_coverage():
+    read = replace(loaded(), evidence=(evidence(100, 180),), dataset_hash="dataset")
+    assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
+    changed = replace(read, filter={"tokens": [UNI]})
+    assert changed.covered is None
+    assert changed.gaps((100, 180), {})
+    restored = replace(changed, evidence=read.evidence + (evidence(100, 180, {"tokens": [UNI]}),))
+    assert restored.gaps((100, 180), {}) == []
+
+
+def test_legacy_cursor_never_certifies_its_current_config():
+    read = replace(loaded(), evidence=())
+    assert read.cursor == 180
+    assert read.covered is None
+    assert read.to_json()["provenance"] == "unverified"
+    assert read.gaps((100, 180), {})
+
+
+def test_separate_generations_can_close_gaps_but_cannot_invent_them():
+    read = replace(loaded(), evidence=(evidence(100, 120), evidence(122, 180)))
+    assert read.covered is None
+    assert read.gaps((100, 180), {})
+    read = replace(read, evidence=read.evidence + (evidence(121, 121),))
+    assert read.covered == (100, 180)
+    assert read.gaps((100, 180), {}) == []
+
+
+def test_restricted_wallet_history_does_not_cover_removing_the_restriction():
+    read = replace(loaded(), filter={"tokens": [USDC]}, evidence=(
+        evidence(100, 180, {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]}),))
+    assert read.covered is None
+    assert read.gaps((100, 180), {})
+    assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
+
+
+def test_changed_dataset_and_unverified_factory_cache_are_not_coverage():
+    read = replace(loaded(), evidence=(evidence(100, 180),), dataset_hash="another-dataset")
+    assert read.covered is None
+    read = replace(read, dataset_hash="dataset", evidence=(evidence(100, 180, verified=False),))
+    assert read.covered is None
+
+
+def test_cursor_follows_the_effective_generation_not_the_legacy_source_id(repo, monkeypatch):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: 999)
+    expected = []
+    def current(source_table, config):
+        expected.append(config)
+        return True, 125
+    monkeypatch.setattr(coverage, "read_configuration_cursor", current)
+    read = coverage.read(repo, "ethereum.erc20_transfers")
+    assert read.cursor == 125
+    assert expected[0]["filter"]["tokens"] == [USDC.lower()]
+    monkeypatch.setattr(coverage, "read_configuration_cursor", lambda source_table, config: (True, None))
+    assert coverage.read(repo, "ethereum.erc20_transfers").cursor is None
+
+
+def test_earlier_pool_discovery_requires_a_generation_that_read_that_history():
+    item = evidence(100, 180)
+    item["config"]["settings"] = {"POOLS_START_BLOCK": 50}
+    read = replace(loaded(), evidence=(item,), settings={"POOLS_START_BLOCK": 1})
+    assert read.covered is None
+    assert read.gaps((100, 180), {})

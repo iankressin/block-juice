@@ -48,7 +48,8 @@ function transfers(url: string, to: number, maxBlocksPerRun?: number, broken = (
   return {
     name: "test",
     table: "transfers",
-    env: z.object({}),
+    env: z.object({ START_BLOCK: z.number().default(1), PORTAL_URL: z.string().default(url) }),
+    coverage: { unrestricted: [] },
     maxBlocksPerRun,
     stream: async () =>
       evmPortalStream({
@@ -107,6 +108,8 @@ test("a batch that fails to load commits neither its rows nor its block, so the 
   process.exitCode = undefined;
   assert.deepEqual(await loaded(db), ["1", "2"]);
   assert.equal(await cursor(db), "2");
+  assert.deepEqual((await db.query("select from_block, to_block, verified from raw._coverage")).rows,
+    [{ from_block: 1, to_block: 2, verified: true }], "failed batches commit neither data nor provenance");
 
   broken = 0;
   await runSource(transfers(url, 4, 100, () => broken), warehouse);
@@ -239,8 +242,94 @@ test("a failure after data handling but before commit reports no durable rows or
   process.exitCode = undefined;
   Object.defineProperty(db, "exec", { configurable: true, value: original });
   assert.deepEqual(await loaded(db), []);
+  assert.deepEqual((await db.query("select * from raw._coverage")).rows, [], "coverage rolled back with the rows");
+  assert.equal(await cursor(db), null, "the failed transaction did not advance its cursor");
   const { rows } = await db.query<{ records_written: number; load_seconds: number }>(
     "select records_written, load_seconds from ops.ingestion_runs");
   assert.equal(rows[0]!.records_written, 0, "a successful onData is not a committed batch");
   assert.equal(rows[0]!.load_seconds, 0);
+});
+
+test("a changed contract backfills into existing rows under a new cursor and resumes that generation", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const source = transfers(await chain(t, 4), 4);
+  await runSource(source, warehouse);
+  source.coverage = { unrestricted: ["wallets"] };
+  await runSource(source, warehouse);
+  await runSource(source, warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4"]);
+  const runs = await db.query<{ records_written: number }>("select records_written from ops.ingestion_runs order by started_at");
+  assert.deepEqual(runs.rows.map((row) => row.records_written), [4, 4, 0]);
+  const configs = await db.query("select cursor_id from raw._source_configurations");
+  assert.equal(configs.rows.length, 2, "both generation cursors remain available");
+  assert.equal((await db.query("select distinct fingerprint from raw._coverage")).rows.length, 2);
+});
+
+test("adopting a legacy cursor verifies only subsequent blocks and never replays existing data", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const url = await chain(t, 4);
+  const legacy = transfers(url, 2);
+  delete legacy.coverage;
+  await runSource(legacy, warehouse);
+  await runSource(transfers(url, 4), warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual((await db.query("select from_block, to_block from raw._coverage")).rows,
+    [{ from_block: 3, to_block: 4 }]);
+  const runs = await db.query<{ records_written: number }>("select records_written from ops.ingestion_runs order by started_at");
+  assert.deepEqual(runs.rows.map((row) => row.records_written), [2, 2]);
+});
+
+test("an explicit backfill proves legacy history without deleting rows or the original cursor", async (t) => {
+  useBlockCap(t, undefined);
+  const saved = process.env.SOURCE_BACKFILL_ID;
+  t.after(() => { if (saved === undefined) delete process.env.SOURCE_BACKFILL_ID; else process.env.SOURCE_BACKFILL_ID = saved; });
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const source = transfers(await chain(t, 4), 4);
+  delete source.coverage;
+  await runSource(source, warehouse);
+  source.coverage = { unrestricted: [] };
+  process.env.SOURCE_BACKFILL_ID = "rebuild-history";
+  await runSource(source, warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "3", "4"]);
+  assert.equal(await cursor(db), "4");
+  assert.deepEqual((await db.query("select from_block, to_block from raw._coverage")).rows,
+    [{ from_block: 1, to_block: 4 }]);
+});
+
+test("empty event batches still commit their verified block interval", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const source = transfers(await chain(t, 4), 4);
+  const stream = source.stream.bind(source);
+  source.stream = async (env) => (await stream(env)).pipe(() => []);
+  await runSource(source, warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), []);
+  assert.equal(await cursor(db), "4");
+  assert.deepEqual((await db.query("select from_block, to_block from raw._coverage")).rows,
+    [{ from_block: 1, to_block: 4 }]);
+});
+
+test("configured gaps between query ranges are never certified as ingested blocks", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const url = await chain(t, 6);
+  const source = transfers(url, 6);
+  source.stream = async () => evmPortalStream({
+    id: "test", portal: new PortalClient({ url, finalized: true, maxBytes: 1 }), logger: "silent",
+    outputs: Object.fromEntries([[1, 2], [5, 6]].map(([from, to], i) => [String(i), evmEventDecoder({
+      range: { from: from!, to: to! }, contracts: [token], events: { transfers: commonAbis.erc20.events.Transfer },
+    }).pipe(({ transfers }) => transfers.map((event) => ({
+      id: String(event.block.number), callId: String(event.block.number), data: { block: event.block.number },
+    })))])),
+  });
+  await runSource(source, warehouse);
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual(await loaded(db), ["1", "2", "5", "6"]);
+  assert.deepEqual((await db.query("select from_block, to_block from raw._coverage order by from_block")).rows,
+    [{ from_block: 1, to_block: 2 }, { from_block: 5, to_block: 6 }]);
 });
