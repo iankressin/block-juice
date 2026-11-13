@@ -22,9 +22,40 @@ Adding coverage doesn't mean building a platform. For another wallet list, EVM c
 
 When something breaks, you can see it. `bj doctor` checks your env and services before you start debugging. Grafana and the `ops.*` run log show ingestion and dbt side by side. The library keeps failed calls as dead letters instead of dropping them.
 
+## Quick start
+
+You need Node 24 and [pnpm](https://pnpm.io) (both pinned in `mise.toml`), [uv](https://docs.astral.sh/uv/) and Docker.
+
+First, set up the checkout:
+
+```sh
+uv run --project orchestration bj install
+```
+
+It copies each missing `.env` from its `.env.example`, installs the Node packages in `ingestion/` and runs `dbt parse`. It never overwrites an `.env` and starts nothing. `uv run` installs the Python packages before `bj` runs.
+
+Then start everything:
+
+```sh
+uv run --project orchestration bj dev
+```
+
+`bj dev` does four things, in order:
+
+1. Runs `bj install` again, which is safe to repeat.
+2. Starts the Docker stack with `docker compose up -d`: the Postgres warehouse, eRPC, Dshackle, Prometheus, the Pushgateway and Grafana. It returns once the warehouse is set up.
+3. Runs the `bj doctor` checks and stops if any of them fails.
+4. Starts `dagster dev` in `orchestration/`, with `.env` loaded, at http://localhost:3000.
+
+It stops at once if port 3000 is taken, since that usually means Dagster is already running. Ctrl-C stops Dagster and leaves the stack running. `docker compose down` stops the stack.
+
+When Dagster is up, open http://localhost:3000, configure the sources for the wallets and tokens you need, and materialize the matching pipeline. For recurring runs, open **Automation → Schedules**, turn on that pipeline's schedule, and check its next tick. Schedules start stopped; a manual materialization does not enable them. Then ask a question with `/bj`, or read [Ask a question](docs/architecture.md#ask-a-question) for the `bj` commands behind it. If something looks wrong, run `bj doctor` before anything else.
+
+New installs set `LOCAL_BIND_ADDRESS=127.0.0.1` in the root `.env`, keeping warehouse and RPC host ports local. Existing `.env` files without this setting retain their previous binding; add it to opt into loopback. Set `LOCAL_BIND_ADDRESS=0.0.0.0` when remote clients need access, with restricted network access and non-example credentials. See [Local setup](docs/architecture.md#local-setup-detail) for configuration and port changes.
+
 ## What
 
-Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<source>_<table>` it was built from, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC.
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<source>_<table>` it was built from, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule.
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
@@ -353,40 +384,11 @@ TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagste
 
 The code is ordinary software engineering: typed sources, tests, schedules and docs a teammate can follow. [docs/architecture.md](docs/architecture.md) has the details.
 
-## Quick start
-
-You need Node 24 and [pnpm](https://pnpm.io) (both pinned in `mise.toml`), [uv](https://docs.astral.sh/uv/) and Docker.
-
-First, set up the checkout:
-
-```sh
-uv run --project orchestration bj install
-```
-
-It copies each missing `.env` from its `.env.example`, installs the Node packages in `ingestion/` and runs `dbt parse`. It never overwrites an `.env` and starts nothing. `uv run` installs the Python packages before `bj` runs.
-
-Then start everything:
-
-```sh
-uv run --project orchestration bj dev
-```
-
-`bj dev` does four things, in order:
-
-1. Runs `bj install` again, which is safe to repeat.
-2. Starts the Docker stack with `docker compose up -d`: the Postgres warehouse, eRPC, Dshackle, Prometheus, the Pushgateway and Grafana. It returns once the warehouse is set up.
-3. Runs the `bj doctor` checks and stops if any of them fails.
-4. Starts `dagster dev` in `orchestration/`, with `.env` loaded, at http://localhost:3000.
-
-It stops at once if port 3000 is taken, since that usually means Dagster is already running. Ctrl-C stops Dagster and leaves the stack running. `docker compose down` stops the stack.
-
-When Dagster is up, open http://localhost:3000 and materialize the assets you need. Then ask a question with `/bj`, or read [Ask a question](docs/architecture.md#ask-a-question) to see what the skill does and the `bj` commands behind it. If something looks wrong, run `bj doctor` before anything else.
-
 ## How you use it
 
 1. Set up once with `bj install`, start the stack and Dagster with `bj dev`, then open the Dagster UI.
 2. Point sources at the wallets and tokens you care about, in each source's `addresses.json`. A source that covers several chains keeps one per chain under `chains/<chain>/`.
-3. Materialize a pipeline (balances, transfers, dex or labels) on a schedule you choose.
+3. Materialize a pipeline (balances, transfers, dex or labels), then enable its schedule under **Automation → Schedules** if you want recurring runs.
 4. Ask the business question in Claude Code. You get an answer folder with its checks, and a report if you want one.
 5. When the brief changes, add a source, a chain or [your own pipeline](#add-your-own-pipeline). The [skill](#claude-code-skill) can walk you through any of these.
 
@@ -413,7 +415,8 @@ The easiest way to build one is to ask the [Claude Code skill](#claude-code-skil
 1. Add mart models under `transformation/models/marts/<pipeline>/`, and any models only that pipeline needs under `transformation/models/intermediate/<pipeline>/`. Staging stays per source under `staging/<source>/`.
 2. Register the name and schedule in `PIPELINES` in `orchestration/pipeline/schedules.py`.
 3. If you need new raw data first, add a source (`bj new-source …`, see [Add a source](docs/architecture.md#add-a-source)), then point the mart at its staging models.
-4. Materialize once in Dagster (or `bj run <pipeline>`) and confirm the tests pass. The schedule runs it from then on.
+4. Materialize once in Dagster (or `bj run <pipeline>`) and confirm the tests pass.
+5. Open **Automation → Schedules** in Dagster, enable the pipeline's schedule and check its next tick. Keep Dagster running for the scheduled runs.
 
 Orchestration tests fail if an asset belongs to no scheduled pipeline, so nothing ships that never runs. [Add a pipeline](docs/architecture.md#add-a-pipeline) has the full steps.
 

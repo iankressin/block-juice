@@ -16,6 +16,7 @@ WAREHOUSE_USER=elt
 WAREHOUSE_PASSWORD=elt
 WAREHOUSE_DB=warehouse
 RAW_SCHEMA=raw
+LOCAL_BIND_ADDRESS=127.0.0.1
 ERPC_PORT=4000
 DSHACKLE_HEALTH_PORT=8082
 PUSHGATEWAY_URL=http://localhost:9091
@@ -40,13 +41,13 @@ START_BLOCK=100
 """
 PACKAGES = {"ethereum-eth-balances": BALANCES_EXAMPLE, "ethereum-erc20-transfers": TRANSFERS_EXAMPLE}
 ROOT_KEYS = ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD", "WAREHOUSE_DB", "RAW_SCHEMA",
-             "ERPC_PORT", "DSHACKLE_HEALTH_PORT", "PUSHGATEWAY_URL")
+             "LOCAL_BIND_ADDRESS", "ERPC_PORT", "DSHACKLE_HEALTH_PORT", "PUSHGATEWAY_URL")
 
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     """A repo with a root .env.example, two source packages with their .env.example and a mise.toml, and no
-    .env anywhere. The root keys are set in the environment, as a shell that sourced .env would have them."""
+    .env anywhere. Connection settings are present; optional service ports load from the root file."""
     (tmp_path / ".env.example").write_text(ROOT_EXAMPLE)
     (tmp_path / "mise.toml").write_text('[tools]\nnode = "24"\npnpm = "10.17.0"\n')
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
@@ -58,7 +59,9 @@ def repo(tmp_path, monkeypatch):
         entries.append({"name": "ethereum", "table": package.removeprefix("ethereum-").replace("-", "_"), "package": package})
     (tmp_path / SOURCES_FILE).write_text(json.dumps(entries))
     for key in ROOT_KEYS:
-        monkeypatch.setenv(key, "x")
+        monkeypatch.delenv(key, raising=False)
+    for key in doctor.CONNECT_ENV:
+        monkeypatch.setenv(key, "5432" if key == "WAREHOUSE_PORT" else "x")
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", tmp_path)
     return tmp_path
 
@@ -128,6 +131,38 @@ def services(monkeypatch):
 
 def lines(capsys) -> list[str]:
     return capsys.readouterr().out.splitlines()
+
+
+def test_root_settings_prefers_process_values_to_the_root_file(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("ERPC_PORT=4000\nDSHACKLE_HEALTH_PORT=8082\n")
+    monkeypatch.setenv("ERPC_PORT", "4100")
+    monkeypatch.delenv("DSHACKLE_HEALTH_PORT", raising=False)
+
+    settings = doctor.root_settings(tmp_path)
+
+    assert doctor.port_of(settings, "ERPC_PORT", 4000) == 4100
+    assert doctor.port_of(settings, "DSHACKLE_HEALTH_PORT", 8082) == 8082
+
+
+def test_root_settings_uses_process_values_absent_from_the_file(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("WAREHOUSE_HOST=localhost\n")
+    monkeypatch.setenv("ERPC_PORT", "4100")
+
+    assert doctor.port_of(doctor.root_settings(tmp_path), "ERPC_PORT", 4000) == 4100
+
+
+def test_empty_process_port_uses_the_compose_default_not_the_file(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("ERPC_PORT=4100\n")
+    monkeypatch.setenv("ERPC_PORT", "")
+
+    assert doctor.port_of(doctor.root_settings(tmp_path), "ERPC_PORT", 4000) == 4000
+
+
+def test_root_settings_falls_back_to_example_without_a_root_env(tmp_path, monkeypatch):
+    (tmp_path / ".env.example").write_text("ERPC_PORT=4200\n")
+    monkeypatch.delenv("ERPC_PORT", raising=False)
+
+    assert doctor.port_of(doctor.root_settings(tmp_path), "ERPC_PORT", 4000) == 4200
 
 
 def test_doctor_fails_without_root_env(repo, services, capsys):
@@ -227,7 +262,7 @@ def test_doctor_root_env_may_leave_out_what_compose_and_dbt_default(repo, servic
     with_envs(repo)
     (repo / ".env").write_text("".join(
         line for line in ROOT_ENV.splitlines(keepends=True)
-        if not line.startswith(("ERPC_PORT", "DSHACKLE_HEALTH_PORT", "PUSHGATEWAY_URL"))
+        if not line.startswith(("LOCAL_BIND_ADDRESS", "ERPC_PORT", "DSHACKLE_HEALTH_PORT", "PUSHGATEWAY_URL"))
     ))
     main(["doctor"])
     assert "PASS  .env sets every required key" in lines(capsys)
@@ -270,6 +305,20 @@ def test_doctor_ports_come_from_the_root_env_and_closed_ones_warn(repo, services
     assert "WARN  port 4001 (erpc metrics) is closed; is docker compose up?" in out
     assert "WARN  port 3000 (dagster) is closed; is docker compose up?" in out
     assert len([line for line in out if line.startswith(("PASS  port", "WARN  port"))]) == 9
+
+
+def test_doctor_checks_the_process_port_override(repo, services, monkeypatch, capsys):
+    with_envs(repo)
+    monkeypatch.setenv("ERPC_PORT", "4200")
+    services.open_ports = {4200}
+    services.statuses = {"http://localhost:4200/healthcheck": 200}
+
+    main(["doctor"])
+
+    out = lines(capsys)
+    assert "PASS  port 4200 (erpc) is open" in out
+    assert "PASS  erpc is healthy at http://localhost:4200/healthcheck" in out
+    assert "http://localhost:4000/healthcheck" not in services.requested
 
 
 def test_doctor_warehouse_fails_when_connect_fails(repo, services, capsys):

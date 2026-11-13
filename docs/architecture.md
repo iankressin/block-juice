@@ -103,7 +103,13 @@ uv run --project orchestration bj dev
 
 `uv run --project orchestration bj doctor` checks the setup: the env files and their keys, the ports, the warehouse, eRPC and Dshackle, and the tool versions.
 
-Open http://localhost:3000 and materialize all assets.
+Open http://localhost:3000, configure the sources you need, and materialize the matching pipeline. For recurring runs, open **Automation → Schedules**, enable its schedule and check the next tick. Schedules start stopped. A manual materialization does not enable them, and Dagster must stay running for their ticks.
+
+New installs copy `LOCAL_BIND_ADDRESS=127.0.0.1` from `.env.example`, binding the warehouse, eRPC and Dshackle host ports to loopback. `bj install` never rewrites an existing `.env`: if it has no bind setting, Compose preserves the previous all-interface binding. Add `LOCAL_BIND_ADDRESS=127.0.0.1` to opt into loopback, or set `0.0.0.0` for intentional remote clients, then run `docker compose up -d`. Restrict network access and replace example credentials before exposing those services. Service names and container ports stay unchanged. Grafana, Prometheus, Pushgateway and Dshackle health ports stay bound to loopback.
+
+Shell settings take precedence over the root `.env`; `bj doctor` uses that same precedence for port and health checks. An empty optional port setting selects Compose's default port. Doctor still checks that the `.env` files themselves contain their required keys, so each checkout remains reproducible without shell-only credentials.
+
+Changing a published port does not rewrite source URLs. If you change `ERPC_PORT`, update the `EVM_RPC_URL` values that point at the local proxy in the relevant `chains/<chain>/.env`, and `SOLANA_RPC_URL` in Solana source `.env` files. If you change `DSHACKLE_PORT`, update `DSHACKLE_URL` in the Bitcoin source `.env`. Keep each URL's existing path and chain id. When moving `PUSHGATEWAY_PORT`, also update the `PUSHGATEWAY_URL` values used by your ingestion processes. Run `bj doctor` after port changes; its health checks verify the proxies, while a source's own URL still determines where that source connects.
 
 In `ingestion/`, a package imports another by name (`import { runSource } from "@ingestion/lib"`). Code for one chain comes from that chain's subpath: `import { connect } from "@ingestion/lib/evm"`. Inside a package, import its own files by their path from its `src`, with the `.ts` extension: `import { fetchBalances } from "#src/balances.ts"`. Each package defines `#src/` in the `imports` field of its `package.json`. Packages export their `.ts` source directly, so there is no build step; `pnpm typecheck` at `ingestion/` checks every package.
 
@@ -213,6 +219,7 @@ A pipeline is the models in `transformation/models/marts/<pipeline>/` and every 
 
 1. Add the pipeline's output models to `transformation/models/marts/<pipeline>/`, and any models that only it reads to `transformation/models/intermediate/<pipeline>/`. Staging models stay in `staging/<source>/`, because any pipeline can read them.
 2. Add the pipeline's name and cron schedule to `PIPELINES` in `orchestration/pipeline/schedules.py`.
+3. Materialize the pipeline once and confirm its checks pass. In Dagster, open **Automation → Schedules**, enable its schedule and verify the next tick. Creating a schedule or manually materializing the pipeline does not enable it.
 
 If the pipeline reads a new source, also follow [Add a source](#add-a-source). Two pipelines that read the same source each run it. The orchestration tests fail when an asset belongs to no scheduled pipeline.
 

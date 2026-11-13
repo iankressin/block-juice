@@ -65,7 +65,7 @@ PORTS = (*COMPOSE_PORTS, ("dagster", None, DAGSTER_PORT))
 # Root keys that docker compose (the ports and MONITOR_PASSWORD) and dbt (DBT_SCHEMA, in
 # transformation/profiles.yml) default when unset. Not WAREHOUSE_PORT: dbt and bj read it with no default.
 ROOT_OPTIONAL_KEYS = (
-    OPTIONAL_KEYS | {key for _, key, _ in PORTS if key} | {"MONITOR_PASSWORD", "DBT_SCHEMA"}
+    OPTIONAL_KEYS | {key for _, key, _ in PORTS if key} | {"MONITOR_PASSWORD", "DBT_SCHEMA", "LOCAL_BIND_ADDRESS"}
 ) - set(REQUIRED_ENV)
 # The root settings pipeline.warehouse.connect reads.
 CONNECT_ENV = tuple(name for name in REQUIRED_ENV if name.startswith("WAREHOUSE_"))
@@ -152,11 +152,18 @@ def check_envs(repo_root: Path, copy: bool) -> list[Check]:
 
 
 def root_settings(repo_root: Path) -> dict[str, str | None]:
-    """The root settings in force: .env, else .env.example, which holds the defaults."""
+    """Root settings with process values taking precedence, as in the CLI and docker compose.
+
+    Keep empty process values: compose's ${NAME:-default} and port_of both use the default for them.
+    The example is a diagnostic fallback only when the root .env does not exist.
+    """
+    settings: dict[str, str | None] = {}
     for name in (".env", ".env.example"):
         if (repo_root / name).is_file():
-            return dotenv_values(repo_root / name)
-    return {}
+            settings = dict(dotenv_values(repo_root / name))
+            break
+    keys = settings.keys() | {key for _, key, _ in COMPOSE_PORTS}
+    return {**settings, **{key: os.environ[key] for key in keys if key in os.environ}}
 
 
 def port_of(settings: dict[str, str | None], key: str | None, default: int) -> int:
