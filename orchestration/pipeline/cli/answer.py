@@ -12,12 +12,14 @@ from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import psycopg2
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
+from pipeline.answer_artifacts import publish
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
 from pipeline.cli.coverage import Coverage
 from pipeline.cli.question import Question, SourceInput, WindowKey, load_question
@@ -268,10 +270,17 @@ def compile_analyses(project: Path, names: Sequence[str], blocks: dict[str, tupl
     """The manifest after `dbt compile`, and the unique id of each analysis. The analyses read the window's
     blocks through the in_window macro, from var('window')."""
     variables = ("--vars", json.dumps({"window": blocks})) if blocks else ()
-    result = dbt(project, "compile", "--select", *names, *variables)
-    if not result.success:
-        raise BadInput(f"dbt compile failed: {dbt_error(result)}")
-    manifest = json.loads((project / "target" / "manifest.json").read_text())
+    # Each invocation owns its artifacts: bj run or another answer can parse with different
+    # variables concurrently without replacing the manifest this invocation consumes.
+    with TemporaryDirectory(prefix="bj-answer-") as temporary:
+        target = Path(temporary)
+        result = dbt(
+            project, "compile", "--select", *names, *variables,
+            "--target-path", str(target), "--log-path", str(target / "logs"),
+        )
+        if not result.success:
+            raise BadInput(f"dbt compile failed: {dbt_error(result)}")
+        manifest = json.loads((target / "manifest.json").read_text())
     analyses = {node["name"]: uid for uid, node in manifest["nodes"].items() if node["resource_type"] == "analysis"}
     for name in names:
         if name not in analyses:
@@ -427,25 +436,37 @@ def git(repo_root: Path, *args: str) -> str | None:
 
 
 def provenance(repo_root: Path) -> dict[str, Any]:
-    # answers/ is this command's own output, so it does not make the code that produced it dirty.
+    # Generated answers do not make the code dirty, but the authored question specifications do.
     status = git(repo_root, "status", "--porcelain", "--", ".", ":(exclude)answers")
+    questions = git(repo_root, "status", "--porcelain", "--", ":(glob)answers/*/question.yaml")
     return {
         "git_sha": git(repo_root, "rev-parse", "HEAD"),
-        "git_dirty": bool(status) if status is not None else None,
+        "git_dirty": bool(status or questions) if status is not None and questions is not None else None,
         "dbt_version": dbt_version,
     }
 
 
 def write_answer(folder: Path, results: Sequence[Result], document: dict[str, Any]) -> None:
-    results_dir = folder / "results"
-    shutil.rmtree(results_dir, ignore_errors=True)
-    results_dir.mkdir()
-    for result in results:
-        with open(results_dir / f"{result.analysis}.csv", "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file, lineterminator="\n")
-            writer.writerow(result.columns)
-            writer.writerows([cell_text(value) for value in row] for row in result.rows)
-    (folder / "answer.json").write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # Prepare every file before touching an existing answer. The previous narrative and reports
+    # belong to those previous results; retaining them beside new rows would misrepresent the answer.
+    with TemporaryDirectory(prefix=".answer-", dir=folder.parent) as temporary:
+        prepared = Path(temporary)
+        results_dir = prepared / "results"
+        results_dir.mkdir()
+        for result in results:
+            with open(results_dir / f"{result.analysis}.csv", "w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file, lineterminator="\n")
+                writer.writerow(result.columns)
+                writer.writerows([cell_text(value) for value in row] for row in result.rows)
+        (prepared / "answer.json").write_text(
+            json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        # This is the remote document's identity, not report content. Retain it so a later gdoc
+        # publication updates that document rather than creating a second one.
+        for state in (folder / "reports").glob("*.gdoc.json"):
+            (prepared / "reports").mkdir(exist_ok=True)
+            shutil.copy2(state, prepared / "reports" / state.name)
+        publish(folder, prepared)
 
 
 def run(repo_root: Path, slug: str, window_key: WindowKey = "window") -> int:
@@ -469,11 +490,14 @@ def run(repo_root: Path, slug: str, window_key: WindowKey = "window") -> int:
         question, datetime.now(timezone.utc), results, dead_letters, last_runs, checks, provenance(repo_root)
     )
     folder = repo_root / "answers" / slug
+    if window_key == "eval_window":
+        folder = folder / "eval"
     write_answer(folder, results, document)
 
     value = document["value"]
     print(f"value: {value if value is not None else 'none (the first analysis is not one row of one column)'}")
     for check in checks:
         print(f"{check.name}: {'passed' if check.passed else 'FAILED'} ({check.detail})")
-    print(f"wrote answers/{slug}/answer.json and {len(results)} CSV file(s) in answers/{slug}/results/")
+    relative = folder.relative_to(repo_root)
+    print(f"wrote {relative}/answer.json and {len(results)} CSV file(s) in {relative}/results/")
     return 0 if all(check.passed for check in checks) else 1

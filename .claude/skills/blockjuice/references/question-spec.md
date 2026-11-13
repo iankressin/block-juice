@@ -9,7 +9,7 @@
 | `definitions` | no | Each word that could be counted two ways, mapped to the reading you used. |
 | `alternatives` | no | Readings you passed over that would change the number. |
 | `window` | no | The time span: `from`, `to`, and the blocks from `bj blocks`. On one chain, `chain` plus `blocks: [from, to]`. On several chains, `blocks` maps each chain to its range, `{arbitrum: [from, to], base: [from, to]}`. Use `at: latest` for a question about now. History inputs need blocks on their chain. The analyses read the blocks through `{{ in_window('block_number', '<chain>') }}`, or `window_start('<chain>')` and `window_end('<chain>')` where a macro takes the bounds, never as numbers. |
-| `eval_window` | no | A slice of `window` in the same shape, for a check that loads less. `bj answer <slug> --eval` answers over it, and answer.json then says `eval: true`. A factory build puts its eval window here. |
+| `eval_window` | no | A slice of `window` in the same shape, for a check that loads less. `bj answer <slug> --eval` writes `eval/answer.json` and `eval/results/`, leaving the full answer intact; its JSON says `eval: true`. Record an evaluation check with `bj check <slug> --eval ...`. A factory build puts its eval window here. |
 | `inputs` | no | One entry per kind of data: `name`, `strategy` (`state` or `history`), and the `mart` that holds it. A history input names its `source` as `<chain>.<table>`, and may narrow it with `filter`, keyed like the source's `addresses.json`, with every address quoted. `bj answer` checks coverage for it. |
 | `marts` | no | The marts the analyses read. |
 | `analyses` | no | The dbt analyses to run, headline first. Defaults to the slug with `_` for `-`. |

@@ -142,6 +142,19 @@ Open the repo in Claude Code and ask a question about chain data, or type `/bj <
 - `results/` holds one CSV per analysis.
 - `reports/` holds what `bj report` builds: XLSX, PDF and Word files, and the id of the answer's Google Doc. Git ignores it.
 
+Rerunning `bj answer` prepares the new JSON and CSVs before replacing the current answer. It keeps the
+replaced files, narrative and reports together in `previous/`, retaining one previous answer. Write a
+new `answer.md` before reporting the new results; the old narrative is not reused. Google Doc identity
+files stay available so a later `gdoc` report updates the same document. A failure while compiling,
+querying or preparing files leaves the current answer intact. A completed run with failed data checks
+still writes its results and exits 1, as before.
+
+`bj answer <slug> --eval` writes into `answers/<slug>/eval/`, leaving the full answer intact. Record
+checks for that run with `bj check <slug> --eval <name> <passed|failed> <detail>`. Normal `bj check` and
+`bj report` continue to use the full answer. Each answer compilation uses its own temporary dbt target,
+so concurrent commands cannot replace the compiled manifest it reads. This isolates compilation;
+it does not make the warehouse queries and dbt tests share one database snapshot.
+
 `answers/tracked-wallets-eth/` is an example. The skill reads state through the balance sources and history through stream sources, which load events over a range of blocks. When a question involves a protocol it doesn't know, it first writes the protocol's contracts, events and their meaning to `catalog/protocols/<name>/`, each proven on a real transaction. `catalog/protocols/uniswap/` is the first entry. Off-chain APIs that a source calls get an entry in `catalog/vendors/<name>/` the same way: the endpoints, limits and errors the source relies on, what each field means, and a proof table that rebuilds real replies from independent data. `catalog/vendors/binance/` and `catalog/vendors/coinbase/` cover the two candle sources. `.mcp.json` registers the SQD Portal MCP, which the skill uses to estimate a load and to cross-check a history answer.
 
 The skill runs every mechanical step through the `bj` CLI, whose long name is `blockjuice`. It lives in `orchestration/pipeline/cli/` and reads `.env` itself. Run it from the repo root:

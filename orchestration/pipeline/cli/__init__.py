@@ -50,7 +50,7 @@ def _blocks(args: argparse.Namespace) -> int:
 def _check(args: argparse.Namespace) -> int:
     from pipeline.cli import check
 
-    return check.run(REPO_ROOT, args.slug, args.name, args.status, " ".join(args.detail))
+    return check.run(REPO_ROOT, args.slug, args.name, args.status, " ".join(args.detail), evaluation=args.eval)
 
 
 def _coverage(args: argparse.Namespace) -> int:
@@ -107,7 +107,9 @@ def parser() -> argparse.ArgumentParser:
         "read, and writes answers/<slug>/results/ and answer.json. Exits 1 when a check fails.",
     )
     answer.add_argument("slug")
-    answer.add_argument("--eval", action="store_true", help="answer over question.yaml's eval_window, not its window")
+    answer.add_argument(
+        "--eval", action="store_true", help="answer over eval_window and write answers/<slug>/eval/"
+    )
     answer.set_defaults(run=_answer)
 
     blocks = commands.add_parser(
@@ -134,6 +136,7 @@ def parser() -> argparse.ArgumentParser:
     check.add_argument("name", help="such as cross_check; not one of the checks bj answer runs")
     check.add_argument("status", choices=("passed", "failed"))
     check.add_argument("detail", nargs="+", help="what the check compared, and what it found")
+    check.add_argument("--eval", action="store_true", help="record the check in answers/<slug>/eval/answer.json")
     check.set_defaults(run=_check)
 
     coverage = commands.add_parser(

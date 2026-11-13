@@ -15,10 +15,15 @@ NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 ANSWER_CHECKS = ("dbt_tests", "dead_letters", "freshness", "coverage")
 
 
-def run(repo_root: Path, slug: str, name: str, status: str, detail: str) -> int:
-    path = answer_dir(repo_root, slug) / "answer.json"
+def run(repo_root: Path, slug: str, name: str, status: str, detail: str, *, evaluation: bool = False) -> int:
+    folder = answer_dir(repo_root, slug)
+    if evaluation:
+        folder = folder / "eval"
+    path = folder / "answer.json"
+    label = path.relative_to(repo_root)
+    command = f"bj answer {slug}" + (" --eval" if evaluation else "")
     if not path.is_file():
-        raise BadInput(f"answers/{slug}/answer.json does not exist: run `bj answer {slug}` first")
+        raise BadInput(f"{label} does not exist: run `{command}` first")
     if not NAME.match(name):
         raise BadInput(f"check name {name!r} must match {NAME.pattern}")
     if name in ANSWER_CHECKS:
@@ -28,10 +33,10 @@ def run(repo_root: Path, slug: str, name: str, status: str, detail: str) -> int:
     try:
         answer = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
-        raise BadInput(f"answers/{slug}/answer.json is not valid JSON ({error}): run `bj answer {slug}` again") from None
+        raise BadInput(f"{label} is not valid JSON ({error}): run `{command}` again") from None
     checks = answer.get("checks") if isinstance(answer, dict) else None
     if not isinstance(checks, list) or not all(isinstance(c, dict) and isinstance(c.get("name"), str) for c in checks):
-        raise BadInput(f"answers/{slug}/answer.json has no checks list as bj answer writes it: run `bj answer {slug}` again")
+        raise BadInput(f"{label} has no checks list as bj answer writes it: run `{command}` again")
 
     check = {"name": name, "status": status, "detail": detail.strip()}
     names = [c["name"] for c in checks]

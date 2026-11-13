@@ -36,7 +36,7 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 
 - Seed: `transformation/seeds/reference/reference_<name>.csv`, where `<name>` is the slug with `_` for `-`. Registered in `_reference_seeds.yml` with a description naming the oracle, the window and the ticket.
 - Test: `transformation/tests/reference/<name>_matches_reference.sql`, tagged `reference`, built on the `reference_mismatches` macro.
-- `bj answer` does not run these tests. Run them with `dbt test --select tag:reference`. The build run records the verdict with `bj check <slug> reference_match`.
+- `bj answer` does not run these tests. Run them with `dbt test --select tag:reference`. The build run records the verdict in the evaluation answer with `bj check <slug> --eval reference_match`. When retrying an older ticket branch whose CLI lacks `check --eval`, the workflow detects that version and uses its root answer directory and plain `bj check` instead; the model's prompt names the detected directory.
 - CI seeds and compiles them but never runs them.
 
 ## What a human does

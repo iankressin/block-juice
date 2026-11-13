@@ -208,9 +208,12 @@ def test_rerun_replaces_results_and_changes_only_answered_at(tmp_path):
 
 
 def test_an_analysis_dbt_does_not_know_is_bad_input(tmp_path, monkeypatch):
-    (tmp_path / "target").mkdir()
-    (tmp_path / "target" / "manifest.json").write_text(json.dumps({"nodes": {}, "sources": {}}))
-    monkeypatch.setattr(answer, "dbt", lambda project, *args: SimpleNamespace(success=True))
+    def compile(project, *args):
+        target = Path(args[args.index("--target-path") + 1])
+        (target / "manifest.json").write_text(json.dumps({"nodes": {}, "sources": {}}))
+        return SimpleNamespace(success=True)
+
+    monkeypatch.setattr(answer, "dbt", compile)
     with pytest.raises(BadInput, match="write transformation/analyses/eth_total.sql"):
         answer.compile_analyses(tmp_path, ["eth_total"], {})
 
@@ -296,6 +299,8 @@ def history(tmp_path, offline, monkeypatch):
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "question.yaml").write_text(f"question: How much USDC moved?\nwindow: {window}\ninputs: {inputs}\n{extra}")
         code = answer.run(tmp_path, "usdc-flows", window_key)
+        if window_key == "eval_window":
+            folder = folder / "eval"
         checks = json.loads((folder / "answer.json").read_text())["checks"]
         return code, {c["name"]: (c["status"], c["detail"]) for c in checks}
 
@@ -580,13 +585,13 @@ def test_a_stream_input_needs_window_blocks(history):
 
 
 def test_the_window_reaches_dbt_compile_as_a_var_only_when_it_has_blocks(tmp_path, monkeypatch):
-    (tmp_path / "target").mkdir()
     manifest = {"nodes": {"analysis.t.usdc_flows": {"name": "usdc_flows", "resource_type": "analysis"}}, "sources": {}}
-    (tmp_path / "target" / "manifest.json").write_text(json.dumps(manifest))
     calls = []
 
     def dbt(project, *args):
         calls.append(args)
+        target = Path(args[args.index("--target-path") + 1])
+        (target / "manifest.json").write_text(json.dumps(manifest))
         return SimpleNamespace(success=True)
 
     monkeypatch.setattr(answer, "dbt", dbt)
@@ -595,10 +600,30 @@ def test_the_window_reaches_dbt_compile_as_a_var_only_when_it_has_blocks(tmp_pat
     flows, latest = calls
     assert flows[: flows.index("--vars")] == ("compile", "--select", "usdc_flows")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"window": {"ethereum": [100, 180], "base": [5, 9]}}
-    assert latest == ("compile", "--select", "usdc_flows")
+    assert latest[:latest.index("--target-path")] == ("compile", "--select", "usdc_flows")
 
 
 EVAL_SLICE = "eval_window: {chain: ethereum, blocks: [100, 180]}\n"
+
+
+def test_eval_answer_and_factory_check_leave_the_full_answer_unchanged(tmp_path, offline, monkeypatch):
+    from pipeline.cli import main
+
+    folder = write_question(tmp_path, extra=EVAL_SLICE)
+    offline(parked=0)
+    assert answer.run(tmp_path, "eth-total") == 0
+    before = (folder / "answer.json").read_bytes()
+    (folder / "answer.md").write_text("The full answer.")
+    assert answer.run(tmp_path, "eth-total", "eval_window") == 0
+    assert (folder / "answer.json").read_bytes() == before
+    assert (folder / "answer.md").read_text() == "The full answer."
+    evaluation = folder / "eval" / "answer.json"
+    assert json.loads(evaluation.read_text())["eval"] is True
+    monkeypatch.setattr("pipeline.cli.REPO_ROOT", tmp_path)
+    # The workflow's shell steps and legacy CLI branch are covered in test_factory_eval_compatibility.
+    assert main(["check", "eth-total", "--eval", "reference_match", "passed", "matches oracle"]) == 0
+    assert json.loads(evaluation.read_text())["checks"][-1]["name"] == "reference_match"
+    assert (folder / "answer.json").read_bytes() == before
 
 
 def test_an_eval_run_compiles_checks_coverage_and_records_the_eval_window(tmp_path, history):
@@ -606,7 +631,7 @@ def test_an_eval_run_compiles_checks_coverage_and_records_the_eval_window(tmp_pa
     assert code == 0
     assert history.compiled == [{"ethereum": (100, 180)}]
     assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
-    doc = json.loads((tmp_path / "answers" / "usdc-flows" / "answer.json").read_text())
+    doc = json.loads((tmp_path / "answers" / "usdc-flows" / "eval" / "answer.json").read_text())
     assert (doc["window"], doc["eval"]) == ({"chain": "ethereum", "blocks": [100, 180]}, True)
 
 

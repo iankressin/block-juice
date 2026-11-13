@@ -40,6 +40,10 @@ uv run --project orchestration bj answer <slug>
 
 It answers from the data already in the warehouse. It writes `results/<analysis>.csv` and `answer.json`, and exits 1 when a check fails. The `freshness` detail says when each input last loaded. [../references/checks.md](../references/checks.md) says what each failure means and what to do. Ship an answer with a failed check only when the user agrees, and say so in the answer.
 
+A rerun moves the old results, narrative and reports into `previous/` before publishing the new ones.
+Write a fresh `answer.md` in step 6; use the old narrative only as a reference. With `--eval`, the JSON
+and CSVs live under `eval/`, and any evaluation narrative belongs in `eval/answer.md`.
+
 When an input is history, cross-check one number once the checks pass. Count the same thing over the same blocks and filter with the Portal MCP, which reads Portal directly, without Pipes or the warehouse. Record it with `bj check <slug> cross_check passed "<what you compared, and both numbers>"`, or `failed` when they differ, and find out why before you write the answer.
 
 ## 5. Load newer data, only when needed
