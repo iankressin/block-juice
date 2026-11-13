@@ -1,0 +1,40 @@
+question: "What share of RN1's Polymarket fills were maker-side in Polygon blocks 96972629\u201396975028,\
+  \ and how do those fills break down?"
+definitions:
+  RN1: The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea.
+  maker-side: The wallet's order rested on the book, as recorded by the exchange OrderFilled role; this
+    is not the buy/sell direction.
+  window: The existing reference fixture covers Polygon blocks 96972629 through 96975028 on 2026-11-08.
+    This is a bounded reference window, not a claim to cover the full UTC day.
+  amounts: Whole shares and pUSD; fee_usdc is kept separate from the pre-fee traded amount.
+marts:
+- polymarket_wallet_fills
+- polymarket_markets
+analyses:
+- rn1_polymarket_fills_2026_11_08
+- rn1_polymarket_fills_2026_11_08_by_market
+- rn1_polymarket_fills_2026_11_08_by_phase
+- rn1_polymarket_fills_2026_11_08_by_role
+- rn1_polymarket_fills_2026_11_08_by_token
+- rn1_polymarket_fills_2026_11_08_pairs
+window:
+  chain: polygon
+  blocks: &id001
+  - 96972629
+  - 96975028
+eval_window:
+  chain: polygon
+  blocks: *id001
+inputs:
+- name: wallet_fills
+  strategy: history
+  source: polygon.polymarket_ctf_exchange_v2
+  filter:
+    wallets:
+    - '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
+- name: conditions
+  strategy: history
+  source: polygon.polymarket_ctf
+- name: market_metadata
+  strategy: state
+  source: polymarket.markets

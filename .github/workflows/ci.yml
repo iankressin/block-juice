@@ -140,6 +140,9 @@ jobs:
         run: uv run pytest
         working-directory: orchestration
 
+      - name: Synthetic raw-to-answer demo
+        run: uv run --project orchestration bj demo
+
   # The Docker stack: every compose file still parses with the defaults from infra/docker-compose.yml.
   infra:
     name: Infra (compose config)

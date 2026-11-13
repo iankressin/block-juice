@@ -134,6 +134,8 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every push to `main` and
 
 ## Ask a question
 
+The [analysis authoring guide](analysis-authoring.md) covers discovery, input contracts, SQL, validation and reports without an assistant. `bj questions` lists every supported bundle and its authored SQL. The [local demo](demo.md) exercises this workflow with synthetic data.
+
 Open the repo in Claude Code and ask a question about chain data, or type `/bj <question>` (`/blockjuice` also works). The blockjuice skill in `.claude/skills/blockjuice/` scopes the question, finds the marts that hold the data or builds them, writes a dbt analysis, checks the result and writes the answer to `answers/<slug>/`:
 
 - `question.yaml` says what the answer counts and over which data.

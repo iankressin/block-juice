@@ -1,0 +1,35 @@
+question: Which wallets and directed wallet pairs account for the configured token transfer graph?
+definitions:
+  token: 'UNI by default: the token mapping, decimals and inclusive chain block windows in transformation/dbt_project.yml
+    vars.token. Override the complete token mapping together when following another asset.'
+  amounts: Whole tokens after applying the configured decimals. Chain token contracts represent the same
+    asset; no USD prices are applied.
+  scope: Only loaded data for the configured token and chain windows. Configure and build the transfers
+    pipeline before running; flows involving bridges also require the bridges and labels pipelines.
+marts:
+- erc20_transfers
+analyses:
+- token_transfer_graph
+- token_transfer_graph_by_edge
+- token_transfer_graph_by_wallet
+window:
+  blocks:
+    arbitrum:
+    - 510496864
+    - 520129273
+    base:
+    - 52011727
+    - 53350926
+inputs:
+- name: arbitrum_transfers
+  strategy: history
+  source: arbitrum.erc20_transfers
+  filter:
+    tokens:
+    - '0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0'
+- name: base_transfers
+  strategy: history
+  source: base.erc20_transfers
+  filter:
+    tokens:
+    - '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'

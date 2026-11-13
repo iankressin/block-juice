@@ -1,0 +1,36 @@
+question: What do the loaded Polymarket maker trades and market positions show?
+definitions:
+  loaded window: All rows currently loaded in the Polymarket marts; no date filter is implied by the question.
+  volume: pUSD in maker-order fills before fees, preserving the existing SQL definition.
+  coverage: Wallet-filtered ingestion is not a market-wide sample. history_complete describes the loaded
+    block history. Open-position valuations use observed prices; resolved markets use payouts.
+marts:
+- polymarket_trades
+- polymarket_markets
+- polymarket_price_candles
+- polymarket_market_participants
+analyses:
+- polymarket_overview
+- polymarket_overview_by_day
+- polymarket_overview_by_event
+- polymarket_overview_by_fill_size
+- polymarket_overview_by_hour
+- polymarket_overview_by_market
+- polymarket_overview_by_market_type
+- polymarket_overview_by_pnl_bucket
+- polymarket_overview_by_price
+- polymarket_overview_by_wallet
+- polymarket_overview_kpis
+- polymarket_overview_top_market_prices
+inputs:
+- name: market_fills
+  strategy: history
+  source: polygon.polymarket_ctf_exchange_v2
+- name: conditions_and_positions
+  strategy: history
+  source: polygon.polymarket_ctf
+- name: market_metadata
+  strategy: state
+  source: polymarket.markets
+window:
+  scope: loaded
