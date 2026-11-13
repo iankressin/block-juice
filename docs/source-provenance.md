@@ -46,7 +46,8 @@ bj coverage ethereum.erc20_transfers
 
 Repeat the run until the required window is verified. Keep the same `SOURCE_BACKFILL_ID` so scheduled
 and manual runs resume the rebuilt generation, especially for Uniswap. A new identifier deliberately
-starts another backfill; removing it returns to the original configuration's cursor. The value must
+starts another backfill; removing it selects the generation without that identifier, which can resume
+an older cursor or start a new backfill if that configuration was never registered. The value must
 contain 1–64 letters, numbers, dots, underscores or hyphens, beginning with a letter or number.
 For direct `pnpm ingest`, export the same variable in that process's environment. This procedure
 does not drop raw tables, erase old cursors or delete caches. Backfills can make many provider

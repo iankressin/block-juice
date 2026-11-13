@@ -43,6 +43,7 @@ test("factory histories preserve the original file and use stable independent pa
   const changed = factoryCachePath(path, settings, { tokens: ["a", "b"] });
   assert.notEqual(changed, path);
   assert.equal(factoryCachePath(path, settings, { tokens: ["b", "a"] }), changed);
+  assert.equal(factoryCachePath(path, settings, { tokens: ["b", "a", "a"] }), changed);
   assert.equal(factoryCachePath(path, settings, { tokens: ["a"] }), path);
   assert.equal(readFileSync(path, "utf8"), "legacy cache remains");
   assert.equal(readFileSync(`${path}.identity`, "utf8").includes("secret"), false);
