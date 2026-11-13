@@ -2,6 +2,7 @@
 from sqlglot import parse, exp
 from sqlglot.errors import ParseError
 from sqlglot.optimizer.scope import traverse_scope
+from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from pipeline.analysis.executor import relations
 
 
@@ -23,7 +24,8 @@ def unknown_lineage(manifest, analysis_ids):
             if len(statements) != 1 or not isinstance(statements[0], exp.Query):
                 failures.append(f"{name}: an analysis must be a single SELECT")
                 continue
-            for scope in traverse_scope(statements[0]):
+            normalized = normalize_identifiers(statements[0], dialect="postgres")
+            for scope in traverse_scope(normalized):
                 for table in scope.sources.values():
                     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
                         continue

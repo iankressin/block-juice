@@ -233,7 +233,70 @@ def test_lineage_folds_only_unquoted_postgres_identifiers():
     from pipeline.analysis.lineage import unknown_lineage
     manifest, ids = manifest_for("raw", "select * from RAW.FACTS")
     assert unknown_lineage(manifest, ids) == []
+    manifest["nodes"][ids[0]]["compiled_code"] = "WITH X AS (SELECT * FROM RAW.FACTS) SELECT * FROM x"
+    assert unknown_lineage(manifest, ids) == []
     manifest["nodes"][ids[0]]["compiled_code"] = 'select * from "RAW"."FACTS"'
     assert "undeclared relation" in unknown_lineage(manifest, ids)[0]
     manifest["nodes"][ids[0]].pop("compiled_code")
     assert "compiled SQL is missing" in unknown_lineage(manifest, ids)[0]
+
+
+def token_question(tmp_path):
+    import yaml
+    folder = tmp_path / "answers" / "token-total"
+    folder.mkdir(parents=True)
+    asset = "0x" + "1" * 40
+    l1_asset = "0x" + "2" * 40
+    token = {"ethereum": l1_asset, "decimals": 18, "windows": [{"chain": "arbitrum", "token": asset, "blocks": [100, 200]}]}
+    window_schema = {"type": "object", "properties": {
+        "chain": {"type": "string", "required": True}, "token": {"type": "string", "required": True},
+        "blocks": {"type": "array", "items": "integer", "required": True}}}
+    token_schema = {"type": "object", "properties": {
+        "ethereum": {"type": "string", "required": True}, "decimals": {"type": "integer", "required": True},
+        "windows": {"type": "array", "items": window_schema}}, "default": token}
+    raw = {"question": "Token total", "parameter_scope": "token_windows", "window": {"blocks": {"arbitrum": [100, 200]}},
+           "inputs": [{"source": "arbitrum.erc20_transfers", "filter": {"tokens": [asset]}},
+                      {"source": "arbitrum.token_bridge", "filter": {"tokens": [l1_asset]}}],
+           "parameters": {"token": token_schema}}
+    def save():
+        (folder / "question.yaml").write_text(yaml.safe_dump(raw))
+    save()
+    return raw, save
+
+
+@pytest.mark.parametrize("change", ["blocks", "asset", "bridge"])
+def test_supported_token_scope_mismatch_fails_bj_answer_before_compiling(tmp_path, monkeypatch, change):
+    import copy
+    from pipeline.cli import answer
+    raw, save = token_question(tmp_path)
+    token = copy.deepcopy(raw["parameters"]["token"]["default"])
+    if change == "blocks": token["windows"][0]["blocks"] = [1, 2]
+    if change == "asset": token["windows"][0]["token"] = "0x" + "3" * 40
+    if change == "bridge": token["ethereum"] = "0x" + "3" * 40
+    raw["values"] = {"token": token}
+    save()
+    monkeypatch.setattr(answer, "compile_analyses", lambda *args, **kwargs: pytest.fail("scope mismatch reached compilation"))
+    with pytest.raises(BadInput, match="match"):
+        answer.run(tmp_path, "token-total")
+
+
+def test_token_eval_requires_explicit_matching_typed_scope_and_preserves_full_defaults(tmp_path):
+    import copy
+    from pipeline.cli.question import load_question
+    raw, save = token_question(tmp_path)
+    raw["eval_window"] = {"blocks": {"arbitrum": [120, 125]}}
+    save()
+    with pytest.raises(BadInput, match="eval_values"):
+        load_question(tmp_path, "token-total", "eval_window")
+    token = copy.deepcopy(raw["parameters"]["token"]["default"])
+    token["windows"][0]["blocks"] = [120, 125]
+    raw["eval_values"] = {"token": token}
+    save()
+    evaluated = load_question(tmp_path, "token-total", "eval_window")
+    full = load_question(tmp_path, "token-total")
+    assert evaluated.parameters["token"]["windows"][0]["blocks"] == [120, 125]
+    assert full.parameters["token"]["windows"][0]["blocks"] == [100, 200]
+    raw["eval_values"]["token"]["windows"][0]["blocks"] = [True, 125]
+    save()
+    with pytest.raises(BadInput, match="must be integer"):
+        load_question(tmp_path, "token-total", "eval_window")

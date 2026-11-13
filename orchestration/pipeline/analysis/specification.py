@@ -12,6 +12,7 @@ import yaml
 
 from pipeline.cli import BadInput
 from pipeline.analysis.spec import ExecutionPolicy, validate_contracts
+from pipeline.analysis.scope import validate_token_scope
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # A dbt node name, and nothing a dbt selector would read as a method, graph operator or path.
@@ -58,6 +59,7 @@ class Question:
     execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
     freshness: dict[str, Any] = field(default_factory=dict)
     grain: dict[str, list[str]] = field(default_factory=dict)
+    parameter_scope: str | None = None
     authored_sha256: str | None = field(default=None, compare=False)
     authored_text: str | None = field(default=None, compare=False, repr=False)
 
@@ -117,7 +119,8 @@ FIELDS: dict[str, tuple[Callable[[Any], bool], str]] = {
     "inputs": (lambda v: isinstance(v, list) and all(isinstance(item, dict) for item in v), "a list of maps"),
     "marts": (_strings, "a list of strings"),
     "analyses": (_analyses, f"a non-empty list of dbt analysis names matching {ANALYSIS.pattern}"),
-    **{key: (lambda v: isinstance(v, dict), "a map") for key in ("parameters", "values", "expected_columns", "execution", "freshness", "grain")},
+    "parameter_scope": (lambda v: v == "token_windows", "token_windows"),
+    **{key: (lambda v: isinstance(v, dict), "a map") for key in ("parameters", "values", "eval_values", "expected_columns", "execution", "freshness", "grain")},
 }
 
 
@@ -167,6 +170,12 @@ def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") 
             )
         sources.append(SourceInput(item["source"], item.get("filter", {})))
     resolved_parameters, policy = validate_contracts(raw)
+    if "eval_values" in raw:
+        evaluation, _ = validate_contracts({**raw, "values": {**raw.get("values", {}), **raw["eval_values"]}})
+        if window_key == "eval_window":
+            resolved_parameters = evaluation
+    if raw.get("parameter_scope") == "token_windows":
+        validate_token_scope(resolved_parameters, blocks[window_key], sources, label)
     analysis_names = tuple(raw.get("analyses", [slug.replace("-", "_")]))
     for field_name in ("expected_columns", "grain"):
         unknown = set(raw.get(field_name, {})) - set(analysis_names)
@@ -191,6 +200,7 @@ def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") 
         execution=policy,
         freshness=raw.get("freshness", {}),
         grain=raw.get("grain", {}),
+        parameter_scope=raw.get("parameter_scope"),
         authored_sha256=hashlib.sha256(authored).hexdigest(),
         authored_text=authored.decode("utf-8"),
     )
