@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { PGlite } from "@electric-sql/pglite";
 import { Pushgateway } from "@prometheus-io/client";
 import * as z from "zod";
 import { runSource } from "#src/run/index.ts";
+import { readJson } from "#src/json.ts";
 import type { Batch, Source } from "#src/source.ts";
 import { observeRequest, transportSnapshot } from "#src/transport-metrics.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
@@ -183,4 +188,45 @@ test("pending and final progress finish before the warehouse releases its source
   }
   assert.equal(closed, true);
   assert.equal(pushes, 3, "completed-run metrics are still published");
+});
+
+test("lazy call-source fingerprints follow exact runs, including empty success and partially committed failure", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const dir = mkdtempSync(join(tmpdir(), "run-inputs-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "wallets.json");
+  const initial = '["original-wallet"]';
+  const changed = '["new-wallet"]';
+  writeFileSync(path, initial);
+  await runSource(source(async function* () {
+    await Promise.resolve();
+    readJson(path);
+    writeFileSync(path, changed);
+    // A source can finish successfully without yielding a batch.
+  }), warehouse);
+  await runSource(source(async function* () {
+    await Promise.resolve();
+    readJson(path);
+    yield { records: [{ id: "one", callId: "one", data: {} }], failed: [] };
+    throw new Error("interrupted extraction");
+  }), warehouse);
+  assert.equal(process.exitCode, 1);
+  process.exitCode = undefined;
+  const { rows } = await db.query<{
+    succeeded: boolean; config_hash: string; evidence: { complete: boolean; files: Record<string, unknown> };
+  }>(`select r.succeeded, i.config_hash, i.evidence
+    from ops.ingestion_runs r join raw._ingestion_inputs i
+      on i.run_id = r.run_id::text and i.source_table = r.source || '_' || r.table_name
+    order by r.started_at`);
+  assert.equal(rows.length, 2);
+  for (const [index, text] of [initial, changed].entries()) {
+    assert.equal(rows[index]?.succeeded, index === 0);
+    assert.equal(rows[index]?.evidence.complete, index === 0);
+    assert.deepEqual(rows[index]?.evidence.files[path], [{
+      sha256: createHash("sha256").update(text).digest("hex"), bytes: Buffer.byteLength(text),
+    }]);
+  }
+  assert.notEqual(rows[0]?.config_hash, rows[1]?.config_hash);
+  assert.doesNotMatch(JSON.stringify(rows), /original-wallet|new-wallet/);
+  assert.deepEqual((await db.query("select id from raw.test_wallets")).rows, [{ id: "one" }]);
 });

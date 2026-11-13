@@ -1,4 +1,4 @@
-import { callBatches, chunk, historyKey, historyPlan, historyState, type Source } from "@ingestion/lib";
+import { readJson, callBatches, chunk, historyKey, historyPlan, historyState, type Source } from "@ingestion/lib";
 import * as z from "zod";
 import { createBinanceClient, systemClock, type Clock } from "#src/binance.ts";
 import {
@@ -47,7 +47,7 @@ export const candlesSource = (clock: Clock = systemClock): Source<BinanceEnv, Ca
   retryMode: "paged",
   async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad tokens.json.
-    const { default: tokens } = await import("../tokens.json", { with: { type: "json" } });
+    const tokens = readJson(new URL("../tokens.json", import.meta.url));
     const markets = parseTokens(tokens);
     const binance = createBinanceClient(env.BINANCE_API_URL, clock);
 

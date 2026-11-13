@@ -29,6 +29,33 @@ The `covered` field is null when there is no single verified interval for the cu
 `bj answer` will report a coverage gap instead of certifying unverified history. API credentials
 are never written to these records; the dataset URL is represented by a SHA-256 hash.
 
+## Per-run input fingerprints
+
+New ingestion runs record fingerprints in `RAW_SCHEMA._ingestion_inputs`, keyed by their exact
+`ops.ingestion_runs.run_id` and source table. These apply to call sources as well as streams.
+The evidence includes parsed non-secret settings, provider origins and URL hashes, and SHA-256
+hashes plus byte lengths of JSON files actually read during extraction. Reads inside lazy
+generators are captured; a later file edit does not rewrite the evidence for an earlier run.
+Binance and Coinbase read their token lists through this same capture path.
+
+Call-source evidence retains hashes rather than copies of wallet or token lists. Credential fields
+are omitted, unknown text/list settings are hashed, and provider URL userinfo, paths and query
+strings are never stored in plain text. At most 128 files and 16 distinct versions of each file
+are recorded; exceeding either bound marks the evidence `truncated` and incomplete. Custom sources
+must use `readJson` during extraction for their JSON files to participate in this capture.
+
+Evidence commits with each raw batch and checkpoint, initially with `complete: false`. Finishing
+extraction marks it complete, including successful runs that return no rows. A run interrupted
+after a committed batch retains incomplete evidence. Unavailable evidence permissions or metadata
+writes leave ingestion working, with a warning and absent or incomplete provenance. Missing records
+from older runs remain unknown. Analysis results associate the last successful ingestion run with
+only its exact matching evidence; they do not substitute a newer run's settings.
+
+These are input fingerprints, not replayable configuration history or lineage for every row in
+an accumulated raw table. `complete` means extraction finished without truncating this capture;
+it does not certify historical coverage, successful individual API calls, or JSON read outside
+`readJson` by a custom source.
+
 ## Nondestructive backfill
 
 Choose a stable identifier and keep it in the root `.env` for subsequent runs:
