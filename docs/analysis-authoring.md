@@ -122,7 +122,8 @@ from the last 48 hours and a recorded model build after those inputs were loaded
 balances` to ingest, build and record that evidence. A direct unlogged `dbt build` cannot prove
 when the saved balances were built. Fixed-window historical questions do not impose this age
 policy. For model refresh choices and reproducible benchmarks, see
-[fact model performance](fact-model-performance.md).
+[fact model performance](fact-model-performance.md) and
+[state and aggregation performance](model-performance.md).
 
 Validate with `bj questions --check`, `dbt compile --select <analysis-name>` and the relevant model
 tests. Compare results against a small independent fixture, including empty input and late data.
