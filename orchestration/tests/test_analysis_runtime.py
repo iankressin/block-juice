@@ -202,3 +202,10 @@ def test_lock_backend_on_windows_retries_and_releases(tmp_path, monkeypatch):
         with store.answer_lock(tmp_path, shared=True):
             assert calls == [1, 1]
     assert calls == [1, 1, 2]
+
+
+def test_real_pg_grain_uses_numeric_equality_not_decimal_display_scale(pg):
+    connect, _, schema = pg
+    manifest, ids = manifest_for(schema, 'select amount from (values (1.0::numeric), (1.00::numeric)) t(amount)')
+    with pytest.raises(BadInput, match="duplicate grain"):
+        read_warehouse(connect, manifest, ids, [], grain={"q0": ["amount"]})
