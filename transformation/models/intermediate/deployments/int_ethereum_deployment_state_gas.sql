@@ -17,15 +17,20 @@
 {% set cost_per_state_byte = 1530 %}
 
 with traces as (
-    select * from {{ ref('stg_ethereum__contract_deployments') }}
+    select block_number, transaction_index, trace_address, trace_type, error,
+        create_from, create_address, create_code
+    from {{ ref('stg_ethereum__contract_deployments') }}
 ),
 
 transactions as (
-    select * from {{ ref('stg_ethereum__contract_deployments_transactions') }}
+    select block_number, block_timestamp, transaction_index, hash, from_address, to_address,
+        sighash, transaction_type, status
+    from {{ ref('stg_ethereum__contract_deployments_transactions') }}
 ),
 
 state_diffs as (
-    select * from {{ ref('stg_ethereum__contract_deployments_state_diffs') }}
+    select block_number, transaction_index, address, key, is_storage, diff_kind, prev, next
+    from {{ ref('stg_ethereum__contract_deployments_state_diffs') }}
 ),
 
 creates as (
