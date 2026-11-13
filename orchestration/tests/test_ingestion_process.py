@@ -158,6 +158,9 @@ sys.exit(EXIT_CODE)
 """.replace("EXIT_CODE", str(exit_code))
         return popen([sys.executable, "-u", "-c", script], **kwargs)
 
+    from contextlib import nullcontext
+
+    monkeypatch.setattr(ingestion, "warehouse_slot", lambda *args: nullcontext())
     monkeypatch.setattr(ingestion.subprocess, "Popen", launch_fixture)
     ingest = ingestion.build_ingestion_asset("ethereum", "eth_balances").op.compute_fn.decorated_fn
     if exit_code:
