@@ -180,7 +180,7 @@ def worker(repo_root: Path, folder: Path, output: Path) -> None:
     # Balance reconciliation tests also reference the transfer mart. Build its empty fixture
     # dependencies, so the ordinary checks can run without fake relations or skipped tests.
     result = answer.dbt(project, "build", "--select", "+latest_balances", "+erc20_transfers",
-                        "--exclude", "tag:reference")
+                        "--exclude", "tag:reference", "--target-path", str(project / "target"))
     if not result.success:
         raise BadInput(f"demo dbt build failed: {answer.dbt_error(result)}")
     record_build(json.loads((project / "target/run_results.json").read_text()), started)
