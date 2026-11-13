@@ -1,12 +1,14 @@
 """bj coverage: the blocks each stream source has loaded, from its START_BLOCK to the cursor Pipes keeps.
 
-Pipes resumes a stream after its cursor and never reads a block twice, so a stream source holds every
-block from START_BLOCK to the cursor, for the wallets and tokens in its addresses.json. Changing either
-means resetting the cursor, so coverage reads both as they are now.
+Pipes resumes a stream after its cursor and never reads a block twice. Coverage assumes the effective
+START_BLOCK and addresses.json still describe the history loaded under that cursor. The cursor does
+not retain their old values: after changing either, follow the documented source reset/backfill
+procedure before trusting coverage. This command never resets a source or changes its data.
 """
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,17 @@ from dotenv import dotenv_values
 from pipeline.cli import BadInput, require_env
 from pipeline.sources import SOURCES_FILE, read_sources
 from pipeline.warehouse import read_cursor
+
+
+# Only these shipped sources define an omitted wallets key as unrestricted. A missing key on an
+# unknown source remains a gap; adding a source requires confirming its extraction semantics first.
+OPTIONAL_WALLET_SOURCES = {
+    ("ethereum", "erc20_transfers"),
+    ("arbitrum", "erc20_transfers"),
+    ("base", "erc20_transfers"),
+    ("polygon", "polymarket_ctf"),
+    ("polygon", "polymarket_ctf_exchange_v2"),
+}
 
 
 @dataclass(frozen=True)
@@ -49,6 +62,8 @@ class Coverage:
             gaps.append(f"cursor {self.cursor} is before {last}")
         for key, values in wanted.items():
             if key not in self.filter:
+                if key == "wallets" and (self.source, self.table) in OPTIONAL_WALLET_SOURCES:
+                    continue
                 gaps.append(f"addresses.json has no {key!r}")
                 continue
             loaded = {value.lower() for value in self.filter[key]}
@@ -94,18 +109,52 @@ def stream_sources(repo_root: Path) -> list[str]:
 
 
 def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
-    """START_BLOCK as a run reads it, and the file it came from: the folder's .env, else .env.example."""
-    for name in (".env", ".env.example"):
-        value = dotenv_values(folder / name).get("START_BLOCK")
-        if value:
-            path = (folder / name).relative_to(repo_root)
-            if not value.isdigit():
-                raise BadInput(f"START_BLOCK in {path} must be a block number, not {value!r}")
-            return int(value), str(path)
+    """The effective START_BLOCK and its origin, including process overrides as ingestion reads them.
+
+    A chain's files precede the package .env. Keep the example fallback for an uninstalled checkout.
+    An explicitly empty value wins in dotenv, then loadEnv removes it before validating the required
+    START_BLOCK. It must therefore fail here, rather than fall back and claim an earlier start.
+    """
+    candidates = [("environment", os.environ.get("START_BLOCK"))]
+    paths = [folder / ".env", folder / ".env.example"]
+    if folder.parent.name == "chains":
+        paths.append(folder.parents[1] / ".env")
+    candidates.extend(
+        (str(path.relative_to(repo_root)), dotenv_values(path, interpolate=False).get("START_BLOCK"))
+        for path in paths
+    )
+    for origin, value in candidates:
+        if value is not None:
+            return parse_start_block(value, origin), origin
     raise BadInput(f"{folder.relative_to(repo_root)} sets no START_BLOCK in .env or .env.example")
 
 
-def address_filter(repo_root: Path, folder: Path) -> dict[str, list[str]]:
+def parse_start_block(value: str, origin: str) -> int:
+    """Match ingestion's Number coercion and Zod nonnegative safe-integer validation.
+
+    Restrict the syntax before float/int: Python also accepts underscores, which Number rejects.
+    loadEnv removes an empty string, but a whitespace-only value reaches Number and becomes zero.
+    """
+    text = value.strip()
+    try:
+        if not value:
+            raise ValueError
+        if not text:
+            number = 0.0
+        elif re.fullmatch(r"0(?:[xX][0-9a-fA-F]+|[oO][0-7]+|[bB][01]+)", text):
+            number = float(int(text, 0))
+        elif re.fullmatch(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", text):
+            number = float(text)
+        else:
+            raise ValueError
+        if not number.is_integer() or not 0 <= number <= 2**53 - 1:
+            raise ValueError
+        return int(number)
+    except (ValueError, OverflowError):
+        raise BadInput(f"START_BLOCK in {origin} must be a block number, not {value!r}") from None
+
+
+def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = False) -> dict[str, list[str]]:
     path = folder / "addresses.json"
     label = path.relative_to(repo_root)
     try:
@@ -114,6 +163,10 @@ def address_filter(repo_root: Path, folder: Path) -> dict[str, list[str]]:
         raise BadInput(f"could not read {label}: {error}") from None
     if not isinstance(addresses, dict):
         raise BadInput(f"{label} must map each key to an address or a list of addresses")
+    if optional_wallets and "wallets" in addresses:
+        wallets = addresses["wallets"]
+        if not isinstance(wallets, list) or not wallets or not all(isinstance(w, str) and w for w in wallets):
+            raise BadInput(f"{label}: wallets must be a nonempty list of addresses; omit it to read every wallet")
     # A source may name one contract per key, such as polygon-polymarket-ctf's conditional_tokens.
     lists = {key: [values] if isinstance(values, str) else values for key, values in addresses.items()}
     if not all(isinstance(values, list) and all(isinstance(value, str) for value in values) for values in lists.values()):
@@ -130,7 +183,10 @@ def read(repo_root: Path, name: str) -> Coverage:
         cursor = read_cursor(f"{source}_{table}")
     except psycopg2.Error as error:
         raise BadInput(f"could not read the cursor in {schema}._sync: {' '.join(str(error).split())}") from None
-    return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, address_filter(repo_root, folder))
+    loaded_filter = address_filter(
+        repo_root, folder, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
+    )
+    return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter)
 
 
 def run(repo_root: Path, name: str | None) -> int:

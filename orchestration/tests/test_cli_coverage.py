@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ BALANCES = {"name": "ethereum", "table": "eth_balances", "package": "evm-eth-bal
 def repo(tmp_path, monkeypatch):
     """A repo with one stream source and one call source, each in a package that loads several chains."""
     monkeypatch.setenv("RAW_SCHEMA", "raw")
+    monkeypatch.delenv("START_BLOCK", raising=False)
     (tmp_path / SOURCES_FILE).parent.mkdir(parents=True)
     for entry, env in ((TRANSFERS, "START_BLOCK=100\n"), (BALANCES, "BLOCK_NUMBER=latest\n")):
         folder = tmp_path / "ingestion" / "sources" / entry["package"] / entry.get("settings", "")
@@ -60,6 +62,58 @@ def test_start_block_comes_from_env_else_env_example(repo, monkeypatch):
     assert start() == (250, "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env")
 
 
+def test_process_start_block_wins_over_both_files_and_changes_coverage(repo, monkeypatch):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: 300)
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    (folder / ".env").write_text("START_BLOCK=150\n")
+    monkeypatch.setenv("START_BLOCK", "200")
+
+    read = coverage.read(repo, "ethereum.erc20_transfers")
+    assert (read.start_block, read.start_block_file) == (200, "environment")
+    assert read.gaps((100, 150), {}) == ["START_BLOCK 200 is after 100"]
+    assert read.to_json()["covered"] == [200, 300]
+
+
+@pytest.mark.parametrize("value", ["", "latest", "-1", "1.5", "1_0", "9007199254740992"])
+def test_invalid_process_start_does_not_fall_back_to_a_valid_file(repo, monkeypatch, value):
+    monkeypatch.setenv("START_BLOCK", value)
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    with pytest.raises(BadInput, match="START_BLOCK in environment must be"):
+        coverage.start_block(repo, folder)
+
+
+def test_empty_chain_start_does_not_fall_back_to_an_earlier_example(repo):
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    (folder / ".env").write_text("START_BLOCK=\n")
+    with pytest.raises(BadInput, match="START_BLOCK in .*\\.env must be"):
+        coverage.start_block(repo, folder)
+
+
+def test_chain_start_falls_back_to_package_env_after_chain_files(repo):
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    (folder / ".env.example").write_text("LOG_LEVEL=debug\n")
+    (folder.parents[1] / ".env").write_text("START_BLOCK=250\n")
+    assert coverage.start_block(repo, folder) == (
+        250, "ingestion/sources/evm-erc20-transfers/.env"
+    )
+
+
+def test_zero_is_a_valid_process_start_block(repo, monkeypatch):
+    monkeypatch.setenv("START_BLOCK", "0")
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    assert coverage.start_block(repo, folder) == (0, "environment")
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("+100", 100), ("1e2", 100), ("100.0", 100), ("0x64", 100),
+    ("0b1100100", 100), ("0o144", 100), (" 100 ", 100), ("   ", 0),
+])
+def test_start_accepts_the_numeric_forms_ingestion_coerces(repo, monkeypatch, value, expected):
+    monkeypatch.setenv("START_BLOCK", value)
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    assert coverage.start_block(repo, folder) == (expected, "environment")
+
+
 def test_each_chain_of_an_evm_package_reads_its_own_folder(repo, monkeypatch):
     monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
     arbitrum = {**TRANSFERS, "name": "arbitrum", "settings": "chains/arbitrum"}
@@ -95,6 +149,15 @@ def test_a_key_that_holds_neither_an_address_nor_a_list_of_them_is_bad_input(rep
     folder = repo / "ingestion" / "sources" / "evm-erc20-transfers" / "chains" / "ethereum"
     (folder / "addresses.json").write_text(json.dumps({"tokens": {"usdc": USDC}}))
     with pytest.raises(BadInput, match="must map each key to an address or a list of addresses"):
+        coverage.read(repo, "ethereum.erc20_transfers")
+
+
+@pytest.mark.parametrize("wallets", [[], None, WALLET, [42], {"owner": WALLET}])
+def test_invalid_optional_wallet_filter_is_not_treated_as_all_wallets(repo, monkeypatch, wallets):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: 180)
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    (folder / "addresses.json").write_text(json.dumps({"tokens": [USDC], "wallets": wallets}))
+    with pytest.raises(BadInput, match="wallets must be a nonempty list"):
         coverage.read(repo, "ethereum.erc20_transfers")
 
 
@@ -157,3 +220,38 @@ def test_gaps_name_each_block_and_address_that_was_not_loaded():
         "addresses.json has no 'pools'",
     ]
     assert loaded(cursor=None).gaps((100, 100), {}) == ["no run has saved a cursor"]
+
+
+@pytest.mark.parametrize("source, table", [
+    ("ethereum", "erc20_transfers"),
+    ("arbitrum", "erc20_transfers"),
+    ("base", "erc20_transfers"),
+    ("polygon", "polymarket_ctf"),
+    ("polygon", "polymarket_ctf_exchange_v2"),
+])
+def test_known_all_wallet_sources_cover_a_requested_wallet(source, table):
+    read = replace(loaded(), source=source, table=table, filter={"tokens": [USDC]})
+    assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
+    assert read.gaps((100, 180), {"tokens": ["missing-token"]}) == [
+        "tokens not in addresses.json: missing-token"
+    ]
+
+
+@pytest.mark.parametrize("source, table", [
+    ("ethereum", "wallet_transactions"),
+    ("ethereum", "cow_ethflow"),
+    ("unknown", "erc20_transfers"),
+    ("polygon", "unknown"),
+])
+def test_missing_wallets_are_not_a_wildcard_for_other_sources(source, table):
+    read = replace(loaded(), source=source, table=table, filter={"tokens": [USDC]})
+    assert read.gaps((100, 180), {"wallets": [WALLET]}) == [
+        "addresses.json has no 'wallets'"
+    ]
+
+
+def test_explicit_empty_wallets_do_not_cover_a_requested_wallet():
+    read = replace(loaded(), filter={"wallets": [], "tokens": [USDC]})
+    assert read.gaps((100, 180), {"wallets": [WALLET]}) == [
+        f"wallets not in addresses.json: {WALLET}"
+    ]
