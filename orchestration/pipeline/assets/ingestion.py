@@ -62,6 +62,8 @@ LOG_CHARS_MAX = 64 * 1024
 def read_process_log(pipe: TextIO, log, *, stderr: bool) -> str:
     """Drain one pipe into the thread-safe logger, keeping only its recent failure diagnostics."""
     tail = ""
+    raw_tail = ""
+    oversized = False
     with pipe:
         while text := pipe.readline(LOG_CHARS_MAX):
             line = text.rstrip("\r\n")
@@ -70,10 +72,17 @@ def read_process_log(pipe: TextIO, log, *, stderr: bool) -> str:
                 if line.strip():
                     log.warning(line)
             elif line.strip():
+                raw_tail = (raw_tail + text)[-LOG_CHARS_MAX:]
+                oversized |= len(text) == LOG_CHARS_MAX and not text.endswith("\n")
                 level, message = parse_log_line(line)
                 log.log(level, message)
                 if level >= logging.ERROR:
                     tail = (tail + message + "\n")[-LOG_CHARS_MAX:]
+    if oversized:
+        # A partial JSON line has no reliable Pino severity. Keep the raw ending even when an
+        # earlier structured error exists, instead of silently losing the oversized failure.
+        notice = "[stdout diagnostic fallback: oversized log truncated; severity unavailable]\n"
+        return notice + raw_tail[-(LOG_CHARS_MAX - len(notice)):]
     return tail
 
 

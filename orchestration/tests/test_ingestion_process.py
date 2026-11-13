@@ -87,6 +87,29 @@ def test_failure_keeps_recent_errors_stderr_and_fatal_stack(tmp_path):
     assert (logging.CRITICAL, "Run failed\nboom\n at source") in log.messages
 
 
+@pytest.mark.parametrize("preceding_error", [False, True])
+def test_oversized_fatal_keeps_bounded_raw_diagnostics(tmp_path, preceding_error):
+    log = RecordingLog()
+    script = """
+        import json, sys
+        if PRECEDING_ERROR:
+            print(json.dumps({"level": 50, "msg": "earlier failure"}))
+        print(json.dumps({
+            "level": 60, "msg": "fatal failure",
+            "err": {"stack": "x" * 200000 + " useful trailing stack marker"},
+        }))
+        raise SystemExit(9)
+    """.replace("PRECEDING_ERROR", str(preceding_error))
+    code, errors, stderr = run_child(script, tmp_path, log)
+    assert code == 9
+    assert stderr == ""
+    assert 0 < len(errors) <= 65536
+    assert "stdout diagnostic fallback" in errors
+    assert "truncated" in errors
+    assert "useful trailing stack marker" in errors
+    assert max(len(message) for _, message in log.messages) <= 65536
+
+
 def test_logging_failure_stops_and_reaps_the_child(tmp_path, monkeypatch):
     children = []
     popen = subprocess.Popen
