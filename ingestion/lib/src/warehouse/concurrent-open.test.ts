@@ -59,3 +59,43 @@ test("warehouses that open at once on an empty schema all succeed", async (t) =>
     assert.deepEqual(failed, [], `round ${round}`);
   }
 });
+
+test("Postgres exposes API progress and records together only after COMMIT", async (t) => {
+  const server = serverConfig();
+  if (typeof server === "string") return t.skip(server);
+  let admin: Connection;
+  try { admin = await connect({ ...server, database: "postgres" }); }
+  catch (error) { if (process.env.CI) throw error; return t.skip(String(error)); }
+  const database = `bj_test_${randomBytes(6).toString("hex")}`;
+  await admin.query(`create database "${database}"`);
+  const cleanups: (() => Promise<void>)[] = [];
+  t.after(async () => { for (const close of cleanups) await close(); await admin.query(`drop database "${database}" with (force)`); await admin.close(); });
+  const config = { ...server, database };
+  const observer = await connect(config);
+  cleanups.push(() => observer.close());
+  let pause = false;
+  let signalReady!: () => void;
+  let signalRelease!: () => void;
+  const ready = new Promise<void>((resolve) => { signalReady = resolve; });
+  const release = new Promise<void>((resolve) => { signalRelease = resolve; });
+  cleanups.unshift(async () => signalRelease());
+  const warehouse = postgresWarehouse({ schema: "raw", connect: async () => {
+    const connection = await connect(config);
+    return { ...connection, async query<R>(text: string, params?: unknown[]) {
+      if (pause && text === "commit") { signalReady(); await release; }
+      return connection.query<R>(text, params);
+    } };
+  } });
+  const table = await warehouse.open("test_candles");
+  cleanups.push(() => table.close());
+  pause = true;
+  const loading = table.load({ records: [{ id: "1", callId: "window", data: { close: 12 } }], failed: [],
+    checkpoints: [{ key: "history", value: { next: 20 } }] });
+  await ready;
+  assert.deepEqual((await observer.query("select * from raw.test_candles")).rows, []);
+  assert.deepEqual((await observer.query("select * from raw._checkpoints")).rows, []);
+  signalRelease();
+  await loading;
+  assert.equal((await observer.query("select * from raw.test_candles")).rows.length, 1);
+  assert.equal((await observer.query("select * from raw._checkpoints")).rows.length, 1);
+});

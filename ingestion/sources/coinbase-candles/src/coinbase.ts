@@ -1,5 +1,5 @@
 import { setTimeout } from "node:timers/promises";
-import { logger } from "@ingestion/lib";
+import { logger, observedFetch, observeDelay } from "@ingestion/lib";
 import * as z from "zod";
 
 /** Time as the client sees it, so a test can pass a second's wait at once. */
@@ -79,13 +79,13 @@ export function createCoinbaseClient(url: string, clock: Clock) {
     for (const [key, value] of Object.entries(query)) request.searchParams.set(key, value);
     for (let attempt = 0; ; attempt++) {
       lastChunkAt = clock.now();
-      const response = await fetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const response = await observedFetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (response.ok) return response.json();
       const error = await coinbaseError(response);
       const waitMs = RETRY_WAITS_MS[attempt];
       if (!error.rateLimited || waitMs === undefined) throw error;
       logger.info({ path, waitMs }, "Coinbase rate limit reached, waiting before trying again");
-      await clock.sleep(waitMs);
+      await observeDelay(() => clock.sleep(waitMs));
     }
   }
 
@@ -124,7 +124,7 @@ export function createCoinbaseClient(url: string, clock: Clock) {
     /** Waits until a second has passed since the last chunk. Call it before each set of requests sent together. */
     async waitForRate() {
       const waitMs = lastChunkAt + SECOND_MS - clock.now();
-      if (waitMs > 0) await clock.sleep(waitMs);
+      if (waitMs > 0) await observeDelay(() => clock.sleep(waitMs));
       lastChunkAt = clock.now();
     },
   };

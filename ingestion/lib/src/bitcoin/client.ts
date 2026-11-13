@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { observedFetch } from "#src/transport-metrics.ts";
 
 // A scan took 43s to 96s when measured, so this leaves room for a slow node.
 const SCAN_TIMEOUT_MS = 5 * 60_000;
@@ -30,7 +31,7 @@ export function createBitcoinClient(url: string) {
      * once, however many descriptors it gets.
      */
     async scanTxOutSet(descriptors: readonly string[]) {
-      const response = await fetch(url, {
+      const response = await observedFetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

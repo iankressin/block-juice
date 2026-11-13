@@ -382,3 +382,29 @@ test("BINANCE_MAX_CONCURRENCY is at most 100, so a chunk fits in the weight left
   assert.equal(parse("100").BINANCE_MAX_CONCURRENCY, 100);
   assert.throws(() => parse("101"));
 });
+
+test("committed Binance history resumes and routine refresh reads only the recent window", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeBinance(t, { markets: { UNIUSDT: hourly(LISTED, 3100) }, requests });
+  const source = await sourceWith(t, uniTokens, fakeClock(LISTED + 3001 * HOUR));
+  const state = new Map<string, unknown>();
+  const context = { getCheckpoint: async (key: string) => state.get(key) };
+  const first = source.extract(envAt(url, 1), [], context)[Symbol.asyncIterator]();
+  const batch = (await first.next()).value!;
+  for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  await first.return?.();
+  requests.length = 0;
+  for await (const next of source.extract(envAt(url, 1), [], context)) {
+    for (const checkpoint of next.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  assert.equal(requests.length, 3, "three unfinished windows; no repeated listing probe or committed first window");
+  assert.ok(requests[0]!.includes(String(LISTED + 1000 * HOUR)));
+  requests.length = 0;
+  for await (const next of source.extract(envAt(url), [], context)) {
+    for (const checkpoint of next.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  assert.equal(requests.length, 2, "overlap straddles the last two windows and keeps the current partial window");
+  requests.length = 0;
+  for await (const _ of source.extract({ ...envAt(url), HISTORY_FULL_REFRESH: "1" }, [], context)) {}
+  assert.equal(requests.length, 4, "an explicit sweep revisits old corrected candles");
+});

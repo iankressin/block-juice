@@ -1,4 +1,4 @@
-import { chunk, readJson, settleCalls, uniqueBy, type Source } from "@ingestion/lib";
+import { callBatches, readJson, settleCalls, type Source } from "@ingestion/lib";
 import {
   address,
   connect,
@@ -69,7 +69,8 @@ export const forChain = (chain: string): Source<AccountStateEnv, StateCall> => (
   table: "account_state",
   env,
   call: stateCallSchema,
-  async *extract(env, retry) {
+  retryMode: "paged",
+  async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const path = `chains/${chain}/addresses.json`;
     const listed = readJson(path).wallets;
@@ -77,10 +78,12 @@ export const forChain = (chain: string): Source<AccountStateEnv, StateCall> => (
     const wallets = validateEthAddressList(listed);
     const { client, block } = await connect(env);
     const blocks = [...new Set([block, ...(env.ALSO_AT_BLOCKS ?? [])])];
-    const calls = uniqueBy([...blocks.flatMap((b) => stateCallsAt(b, wallets)), ...retry], callId);
-    // A request's timeout runs while it waits for a free slot, so a few thousand calls made at once time
-    // out in the queue. Each chunk keeps about ten rounds of requests in flight, and is a batch of its own.
-    for (const part of chunk(calls, env.RPC_BATCH_SIZE * env.RPC_MAX_CONCURRENCY * 10)) {
+    const selected = new Set(wallets.map(toLower));
+    function* fresh() {
+      for (const b of blocks) for (const wallet of selected) yield* stateCallsAt(b, [wallet]);
+    }
+    for await (const part of callBatches(fresh(), retry, callId,
+      (call) => blocks.includes(call.block) && selected.has(call.address), context)) {
       yield await fetchState(client, part);
     }
   },

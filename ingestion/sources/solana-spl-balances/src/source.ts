@@ -1,4 +1,4 @@
-import { readJson, type Source } from "@ingestion/lib";
+import { callBatches, readJson, type Source } from "@ingestion/lib";
 import {
   createSolanaClient,
   solanaEnv,
@@ -19,7 +19,8 @@ export const solanaSplBalances: Source<SolanaEnv, BalanceCall> = {
   table: "spl_balances",
   env: solanaEnv,
   call: balanceCallSchema,
-  async *extract(env, retry) {
+  retryMode: "paged",
+  async *extract(env, retry, context) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
     const addresses = readJson("addresses.json");
     const wallets = validateSolanaAddressList(addresses.wallets);
@@ -27,6 +28,12 @@ export const solanaSplBalances: Source<SolanaEnv, BalanceCall> = {
     // The free RPCs that serve getTokenAccountsByOwner allow about 2 calls a second
     // between them; sent all at once, most calls are refused.
     const rpc = createSolanaClient(env.SOLANA_RPC_URL, { maxConcurrency: 2 });
-    yield await fetchBalances(rpc, [...balanceCalls(wallets, mints), ...retry]);
+    const selectedWallets = new Set(wallets);
+    const selectedMints = new Set(mints);
+    function* fresh() {
+      for (const mint of selectedMints) for (const wallet of selectedWallets) yield* balanceCalls([wallet], [mint]);
+    }
+    for await (const part of callBatches(fresh(), retry, (call) => `${call.mint}:${call.wallet}`,
+      (call) => selectedWallets.has(call.wallet) && selectedMints.has(call.mint), context)) yield await fetchBalances(rpc, part);
   },
 };
