@@ -21,8 +21,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 from httplib2 import ServerNotFoundError
 
-from pipeline.cli import BadInput, check, gdoc, main
-from pipeline.cli.report import cell_value, run
+from pipeline.cli import BadInput, check, gdoc, main, report
+from pipeline.cli.report import append_row, cell_value, run
 
 BALANCE = "1234567890123456789012345"
 ADDRESS = "0x00000000219ab540356cBB839Cbe05303d7705Fa"
@@ -109,6 +109,89 @@ def test_xlsx_has_the_answer_sheet_and_one_sheet_per_result(answered):
     assert top["C3"].value == "007"
     assert book[LONG_NAME[:31]]["A61"].value == 59
     assert not (folder / "reports" / "top-wallets.pdf").exists()
+
+
+def test_appending_xlsx_rows_does_not_scan_existing_worksheet_dimensions(monkeypatch):
+    """A dimension lookup scans existing cells, making row-by-row export quadratic."""
+    sheet = openpyxl.Workbook().active
+    sheet.append(["existing"])
+
+    def refuse_scan(_sheet):
+        raise AssertionError("appending one row rescanned the existing worksheet")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(type(sheet), "max_row", property(refuse_scan))
+        patch.setattr(type(sheet), "max_column", property(refuse_scan))
+        for number in range(100):
+            append_row(sheet, [f"=value{number}", number, "bad\x07text"], bold=True, wrap=True)
+
+    assert sheet["A1"].value == "existing"
+    assert (sheet["A101"].value, sheet["A101"].data_type) == ("=value99", "s")
+    assert sheet["B101"].value == 99
+    assert sheet["C101"].value == "bad\ufffdtext"
+    assert sheet["A101"].font.bold
+    assert sheet["A101"].alignment.wrap_text
+
+
+def test_preview_load_retains_only_displayed_rows_and_counts_actual_csv_rows(answered):
+    _, folder = answered
+    # Quoted newlines count as one CSV row, and the manifest's old count is not trusted.
+    (folder / "results" / f"{LONG_NAME}.csv").write_text(
+        'n\n"first\nrow"\n' + "".join(f"{i}\n" for i in range(2000))
+    )
+
+    loaded = report.load(folder, "top-wallets", row_limit=50)
+    table = loaded.tables[1]
+    assert len(table.rows) == 50
+    assert table.rows[0] == ["first\nrow"]
+    assert table.rows[-1] == ["48"]
+    assert report.row_count(table) == (
+        f"results/{LONG_NAME}.csv has 2001 rows, the first 50 shown above."
+    )
+    assert report.row_count(loaded.tables[0]) == "results/top_wallets.csv has 2 rows."
+
+
+@pytest.mark.parametrize("formats", ["pdf", "docx", "pdf,docx"])
+def test_preview_only_commands_pass_bounded_rows_to_renderers(answered, monkeypatch, formats):
+    root, _ = answered
+    retained = []
+    original_load = report.load
+
+    def observe_load(*args, **kwargs):
+        loaded = original_load(*args, **kwargs)
+        retained.extend(len(table.rows) for table in loaded.tables)
+        return loaded
+
+    monkeypatch.setattr(report, "load", observe_load)
+    assert run(root, "top-wallets", formats) == 0
+    assert retained == [2, 50]
+
+
+def test_xlsx_with_a_preview_format_keeps_every_detail_row(answered):
+    root, folder = answered
+    assert run(root, "top-wallets", "xlsx,docx") == 0
+    book = openpyxl.load_workbook(folder / "reports" / "top-wallets.xlsx")
+    assert book[LONG_NAME[:31]]["A61"].value == 59
+    assert ("Normal", f"results/{LONG_NAME}.csv has 60 rows, the first 50 shown above.") in outline(
+        folder / "reports" / "top-wallets.docx"
+    )
+
+
+def test_xlsx_refuses_to_silently_export_a_preview_as_full_detail(answered, tmp_path):
+    _, folder = answered
+    preview = report.load(folder, "top-wallets", row_limit=50)
+    destination = tmp_path / "incomplete.xlsx"
+    with pytest.raises(BadInput, match="XLSX requires every result row"):
+        report.write_xlsx(preview, destination)
+    assert not destination.exists()
+
+
+def test_loading_full_detail_and_legacy_table_construction_stay_compatible(answered):
+    _, folder = answered
+    loaded = report.load(folder, "top-wallets")
+    assert len(loaded.tables[1].rows) == 60
+    legacy = report.Table("one", "results/one.csv", ["n"], [["1"]])
+    assert report.row_count(legacy) == "results/one.csv has 1 row."
 
 
 def test_pdf_is_a_pdf_with_pages(answered):

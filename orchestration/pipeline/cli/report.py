@@ -19,6 +19,7 @@ from docx.document import Document
 from docx.text.paragraph import Paragraph
 from fpdf import FPDF
 from openpyxl import Workbook
+from openpyxl.cell.cell import Cell
 from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -60,6 +61,8 @@ class Table:
     path: str
     columns: list[str]
     rows: list[list[str]]
+    # Preview-only loads retain a prefix but still count the complete CSV.
+    total_rows: int | None = None
 
 
 @dataclass(frozen=True)
@@ -77,7 +80,8 @@ def parse_formats(text: str) -> list[str]:
     return formats
 
 
-def load(folder: Path, slug: str) -> Report:
+def load(folder: Path, slug: str, *, row_limit: int | None = None) -> Report:
+    """Loads full detail by default; preview renderers can retain only their displayed rows."""
     answer_json, answer_md = folder / "answer.json", folder / "answer.md"
     if not answer_json.is_file():
         raise BadInput(f"answers/{slug}/answer.json does not exist: run `bj answer {slug}` first")
@@ -93,8 +97,14 @@ def load(folder: Path, slug: str) -> Report:
         if not path.is_file():
             raise BadInput(f"answers/{slug}/{result['path']} does not exist: run `bj answer {slug}` again")
         with open(path, newline="", encoding="utf-8") as file:
-            columns, *rows = csv.reader(file)
-        tables.append(Table(result["analysis"], result["path"], columns, rows))
+            reader = csv.reader(file)
+            columns = next(reader)
+            rows, total_rows = [], 0
+            for row in reader:
+                total_rows += 1
+                if row_limit is None or len(rows) < row_limit:
+                    rows.append(row)
+        tables.append(Table(result["analysis"], result["path"], columns, rows, total_rows))
     return Report(answer, answer_md.read_text(encoding="utf-8"), tables)
 
 
@@ -121,8 +131,9 @@ def paragraphs(text: str) -> list[str]:
 
 
 def row_count(table: Table) -> str:
-    count = len(table.rows)
-    shown = f", the first {ROWS_SHOWN} shown above" if count > ROWS_SHOWN else ""
+    count = table.total_rows if table.total_rows is not None else len(table.rows)
+    displayed = min(ROWS_SHOWN, len(table.rows))
+    shown = f", the first {displayed} shown above" if count > displayed else ""
     return f"{table.path} has {count} row{'s' if count != 1 else ''}{shown}."
 
 
@@ -154,17 +165,27 @@ WRAP = Alignment(wrap_text=True, vertical="top")
 def append_row(sheet: Worksheet, values: Iterable[Any], *, bold: bool = False, wrap: bool = False) -> None:
     """Appends values as cells, every string as text. openpyxl writes a string starting with = as a
     formula, and result cells and answer.md can hold chain data that anyone sets, such as token names."""
-    sheet.append([ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, v) if isinstance(v, str) else v for v in values])
-    for cell in sheet[sheet.max_row]:
+    # Configure new cells before append assigns their coordinates. Looking up the last row afterward
+    # scans every cell already written, making a large export quadratic.
+    cells = []
+    for value in values:
+        if isinstance(value, str):
+            value = ILLEGAL_CHARACTERS_RE.sub(REPLACEMENT, value)
+        cell = Cell(sheet, value=value)
         if isinstance(cell.value, str):
             cell.data_type = "s"
         if bold:
             cell.font = BOLD
         if wrap:
             cell.alignment = WRAP
+        cells.append(cell)
+    sheet.append(cells)
 
 
 def write_xlsx(report: Report, path: Path) -> None:
+    for table in report.tables:
+        if table.total_rows is not None and table.total_rows != len(table.rows):
+            raise BadInput(f"XLSX requires every result row: reload {table.path} without a row limit")
     answer = report.answer
     book = Workbook()
     sheet = book.active
@@ -446,7 +467,7 @@ WRITERS = {"xlsx": write_xlsx, "pdf": write_pdf, "docx": write_docx}
 def run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
     chosen = parse_formats(formats)
     folder = answer_dir(repo_root, slug)
-    report = load(folder, slug)
+    report = load(folder, slug, row_limit=None if "xlsx" in chosen else ROWS_SHOWN)
     reports = folder / "reports"
     if "gdoc" in chosen:
         # Imported here so that the other formats never load the Google client. It runs first, so that
