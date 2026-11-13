@@ -135,7 +135,15 @@ policy. For model refresh choices and reproducible benchmarks, see
 [fact model performance](fact-model-performance.md) and
 [state and aggregation performance](model-performance.md).
 
-Validate with `bj questions --check`, `dbt compile --select <analysis-name>` and the relevant model
-tests. Compare results against a small independent fixture, including empty input and late data.
+Validate with `bj questions --check` and the relevant model tests. To compile an analysis from the
+repository root, export the warehouse settings from `.env` first (see
+[local setup](architecture.md#local-setup-detail)), then run:
+
+```sh
+uv run --project orchestration dbt compile --project-dir transformation \
+  --profiles-dir transformation --select <analysis-name>
+```
+
+Compare results against a small independent fixture, including empty input and late data.
 The [factory reference contract](../transformation/seeds/reference/README.md) is also usable by hand;
 its reference tests are opt-in and do not run as ordinary pipeline checks.
