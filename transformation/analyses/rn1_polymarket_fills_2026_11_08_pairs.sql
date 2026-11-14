@@ -41,7 +41,7 @@ select
     kind,
     count(*) as markets,
     count(*) filter (where pair_shares > 0) as markets_bought_both,
-    round(100.0 * count(*) filter (where pair_shares > 0) / count(*), 2) as markets_bought_both_pct,
+    round(100.0 * count(*) filter (where pair_shares > 0) / nullif(count(*), 0), 2) as markets_bought_both_pct,
     sum(cost_0 + cost_1) as cost_usdc,
     sum(pair_shares) as pair_shares,
     round(sum(pair_shares * pair_cost) filter (where pair_shares > 0), 6) as pair_cost_usdc,

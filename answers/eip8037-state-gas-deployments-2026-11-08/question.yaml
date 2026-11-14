@@ -49,3 +49,14 @@ analyses:
   - eip8037_state_gas_deployments_2026_11_08_by_threshold
   - eip8037_state_gas_deployments_2026_11_08_distribution
   - eip8037_state_gas_deployments_2026_11_08_wildcat
+expected_columns:
+  eip8037_state_gas_deployments_2026_11_08: [deployments_above_60m_gas_limit]
+  eip8037_state_gas_deployments_2026_11_08_by_threshold: [threshold_gas, deployments_above, deployments,
+    share_above]
+  eip8037_state_gas_deployments_2026_11_08_distribution: [deployments, creates, new_accounts, code_bytes,
+    new_slots, min_state_gas, median_state_gas, p90_state_gas, p99_state_gas, max_state_gas, eip7702_transactions]
+  eip8037_state_gas_deployments_2026_11_08_wildcat: [tx_hash, block_number, from_address, to_address,
+    sighash, creates, new_accounts, code_bytes, new_slots, state_gas, above_60m_gas_limit]
+grain:
+  eip8037_state_gas_deployments_2026_11_08_by_threshold: [threshold_gas]
+  eip8037_state_gas_deployments_2026_11_08_wildcat: [tx_hash]

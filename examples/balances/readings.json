@@ -1,0 +1,8 @@
+[
+  {"table": "ethereum_eth_balances", "id": "eth-older", "data": {"wallet": "0x0000000000000000000000000000000000000001", "block_number": 99, "balance": "1000000000000000000"}},
+  {"table": "ethereum_eth_balances", "id": "eth-latest", "data": {"wallet": "0x0000000000000000000000000000000000000001", "block_number": 100, "balance": "1250000000000000000"}},
+  {"table": "ethereum_eth_balances", "id": "eth-second-wallet", "data": {"wallet": "0x0000000000000000000000000000000000000002", "block_number": 100, "balance": "2500000000000000000"}},
+  {"table": "ethereum_erc20_balances", "id": "token", "data": {"wallet": "0x0000000000000000000000000000000000000001", "token": "0x0000000000000000000000000000000000000010", "block_number": 100, "balance": "5000000"}},
+  {"table": "solana_sol_balances", "id": "sol", "data": {"wallet": "11111111111111111111111111111111", "slot": 100, "balance": "2000000000"}},
+  {"table": "bitcoin_btc_balances", "id": "btc", "data": {"wallet": "synthetic-bitcoin-wallet", "block_number": 100, "balance": "10000000"}}
+]

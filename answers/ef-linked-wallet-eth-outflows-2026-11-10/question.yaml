@@ -51,3 +51,15 @@ analyses:
   - ef_linked_wallet_eth_outflows_2026_11_10_by_class
   - ef_linked_wallet_eth_outflows_2026_11_10_by_day
   - ef_linked_wallet_eth_outflows_2026_11_10_reconciliation
+expected_columns:
+  ef_linked_wallet_eth_outflows_2026_11_10: [eth_sent_out]
+  ef_linked_wallet_eth_outflows_2026_11_10_by_outflow: [block_number, block_timestamp, tx_hash, to_address,
+    outflow_class, venue, eth, order_uid, settlement_tx_hash, settlement_block_number, buy_symbol, buy_token,
+    received_base_units]
+  ef_linked_wallet_eth_outflows_2026_11_10_by_class: [outflow_class, venue, outflows, eth]
+  ef_linked_wallet_eth_outflows_2026_11_10_by_day: [day, outflow_class, outflows, eth]
+  ef_linked_wallet_eth_outflows_2026_11_10_reconciliation: [sent_txs, outgoing_eth, fees_eth, incoming_eth]
+grain:
+  ef_linked_wallet_eth_outflows_2026_11_10_by_outflow: [tx_hash]
+  ef_linked_wallet_eth_outflows_2026_11_10_by_class: [outflow_class, venue]
+  ef_linked_wallet_eth_outflows_2026_11_10_by_day: [day, outflow_class]

@@ -54,7 +54,9 @@ class Coverage:
             return ranges[0] if len(ranges) == 1 else None
         return (self.start_block, self.cursor) if self.cursor is not None else None
 
-    def verified_ranges(self, wanted: dict[str, list[str]]) -> list[tuple[int, int]]:
+    def verified_ranges(
+        self, wanted: dict[str, list[str]], *, all_wallets: bool = False,
+    ) -> list[tuple[int, int]]:
         if self.supported_filters is not None and not wanted.keys() <= self.supported_filters:
             return []
         # Older versions wrote multiple datasets into one raw table with overlapping event IDs.
@@ -73,6 +75,8 @@ class Coverage:
                 if config.get("version") != 2 or pool_start is None or pool_start > required_pool_start:
                     continue
             loaded = config["filter"]
+            if all_wallets and ("wallets" in loaded or "wallets" not in config["unrestricted"]):
+                continue
             if self.supported_filters is not None:
                 loaded = {key: values for key, values in loaded.items() if key in self.supported_filters}
             # Removing an optional restriction requests all values; a previous restricted
@@ -94,11 +98,12 @@ class Coverage:
                 merged.append((first, last))
         return merged
 
-    def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]]) -> list[str]:
+    def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]], *, all_wallets: bool = False) -> list[str]:
         """What the loaded data lacks for these blocks and this subset of addresses.json. Empty when it has it all."""
         first, last = blocks
         if self.evidence is not None:
-            if any(begin <= first and end >= last for begin, end in self.verified_ranges(wanted)):
+            ranges = self.verified_ranges(wanted, all_wallets=all_wallets)
+            if any(begin <= first and end >= last for begin, end in ranges):
                 return []
             return [f"no verified ingestion contract covers blocks {first}–{last} and the requested filters; "
                     "legacy or changed-filter history needs a SOURCE_BACKFILL_ID backfill"]
@@ -109,6 +114,11 @@ class Coverage:
             gaps.append("no run has saved a cursor")
         elif self.cursor < last:
             gaps.append(f"cursor {self.cursor} is before {last}")
+        if all_wallets:
+            if (self.source, self.table) not in OPTIONAL_WALLET_SOURCES:
+                gaps.append(f"unrestricted wallet coverage is unknown for {self.name}")
+            elif "wallets" in self.filter:
+                gaps.append("addresses.json restricts wallets but the question requires all wallets")
         for key, values in wanted.items():
             if key not in self.filter:
                 if key == "wallets" and (self.source, self.table) in OPTIONAL_WALLET_SOURCES:

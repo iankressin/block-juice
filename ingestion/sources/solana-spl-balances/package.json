@@ -13,5 +13,6 @@
     "@ingestion/lib": "workspace:*",
     "@solana/kit": "^8.6.0",
     "zod": "^4.6.7"
-  }
+  },
+  "license": "Apache-2.0"
 }

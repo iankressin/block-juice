@@ -1,0 +1,62 @@
+question: What do the loaded Polymarket maker trades and market positions show?
+definitions:
+  loaded window: All rows currently loaded in the Polymarket marts; no date filter is implied by the question.
+  volume: pUSD in maker-order fills before fees, preserving the existing SQL definition.
+  coverage: Wallet-filtered ingestion is not a market-wide sample. history_complete describes the loaded
+    block history. Open-position valuations use observed prices; resolved markets use payouts.
+marts:
+- polymarket_trades
+- polymarket_markets
+- polymarket_price_candles
+- polymarket_market_participants
+analyses:
+- polymarket_overview
+- polymarket_overview_by_day
+- polymarket_overview_by_event
+- polymarket_overview_by_fill_size
+- polymarket_overview_by_hour
+- polymarket_overview_by_market
+- polymarket_overview_by_market_type
+- polymarket_overview_by_pnl_bucket
+- polymarket_overview_by_price
+- polymarket_overview_by_wallet
+- polymarket_overview_kpis
+- polymarket_overview_top_market_prices
+inputs:
+- name: market_fills
+  strategy: history
+  source: polygon.polymarket_ctf_exchange_v2
+- name: conditions_and_positions
+  strategy: history
+  source: polygon.polymarket_ctf
+- name: market_metadata
+  strategy: state
+  source: polymarket.markets
+window:
+  scope: loaded
+expected_columns:
+  polymarket_overview: [volume_usdc]
+  polymarket_overview_by_day: [day, fills, volume_usdc, fees_usdc, markets_traded, makers, markets_resolved]
+  polymarket_overview_by_event: [event_id, event_title, neg_risk, markets_traded, markets_resolved, fills,
+    volume_usdc]
+  polymarket_overview_by_fill_size: [bucket, lower_usdc, fills, volume_usdc]
+  polymarket_overview_by_hour: [hour, fills, volume_usdc, fees_usdc]
+  polymarket_overview_by_market: [condition_id, question, event_title, slug, neg_risk, end_date, resolved_at,
+    last_prices, fills, volume_usdc, fees_usdc, makers, first_fill_at, last_fill_at]
+  polymarket_overview_by_market_type: [market_type, status, markets_traded, fills, volume_usdc]
+  polymarket_overview_by_pnl_bucket: [bucket, pnl_range_usdc, wallets, pnl_usdc]
+  polymarket_overview_by_price: [price_from, price_to, fills, shares, volume_usdc]
+  polymarket_overview_by_wallet: [list, rank, wallet, markets, trades, traded_usdc, fees_usdc, pnl_usdc]
+  polymarket_overview_kpis: [fills, volume_usdc, fees_usdc, shares_traded, maker_buy_usdc, maker_sell_usdc,
+    markets_traded, makers, first_block, last_block, first_fill_at, last_fill_at, markets_in_catalog,
+    markets_resolved, markets_history_complete, events_in_catalog, events_traded, participant_rows, wallets,
+    traders, markets_with_activity, candles, tokens_with_candles]
+  polymarket_overview_top_market_prices: [condition_id, question, market_volume_usdc, outcome, outcome_order,
+    hour, close, volume_usdc]
+grain:
+  polymarket_overview_by_day: [day]
+  polymarket_overview_by_event: [event_id]
+  polymarket_overview_by_hour: [hour]
+  polymarket_overview_by_market: [condition_id]
+  polymarket_overview_by_market_type: [market_type, status]
+  polymarket_overview_by_wallet: [list, rank]

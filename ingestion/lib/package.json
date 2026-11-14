@@ -30,5 +30,6 @@
   "devDependencies": {
     "@electric-sql/pglite": "0.5.13",
     "@types/pg": "^8.11.0"
-  }
+  },
+  "license": "Apache-2.0"
 }
