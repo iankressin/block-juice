@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { Checkpoint } from "#src/source.ts";
 
 export const DAY_MS = 86_400_000;
 export type HistoryState = { origin: number; next: number; refreshedAt: number; refreshNext?: number };
@@ -32,13 +31,16 @@ export function historyPlan(
   const state = saved ?? { origin, next: origin, refreshedAt: 0 };
   const full = !saved || saved.refreshNext !== undefined || settings.HISTORY_FULL_REFRESH === "1"
     || now - state.refreshedAt >= (settings.HISTORY_REFRESH_DAYS ?? 7) * DAY_MS;
+  // The final attempted window may have contained open candles, including in older checkpoints.
+  const lastWindow = Math.max(origin, state.next - span);
+  const overlap = (settings.HISTORY_OVERLAP_DAYS ?? 3) * DAY_MS;
   const lower = full
     ? (settings.HISTORY_FULL_REFRESH === "1" ? origin : state.refreshNext ?? origin)
-    : Math.min(state.next, now) - (settings.HISTORY_OVERLAP_DAYS ?? 3) * DAY_MS;
+    : Math.min(lastWindow, Math.min(state.next, now) - overlap);
   const from = origin + Math.max(0, Math.floor((lower - origin) / span)) * span;
   return {
     from,
-    checkpoint(next: number): Checkpoint {
+    checkpoint(next: number) {
       const finished = next > now;
       const value: HistoryState = { origin, next: Math.max(state.next, next),
         refreshedAt: full && finished ? now : state.refreshedAt };

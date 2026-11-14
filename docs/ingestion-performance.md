@@ -12,7 +12,7 @@ The optional settings apply to these three API sources:
 
 | Setting | Default | Behavior |
 |---|---:|---|
-| `HISTORY_OVERLAP_DAYS` | `3` | Revisit recent history on ordinary runs, rounded down to whole request windows. Zero still revisits the current incomplete window/day. |
+| `HISTORY_OVERLAP_DAYS` | `3` | Revisit recent history on ordinary runs, rounded down to whole request windows. Zero still revisits the last attempted window so candles that have since closed can load. |
 | `HISTORY_REFRESH_DAYS` | `7` | Start a full historical correction sweep after this many days since the previous sweep completed. An interrupted sweep resumes its cursor. |
 | `HISTORY_FULL_REFRESH` | `0` | Set to `1` for one run to start from configured history again; unset afterwards. |
 
@@ -31,7 +31,7 @@ For every-run full history, set `HISTORY_FULL_REFRESH=1` persistently. Do not de
 
 EVM and Solana call sources produce at most 100 calls and retain one result batch at a time. EVM calls keep one snapshot block for a run and still start together within each batch for RPC/multicall batching. Wallet/token products are generated lazily; memory grows with configured address lists, not their Cartesian product. Transport concurrency and API weight/rate limits still apply.
 
-The runner reads dead letters in pages of 500 with a fixed upper boundary and keyset cursor. Successful deletions and failed attempts cannot shift later pages or replay the same failure within a run. Failures created during a run wait for the next run. Schema-invalid calls are parked without hiding valid calls in later pages. `Source.extract(env, retry)` retains its complete retry array for existing custom sources. To adopt bounded pages, set `retryMode: "paged"` and consume `context.retryPages` (or use `callBatches`/`retryPages`). Every built-in call source opts into paging; legacy custom sources retain their original backlog-memory behavior until they opt in.
+The runner reads a snapshot of the starting retry backlog in pages of 500. Successful deletions and failed attempts cannot shift later pages or replay the same failure within a run. Failures created during a run wait for the next run. Schema-invalid calls are parked without hiding valid calls in later pages. `Source.extract(env, retry)` retains its complete retry array for existing custom sources. To adopt bounded pages, set `retryMode: "paged"` and consume `context.retryPages` (or use `callBatches`/`retryPages`). Every built-in call source opts into paging; legacy custom sources retain their original backlog-memory behavior until they opt in.
 
 Bitcoin keeps one native `scantxoutset` operation over its wallet set. Splitting that operation would repeat an entire UTXO scan and mix block heights. Its wallet set and the provider's response remain a memory floor; this change does not claim bounded memory for an arbitrarily large native UTXO response. Provider response/page sizes similarly remain outside the call producer's bound.
 
@@ -41,7 +41,7 @@ Every observation still refreshes `_loaded_at`, including identical values, pres
 
 Structured `Batch committed` logs include committed counts, transaction/write duration, and RSS memory. Stream progress is published after rows and the block cursor commit, so a failed commit never inflates durable counts. `load_seconds` includes transaction overhead, locking, retries, and commit; call sources also report explicit `commit_seconds`. Streams expose transaction overhead separately because Pipes owns their commit; it is not mislabeled as pure commit time.
 
-When `PUSHGATEWAY_URL` is configured, `ingestion_current_*` gauges refresh every 15 seconds while a run is active and once when it ends. They expose committed batches/records, call outcomes, retries, elapsed/load/write/commit time, memory, and the last committed stream block. They do not overwrite the previous completed run's success metric. A metrics failure only warns. After abrupt termination, use the progress timestamp to identify stale gauges.
+When `PUSHGATEWAY_URL` is configured, `ingestion_current_*` gauges refresh every 15 seconds while a run is active and once when it ends. They expose committed batches/records, call outcomes, retries, elapsed/load/write/commit time, memory, and the last stream block committed in this run (`-1` until the first commit). They do not overwrite the previous completed run's success metric. A metrics failure only warns. After abrupt termination, use the progress timestamp to identify stale gauges.
 
 Call clients also expose per-run transport and wait gauges:
 

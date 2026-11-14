@@ -161,7 +161,7 @@ test("a run log row that cannot be written only warns", async () => {
   assert.deepEqual(warnings, ["Could not record the run in ops.ingestion_runs"]);
 });
 
-test("retry keyset pages survive successes, failures and new dead letters without skipping or looping", async (t) => {
+test("retry pages survive successes, failures and new dead letters without skipping or looping", async (t) => {
   const { warehouse } = await pgliteWarehouse(t);
   const table = await warehouse.open("test_wallets");
   const ids = Array.from({ length: 1203 }, (_, i) => String(i).padStart(5, "0"));
@@ -216,4 +216,16 @@ test("unchanged JSON still refreshes observation time and corrections still repl
   assert.ok(timing.seconds >= timing.writeSeconds + timing.commitSeconds);
   await table.load({ records: [record("a", { v: 2 })], failed: [] });
   assert.deepEqual((await db.query("select data from raw.test_wallets")).rows, [{ data: { v: 2 } }]);
+});
+
+test("a stale retry snapshot cannot park a newer valid call", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [], failed: [failure("a"), failure("b", {})] });
+  const pages = table.retryPages(wallet, 1);
+  assert.deepEqual((await pages.next()).value, { calls: [{ wallet: "a" }], parked: 0 });
+  await table.load({ records: [], failed: [failure("b")] });
+  assert.deepEqual((await pages.next()).value, { calls: [], parked: 0 });
+  await pages.return(undefined);
+  assert.deepEqual(await table.backlog(), { pending: 2, parked: 0 });
 });

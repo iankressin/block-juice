@@ -121,6 +121,7 @@ export async function* walkMarkets(
       if (last) succeededCallIds.push(id);
       else next.push({ call: walk.call, cursor: nextCursor, page: walk.page + 1 });
     });
+    batch.callsCompleted = succeededCallIds.length + batch.failed.length;
     batch.records.push(...records.values());
     active = next;
     if (onProgress) batch.checkpoints = onProgress([

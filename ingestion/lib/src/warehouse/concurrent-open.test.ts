@@ -99,3 +99,32 @@ test("Postgres exposes API progress and records together only after COMMIT", asy
   assert.equal((await observer.query("select * from raw.test_candles")).rows.length, 1);
   assert.equal((await observer.query("select * from raw._checkpoints")).rows.length, 1);
 });
+
+test("a source keeps exclusive ownership until close while another source can open", async (t) => {
+  const server = serverConfig();
+  if (typeof server === "string") return t.skip(server);
+  let admin: Connection;
+  try { admin = await connect({ ...server, database: "postgres" }); }
+  catch (error) { if (process.env.CI) throw error; return t.skip(String(error)); }
+  const database = `bj_test_${randomBytes(6).toString("hex")}`;
+  await admin.query(`create database "${database}"`);
+  t.after(async () => {
+    await admin.query(`drop database "${database}" with (force)`);
+    await admin.close();
+  });
+  const warehouse = postgresWarehouse({
+    schema: "raw",
+    connect: () => connect({ ...server, database, options: "-c lock_timeout=500ms" }),
+  });
+  const owner = await warehouse.open("wallets");
+  try {
+    await owner.load({ records: [], failed: [] });
+    await (await warehouse.open("candles")).close();
+    await assert.rejects(async () => {
+      await (await warehouse.open("wallets")).close();
+    }, { code: "55P03" });
+  } finally {
+    await owner.close();
+  }
+  await (await warehouse.open("wallets")).close();
+});

@@ -70,7 +70,7 @@ export const callId = (call: CandleCall) => `${call.symbol}:${call.interval}:${c
 /**
  * The open time of the market's first candle at or after `from`. It is where the market's
  * windows start, so none falls before a listing, and 3d and 1w windows stay on Binance's grid.
- * When the read fails for any reason but an unknown market or a ban, it returns `from`: the
+ * When the read fails for any reason but an unknown market or a ban, it returns undefined: the
  * market's windows still run, and any that fail wait as dead letters for the next run.
  */
 export async function firstOpenTime(
@@ -78,7 +78,7 @@ export async function firstOpenTime(
   market: Market,
   interval: Interval,
   from: number,
-): Promise<number> {
+): Promise<number | undefined> {
   let candles: Candle[];
   try {
     candles = await binance.candles({ symbol: market.symbol, interval, startTime: from, limit: 1 });
@@ -93,7 +93,7 @@ export async function firstOpenTime(
       { symbol: market.symbol, error: describeError(error) },
       "Could not read the market's first candle, so its windows start at START_TIME",
     );
-    return from;
+    return undefined;
   }
   const [first] = candles;
   if (!first) {

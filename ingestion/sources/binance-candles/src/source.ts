@@ -1,4 +1,4 @@
-import { callBatches, chunk, historyKey, historyPlan, historyState, type Source } from "@ingestion/lib";
+import { callBatches, historyKey, historyPlan, historyState, type Checkpoint, type Source } from "@ingestion/lib";
 import * as z from "zod";
 import { createBinanceClient, systemClock, type Clock } from "#src/binance.ts";
 import {
@@ -53,13 +53,20 @@ export const candlesSource = (clock: Clock = systemClock): Source<BinanceEnv, Ca
 
     const now = clock.now();
     const span = windowSpan(env.CANDLE_INTERVAL);
-    const plans = new Map<string, ReturnType<typeof historyPlan>>();
+    const plans = new Map<string, ReturnType<typeof historyPlan> & { listingConfirmed: boolean }>();
     for (const market of markets) {
       const key = historyKey(["binance", env.BINANCE_API_URL, market, env.CANDLE_INTERVAL, env.START_TIME]);
       const saved = historyState(await context?.getCheckpoint?.(key));
-      if (!saved) await binance.waitForWeight();
-      const origin = saved?.origin ?? await firstOpenTime(binance, market, env.CANDLE_INTERVAL, env.START_TIME);
-      plans.set(market.symbol, historyPlan(key, origin, span, now, saved, env));
+      // An old origin equal to START_TIME could have come from a failed probe.
+      const confirmed = saved && (saved.origin !== env.START_TIME ||
+        ("listingConfirmed" in saved && saved.listingConfirmed === true));
+      if (!confirmed) await binance.waitForWeight();
+      const listing = confirmed ? saved.origin
+        : await firstOpenTime(binance, market, env.CANDLE_INTERVAL, env.START_TIME);
+      const origin = listing ?? env.START_TIME;
+      const resume = saved?.origin === origin ? saved : undefined;
+      const plan = historyPlan(key, origin, span, now, resume, env);
+      plans.set(market.symbol, { ...plan, listingConfirmed: listing !== undefined });
     }
     function* fresh() {
       for (const market of markets) yield* iterateWindowCalls(market, env.CANDLE_INTERVAL, plans.get(market.symbol)!.from, now);
@@ -73,10 +80,11 @@ export const candlesSource = (clock: Clock = systemClock): Source<BinanceEnv, Ca
       await binance.waitForWeight();
       const batch = await fetchWindows(binance, part, clock);
       if (context?.getCheckpoint) {
-        const progress = new Map<string, ReturnType<ReturnType<typeof historyPlan>["checkpoint"]>>();
+        const progress = new Map<string, Checkpoint>();
         for (const call of part) if (isFresh(call)) {
-          const checkpoint = plans.get(call.symbol)!.checkpoint(call.end_time + 1);
-          progress.set(checkpoint.key, checkpoint);
+          const plan = plans.get(call.symbol)!;
+          const { key, value } = plan.checkpoint(call.end_time + 1);
+          progress.set(key, { key, value: { ...value, listingConfirmed: plan.listingConfirmed } });
         }
         batch.checkpoints = [...progress.values()];
       }
