@@ -33,32 +33,26 @@
     select pg_advisory_xact_lock(hashtextextended('{{ dbt.escape_single_quotes('block-juice:reconcile:' ~ this) }}', 0))
 {% endmacro %}
 
-{% macro reconcile_index_name(relation, columns, unique=False) %}
-    {# Stable for updates, distinct for --full-refresh: the old backup and its indexes still
-       exist when post-hooks run, so a name based only on the model would skip the new index. #}
-    {% if execute %}
-        {# Reuse an equivalent dbt-created index when switching an existing table to reconcile. #}
-        {% set existing_sql %}
-            select c.relname
+{% macro reconcile_has_index(relation, columns, unique=False) %}
+    {% set existing_sql %}
+        select exists (
+            select 1
             from pg_index i join pg_class c on c.oid = i.indexrelid
             join pg_am am on am.oid = c.relam
             where i.indrelid = '{{ dbt.escape_single_quotes(relation|string) }}'::regclass
                 and i.indisvalid and i.indisready and i.indpred is null and i.indexprs is null
-                and am.amname = 'btree' and i.indnatts = {{ columns|length }}
+                and am.amname = 'btree' and i.indnkeyatts = {{ columns|length }}
                 {% if unique %}and i.indisunique{% endif %}
                 and array(select a.attname::text
                     from unnest(i.indkey) with ordinality k(attnum, position)
                     join pg_attribute a on a.attrelid = i.indrelid and a.attnum = k.attnum
+                    where k.position <= i.indnkeyatts
                     order by k.position) = array[
                     {% for column in columns %}'{{ dbt.escape_single_quotes(column) }}'{% if not loop.last %}, {% endif %}{% endfor %}
                 ]::text[]
-            limit 1
-        {% endset %}
-        {% set existing = run_query(existing_sql) %}
-        {% if existing.rows|length %}{{ return(existing.rows[0][0]) }}{% endif %}
-        {% set identity = run_query("select '" ~ dbt.escape_single_quotes(relation|string) ~ "'::regclass::oid").rows[0][0] %}
-        {{ return('bj_fact_' ~ local_md5(identity|string ~ columns|join(',') ~ unique|string)) }}
-    {% endif %}
+        )
+    {% endset %}
+    {{ return(run_query(existing_sql).rows[0][0]) }}
 {% endmacro %}
 
 {% macro reconcile_key(relation=this) %}
@@ -67,9 +61,16 @@
     {% if keys is string %}{% set keys = [keys] %}{% endif %}
     {% set quoted = [] %}
     {% for key in keys %}{% do quoted.append(adapter.quote(key)) %}{% endfor %}
-    create unique index if not exists {{ adapter.quote(reconcile_index_name(relation, keys, True)) }}
-        on {{ relation }} ({{ quoted|join(', ') }});
-    {% for key in keys %}
+    {% if not reconcile_has_index(relation, keys, unique=True) %}
+    create unique index on {{ relation }} ({{ quoted|join(', ') }});
+    {% endif %}
+    {% set nullable_sql %}
+        select attname from pg_attribute
+        where attrelid = '{{ dbt.escape_single_quotes(relation|string) }}'::regclass
+            and attnum > 0 and not attisdropped and not attnotnull
+    {% endset %}
+    {% set nullable = run_query(nullable_sql).columns[0].values() %}
+    {% for key in keys if key in nullable %}
     alter table {{ relation }} alter column {{ adapter.quote(key) }} set not null;
     {% endfor %}
     {% endif %}
@@ -78,10 +79,11 @@
 {% macro reconcile_indexes(relation=this) %}
     {% if execute %}
     {% for index in config.get('meta').get('reconcile_indexes', []) %}
-        {% set columns = [] %}
-        {% for column in index['columns'] %}{% do columns.append(adapter.quote(column)) %}{% endfor %}
-        create index if not exists {{ adapter.quote(reconcile_index_name(relation, index['columns'])) }}
-            on {{ relation }} ({{ columns|join(', ') }});
+        {% if not reconcile_has_index(relation, index['columns']) %}
+            {% set columns = [] %}
+            {% for column in index['columns'] %}{% do columns.append(adapter.quote(column)) %}{% endfor %}
+            create index on {{ relation }} ({{ columns|join(', ') }});
+        {% endif %}
     {% endfor %}
     {% endif %}
 {% endmacro %}
@@ -93,6 +95,7 @@
     {% if keys is string %}{% set keys = [keys] %}{% endif %}
     {% if not keys %}{{ exceptions.raise_compiler_error('reconcile requires a unique_key') }}{% endif %}
     {% set key_columns, matches, columns, old_values, new_values, assignments = [], [], [], [], [], [] %}
+    {% set numeric_columns = [] %}
     {% for key in keys %}
         {% set column = adapter.quote(key) %}
         {% do key_columns.append(column) %}
@@ -104,6 +107,7 @@
         {% do old_values.append('t.' ~ column) %}
         {% do new_values.append('s.' ~ column) %}
         {% do assignments.append(column ~ ' = s.' ~ column) %}
+        {% if item.is_numeric() %}{% do numeric_columns.append(column) %}{% endif %}
     {% endfor %}
 
     {# Validate the entire candidate before changing the target. Index statistics also prevent
@@ -114,6 +118,15 @@
     create unique index on {{ snapshot }} ({{ key_columns|join(', ') }});
     analyze {{ snapshot }};
 
+    {% if not reconcile_has_index(target, keys, unique=True) %}
+    {# A table build can leave several published rows for one key. Let MERGE reinsert
+       the validated candidate for each such key when adopting reconciliation. #}
+    delete from {{ target }} where ({{ key_columns|join(', ') }}) in (
+        select {{ key_columns|join(', ') }} from {{ target }}
+        group by {{ key_columns|join(', ') }} having count(*) > 1
+    );
+    {% endif %}
+
     {# PostgreSQL 16 MERGE has no NOT MATCHED BY SOURCE. Remove omitted keys separately in the
        same transaction, after candidate validation. Keep MERGE last so dbt's affected-row count
        reports inserts/updates; deletion counts require separate warehouse telemetry. #}
@@ -122,7 +135,12 @@
 
     merge into {{ target }} as t using {{ snapshot }} as s
         on {{ matches|join(' and ') }}
-    when matched and row({{ old_values|join(', ') }}) is distinct from row({{ new_values|join(', ') }})
+    when matched and (
+        row({{ old_values|join(', ') }}) is distinct from row({{ new_values|join(', ') }})
+        {% for column in numeric_columns %}
+        or scale(t.{{ column }}) is distinct from scale(s.{{ column }})
+        {% endfor %}
+    )
         then update set {{ assignments|join(', ') }}
     when not matched then insert ({{ columns|join(', ') }}) values ({{ new_values|join(', ') }});
 

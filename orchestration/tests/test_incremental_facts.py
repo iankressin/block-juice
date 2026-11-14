@@ -124,6 +124,73 @@ def correct_history(connection, transfer, candle, log, aggregator):
         query.execute("update analytics.chainlink_feeds set decimals=6 where aggregator=%s", (aggregator,))
 
 
+def test_reconcile_with_active_reader(fact_project, monkeypatch):
+    project, connection = fact_project
+    reconcile = ["--vars", "{fact_strategy: reconcile}"]
+    dbt(project, "run", "--select", "+token_prices", *reconcile)
+
+    connection.autocommit = False
+    try:
+        with connection.cursor() as reader:
+            reader.execute("select count(*) from analytics.token_prices")
+            reader.execute("select attname from pg_attribute where attrelid = 'analytics.token_prices'::regclass "
+                           "and attnum > 0 and attnotnull")
+            assert {name for (name,) in reader.fetchall()} == {"exchange", "token", "quote", "interval", "open_time"}
+            monkeypatch.setenv("PGOPTIONS", "-c lock_timeout=2s")
+            dbt(project, "run", "--select", "token_prices", *reconcile)
+    finally:
+        connection.rollback()
+        connection.autocommit = True
+
+
+def test_reconcile_preserves_candle_scale(fact_project):
+    project, connection = fact_project
+    _, candle, _, _ = populate_facts(connection)
+    reconcile = ["--vars", "{fact_strategy: reconcile}"]
+    dbt(project, "run", "--select", "+token_prices", *reconcile)
+    put(connection, "binance_candles", "ETHUSDT:1h:0", {**candle, "close": "11.00"})
+    dbt(project, "run", "--select", "token_prices", *reconcile)
+    with connection.cursor() as query:
+        query.execute("select close::text from analytics.token_prices where exchange = 'binance'")
+        assert query.fetchone() == ("11.00",)
+
+
+def test_reconcile_distinguishes_index_keys_from_included_columns(fact_project):
+    project, connection = fact_project
+    dbt(project, "run", "--select", "+erc20_transfers")
+    with connection.cursor() as query:
+        query.execute("create index transfer_cover on analytics.erc20_transfers (chain, token) include (block_number)")
+        query.execute("create unique index transfer_key on analytics.erc20_transfers (chain, id) include (value)")
+    dbt(project, "run", "--select", "erc20_transfers", "--vars", "{fact_strategy: reconcile, fact_indexes: true}")
+    with connection.cursor() as query:
+        query.execute("select pg_get_indexdef(indexrelid) from pg_index "
+                      "where indrelid = 'analytics.erc20_transfers'::regclass")
+        definitions = [definition for (definition,) in query.fetchall()]
+    assert any("btree (chain, token, block_number)" in definition for definition in definitions)
+    assert len(definitions) == 3, "Reuse the unique key that already includes value"
+
+
+def test_reconcile_repairs_duplicate_keys_from_table_build(fact_project):
+    project, connection = fact_project
+    _, candle, _, _ = populate_facts(connection)
+    put(connection, "binance_candles", "duplicate", {**candle, "close": "99"})
+    dbt(project, "run", "--select", "+token_prices")
+    reconcile = ["--vars", "{fact_strategy: reconcile}"]
+    dbt(project, "run", "--select", "token_prices", *reconcile, success=False)
+    with connection.cursor() as query:
+        query.execute("select close::text from analytics.token_prices where exchange = 'binance' order by close")
+        assert query.fetchall() == [("11",), ("99",)]
+        query.execute("select ctid from analytics.token_prices where exchange = 'coinbase'")
+        unchanged = query.fetchone()
+        query.execute("delete from raw.binance_candles where id = 'duplicate'")
+    dbt(project, "run", "--select", "token_prices", *reconcile)
+    with connection.cursor() as query:
+        query.execute("select exchange, close::text from analytics.token_prices order by exchange")
+        assert query.fetchall() == [("binance", "11"), ("coinbase", "11")]
+        query.execute("select ctid from analytics.token_prices where exchange = 'coinbase'")
+        assert query.fetchone() == unchanged
+
+
 @pytest.mark.parametrize("strategy", ["table", "reconcile"])
 def test_facts_match_full_refresh_after_corrections(fact_project, strategy):
     project, connection = fact_project
