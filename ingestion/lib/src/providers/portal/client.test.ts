@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { finalizedHead, portalClient } from "#src/portal.ts";
+import { finalizedHead, portalClient } from "#src/providers/portal/client.ts";
 
 /** A local Portal that answers its finalized head and keeps the headers of each request. */
 async function portal(t: TestContext) {

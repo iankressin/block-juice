@@ -14,6 +14,17 @@ _Avoid_: connector, extractor, job
 A source that reads blocks in order through a Pipes stream instead of making calls. Each run resumes after its cursor. It makes no calls, so it has no dead letters: an error fails the run, and the next run resumes after the last batch that committed.
 _Avoid_: indexer, pipe
 
+**Provider**:
+A service that serves a chain's history to a stream source: SQD Portal, bloklake, a JSON-RPC node, Dune.
+_Avoid_: source (that is the package), vendor (the catalog's word for an off-chain API), backend
+
+**Raw provider**:
+A provider that serves the chain's own records: blocks, transactions, logs, traces. Given an event's ABI it returns the decoded events, and adds no rules of its own.
+
+**Structured provider**:
+A provider that serves facts someone built from those records by rules of their own: trades, balances, prices. Decoding alone does not make a provider structured. One provider can be both, as Dune is.
+_Avoid_: decoded provider
+
 **Call**:
 One request a source makes for data, described well enough to make again in a later run.
 _Avoid_: request, query

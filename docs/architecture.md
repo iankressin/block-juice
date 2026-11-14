@@ -47,7 +47,7 @@ A call source, `evm-erc20-metadata`, reads each token's `name()`, `symbol()` and
 │   │   └── src/
 │   │       ├── index.ts        # public API for any chain
 │   │       ├── source.ts       # Source and StreamSource interfaces
-│   │       ├── portal.ts       # Portal client and finalized head, for stream sources
+│   │       ├── providers/      # one client per provider, portal/ and bloklake/, for stream sources
 │   │       ├── warehouse/      # every Postgres write: raw tables, dead letters, cursors, the run log
 │   │       ├── evm/            # @ingestion/lib/evm: env, addresses, client, connect()
 │   │       ├── solana/         # @ingestion/lib/solana: env, addresses, client
