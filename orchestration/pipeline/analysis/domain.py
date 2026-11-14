@@ -33,6 +33,9 @@ class LastRun:
     finished_at: datetime
     records_written: int
     dagster_run_id: str | None
+    run_id: str | None = None
+    config_hash: str | None = None
+    inputs_complete: bool | None = None
 
 @dataclass(frozen=True)
 class Result:

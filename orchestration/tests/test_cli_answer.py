@@ -152,7 +152,7 @@ def document(tmp_path, answered_at):
         answered_at,
         [Result("eth_total", "select 1", ["total"], [(WEI,)])],
         {ETH: (0, 0), SOL: (1, 0)},
-        {ETH: LastRun(finished, 12, "run-1"), SOL: None},
+        {ETH: LastRun(finished, 12, "run-1", "ingestion-id", "fingerprint", True), SOL: None},
         [Check("dbt_tests", True, "3 passed")],
         {"git_sha": "abc", "git_dirty": False, "dbt_version": "1.12.6"},
     )
@@ -176,7 +176,8 @@ def test_answer_document_has_the_documented_shape(tmp_path):
         {
             "source": "ethereum.eth_balances",
             "raw_table": "raw.ethereum_eth_balances",
-            "last_run": {"finished_at": "2026-11-04T06:00:00Z", "records_written": 12, "dagster_run_id": "run-1"},
+            "last_run": {"finished_at": "2026-11-04T06:00:00Z", "records_written": 12, "dagster_run_id": "run-1",
+                         "run_id": "ingestion-id", "config_hash": "fingerprint", "inputs_complete": True},
             "dead_letters": {"pending": 0, "parked": 0},
         },
         {

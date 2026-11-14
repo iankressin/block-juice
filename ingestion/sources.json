@@ -9,7 +9,13 @@
     "name": "arbitrum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
-    "settings": "chains/arbitrum"
+    "settings": "chains/arbitrum",
+    "coverage": {
+      "filters": [
+        "aggregators"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "arbitrum",
@@ -21,12 +27,28 @@
     "name": "arbitrum",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
-    "settings": "chains/arbitrum"
+    "settings": "chains/arbitrum",
+    "coverage": {
+      "filters": [
+        "tokens",
+        "wallets"
+      ],
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "arbitrum",
     "table": "token_bridge",
-    "package": "arbitrum-token-bridge"
+    "package": "arbitrum-token-bridge",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/arbitrum-one",
+      "filters": [
+        "tokens"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "base",
@@ -38,7 +60,13 @@
     "name": "base",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
-    "settings": "chains/base"
+    "settings": "chains/base",
+    "coverage": {
+      "filters": [
+        "aggregators"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "base",
@@ -50,13 +78,28 @@
     "name": "base",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
-    "settings": "chains/base"
+    "settings": "chains/base",
+    "coverage": {
+      "filters": [
+        "tokens",
+        "wallets"
+      ],
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "base",
     "table": "op_standard_bridge",
     "package": "evm-op-standard-bridge",
-    "settings": "chains/base"
+    "settings": "chains/base",
+    "coverage": {
+      "filters": [
+        "tokens"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "binance",
@@ -83,19 +126,37 @@
     "name": "ethereum",
     "table": "chainlink_price_feeds",
     "package": "evm-chainlink-price-feeds",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "aggregators"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "ethereum",
     "table": "contract_deployments",
     "package": "evm-contract-deployments",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [],
+      "unrestricted": []
+    }
   },
   {
     "name": "ethereum",
     "table": "cow_ethflow",
     "package": "evm-cow-ethflow",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "wallets",
+        "ethFlow",
+        "settlement"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "ethereum",
@@ -113,7 +174,16 @@
     "name": "ethereum",
     "table": "erc20_transfers",
     "package": "evm-erc20-transfers",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "tokens",
+        "wallets"
+      ],
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "ethereum",
@@ -125,35 +195,91 @@
     "name": "ethereum",
     "table": "uniswap_v2",
     "package": "evm-uniswap-v2",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "tokens"
+      ],
+      "unrestricted": [],
+      "defaults": {
+        "POOLS_START_BLOCK": 10000835
+      }
+    }
   },
   {
     "name": "ethereum",
     "table": "uniswap_v3",
     "package": "evm-uniswap-v3",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "tokens"
+      ],
+      "unrestricted": [],
+      "defaults": {
+        "POOLS_START_BLOCK": 12369621
+      }
+    }
   },
   {
     "name": "ethereum",
     "table": "uniswap_v4",
     "package": "evm-uniswap-v4",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "tokens"
+      ],
+      "unrestricted": [],
+      "defaults": {
+        "POOLS_START_BLOCK": 21688329
+      }
+    }
   },
   {
     "name": "ethereum",
     "table": "wallet_transactions",
     "package": "evm-wallet-transactions",
-    "settings": "chains/ethereum"
+    "settings": "chains/ethereum",
+    "coverage": {
+      "filters": [
+        "wallets"
+      ],
+      "unrestricted": []
+    }
   },
   {
     "name": "polygon",
     "table": "polymarket_ctf",
-    "package": "polygon-polymarket-ctf"
+    "package": "polygon-polymarket-ctf",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/polygon-mainnet",
+      "filters": [
+        "conditional_tokens",
+        "neg_risk_adapter",
+        "collateral_adapters",
+        "auto_redeemers",
+        "wallets"
+      ],
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "polygon",
     "table": "polymarket_ctf_exchange_v2",
-    "package": "polygon-polymarket-ctf-exchange-v2"
+    "package": "polygon-polymarket-ctf-exchange-v2",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/polygon-mainnet",
+      "filters": [
+        "exchanges",
+        "wallets"
+      ],
+      "unrestricted": [
+        "wallets"
+      ]
+    }
   },
   {
     "name": "polymarket",

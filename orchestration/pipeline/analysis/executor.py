@@ -3,6 +3,7 @@ import csv
 import os
 import sqlite3
 import json
+from dataclasses import replace
 from decimal import Decimal
 from contextlib import closing
 from tempfile import TemporaryDirectory
@@ -149,6 +150,30 @@ def ingestion_inputs(cursor, runs):
     return result
 
 
+def latest_ingestion_runs(cursor, inputs):
+    runs = {}
+    keys = {}
+    for source in inputs:
+        cursor.execute(
+            "select finished_at, records_written, dagster_run_id, run_id::text "
+            "from ops.ingestion_runs where source = %s and table_name = %s and succeeded "
+            "order by finished_at desc, run_id desc limit 1",
+            (source.source, source.table),
+        )
+        row = cursor.fetchone()
+        runs[source] = LastRun(*row) if row else None
+        if row:
+            keys[source.name] = {"run_id": row[3], "source_table": source.source_table}
+
+    evidence = ingestion_inputs(cursor, keys)
+    for source, run in runs.items():
+        if run is not None:
+            item = evidence[source.name]
+            runs[source] = replace(run, config_hash=item.get("config_hash"),
+                                   inputs_complete=item.get("evidence", {}).get("complete"))
+    return runs, evidence
+
+
 def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):
     policy = policy or ExecutionPolicy()
     expected_columns = expected_columns or {}
@@ -178,17 +203,8 @@ def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expe
                     oid, filenode, kind = cursor.fetchone()
                     generations[f"{schema}.{name}"] = {"oid": oid, "relfilenode": filenode, "kind": kind}
                 results.context["relation_generations"] = generations
-                last_runs = {}
-                input_runs = {}
-                for source in inputs:
-                    cursor.execute("select finished_at, records_written, dagster_run_id, run_id::text from ops.ingestion_runs "
-                                   "where source = %s and table_name = %s and succeeded order by finished_at desc limit 1",
-                                   (source.source, source.table))
-                    row = cursor.fetchone()
-                    last_runs[source] = LastRun(*row[:3]) if row else None
-                    if row:
-                        input_runs[source.name] = {"run_id": row[3], "source_table": source.source_table}
-                results.context["ingestion_inputs"] = ingestion_inputs(cursor, input_runs)
+                last_runs, evidence = latest_ingestion_runs(cursor, inputs)
+                results.context["ingestion_inputs"] = evidence
                 dead_letters = {source: count_dead_letters(cursor, source.source_table) for source in inputs}
             for uid in analysis_ids:
                 node = manifest["nodes"][uid]

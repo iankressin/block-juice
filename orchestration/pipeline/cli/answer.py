@@ -293,13 +293,9 @@ def run_dbt_tests(
 
 
 def last_successful_run(cursor, source: Input) -> LastRun | None:
-    cursor.execute(
-        "select finished_at, records_written, dagster_run_id from ops.ingestion_runs"
-        " where source = %s and table_name = %s and succeeded order by finished_at desc limit 1",
-        (source.source, source.table),
-    )
-    row = cursor.fetchone()
-    return LastRun(*row) if row else None
+    from pipeline.analysis.executor import latest_ingestion_runs
+    runs, _ = latest_ingestion_runs(cursor, [source])
+    return runs[source]
 
 
 def read_warehouse(manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):

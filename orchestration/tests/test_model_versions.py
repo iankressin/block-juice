@@ -180,6 +180,8 @@ def test_result_snapshot_joins_input_evidence_to_last_successful_run(ops, scratc
     results, dead_letters, runs = read_warehouse(lambda: psycopg2.connect(**scratch), manifest, ["analysis.test.q"], [source])
     try:
         assert results[0].rows == [(17,)] and runs[source].records_written == 1
+        assert runs[source].run_id == run_id
+        assert runs[source].config_hash == "exact-config"
         assert dead_letters[source] == (0, 0)
         evidence = results.context["ingestion_inputs"][source.name]
         assert evidence["run_id"] == run_id and evidence["config_hash"] == "exact-config"
