@@ -142,15 +142,16 @@ def load_fixture(repo_root: Path) -> None:
             )
 
 
-def record_build(result: dict, started_at: datetime) -> None:
+def record_build(target: Path, started_at: datetime) -> None:
     from psycopg2.extras import execute_values
-    from pipeline.run_log import dbt_run_rows
+    from pipeline.run_log import dbt_run_rows, node_versions
     from pipeline.warehouse import connect
 
     invocation, nodes = dbt_run_rows(
-        result, dagster_run_id="synthetic-demo", command="build", started_at=started_at,
-        finished_at=datetime.now(timezone.utc), error=None,
+        json.loads((target / "run_results.json").read_text()), dagster_run_id="synthetic-demo",
+        command="build", started_at=started_at, finished_at=datetime.now(timezone.utc), error=None,
     )
+    versions = node_versions(json.loads((target / "manifest.json").read_text()), invocation.invocation_id, nodes)
     with closing(connect()) as connection, connection, connection.cursor() as cursor:
         cursor.execute(
             "insert into ops.dbt_invocations (invocation_id, dagster_run_id, command, started_at,"
@@ -161,6 +162,10 @@ def record_build(result: dict, started_at: datetime) -> None:
             "insert into ops.dbt_node_runs (invocation_id, unique_id, resource_type, name, status,"
             " started_at, finished_at, execution_seconds, rows_affected, failures, message) values %s",
             [astuple(node) for node in nodes],
+        )
+        execute_values(cursor,
+            "insert into ops.dbt_node_versions (invocation_id, unique_id, provenance) values %s",
+            versions,
         )
 
 
@@ -189,7 +194,7 @@ def worker(repo_root: Path, folder: Path, output: Path) -> None:
                         "--exclude", "tag:reference", "--target-path", str(project / "target"))
     if not result.success:
         raise BadInput(f"demo dbt build failed: {answer.dbt_error(result)}")
-    record_build(json.loads((project / "target/run_results.json").read_text()), started)
+    record_build(project / "target", started)
     if answer.run(folder, slug) != 0:
         raise BadInput("demo answer checks failed")
     document = json.loads((destination / "answer.json").read_text())
