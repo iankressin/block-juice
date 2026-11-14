@@ -1,3 +1,4 @@
+import csv
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -255,3 +256,37 @@ def test_explicit_empty_wallets_do_not_cover_a_requested_wallet():
     assert read.gaps((100, 180), {"wallets": [WALLET]}) == [
         f"wallets not in addresses.json: {WALLET}"
     ]
+
+
+@pytest.mark.parametrize("slug", ["token-transfer-graph", "token-net-accumulators", "token-categories", "token-flow-map"])
+def test_token_answers_require_transfers_for_all_wallets(slug):
+    from pipeline.cli.answer import coverage_check
+    from pipeline.cli.question import load_question
+
+    question = load_question(REPO_ROOT, slug)
+    transfers = [source for source in question.sources if source.source.endswith(".erc20_transfers")]
+    assert {source.chain for source in transfers} == set(question.blocks)
+    for source in transfers:
+        start, end = question.blocks[source.chain]
+        loaded = Coverage(source.chain, "erc20_transfers", "", start, ".env", end, {"tokens": source.filter["tokens"]})
+        assert coverage_check([source], {source.source: loaded}, question.blocks).passed
+        restricted = replace(loaded, filter={**loaded.filter, "wallets": [WALLET]})
+        check = coverage_check([source], {source.source: restricted}, question.blocks)
+        assert not check.passed
+        assert "wallet" in check.detail
+
+
+def test_rn1_answer_requires_all_reference_exchanges():
+    from pipeline.cli.question import load_question
+
+    question = load_question(REPO_ROOT, "rn1-polymarket-fills-2026-11-08")
+    fills = next(source for source in question.sources if source.source.endswith(".polymarket_ctf_exchange_v2"))
+    with (REPO_ROOT / "transformation/seeds/polymarket_contracts.csv").open() as contracts:
+        exchanges = [row["address"] for row in csv.DictReader(contracts) if row["version"] == "ctf_exchange_v2"]
+    assert len(exchanges) == 3
+    start, end = question.blocks["polygon"]
+    loaded = Coverage("polygon", "polymarket_ctf_exchange_v2", "", start, ".env", end, {"exchanges": exchanges})
+    assert not loaded.gaps((start, end), fills.filter)
+    for exchange in exchanges:
+        partial = replace(loaded, filter={"exchanges": [address for address in exchanges if address != exchange]})
+        assert any(exchange in gap for gap in partial.gaps((start, end), fills.filter))

@@ -137,6 +137,12 @@ def test_aligned_token_override_and_separate_eval_values(tmp_path):
     assert load_question(tmp_path, "token-flow-map").parameters["token"] == token
     with pytest.raises(BadInput, match="token"):
         load_question(tmp_path, "token-flow-map", "eval_window")
+    analyses = tmp_path / "transformation" / "analyses"
+    analyses.mkdir(parents=True)
+    for name in document["analyses"]:
+        (analyses / f"{name}.sql").write_text("select 1")
+    with pytest.raises(BadInput, match="eval_window"):
+        run(tmp_path, None, check=True)
     evaluation = deepcopy(token)
     for window in evaluation["windows"]:
         window["blocks"] = [100, 110]
@@ -144,3 +150,4 @@ def test_aligned_token_override_and_separate_eval_values(tmp_path):
     path.write_text(yaml.safe_dump(document, sort_keys=False))
     assert load_question(tmp_path, "token-flow-map", "eval_window").parameters["token"] == evaluation
     assert load_question(tmp_path, "token-flow-map").parameters["token"] == token
+    assert run(tmp_path, None, check=True) == 0

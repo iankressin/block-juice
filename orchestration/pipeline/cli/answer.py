@@ -113,7 +113,9 @@ def coverage_check(
         loaded = coverages[i.source]
         span = f"loaded {loaded.start_block}-{loaded.cursor}" if loaded.cursor is not None else "nothing loaded"
         window = blocks.get(i.chain)
-        gaps = loaded.gaps(window, i.filter) if window else [f"{window_key}.blocks has no blocks for {i.chain}"]
+        gaps = loaded.gaps(window, i.filter, all_wallets=i.all_wallets) if window else [
+            f"{window_key}.blocks has no blocks for {i.chain}"
+        ]
         passed = passed and not gaps
         details.append(
             f"{i.source} ({span}): {', '.join(gaps)}"

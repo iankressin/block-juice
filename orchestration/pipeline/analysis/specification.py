@@ -27,10 +27,11 @@ WindowKey = Literal["window", "eval_window"]
 @dataclass(frozen=True)
 class SourceInput:
     """An input that names the source it reads, as <source>.<table>, and the part of the source's
-    addresses.json it needs, keyed like that file. A key left out means all of it."""
+    addresses.json it needs. all_wallets requires a source that reads unrestricted wallet history."""
 
     source: str
     filter: dict[str, list[str]]
+    all_wallets: bool = False
 
     @property
     def chain(self) -> str:
@@ -133,7 +134,9 @@ def answer_dir(repo_root: Path, slug: str) -> Path:
     return folder
 
 
-def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") -> Question:
+def load_question(
+    repo_root: Path, slug: str, window_key: WindowKey = "window", *, check_eval: bool = False
+) -> Question:
     path = answer_dir(repo_root, slug) / "question.yaml"
     label = f"answers/{slug}/question.yaml"
     if not path.is_file():
@@ -145,6 +148,13 @@ def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") 
         raise BadInput(f"{label} is not valid YAML: {' '.join(str(error).split())}") from None
     if not isinstance(raw, dict):
         raise BadInput(f"{label} must be a map with a 'question' key")
+    question = _resolve_question(slug, label, raw, authored, window_key)
+    if check_eval and window_key == "window" and "eval_window" in raw:
+        _resolve_question(slug, label, raw, authored, "eval_window")
+    return question
+
+
+def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_key: WindowKey) -> Question:
     for key, value in raw.items():
         if key not in FIELDS:
             raise BadInput(f"{label}: unknown key {key!r}; allowed keys: {', '.join(FIELDS)}")
@@ -163,12 +173,18 @@ def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") 
             continue
         if not isinstance(item["source"], str) or not SOURCE.match(item["source"]):
             raise BadInput(f"{label}: 'inputs[{index}].source' must be <source>.<table>")
-        if not _filter(item.get("filter", {})):
+        wanted = item.get("filter", {})
+        if not _filter(wanted):
             raise BadInput(
                 f"{label}: 'inputs[{index}].filter' must map keys of addresses.json to lists of quoted addresses"
                 " (YAML reads an unquoted 0x... as a number)"
             )
-        sources.append(SourceInput(item["source"], item.get("filter", {})))
+        all_wallets = item.get("all_wallets", False)
+        if not isinstance(all_wallets, bool):
+            raise BadInput(f"{label}: 'inputs[{index}].all_wallets' must be boolean")
+        if all_wallets and "wallets" in wanted:
+            raise BadInput(f"{label}: 'inputs[{index}].all_wallets' must be false when filter.wallets is set")
+        sources.append(SourceInput(item["source"], wanted, all_wallets))
     resolved_parameters, policy = validate_contracts(raw)
     if "eval_values" in raw:
         evaluation, _ = validate_contracts({**raw, "values": {**raw.get("values", {}), **raw["eval_values"]}})

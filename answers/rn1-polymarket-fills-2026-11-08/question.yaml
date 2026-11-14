@@ -30,6 +30,10 @@ inputs:
   strategy: history
   source: polygon.polymarket_ctf_exchange_v2
   filter:
+    exchanges:
+    - '0xe111180000d2663c0091e4f400237545b87b996b'
+    - '0xe2222d279d744050d28e00520010520000310f59'
+    - '0xe2222d002000ba0053cef3375333610f64600036'
     wallets:
     - '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
 - name: conditions

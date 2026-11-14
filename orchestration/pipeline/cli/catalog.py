@@ -16,11 +16,11 @@ def analysis_paths(repo_root: Path) -> dict[str, str]:
     return paths
 
 
-def catalog(repo_root: Path) -> list[dict]:
+def catalog(repo_root: Path, *, check_eval: bool = False) -> list[dict]:
     paths = analysis_paths(repo_root)
     entries = []
     for manifest in sorted((repo_root / "answers").glob("*/question.yaml")):
-        question = load_question(repo_root, manifest.parent.name)
+        question = load_question(repo_root, manifest.parent.name, check_eval=check_eval)
         for name in question.analyses:
             if name not in paths:
                 raise BadInput(f"{manifest.relative_to(repo_root)}: no SQL analysis named {name}")
@@ -37,7 +37,7 @@ def catalog(repo_root: Path) -> list[dict]:
 def run(repo_root: Path, slug: str | None, *, as_json: bool = False, check: bool = False) -> int:
     if check and slug is not None:
         raise BadInput("bj questions --check validates the whole catalog; omit the slug")
-    entries = catalog(repo_root)
+    entries = catalog(repo_root, check_eval=check)
     if slug is not None:
         entries = [entry for entry in entries if entry["slug"] == slug]
         if not entries:

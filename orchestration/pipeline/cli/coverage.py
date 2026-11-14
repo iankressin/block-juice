@@ -50,7 +50,7 @@ class Coverage:
     def covered(self) -> tuple[int, int] | None:
         return (self.start_block, self.cursor) if self.cursor is not None else None
 
-    def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]]) -> list[str]:
+    def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]], *, all_wallets: bool = False) -> list[str]:
         """What the loaded data lacks for these blocks and this subset of addresses.json. Empty when it has it all."""
         first, last = blocks
         gaps = []
@@ -60,6 +60,11 @@ class Coverage:
             gaps.append("no run has saved a cursor")
         elif self.cursor < last:
             gaps.append(f"cursor {self.cursor} is before {last}")
+        if all_wallets:
+            if (self.source, self.table) not in OPTIONAL_WALLET_SOURCES:
+                gaps.append(f"unrestricted wallet coverage is unknown for {self.name}")
+            elif "wallets" in self.filter:
+                gaps.append("addresses.json restricts wallets but the question requires all wallets")
         for key, values in wanted.items():
             if key not in self.filter:
                 if key == "wallets" and (self.source, self.table) in OPTIONAL_WALLET_SOURCES:

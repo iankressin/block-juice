@@ -21,15 +21,15 @@ and stays out of Git; ingestion and model run logs belong in `ops.*` in the ware
 
 The shipped bundles cover balances, token transfer graphs and accumulators, classified token flows,
 Polymarket markets and wallet fills, UNI swaps, contract deployments, and attributed ETH flows.
-`bj questions --check` checks that every SQL analysis has exactly one supported bundle; CI runs
-the same catalog contract. A successful catalog check validates authorship, not data availability.
+`bj questions --check` checks that every SQL analysis has exactly one supported bundle and
+validates each declared evaluation window with its evaluation parameters.
 
 ## Run and explain a question
 
 1. Read the question's definitions, `window`, `inputs` and `marts`. They define the actual claim.
 2. Configure the matching source filters and history, then run the required pipelines with
    `bj run <pipeline>` or Dagster. `bj answer` reads built tables; it does not ingest or build them.
-   See [scheduling](scheduling.md) to avoid duplicate upstream work in recurring runs.
+   When scheduling pipelines, account for [sources shared by multiple jobs](architecture.md#add-a-pipeline).
 3. Run `bj answer <slug>`. Inspect `answer.json`, its checks, and every CSV in `results/`.
    Exit 1 means a check failed. Do not treat an empty result as evidence that nothing happened
    until coverage, freshness and source failures are understood.
@@ -56,6 +56,7 @@ inputs:
   - {name: eth_balances, strategy: state, mart: latest_balances}
 marts: [latest_balances]
 analyses: [my_question]
+expected_columns: {my_question: [eth]}
 ```
 
 ```sql
@@ -82,10 +83,17 @@ inputs:
 ```
 
 Quote addresses in YAML. Apply the same window in SQL with `in_window('block_number', 'ethereum')`.
-After a source configuration has been recorded, changed filters use an independent backfill
-generation while retaining existing rows and cursors. Legacy history with unknown filters needs
-the explicit nondestructive `SOURCE_BACKFILL_ID` recovery. Follow the coverage workflow in
-[source provenance](source-provenance.md) before claiming the changed dataset is complete.
+`bj coverage` reads the current `START_BLOCK`, address filter and saved cursor. The cursor belongs
+to the source table and survives filter changes. If the filter or start block changed, or the
+settings used for earlier blocks are unknown, [reset the affected source](../.claude/skills/blockjuice/workflows/history-source.md#reuse-before-you-build).
+This clears its raw rows and cursor. Factory sources also need their pool store reset. Rerun the
+pipeline from the required start block until the cursor covers the end of the window, then check
+coverage with the rebuilt data.
+
+For a transfer analysis covering every wallet, set `all_wallets: true` on the source input.
+Coverage then requires the source's `addresses.json` to omit `wallets`. For a specific wallet
+or group, list the addresses under `filter.wallets`.
+
 For summaries of whatever is loaded, declare `window: {scope: loaded}` explicitly. That records
 the source inventory without asserting complete historical coverage. The Polymarket overview
 uses this mode because its current-position metrics cannot be restricted by a trade-date filter.
@@ -107,8 +115,8 @@ answer's parameters. An evaluation that still supplies full-window parameters is
 cannot certify a smaller slice while querying the full history. Arbitrum bridge filters identify
 the Ethereum token, while Base OP bridge filters identify its Base token address.
 
-All shipped queries declare their ordered `expected_columns`, and detail queries with a stable
-unique key also declare `grain`. New questions can add typed parameters, result contracts and a
+Every query in a checked-in bundle must declare its ordered `expected_columns`. Detail queries
+with a stable unique key also declare `grain`. New questions can add typed parameters and a
 freshness policy:
 
 ```yaml
@@ -124,16 +132,14 @@ freshness: {max_age_hours: 24, require_model_build: true}
 Use only parameters your SQL actually reads. Choose freshness and row limits for the question's
 purpose; a historical snapshot need not satisfy a live dashboard's age policy. The
 [analysis runtime contract](analysis-runtime.md) describes immutable runs, streaming results,
-snapshot consistency, parameter schemas and the precise checks. For ingestion/backfill policy
-and live progress, see [ingestion performance](ingestion-performance.md).
+snapshot consistency, parameter schemas and the precise checks. To track ingestion progress,
+see [monitoring](architecture.md#monitoring).
 
 The shipped `tracked-wallets-eth` and `tracked-wallets-sol` questions require source observations
 from the last 48 hours and a recorded model build after those inputs were loaded. Run `bj run
 balances` to ingest, build and record that evidence. A direct unlogged `dbt build` cannot prove
 when the saved balances were built. Fixed-window historical questions do not impose this age
-policy. For model refresh choices and reproducible benchmarks, see
-[fact model performance](fact-model-performance.md) and
-[state and aggregation performance](model-performance.md).
+policy.
 
 Validate with `bj questions --check` and the relevant model tests. To compile an analysis from the
 repository root, export the warehouse settings from `.env` first (see

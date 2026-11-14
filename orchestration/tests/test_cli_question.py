@@ -132,6 +132,9 @@ def test_wrong_type_names_the_key(tmp_path, text, key):
         ("inputs: [{name: a}, {source: 3}]\n", "inputs[1].source"),
         (f'inputs: [{{source: ethereum.erc20_transfers, filter: {{tokens: "{USDC}"}}}}]\n', "inputs[0].filter"),
         ("inputs: [{source: ethereum.erc20_transfers, filter: [a]}]\n", "inputs[0].filter"),
+        ('inputs: [{source: ethereum.erc20_transfers, all_wallets: "true"}]\n', "inputs[0].all_wallets"),
+        ("inputs: [{source: ethereum.erc20_transfers, all_wallets: true, filter: {wallets: [one]}}]\n",
+         "inputs[0].all_wallets"),
     ],
 )
 def test_a_wrong_block_range_or_source_input_names_the_key(tmp_path, text, key):

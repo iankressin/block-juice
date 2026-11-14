@@ -7,9 +7,10 @@ definitions:
     asset; no USD prices are applied.
   scope: Only loaded data for the configured token and chain windows. Configure and build the transfers
     pipeline before running; flows involving bridges also require the bridges and labels pipelines.
-  bridge edges: An observed pair is anchored by a withdrawal in the configured window; its deposit may
-    occur outside that window. Pairing uses amount and timing, not proof of the Ethereum leg, and does
-    not establish that every possible later counterpart has been loaded.
+  bridge edges: Each row is a withdrawal or deposit in its chain's window. A withdrawal can match
+    a later deposit beyond the destination window. A deposit can match an earlier withdrawal before
+    the origin window. The counterpart is inferred from loaded moves using the Ethereum address,
+    amount and timing.
 marts:
 - classified_transfers
 - bridge_transfers
@@ -34,12 +35,14 @@ inputs:
 - name: arbitrum_transfers
   strategy: history
   source: arbitrum.erc20_transfers
+  all_wallets: true
   filter:
     tokens:
     - '0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0'
 - name: base_transfers
   strategy: history
   source: base.erc20_transfers
+  all_wallets: true
   filter:
     tokens:
     - '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'

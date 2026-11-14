@@ -1,7 +1,9 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
+from pipeline import cli, demo
 from pipeline.cli import BadInput
 from pipeline.demo import demo_environment, run
 
@@ -39,6 +41,41 @@ def test_existing_output_is_rejected_before_starting_docker(tmp_path, monkeypatc
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("must not start Docker"))
     with pytest.raises(BadInput, match="already exists"):
         run(tmp_path, out)
+
+
+def test_demo_cli_ignores_checkout_environment(tmp_path, monkeypatch):
+    home = tmp_path / "regular-file"
+    home.touch()
+    monkeypatch.setenv("DAGSTER_HOME", str(home))
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **kw: pytest.fail("read checkout .env"))
+    monkeypatch.setattr(demo, "run", lambda root, output: 0)
+    assert cli.main(["demo"]) == 0
+
+
+def test_interrupted_demo_export_can_retry_same_destination(tmp_path, monkeypatch):
+    output = tmp_path / "export"
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker")
+    interrupt = True
+
+    def command(args, **kwargs):
+        if "port" in args:
+            return subprocess.CompletedProcess(args, 0, "127.0.0.1:54321\n", "")
+        if "pipeline.demo" in args:
+            export = Path(args[-1])
+            export.mkdir()
+            (export / "answer.json").write_text("{}")
+            if interrupt:
+                raise subprocess.TimeoutExpired(args, 300)
+            (export / "answer.md").write_text("3.75 ETH")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", command)
+    with pytest.raises(BadInput, match="demo failed"):
+        run(tmp_path, output)
+    assert list(tmp_path.iterdir()) == []
+    interrupt = False
+    assert run(tmp_path, output) == 0
+    assert sorted(p.name for p in output.iterdir()) == ["answer.json", "answer.md"]
 
 
 def test_failed_worker_removes_only_its_container(tmp_path, monkeypatch):

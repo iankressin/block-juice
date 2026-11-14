@@ -70,10 +70,16 @@ def run(repo_root: Path, output: Path | None = None) -> int:
                 os.environ, folder, port=ports.split(":")[-1], password=password,
                 pythonpath=str(repo_root / "orchestration"),
             )
-            subprocess.run(
-                [sys.executable, "-m", "pipeline.demo", str(repo_root), str(folder), str(output)],
-                env=env, check=True, timeout=300,
-            )
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with TemporaryDirectory(dir=output.parent, prefix=".demo-export-") as staging:
+                staged = Path(staging) / "result"
+                subprocess.run(
+                    [sys.executable, "-m", "pipeline.demo", str(repo_root), str(folder), str(staged)],
+                    env=env, check=True, timeout=300,
+                )
+                if os.path.lexists(output):
+                    raise BadInput(f"demo output already exists: {output}; choose a new directory")
+                staged.rename(output)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
         detail = getattr(error, "stderr", None) or str(error)
         raise BadInput(f"demo failed: {' '.join(str(detail).split())}") from None
@@ -198,7 +204,6 @@ def worker(repo_root: Path, folder: Path, output: Path) -> None:
     )
     if report.run(folder, slug, "xlsx") != 0:
         raise BadInput("demo report export failed")
-    output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(destination, output, symlinks=True)
 
 

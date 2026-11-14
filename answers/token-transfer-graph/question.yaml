@@ -24,12 +24,14 @@ inputs:
 - name: arbitrum_transfers
   strategy: history
   source: arbitrum.erc20_transfers
+  all_wallets: true
   filter:
     tokens:
     - '0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0'
 - name: base_transfers
   strategy: history
   source: base.erc20_transfers
+  all_wallets: true
   filter:
     tokens:
     - '0xc3de830ea07524a0761646a6a4e4be0e114a3c83'
