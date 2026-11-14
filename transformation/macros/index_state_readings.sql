@@ -38,14 +38,23 @@
     {# Failed/interrupted concurrent builds can leave an invalid index. Re-running repairs only
        this command's deterministic index, under its session lock. On SQL failure dbt closes the
        connection and releases the lock; it never holds an ingestion transaction open. #}
-    {% set present = run_query("select i.indisvalid from pg_index i where i.indexrelid = to_regclass('" ~
-        index|replace("'", "''") ~ "')") %}
-    {% if present.rows|length and not present.rows[0][0] %}
+    {% set lookup %}
+        select i.indrelid = '{{ relation|string|replace("'", "''") }}'::regclass as on_target, i.indisvalid
+        from pg_index i
+        where i.indexrelid = to_regclass('{{ index|replace("'", "''") }}')
+    {% endset %}
+    {% set present = run_query(lookup) %}
+    {% if present.rows and not present.rows[0]['on_target'] %}
+        {{ exceptions.raise_compiler_error(index ~ ' belongs to another table. Rename that index before indexing ' ~ relation) }}
+    {% endif %}
+    {% if present.rows and not present.rows[0]['indisvalid'] %}
         {% do run_query('drop index concurrently ' ~ index) %}
         {{ log('Removed interrupted index ' ~ index, info=True) }}
     {% endif %}
-    {% do run_query('create index concurrently if not exists ' ~ adapter.quote(name) ~
-        ' on ' ~ relation ~ ' (' ~ expressions ~ ')') %}
+    {% if not present.rows or not present.rows[0]['indisvalid'] %}
+        {% do run_query('create index concurrently ' ~ adapter.quote(name) ~
+            ' on ' ~ relation ~ ' (' ~ expressions ~ ')') %}
+    {% endif %}
     {% do run_query('analyze ' ~ relation) %}
     {% do run_query("select pg_advisory_unlock(hashtextextended('" ~ key|replace("'", "''") ~ "', 0))") %}
     {{ log('Ready: ' ~ index, info=True) }}

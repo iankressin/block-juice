@@ -4,13 +4,14 @@ These models must retain historical corrections, inclusive bridge finality bound
 complementary Polymarket prices. Tables are temporary; no warehouse relations are changed.
 """
 
-import os
+from contextlib import closing
 from pathlib import Path
 
 import psycopg2
 import pytest
 from jinja2 import Environment
 
+from test_warehouse import scratch
 
 MODELS = Path(__file__).resolve().parents[2] / "transformation" / "models"
 
@@ -23,18 +24,9 @@ def model_sql(path):
 
 
 @pytest.fixture
-def postgres():
-    keys = ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD")
-    if not all(os.environ.get(key) for key in keys):
-        pytest.skip("set WAREHOUSE_HOST/PORT/USER/PASSWORD to run PostgreSQL model fixtures")
-    settings = dict(zip(("host", "port", "user", "password"), (os.environ[key] for key in keys)))
-    connection = psycopg2.connect(**settings, dbname=os.environ.get("WAREHOUSE_DB", "warehouse"))
-    try:
-        with connection.cursor() as cursor:
-            yield cursor
-    finally:
-        connection.rollback()
-        connection.close()
+def postgres(scratch):
+    with closing(psycopg2.connect(**scratch)) as connection, connection.cursor() as cursor:
+        yield cursor
 
 
 def test_bridge_candidates_include_ready_ties_and_exclude_same_chain(postgres):
@@ -194,7 +186,8 @@ def test_gamma_shared_projection_preserves_distinct_token_and_name_winners(postg
             (jsonb_build_object('id','2','version','v1','conditionId','condition','clobTokenIds','["101","102"]','outcomes','["yes","no"]'), now()),
             ('{"id":"3","version":"v1","conditionId":"empty","clobTokenIds":"[]"}', now()),
             (jsonb_build_object('id','4','version','v1','conditionId','empty','clobTokenIds','["201"]'), now()),
-            (jsonb_build_object('id','5','version','v2','conditionId','v2','clobTokenIds','["301"]'), now());
+            (jsonb_build_object('id','5','version','v2','conditionId','v2','clobTokenIds','["301"]'), now()),
+            ('{"id":"6","version":"v1","conditionId":"","endDate":"undecided"}', now());
         create temp table int_polygon_polymarket_ctf_conditions (
             condition_id text, prepared_block bigint, history_complete boolean
         );

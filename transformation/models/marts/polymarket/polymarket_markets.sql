@@ -17,6 +17,7 @@ with gamma_rows as materialized (
         end_date, sports_market_type, fee_type, series_slug, game_start_time, clob_token_ids
     from {{ ref('stg_polymarket__markets') }}
     where protocol_version = 'v1'
+        and (condition_id is not null or clob_token_ids is not null)
 ),
 
 token_markets as (

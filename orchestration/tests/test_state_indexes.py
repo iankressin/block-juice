@@ -1,8 +1,10 @@
 """The optional concurrent index operation repairs interrupted builds and is safe to repeat."""
 
+from contextlib import closing
 from pathlib import Path
 
 import psycopg2
+import pytest
 from dbt.cli.main import dbtRunner
 
 from test_warehouse import scratch
@@ -11,11 +13,25 @@ from test_warehouse import scratch
 PROJECT = Path(__file__).resolve().parents[2] / "transformation"
 
 
-def test_state_index_operation_repairs_invalid_index_and_preserves_live_views(scratch, monkeypatch, tmp_path):
+@pytest.fixture
+def invoke(scratch, monkeypatch, tmp_path):
     for name, key in {"HOST": "host", "PORT": "port", "USER": "user", "PASSWORD": "password", "DB": "dbname"}.items():
         monkeypatch.setenv("WAREHOUSE_" + name, str(scratch[key]))
     monkeypatch.setenv("RAW_SCHEMA", "raw")
     monkeypatch.setenv("DBT_SCHEMA", "analytics")
+
+    def run(family="address_code"):
+        return dbtRunner().invoke([
+            "run-operation", "index_state_readings", "--args", "{family: " + family + "}",
+            "--project-dir", str(PROJECT), "--profiles-dir", str(PROJECT),
+            "--target-path", str(tmp_path / "target"), "--log-path", str(tmp_path / "logs"),
+            "--no-send-anonymous-usage-stats", "--quiet",
+        ])
+
+    return run
+
+
+def test_state_index_operation_repairs_invalid_index_and_preserves_live_views(scratch, invoke):
     connection = psycopg2.connect(**scratch)
     connection.autocommit = True
     try:
@@ -27,14 +43,6 @@ def test_state_index_operation_repairs_invalid_index_and_preserves_live_views(sc
                     ('1', '{"address":"WALLET","block_number":"invalid","code":"0x"}', now());
                 create view raw.live_code as select * from raw.base_address_code;
             """)
-
-            def invoke(family="address_code"):
-                return dbtRunner().invoke([
-                    "run-operation", "index_state_readings", "--args", "{family: " + family + "}",
-                    "--project-dir", str(PROJECT), "--profiles-dir", str(PROJECT),
-                    "--target-path", str(tmp_path / "target"), "--log-path", str(tmp_path / "logs"),
-                    "--no-send-anonymous-usage-stats", "--quiet",
-                ])
 
             assert not invoke().success
             cursor.execute("select indisvalid from pg_index where indexrelid::regclass::text like '%bj_state_%'")
@@ -65,3 +73,25 @@ def test_state_index_operation_repairs_invalid_index_and_preserves_live_views(sc
             assert not invoke("unsupported").success
     finally:
         connection.close()
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_state_index_operation_preserves_index_on_renamed_table(scratch, invoke, monkeypatch, valid):
+    schema = "valid_index" if valid else "invalid_index"
+    monkeypatch.setenv("RAW_SCHEMA", schema)
+    with closing(psycopg2.connect(**scratch)) as connection, connection.cursor() as cursor:
+        connection.autocommit = True
+        cursor.execute(f"create schema {schema}")
+        cursor.execute(f"set search_path = {schema}")
+        cursor.execute("create table base_address_code (data jsonb)")
+        if not valid:
+            cursor.execute("""insert into base_address_code values ('{"block_number":"invalid"}')""")
+        assert invoke().success == valid
+        cursor.execute("select indexrelid from pg_index where indrelid = 'base_address_code'::regclass")
+        index_oid, = cursor.fetchone()
+
+        cursor.execute("alter table base_address_code rename to archived")
+        cursor.execute("create table base_address_code (like archived)")
+        assert not invoke().success
+        cursor.execute("select indexrelid, indisvalid from pg_index where indrelid = 'archived'::regclass")
+        assert cursor.fetchall() == [(index_oid, valid)]
