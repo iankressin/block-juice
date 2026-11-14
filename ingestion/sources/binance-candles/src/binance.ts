@@ -1,5 +1,5 @@
 import { setTimeout } from "node:timers/promises";
-import { logger } from "@ingestion/lib";
+import { logger, observedFetch, observeDelay } from "@ingestion/lib";
 import * as z from "zod";
 
 /** Time as the client sees it, so a test can pass a minute's wait at once. */
@@ -124,7 +124,7 @@ export function createBinanceClient(url: string, clock: Clock) {
       for (const [key, value] of Object.entries(query)) {
         if (value !== undefined) request.searchParams.set(key, String(value));
       }
-      const response = await fetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const response = await observedFetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       const weight = response.headers.get("x-mbx-used-weight-1m");
       if (weight !== null) usedWeight = Number(weight);
       if (!response.ok) throw await binanceError(response);
@@ -140,7 +140,7 @@ export function createBinanceClient(url: string, clock: Clock) {
       if (usedWeight < WEIGHT_BUDGET) return;
       const waitMs = MINUTE_MS - (clock.now() % MINUTE_MS);
       logger.info({ usedWeight, waitMs }, "Binance request weight is near its limit, waiting for the next minute");
-      await clock.sleep(waitMs);
+      await observeDelay(() => clock.sleep(waitMs));
       usedWeight = 0;
     },
   };

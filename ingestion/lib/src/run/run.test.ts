@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PGlite } from "@electric-sql/pglite";
+import { Pushgateway, type Registry } from "@prometheus-io/client";
 import * as z from "zod";
+import { callBatches } from "#src/batches.ts";
 import { runSource } from "#src/run/index.ts";
 import type { Batch, Source } from "#src/source.ts";
+import { observeRequest, transportSnapshot } from "#src/transport-metrics.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
 // loadEnv treats an empty value as unset, so the run pushes no metrics, even when the shell
@@ -90,4 +93,136 @@ test("an invalid environment fails the run, and the run log says why", async (t)
   const [row] = await runLog(db);
   assert.equal(row?.succeeded, false);
   assert.match(String(row?.error), /Invalid environment[\s\S]*RUN_TEST_ENDPOINT/);
+});
+
+test("legacy two-argument sources still receive every retry when the backlog exceeds one page", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("test_wallets");
+  const calls = Array.from({ length: 1003 }, (_, i) => ({ wallet: String(i).padStart(5, "0") }));
+  await table.load({ records: [], failed: calls.map((call) => ({ id: call.wallet, call, error: "old timeout" })) });
+  await table.close();
+  let seen: Wallet[] = [];
+  await runSource(source(async function* (retry) {
+    seen = retry;
+    yield { records: [], failed: [], succeededCallIds: retry.map((call) => call.wallet) };
+  }), warehouse);
+  assert.deepEqual(seen, calls);
+  const [run] = await runLog(db);
+  assert.equal(run?.retried_calls, 1003);
+  assert.equal(run?.dead_letters_pending, 0);
+});
+
+test("a waiting warehouse opener cannot publish current progress before owning the source", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const open = warehouse.open;
+  warehouse.open = async (name) => { await gate; return open(name); };
+  const timer = t.mock.method(globalThis, "setInterval");
+  const running = runSource(source(async function* () {
+    assert.equal(timer.mock.callCount(), 1);
+  }), warehouse);
+  try {
+    assert.equal(timer.mock.callCount(), 0);
+  } finally {
+    release();
+    await running;
+  }
+});
+
+test("the runner isolates transport counts between successive source runs", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  for (let i = 0; i < 2; i++) {
+    await runSource(source(async function* () {
+      assert.equal(transportSnapshot().requestsStarted, 0);
+      await observeRequest(async () => "reply");
+      assert.equal(transportSnapshot().requestsCompleted, 1);
+    }), warehouse);
+  }
+  assert.equal(transportSnapshot().requestsStarted, 0);
+});
+
+test("pending and final progress finish before the warehouse releases its source lock", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  const deferred = () => {
+    let resolve!: () => void;
+    return { promise: new Promise<void>((done) => { resolve = done; }), resolve: () => resolve() };
+  };
+  const active = { started: deferred(), release: deferred() };
+  const final = { started: deferred(), release: deferred() };
+  let pushes = 0;
+  let closed = false;
+  let tick!: () => void;
+  const originalInterval = globalThis.setInterval;
+  t.mock.method(globalThis, "setInterval", (callback: () => void, ms: number) => {
+    tick = callback;
+    return originalInterval(callback, ms);
+  });
+  const open = warehouse.open;
+  warehouse.open = async (name) => {
+    const table = await open(name);
+    return { ...table, close: async () => { closed = true; await table.close(); } };
+  };
+  t.mock.method(Pushgateway.prototype, "pushAdd", async () => {
+    const pending = [active, final][pushes++];
+    if (pending) { pending.started.resolve(); await pending.release.promise; }
+  });
+  process.env.PUSHGATEWAY_URL = "http://metrics.invalid";
+  t.after(() => { process.env.PUSHGATEWAY_URL = ""; });
+  const running = runSource(source(async function* () { tick(); }), warehouse);
+  try {
+    await active.started.promise;
+    assert.equal(closed, false);
+    active.release.resolve();
+    await final.started.promise;
+    assert.equal(closed, false, "the next source owner must wait until final progress is sent");
+    assert.equal(pushes, 2);
+  } finally {
+    active.release.resolve();
+    final.release.resolve();
+    await running;
+  }
+  assert.equal(closed, true);
+  assert.equal(pushes, 3, "completed-run metrics are still published");
+});
+
+test("fresh batches account for matching retries beyond the first page", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const calls = Array.from({ length: 600 }, (_, i) => ({ wallet: String(i).padStart(3, "0") }));
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [], failed: calls.map((call) => ({
+    id: call.wallet, call, error: "timeout",
+  })) });
+  await table.close();
+
+  const paged: Source<unknown, Wallet> = {
+    ...source(async function* () {}), retryMode: "paged",
+    async *extract(_env, retry, context) {
+      for await (const batch of callBatches(calls, retry, (call) => call.wallet, () => true, context)) {
+        yield { records: [], failed: [], succeededCallIds: batch.map((call) => call.wallet) };
+      }
+    },
+  };
+  await runSource(paged, warehouse);
+  const [report] = await runLog(db);
+  assert.equal(report?.dead_letters_pending, 0);
+  assert.equal(report?.retried_calls, calls.length);
+});
+
+test("the runner counts explicit terminal outcomes and infers outcomes for ordinary batches", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  process.env.PUSHGATEWAY_URL = "http://metrics.invalid";
+  t.after(() => { process.env.PUSHGATEWAY_URL = ""; });
+  let completed: number | undefined;
+  t.mock.method(Pushgateway.prototype, "pushAdd", async function (this: { registry: Registry }) {
+    const metrics = await this.registry.getMetricsAsJSON();
+    const gauge = metrics.find((metric) => metric.name === "ingestion_current_calls_completed");
+    if (gauge) completed = gauge.values[0]!.value;
+  });
+  await runSource(source(async function* () {
+    yield { records: [{ id: "one", callId: "walk#0", data: {} }], failed: [], callsCompleted: 0 };
+    yield { records: [], failed: [], succeededCallIds: ["walk"], callsCompleted: 1 };
+    yield { records: [{ id: "two", callId: "other", data: {} }], failed: [] };
+  }), warehouse);
+  assert.equal(completed, 2);
 });

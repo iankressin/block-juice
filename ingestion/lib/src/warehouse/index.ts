@@ -22,6 +22,7 @@ export type Connection = {
   query<R>(text: string, params?: unknown[]): Promise<{ rows: R[] }>;
   /** The same connection as a Drizzle database, which Pipes' Postgres target needs to keep a stream source's cursor. */
   drizzle(): NodePgDatabase;
+  /** End this session, including its advisory locks and cursors. */
   close(): Promise<void>;
 };
 
@@ -101,8 +102,11 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       const raw = ident(schema);
       const table = `${raw}.${ident(sourceTable)}`;
       const deadLetters = `${raw}."_dead_letters"`;
+      const checkpoints = `${raw}."_checkpoints"`;
       const db = await connect();
       try {
+        // Hold ownership across batch commits and the final progress push, until db.close().
+        await db.query("select pg_advisory_lock(hashtext('ingestion.source'), hashtext($1))", [table]);
         // IF NOT EXISTS fails when two sessions create the same object at once, and Dagster opens
         // a pipeline's sources at once, so they take turns here. The key has two parts: Postgres
         // keeps those apart from the one-part keys Pipes locks its cursors with.
@@ -129,6 +133,11 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
              primary key (source_table, id)
            )`,
         );
+        await db.query(`create table if not exists ${checkpoints} (
+          source_table text not null, key text not null, value jsonb not null,
+          updated_at timestamptz not null default now(), primary key (source_table, key))`);
+        await db.query(`create index if not exists "_dead_letters_retry_page" on ${deadLetters}
+          (source_table, first_failed_at, id) where not parked`);
         await db.query("commit");
       } catch (error) {
         await db.query("rollback").catch(() => {});
@@ -137,13 +146,15 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       }
 
       /** Writes the records, clears the dead letters they answer, and queues the new failures. */
-      const write = async (q: Query, { records, failed, succeededCallIds = [] }: Batch) => {
+      const write = async (q: Query, { records, failed, succeededCallIds = [], checkpoints: progress = [] }: Batch) => {
         // Postgres rejects an upsert that touches the same id twice, so keep the last one.
         for (const part of chunk(uniqueBy(records, (r) => r.id), CHUNK_SIZE)) {
           await q.query(
-            `insert into ${table} (id, data)
+            `insert into ${table} as t (id, data)
              select r->>'id', r->'data' from jsonb_array_elements($1::jsonb) r
-             on conflict (id) do update set data = excluded.data, _loaded_at = now()`,
+             on conflict (id) do update set
+               data = case when t.data is distinct from excluded.data then excluded.data else t.data end,
+               _loaded_at = now()`,
             [toJson(part)],
           );
         }
@@ -168,44 +179,88 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
             [sourceTable, MAX_ATTEMPTS, toJson(part)],
           );
         }
+        for (const checkpoint of progress) {
+          await q.query(`insert into ${checkpoints} (source_table, key, value) values ($1, $2, $3::jsonb)
+            on conflict (source_table, key) do update set value = excluded.value, updated_at = now()`,
+            [sourceTable, checkpoint.key, toJson(checkpoint.value)]);
+        }
       };
+
+      let retryCursorNumber = 0;
+      async function* retryPages<C>(call: z.ZodType<C>, size = 500): AsyncGenerator<{ calls: C[]; parked: number }> {
+        if (!Number.isSafeInteger(size) || size < 1 || size > 5000) throw new Error("Retry page size must be between 1 and 5000");
+        const cursor = ident(`retry_page_${++retryCursorNumber}`);
+        // WITH HOLD snapshots the starting backlog across commits, including rows fresh work clears.
+        await db.query(
+          `declare ${cursor} no scroll cursor with hold for
+           select id, call from ${deadLetters} where source_table = $1 and not parked
+           order by first_failed_at, id`, [sourceTable],
+        );
+        try {
+          while (true) {
+            const { rows } = await db.query<{ id: string; call: unknown }>(
+              `fetch forward ${size} from ${cursor}`,
+            );
+            const calls: C[] = [];
+            const unparsed: { id: string; call: unknown; error: string }[] = [];
+            for (const letter of rows) {
+              const parsed = call.safeParse(letter.call);
+              if (parsed.success) calls.push(parsed.data);
+              else unparsed.push({ id: letter.id, call: letter.call, error: schemaMismatch(parsed.error) });
+            }
+            let parked = 0;
+            if (unparsed.length > 0) {
+              const updated = await db.query(
+                `update ${deadLetters} as t set parked = true, error = l->>'error'
+                 from jsonb_array_elements($2::jsonb) l
+                 where t.source_table = $1 and t.id = l->>'id' and t.call = l->'call'
+                   and not t.parked returning t.id`,
+                [sourceTable, toJson(unparsed)],
+              );
+              parked = updated.rows.length;
+            }
+            if (rows.length === 0) return;
+            yield { calls, parked };
+            if (rows.length < size) return;
+          }
+        } finally {
+          await db.query(`close ${cursor}`);
+        }
+      }
 
       return {
         name: table,
         deadLetters,
+        async getCheckpoint(key: string): Promise<unknown> {
+          const { rows } = await db.query<{ value: unknown }>(
+            `select value from ${checkpoints} where source_table = $1 and key = $2`, [sourceTable, key]);
+          return rows[0]?.value;
+        },
 
-        /** The calls of the pending dead letters that still parse with `call`. The rest are parked, each with the reason. */
+        /** Read bounded pages from the backlog as it stood before extraction. */
+        retryPages,
+
+        /** Compatibility helper for direct callers. runSource uses bounded retryPages instead. */
         async retries<C>(call: z.ZodType<C>): Promise<{ calls: C[]; parked: number }> {
-          const { rows } = await db.query<{ id: string; call: unknown }>(
-            `select id, call from ${deadLetters}
-             where source_table = $1 and not parked
-             order by first_failed_at, id`,
-            [sourceTable],
-          );
           const calls: C[] = [];
-          const unparsed: { id: string; error: string }[] = [];
-          for (const letter of rows) {
-            const parsed = call.safeParse(letter.call);
-            if (parsed.success) calls.push(parsed.data);
-            else unparsed.push({ id: letter.id, error: schemaMismatch(parsed.error) });
-          }
-          if (unparsed.length > 0) {
-            await db.query(
-              `update ${deadLetters} as t set parked = true, error = l->>'error'
-               from jsonb_array_elements($2::jsonb) l
-               where t.source_table = $1 and t.id = l->>'id'`,
-              [sourceTable, toJson(unparsed)],
-            );
-          }
-          return { calls, parked: unparsed.length };
+          let parked = 0;
+          for await (const page of retryPages(call)) { calls.push(...page.calls); parked += page.parked; }
+          return { calls, parked };
         },
 
         /** In one transaction: writes the records, clears the dead letters they answer, and queues the new failures. */
         async load(batch: Batch) {
+          const startedAt = performance.now();
           await db.query("begin");
           try {
+            const writeStartedAt = performance.now();
             await write(db, batch);
+            const commitStartedAt = performance.now();
             await db.query("commit");
+            const committedAt = performance.now();
+            return { seconds: (committedAt - startedAt) / 1000,
+              writeSeconds: (commitStartedAt - writeStartedAt) / 1000,
+              commitSeconds: (committedAt - commitStartedAt) / 1000 };
           } catch (error) {
             // A connection that broke cannot roll back. Report the error that broke it instead.
             await db.query("rollback").catch(() => {});

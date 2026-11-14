@@ -1,5 +1,5 @@
 import { setTimeout } from "node:timers/promises";
-import { describeError, logger } from "@ingestion/lib";
+import { describeError, logger, observedFetch, observeDelay } from "@ingestion/lib";
 import * as z from "zod";
 
 /** Time as the client sees it, so a test can pass a retry's wait at once. */
@@ -80,7 +80,7 @@ export function createGammaClient(url: string, clock: Clock) {
     for (let attempt = 0; ; attempt++) {
       let error: Error;
       try {
-        const response = await fetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+        const response = await observedFetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
         if (response.ok) return await response.json();
         error = await gammaError(response);
       } catch (cause) {
@@ -90,7 +90,7 @@ export function createGammaClient(url: string, clock: Clock) {
       const waitMs = RETRY_WAITS_MS[attempt];
       if ((error instanceof GammaError && !error.retryable) || waitMs === undefined) throw error;
       logger.info({ path, error: describeError(error), waitMs }, "Gamma failed a request, waiting before trying again");
-      await clock.sleep(waitMs);
+      await observeDelay(() => clock.sleep(waitMs));
     }
   }
 
@@ -98,7 +98,7 @@ export function createGammaClient(url: string, clock: Clock) {
     /** Waits until a second has passed since the last round. Call it before each set of requests sent together. */
     async waitForRate() {
       const waitMs = lastRoundAt + ROUND_MS - clock.now();
-      if (waitMs > 0) await clock.sleep(waitMs);
+      if (waitMs > 0) await observeDelay(() => clock.sleep(waitMs));
       lastRoundAt = clock.now();
     },
 

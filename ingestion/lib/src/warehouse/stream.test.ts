@@ -225,3 +225,22 @@ test("an uncapped run commits its cursor after each batch, so a failure resumes 
   assert.deepEqual(await loaded(db), ["1", "2", "3", "4", "5", "6"]);
   assert.equal(await cursor(db), "6");
 });
+
+test("a failure after data handling but before commit reports no durable rows or progress", async (t) => {
+  useBlockCap(t, undefined);
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const original = db.exec.bind(db);
+  Object.defineProperty(db, "exec", { configurable: true, value: async (sql: string, ...args: unknown[]) => {
+    if (/^commit\b/i.test(sql.trim())) throw new Error("simulated commit failure");
+    return original(sql, ...args as []);
+  } });
+  await runSource(transfers(await chain(t, 2), 2), warehouse);
+  assert.equal(process.exitCode, 1);
+  process.exitCode = undefined;
+  Object.defineProperty(db, "exec", { configurable: true, value: original });
+  assert.deepEqual(await loaded(db), []);
+  const { rows } = await db.query<{ records_written: number; load_seconds: number }>(
+    "select records_written, load_seconds from ops.ingestion_runs");
+  assert.equal(rows[0]!.records_written, 0, "a successful onData is not a committed batch");
+  assert.equal(rows[0]!.load_seconds, 0);
+});

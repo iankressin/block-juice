@@ -1,5 +1,6 @@
 import { createPublicClient, http } from "viem";
 import { createLimiter } from "#src/concurrency.ts";
+import { observedFetch } from "#src/transport-metrics.ts";
 import type { BlockNumber, EvmEnv } from "#src/evm/env.ts";
 
 export type EvmClient = ReturnType<typeof createEvmClient>;
@@ -29,7 +30,7 @@ export function createEvmClient(
     transport: http(rpcUrl, {
       batch: { batchSize },
       retryCount,
-      fetchFn: (input, init) => limit(() => fetch(input, init)),
+      fetchFn: (input, init) => limit(() => observedFetch(input, init)),
     }),
     batch: { multicall: { deployless: true } },
   });

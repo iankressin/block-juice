@@ -11,7 +11,8 @@ export type PipesTargetOptions = {
    * Unset means no cap: the source stream runs on to its own end.
    */
   maxBlocks?: number;
-  onLoad(load: { records: number; seconds: number }): void;
+  /** Called only after rows and cursor commit; seconds includes commit/lock/retry overhead. */
+  onLoad(load: { records: number; seconds: number; writeSeconds: number; committedBlock: number }): void | Promise<void>;
 };
 
 /**
@@ -36,6 +37,7 @@ export function pipesTarget({
   id: string;
   write(q: Query, batch: Batch): Promise<void>;
 }): Target<StreamRecords> {
+  let written = { records: 0, writeSeconds: 0 };
   const pipes = drizzleTarget<StreamRecords>({
     db,
     tables: [],
@@ -43,10 +45,26 @@ export function pipesTarget({
     onData: async ({ tx, data }) => {
       const records = Array.isArray(data) ? data : Object.values(data).flat();
       const startedAt = performance.now();
-      await write(within(tx), { records, failed: [] });
-      onLoad({ records: records.length, seconds: (performance.now() - startedAt) / 1000 });
+      try {
+        await write(within(tx), { records, failed: [] });
+        written.records = records.length;
+      } finally {
+        written.writeSeconds += (performance.now() - startedAt) / 1000;
+      }
     },
   });
+  async function* committed(batches: AsyncIterable<PortalBatch<StreamRecords>>) {
+    for await (const batch of batches) {
+      const startedAt = performance.now();
+      written = { records: 0, writeSeconds: 0 };
+      yield batch;
+      // Pipes requests the next batch only after its transaction resolves. On failure
+      // it closes this generator instead, so no uncommitted progress is published.
+      await onLoad({ ...written, seconds: (performance.now() - startedAt) / 1000,
+        committedBlock: batch.ctx.stream.state.current.number });
+    }
+  }
+
   return {
     ...pipes,
     requiresFinalizedStream: true,
@@ -57,8 +75,8 @@ export function pipesTarget({
           const batches = writer.read(state, options);
           // No cap: leave Pipes' own read loop in place. It ends when the source stream ends,
           // at END_BLOCK or the finalized head, and each batch still commits and reports.
-          if (maxBlocks === undefined) return batches;
-          return upTo(maxBlocks, state, batches);
+          const limited = maxBlocks === undefined ? batches : upTo(maxBlocks, state, batches);
+          return committed(limited);
         },
       }),
   };
