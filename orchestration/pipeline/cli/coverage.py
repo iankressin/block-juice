@@ -1,24 +1,19 @@
-"""bj coverage: the blocks each stream source has loaded, from its START_BLOCK to the cursor Pipes keeps.
-
-Pipes resumes a stream after its cursor and never reads a block twice. Coverage assumes the effective
-START_BLOCK and addresses.json still describe the history loaded under that cursor. The cursor does
-not retain their old values: after changing either, follow the documented source reset/backfill
-procedure before trusting coverage. This command never resets a source or changes its data.
-"""
+"""bj coverage: committed block intervals and the source contracts that actually produced them."""
 
 import json
 import os
 import re
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import psycopg2
-from dotenv import dotenv_values
 
 from pipeline.cli import BadInput, require_env
 from pipeline.sources import SOURCES_FILE, read_sources
-from pipeline.warehouse import read_cursor
+from pipeline.warehouse import read_cursor, read_coverage, read_configuration_cursor
+from pipeline.source_config import JS_WHITESPACE, source_env_values
 
 
 # Only these shipped sources define an omitted wallets key as unrestricted. A missing key on an
@@ -41,6 +36,12 @@ class Coverage:
     start_block_file: str
     cursor: int | None
     filter: dict[str, list[str]]
+    # None preserves the public constructor's legacy in-memory contract. read() always supplies
+    # actual evidence, including an empty tuple for an untracked legacy warehouse.
+    evidence: tuple[dict[str, Any], ...] | None = None
+    dataset_hash: str | None = None
+    settings: dict[str, int] | None = None
+    supported_filters: frozenset[str] | None = None
 
     @property
     def name(self) -> str:
@@ -48,11 +49,64 @@ class Coverage:
 
     @property
     def covered(self) -> tuple[int, int] | None:
+        if self.evidence is not None:
+            ranges = self.verified_ranges(self.filter)
+            return ranges[0] if len(ranges) == 1 else None
         return (self.start_block, self.cursor) if self.cursor is not None else None
+
+    def verified_ranges(
+        self, wanted: dict[str, list[str]], *, all_wallets: bool = False,
+    ) -> list[tuple[int, int]]:
+        if self.supported_filters is not None and not wanted.keys() <= self.supported_filters:
+            return []
+        # Older versions wrote multiple datasets into one raw table with overlapping event IDs.
+        evidence = self.evidence or ()
+        if len({item["config"]["datasetHash"] for item in evidence}) > 1:
+            return []
+        wanted = {**self.filter, **wanted}
+        required_pool_start = (self.settings or {}).get("POOLS_START_BLOCK")
+        ranges = []
+        for item in evidence:
+            config = item["config"]
+            if not item["verified"] or (self.dataset_hash is not None and config["datasetHash"] != self.dataset_hash):
+                continue
+            if required_pool_start is not None:
+                pool_start = config.get("settings", {}).get("POOLS_START_BLOCK")
+                if config.get("version") != 2 or pool_start is None or pool_start > required_pool_start:
+                    continue
+            loaded = config["filter"]
+            if all_wallets and ("wallets" in loaded or "wallets" not in config["unrestricted"]):
+                continue
+            if self.supported_filters is not None:
+                loaded = {key: values for key, values in loaded.items() if key in self.supported_filters}
+            # Removing an optional restriction requests all values; a previous restricted
+            # generation cannot establish that coverage merely because the key is absent now.
+            if any(key not in wanted for key in loaded):
+                continue
+            if any(key not in loaded and key not in config["unrestricted"]
+                   or key in loaded and not {value.lower() for value in values} <= set(loaded[key])
+                   for key, values in wanted.items()):
+                continue
+            first = max(item["first"], config["startBlock"])
+            if first <= item["last"]:
+                ranges.append((first, item["last"]))
+        merged = []
+        for first, last in sorted(ranges):
+            if merged and first <= merged[-1][1] + 1:
+                merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
+            else:
+                merged.append((first, last))
+        return merged
 
     def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]], *, all_wallets: bool = False) -> list[str]:
         """What the loaded data lacks for these blocks and this subset of addresses.json. Empty when it has it all."""
         first, last = blocks
+        if self.evidence is not None:
+            ranges = self.verified_ranges(wanted, all_wallets=all_wallets)
+            if any(begin <= first and end >= last for begin, end in ranges):
+                return []
+            return [f"no verified ingestion contract covers blocks {first}–{last} and the requested filters; "
+                    "legacy or changed-filter history needs a SOURCE_BACKFILL_ID backfill"]
         gaps = []
         if self.start_block > first:
             gaps.append(f"START_BLOCK {self.start_block} is after {first}")
@@ -78,7 +132,7 @@ class Coverage:
         return gaps
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        result = {
             "source": self.name,
             "raw_table": self.raw_table,
             "start_block": self.start_block,
@@ -87,6 +141,11 @@ class Coverage:
             "filter": self.filter,
             "covered": list(self.covered) if self.covered else None,
         }
+        if self.evidence is not None:
+            result.update(provenance="verified" if self.covered else "unverified",
+                          verified_ranges=[list(pair) for pair in self.verified_ranges(self.filter)],
+                          generations=list(self.evidence))
+        return result
 
 
 def folders(repo_root: Path) -> dict[str, Path]:
@@ -109,7 +168,7 @@ def stream_sources(repo_root: Path) -> list[str]:
     return [
         name
         for name, folder in folders(repo_root).items()
-        if dotenv_values(folder / ".env.example").get("START_BLOCK")
+        if source_env_values(folder / ".env.example").get("START_BLOCK")
     ]
 
 
@@ -125,7 +184,7 @@ def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
     if folder.parent.name == "chains":
         paths.append(folder.parents[1] / ".env")
     candidates.extend(
-        (str(path.relative_to(repo_root)), dotenv_values(path, interpolate=False).get("START_BLOCK"))
+        (str(path.relative_to(repo_root)), source_env_values(path).get("START_BLOCK"))
         for path in paths
     )
     for origin, value in candidates:
@@ -140,7 +199,7 @@ def parse_start_block(value: str, origin: str) -> int:
     Restrict the syntax before float/int: Python also accepts underscores, which Number rejects.
     loadEnv removes an empty string, but a whitespace-only value reaches Number and becomes zero.
     """
-    text = value.strip()
+    text = value.strip(JS_WHITESPACE)
     try:
         if not value:
             raise ValueError
@@ -159,7 +218,8 @@ def parse_start_block(value: str, origin: str) -> int:
         raise BadInput(f"START_BLOCK in {origin} must be a block number, not {value!r}") from None
 
 
-def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = False) -> dict[str, list[str]]:
+def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = False,
+                   supported: frozenset[str] | None = None) -> dict[str, list[str]]:
     path = folder / "addresses.json"
     label = path.relative_to(repo_root)
     try:
@@ -168,6 +228,8 @@ def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = Fa
         raise BadInput(f"could not read {label}: {error}") from None
     if not isinstance(addresses, dict):
         raise BadInput(f"{label} must map each key to an address or a list of addresses")
+    if supported is not None:
+        addresses = {key: values for key, values in addresses.items() if key in supported}
     if optional_wallets and "wallets" in addresses:
         wallets = addresses["wallets"]
         if not isinstance(wallets, list) or not wallets or not all(isinstance(w, str) and w for w in wallets):
@@ -181,7 +243,11 @@ def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = Fa
 
 def read(repo_root: Path, name: str) -> Coverage:
     source, table = name.split(".")
-    folder = folders(repo_root)[name]
+    entry = next(entry for entry in read_sources((repo_root / SOURCES_FILE).read_text())
+                 if (entry.name, entry.table) == (source, table))
+    folder = entry.folder(repo_root)
+    contract = entry.coverage or {}
+    supported = frozenset(contract["filters"]) if "filters" in contract else None
     block, block_file = start_block(repo_root, folder)
     schema = os.environ["RAW_SCHEMA"]
     try:
@@ -189,9 +255,39 @@ def read(repo_root: Path, name: str) -> Coverage:
     except psycopg2.Error as error:
         raise BadInput(f"could not read the cursor in {schema}._sync: {' '.join(str(error).split())}") from None
     loaded_filter = address_filter(
-        repo_root, folder, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
+        repo_root, folder, supported=supported, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
     )
-    return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter)
+    try:
+        evidence = tuple(read_coverage(f"{source}_{table}"))
+    except psycopg2.Error as error:
+        raise BadInput(f"could not read ingestion provenance in {schema}: {' '.join(str(error).split())}") from None
+    settings = {}
+    paths = [folder / ".env", folder / ".env.example"]
+    if folder.parent.name == "chains":
+        paths.append(folder.parents[1] / ".env")
+    for path in reversed(paths):
+        settings.update(source_env_values(path))
+    settings.update(os.environ)
+    portal = settings.get("PORTAL_URL") or contract.get("defaultPortalUrl")
+    dataset_hash = hashlib.sha256(portal.encode()).hexdigest() if portal else ""
+    pool_start = settings.get("POOLS_START_BLOCK")
+    contract_settings = dict(contract.get("defaults", {}))
+    if "POOLS_START_BLOCK" in contract_settings and pool_start:
+        contract_settings["POOLS_START_BLOCK"] = parse_start_block(pool_start, "POOLS_START_BLOCK")
+    version = 2 if "POOLS_START_BLOCK" in contract_settings else 1
+    expected = dict(version=version, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
+                    filter={key: sorted({value.lower() for value in values}) for key, values in loaded_filter.items()},
+                    unrestricted=contract.get("unrestricted", []), settings=contract_settings)
+    if settings.get("SOURCE_BACKFILL_ID"):
+        expected["backfill"] = settings["SOURCE_BACKFILL_ID"]
+    try:
+        tracked, current_cursor = read_configuration_cursor(f"{source}_{table}", expected)
+    except psycopg2.Error as error:
+        raise BadInput(f"could not read the configuration cursor in {schema}: {' '.join(str(error).split())}") from None
+    if tracked:
+        cursor = current_cursor
+    return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
+                    evidence, dataset_hash, contract_settings, supported)
 
 
 def run(repo_root: Path, name: str | None) -> int:

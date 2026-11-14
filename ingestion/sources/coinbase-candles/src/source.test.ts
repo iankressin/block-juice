@@ -440,3 +440,46 @@ test("COINBASE_MAX_CONCURRENCY is at most 10, Coinbase's public requests a secon
   assert.equal(parse("10").COINBASE_MAX_CONCURRENCY, 10);
   assert.throws(() => parse("11"));
 });
+
+test("committed Coinbase history retains a recent overlap and supports a full correction sweep", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeCoinbase(t, { markets: { "UNI-USD": hourly(START, 1000) }, requests });
+  const source = await sourceWith(t, { quote: "USD", tokens: ["UNI"] }, fakeClock(START + 901 * HOUR));
+  const state = new Map<string, unknown>();
+  const context = { getCheckpoint: async (key: string) => state.get(key) };
+  for await (const batch of source.extract(envAt(url), [], context)) {
+    for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  const firstCount = requests.length;
+  requests.length = 0;
+  for await (const batch of source.extract(envAt(url), [], context)) {
+    for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+  }
+  assert.ok(requests.length < firstCount, `${requests.length} routine requests versus ${firstCount} initial requests`);
+  requests.length = 0;
+  for await (const _ of source.extract({ ...envAt(url), HISTORY_FULL_REFRESH: "1" }, [], context)) {}
+  assert.equal(requests.length, firstCount);
+});
+
+test("zero overlap loads the last candle of a window after it closes", async (t) => {
+  const lastOpen = START + WINDOW - HOUR;
+  const url = await fakeCoinbase(t, { markets: { "UNI-USD": hourly(lastOpen, 2) } });
+  const clock = fakeClock(lastOpen + HOUR / 2);
+  const source = await sourceWith(t, uniTokens, clock);
+  const env = { ...envAt(url), HISTORY_OVERLAP_DAYS: 0 };
+  const state = new Map<string, unknown>();
+  const context = { getCheckpoint: async (key: string) => state.get(key) };
+  async function refresh() {
+    const ids: string[] = [];
+    for await (const batch of source.extract(env, [], context)) {
+      ids.push(...batch.records.map((record) => record.id));
+      for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+    }
+    return ids;
+  }
+  assert.deepEqual(await refresh(), []);
+  await clock.sleep(2 * HOUR);
+  assert.deepEqual(await refresh(), [
+    `UNI-USD:1h:${lastOpen}`, `UNI-USD:1h:${lastOpen + HOUR}`,
+  ]);
+});

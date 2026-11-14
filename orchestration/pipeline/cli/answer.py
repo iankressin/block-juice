@@ -169,11 +169,7 @@ def answer_document(
 
 
 def dbt(project: Path, *args: str) -> dbtRunnerResult:
-    arguments = [*args, "--project-dir", str(project), "--profiles-dir", str(project), *DBT_FLAGS]
-    if "--target-path" in args:
-        return dbtRunner().invoke(arguments)
-    with TemporaryDirectory(prefix="bj-dbt-check-") as temporary:
-        return dbtRunner().invoke([*arguments, "--target-path", temporary, "--log-path", str(Path(temporary) / "logs")])
+    return dbtRunner().invoke([*args, "--project-dir", str(project), "--profiles-dir", str(project), *DBT_FLAGS])
 
 
 def dbt_error(result: dbtRunnerResult) -> str:
@@ -290,20 +286,18 @@ def run_dbt_tests(
     variables = ("--vars", json.dumps(values)) if values else ()
     selection = [selector for name in names for selector in (f"1+{name}", f"+{name},tag:coverage")]
     selection += list(upstream)
-    result = dbt(project, "test", "--select", *selection, "--exclude", "tag:reference", *variables)
+    with TemporaryDirectory(prefix="bj-dbt-check-") as target:
+        result = dbt(project, "test", "--select", *selection, "--exclude", "tag:reference", *variables,
+                     "--target-path", target, "--log-path", str(Path(target) / "logs"))
     if result.exception is not None:
         raise BadInput(f"dbt test could not run: {dbt_error(result)}")
     return dbt_tests_check((r.node.name, str(r.status)) for r in result.result.results)
 
 
 def last_successful_run(cursor, source: Input) -> LastRun | None:
-    cursor.execute(
-        "select finished_at, records_written, dagster_run_id from ops.ingestion_runs"
-        " where source = %s and table_name = %s and succeeded order by finished_at desc limit 1",
-        (source.source, source.table),
-    )
-    row = cursor.fetchone()
-    return LastRun(*row) if row else None
+    from pipeline.analysis.executor import latest_ingestion_runs
+    runs, _ = latest_ingestion_runs(cursor, [source])
+    return runs[source]
 
 
 def read_warehouse(manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):

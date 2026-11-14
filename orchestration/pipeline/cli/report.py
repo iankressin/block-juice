@@ -151,10 +151,8 @@ def input_rows(answer: dict[str, Any]) -> list[list[Any]]:
         rows.append(
             [
                 item["source"],
-                item["raw_table"],
                 run.get("finished_at", "never"),
                 run.get("records_written"),
-                run.get("dagster_run_id"),
                 item["dead_letters"]["pending"],
                 item["dead_letters"]["parked"],
             ]
@@ -162,7 +160,14 @@ def input_rows(answer: dict[str, Any]) -> list[list[Any]]:
     return rows
 
 
-INPUT_COLUMNS = ["Source", "Raw table", "Last successful run", "Records", "Dagster run", "Pending", "Parked"]
+INPUT_COLUMNS = ["Source", "Last successful run", "Records", "Pending", "Parked"]
+
+
+def report_provenance(answer: dict[str, Any]) -> Iterable[tuple[str, Any]]:
+    provenance = answer["provenance"]
+    for key in ("git_sha", "git_dirty", "dbt_version"):
+        if key in provenance:
+            yield key, provenance[key]
 
 
 BOLD = Font(bold=True)
@@ -217,8 +222,7 @@ def write_xlsx(report: Report, path: Path) -> None:
     section("Definitions", ["Term", "Definition"], answer["definitions"].items())
     section("Checks", ["Check", "Status", "Detail"], ([c["name"], c["status"], c["detail"]] for c in answer["checks"]))
     section("Inputs", INPUT_COLUMNS, input_rows(answer))
-    section("Provenance", None, ((key, json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value)
-                                for key, value in answer["provenance"].items()))
+    section("Provenance", None, report_provenance(answer))
     sheet.column_dimensions["A"].width = 60
     sheet.column_dimensions["B"].width = 60
     sheet.column_dimensions["C"].width = 60
@@ -289,7 +293,7 @@ def write_pdf(report: Report, path: Path) -> None:
         table(result.columns, result.rows[:ROWS_SHOWN])
         line(row_count(result))
     heading("Provenance")
-    for key, value in answer["provenance"].items():
+    for key, value in report_provenance(answer):
         line(f"{key}: {value}")
     pdf.output(str(path))
 
@@ -464,7 +468,7 @@ def write_docx(report: Report, target: Path | IO[bytes]) -> None:
         add_table(document, text_table(result.columns, result.rows[:ROWS_SHOWN]))
         paragraph(Run(row_count(result)))
     paragraph(Run("Provenance"), style="Heading 2")
-    for key, value in answer["provenance"].items():
+    for key, value in report_provenance(answer):
         paragraph(Run(f"{key}: {value}"))
     document.save(target)
 

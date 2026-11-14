@@ -70,3 +70,84 @@ def test_the_cursor_is_the_highest_block_saved_for_the_source(database):
 def test_no_cursor_for_a_source_with_no_rows_while_another_has_some(database):
     database(SYNC + "; insert into raw._sync values ('ethereum_other_transfers', 999, '0xd')")
     assert read_cursor("ethereum_erc20_transfers") is None
+
+
+def test_legacy_warehouse_has_no_coverage_evidence(database):
+    from pipeline.warehouse import read_coverage
+    database(SYNC + "; insert into raw._sync values ('ethereum_erc20_transfers', 180, '0xa')")
+    assert read_coverage("ethereum_erc20_transfers") == []
+
+
+def test_coverage_reader_keeps_generation_filters_and_verification(database):
+    from pipeline.warehouse import read_coverage
+    database("create schema raw; create table raw._coverage (source_table text, from_block bigint, "
+             "to_block bigint, config jsonb, verified boolean); "
+             "insert into raw._coverage values "
+             "('ethereum_erc20_transfers', 100, 180, '{\"filter\":{\"tokens\":[\"a\"]}}', true), "
+             "('ethereum_erc20_transfers', 181, 200, '{\"filter\":{\"tokens\":[\"b\"]}}', false), "
+             "('another_source', 1, 999, '{}', true)")
+    assert read_coverage("ethereum_erc20_transfers") == [
+        {"first": 100, "last": 180, "config": {"filter": {"tokens": ["a"]}}, "verified": True},
+        {"first": 181, "last": 200, "config": {"filter": {"tokens": ["b"]}}, "verified": False},
+    ]
+
+
+def test_configuration_cursor_selects_its_own_sync_row(database):
+    from pipeline.warehouse import read_configuration_cursor
+    database(SYNC + "; create table raw._source_configurations (source_table text, cursor_id text, config jsonb); "
+             "insert into raw._sync values ('source', 999, 'old'), ('source_new', 125, 'new'); "
+             "insert into raw._source_configurations values "
+             "('source', 'source', '{\"generation\":1}'), ('source', 'source_new', '{\"generation\":2}')")
+    assert read_configuration_cursor("source", {"generation": 2}) == (True, 125)
+    assert read_configuration_cursor("source", {"generation": 3}) == (True, None)
+    assert read_configuration_cursor("untracked", {}) == (False, None)
+
+
+def test_oracle_freshness_includes_new_generation_cursors_and_preserves_legacy_behavior(database, scratch):
+    from pathlib import Path
+    from jinja2 import Environment
+    database('create schema raw; create table raw._sync (id text, "current_timestamp" timestamptz); '
+             'create table raw.chainlink_feeds (chain text, proxy text, feed text, heartbeat_seconds integer); '
+             'create table raw.oracle_prices (chain text, proxy text, updated_at timestamptz); '
+             "insert into raw.chainlink_feeds values ('ethereum', 'proxy', 'feed', 3600); "
+             "insert into raw.oracle_prices values ('ethereum', 'proxy', '2026-01-01'); "
+             "insert into raw._sync values ('ethereum_chainlink_price_feeds', '2026-01-01')")
+    query = Environment().from_string((Path(__file__).resolve().parents[2] /
+        'transformation/tests/oracle_prices_within_heartbeat.sql').read_text()).render(
+            config=lambda **kwargs: '', env_var=lambda *args: 'raw', ref=lambda name: f'raw.{name}')
+    with closing(psycopg2.connect(**scratch)) as connection, connection.cursor() as cursor:
+        cursor.execute(query)
+        assert cursor.fetchall() == []
+    database("delete from raw._sync; insert into raw._sync values "
+             "('ethereum_chainlink_price_feeds_abcdef012345abcdef012345', '2026-01-02')")
+    with closing(psycopg2.connect(**scratch)) as connection, connection.cursor() as cursor:
+        cursor.execute(query)
+        assert [row[0:3] for row in cursor.fetchall()] == [('ethereum', 'feed', 'proxy')]
+
+
+def test_answer_input_fingerprint_belongs_to_the_exact_successful_run(database, scratch):
+    from pipeline.cli.answer import Input, last_successful_run
+    source = Input("ethereum", "events", "raw.ethereum_events")
+    first, last, failed = [str(uuid.uuid4()) for _ in range(3)]
+    database("create schema ops; create schema raw; create table ops.ingestion_runs "
+             "(run_id uuid, finished_at timestamptz, records_written int, dagster_run_id text, "
+             "source text, table_name text, succeeded boolean); insert into ops.ingestion_runs values "
+             f"('{first}', '2026-01-01', 5, null, 'ethereum', 'events', true),"
+             f"('{last}', '2026-01-02', 0, null, 'ethereum', 'events', true),"
+             f"('{failed}', '2026-01-03', 0, null, 'ethereum', 'events', false)")
+
+    def latest():
+        with closing(psycopg2.connect(**scratch)) as conn, conn.cursor() as cur:
+            return last_successful_run(cur, source)
+
+    assert latest().run_id == last
+    assert latest().config_hash is None
+    database("create table raw._ingestion_inputs (run_id text, source_table text, config_hash text, evidence jsonb); "
+             "insert into raw._ingestion_inputs values "
+             f"('{first}', 'ethereum_events', 'older', '{{}}'), ('{last}', 'other_events', 'other', '{{}}'), "
+             f"('{failed}', 'ethereum_events', 'failed', '{{}}')")
+    assert latest().config_hash is None
+    database(f"""insert into raw._ingestion_inputs values
+             ('{last}', 'ethereum_events', 'matching', '{{"complete":false}}')""")
+    run = latest()
+    assert (run.run_id, run.config_hash, run.inputs_complete) == (last, "matching", False)

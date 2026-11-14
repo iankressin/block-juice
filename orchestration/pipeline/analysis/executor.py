@@ -3,6 +3,7 @@ import csv
 import os
 import sqlite3
 import json
+from dataclasses import replace
 from decimal import Decimal
 from contextlib import closing
 from tempfile import TemporaryDirectory
@@ -88,30 +89,38 @@ def count_dead_letters(cursor, source_table):
 
 
 def model_builds(cursor, manifest, analysis_ids):
-    ids = sorted(uid for uid in ancestors(manifest, analysis_ids) if uid.startswith("model."))
-    cursor.execute("select to_regclass('ops.dbt_node_runs')")
-    if cursor.fetchone()[0] is None or not ids:
+    nodes = manifest.get("nodes", {})
+    expected = {uid: nodes[uid].get("relation_name") for uid in ancestors(manifest, analysis_ids)
+                if uid in nodes and nodes[uid].get("resource_type") in {"model", "seed", "snapshot"}
+                and nodes[uid].get("config", {}).get("materialized") != "ephemeral"}
+    if not expected:
         return {}
-    cursor.execute("select distinct on (unique_id) unique_id, invocation_id::text, started_at, finished_at, status "
-                   "from ops.dbt_node_runs where unique_id = any(%s) and finished_at is not null "
-                   "order by unique_id, finished_at desc, invocation_id", (ids,))
-    builds = {uid: {"invocation_id": invocation, "started_at": utc_iso(started) if started else None,
-                    "finished_at": utc_iso(finished), "status": status,
-                    "evidence_scope": "latest recorded invocation; unrecorded external writes are not detected",
-                    "version": {"status": "unknown", "reason": "no recorded build-version evidence"}}
-              for uid, invocation, started, finished, status in cursor.fetchall()}
-    cursor.execute("select to_regclass('ops.dbt_node_versions')")
-    version_table = cursor.fetchone()[0]
-    if version_table is not None and builds:
-        cursor.execute("select has_table_privilege(%s, 'SELECT')", (version_table,))
-        if not cursor.fetchone()[0]:
-            return builds
-        cursor.execute("select invocation_id::text, unique_id, provenance from ops.dbt_node_versions "
-                       "where unique_id = any(%s) and invocation_id = any(%s::uuid[])",
-                       (list(builds), [build["invocation_id"] for build in builds.values()]))
-        for invocation, uid, evidence in cursor.fetchall():
-            if builds[uid]["invocation_id"] == invocation:
-                builds[uid]["version"] = {"status": "recorded", **evidence}
+    builds = {uid: {"status": "unknown", "version": {"status": "unknown", "reason": "no build identified for this relation"}}
+              for uid in expected}
+    cursor.execute("select to_regclass('ops.dbt_node_runs'), "
+                   "has_table_privilege(to_regclass('ops.dbt_node_versions'), 'SELECT')")
+    run_table, readable_versions = cursor.fetchone()
+    if run_table is None or not readable_versions:
+        return builds
+
+    # An unidentified later build might have replaced the requested relation. Keep it in
+    # the ordering so that it invalidates older evidence; ignore builds known to be elsewhere.
+    cursor.execute("""
+        select distinct on (r.unique_id)
+               r.unique_id, r.invocation_id::text, r.started_at, r.finished_at, r.status, v.provenance
+          from ops.dbt_node_runs r
+          join jsonb_each_text(%s::jsonb) target on target.key = r.unique_id
+          left join ops.dbt_node_versions v using (invocation_id, unique_id)
+         where r.finished_at is not null
+           and (v.provenance->>'relation_name' is null or v.provenance->>'relation_name' = target.value)
+         order by r.unique_id, r.finished_at desc, (v.provenance->>'relation_name' is null) desc, r.invocation_id
+    """, (json.dumps(expected),))
+    for uid, invocation, started, finished, status, evidence in cursor.fetchall():
+        if evidence and evidence.get("relation_name"):
+            builds[uid] = {"invocation_id": invocation, "started_at": utc_iso(started) if started else None,
+                           "finished_at": utc_iso(finished), "status": status,
+                           "evidence_scope": "latest recorded invocation; unrecorded external writes are not detected",
+                           "version": {"status": "recorded", **evidence}}
     return builds
 
 
@@ -139,6 +148,30 @@ def ingestion_inputs(cursor, runs):
             result[name] = {"run_id": run_id, "source_table": source_table, "status": "recorded",
                             "scope": "ingestion_run", "config_hash": config_hash, "evidence": evidence}
     return result
+
+
+def latest_ingestion_runs(cursor, inputs):
+    runs = {}
+    keys = {}
+    for source in inputs:
+        cursor.execute(
+            "select finished_at, records_written, dagster_run_id, run_id::text "
+            "from ops.ingestion_runs where source = %s and table_name = %s and succeeded "
+            "order by finished_at desc, run_id desc limit 1",
+            (source.source, source.table),
+        )
+        row = cursor.fetchone()
+        runs[source] = LastRun(*row) if row else None
+        if row:
+            keys[source.name] = {"run_id": row[3], "source_table": source.source_table}
+
+    evidence = ingestion_inputs(cursor, keys)
+    for source, run in runs.items():
+        if run is not None:
+            item = evidence[source.name]
+            runs[source] = replace(run, config_hash=item.get("config_hash"),
+                                   inputs_complete=item.get("evidence", {}).get("complete"))
+    return runs, evidence
 
 
 def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expected_columns=None, grain=None):
@@ -170,17 +203,8 @@ def read_warehouse(connect, manifest, analysis_ids, inputs, *, policy=None, expe
                     oid, filenode, kind = cursor.fetchone()
                     generations[f"{schema}.{name}"] = {"oid": oid, "relfilenode": filenode, "kind": kind}
                 results.context["relation_generations"] = generations
-                last_runs = {}
-                input_runs = {}
-                for source in inputs:
-                    cursor.execute("select finished_at, records_written, dagster_run_id, run_id::text from ops.ingestion_runs "
-                                   "where source = %s and table_name = %s and succeeded order by finished_at desc limit 1",
-                                   (source.source, source.table))
-                    row = cursor.fetchone()
-                    last_runs[source] = LastRun(*row[:3]) if row else None
-                    if row:
-                        input_runs[source.name] = {"run_id": row[3], "source_table": source.source_table}
-                results.context["ingestion_inputs"] = ingestion_inputs(cursor, input_runs)
+                last_runs, evidence = latest_ingestion_runs(cursor, inputs)
+                results.context["ingestion_inputs"] = evidence
                 dead_letters = {source: count_dead_letters(cursor, source.source_table) for source in inputs}
             for uid in analysis_ids:
                 node = manifest["nodes"][uid]

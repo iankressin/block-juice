@@ -8,22 +8,24 @@ A history source is a Pipes stream source. It reads events over a range of block
 uv run --project orchestration bj coverage <chain>.<table>
 ```
 
-It prints `start_block`, the `cursor` (the last block saved, from Pipes' cursor table `raw._sync`), the `filter` (the source's `addresses.json`) and `covered: [start_block, cursor]`. Coverage assumes the filter has not changed since `START_BLOCK`. A factory source's coverage also assumes its pool creations loaded from `POOLS_START_BLOCK` and its pool store, `factory.sqlite`, was never lost.
+It prints the effective configuration's `cursor`, current `filter`, committed `verified_ranges` and
+recorded `generations`. `covered` is present only for one continuous verified interval. A legacy cursor
+without recorded configuration is unverified; a factory source also needs evidenced pool discovery.
+See [source provenance](../../../../docs/source-provenance.md) for the complete contract.
 
 ## Reuse before you build
 
 When a source already reads the right events:
 
-- The window is inside `covered` and the addresses are in its filter: nothing to load.
-- The window ends after the cursor: run its pipeline with `bj run <pipeline>` until `bj coverage` shows a cursor at or after the window's last block. Each run reads at most about a million blocks.
-- The window starts before `START_BLOCK`, or the question needs addresses the filter lacks: the source must be reset. Resetting deletes the source's raw rows and its cursor, then reloads everything from the new `START_BLOCK`. Ask the user first, and show them what the reload will read. With their go, edit `addresses.json` or `START_BLOCK`, then run:
-
-  ```sql
-  delete from raw._sync where id = '<chain>_<table>';
-  truncate raw.<chain>_<table>;
-  ```
-
-  For a factory source, also delete `chains/<chain>/factory.sqlite` in its package, or the reload keeps the old pools.
+- The window and required filters are verified: nothing to load.
+- The current generation has not reached the window's end: run its pipeline with `bj run <pipeline>`.
+  `MAX_BLOCKS_PER_RUN` optionally caps each invocation; without a cap, it reads to the configured end.
+- The question needs an earlier start or new addresses: update the source configuration. Its next run
+  automatically backfills an independent generation into the existing raw table, preserving old rows,
+  cursors and factory caches. Estimate the requested provider work before starting a new large load.
+- Legacy history or a lost factory cache needs verification: set a stable `SOURCE_BACKFILL_ID` in root
+  `.env` and follow the [nondestructive backfill procedure](../../../../docs/source-provenance.md#nondestructive-backfill).
+  Keep that identifier for subsequent runs so they resume the rebuilt generation. No truncation is needed.
 
 ## A new history source
 

@@ -152,7 +152,7 @@ def document(tmp_path, answered_at):
         answered_at,
         [Result("eth_total", "select 1", ["total"], [(WEI,)])],
         {ETH: (0, 0), SOL: (1, 0)},
-        {ETH: LastRun(finished, 12, "run-1"), SOL: None},
+        {ETH: LastRun(finished, 12, "run-1", "ingestion-id", "fingerprint", True), SOL: None},
         [Check("dbt_tests", True, "3 passed")],
         {"git_sha": "abc", "git_dirty": False, "dbt_version": "1.12.6"},
     )
@@ -176,7 +176,8 @@ def test_answer_document_has_the_documented_shape(tmp_path):
         {
             "source": "ethereum.eth_balances",
             "raw_table": "raw.ethereum_eth_balances",
-            "last_run": {"finished_at": "2026-11-04T06:00:00Z", "records_written": 12, "dagster_run_id": "run-1"},
+            "last_run": {"finished_at": "2026-11-04T06:00:00Z", "records_written": 12, "dagster_run_id": "run-1",
+                         "run_id": "ingestion-id", "config_hash": "fingerprint", "inputs_complete": True},
             "dead_letters": {"pending": 0, "parked": 0},
         },
         {
@@ -370,7 +371,7 @@ def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total", "eth_total_by_wallet"], {})
-    assert calls == [
+    assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select",
             "1+eth_total", "+eth_total,tag:coverage", "1+eth_total_by_wallet", "+eth_total_by_wallet,tag:coverage",
@@ -388,7 +389,7 @@ def test_upstream_tests_are_named_by_the_tests_bj_answer_must_rerun(monkeypatch)
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total"], {}, ["unique_int_eth_id", "not_null_stg_eth_id"])
-    assert calls == [
+    assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select", "1+eth_total", "+eth_total,tag:coverage", "unique_int_eth_id", "not_null_stg_eth_id",
             "--exclude", "tag:reference",
@@ -526,7 +527,7 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
     flows, eth = calls
     assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "+usdc_flows,tag:coverage", "--exclude", "tag:reference")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
-    assert eth == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
+    assert eth[:eth.index("--target-path")] == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):

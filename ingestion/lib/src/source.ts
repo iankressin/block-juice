@@ -16,11 +16,24 @@ export type Failed<C = unknown> = {
   error: string;
 };
 
+export type Checkpoint = { key: string; value: unknown };
+
 export type Batch<C = unknown> = {
   records: RawRecord[];
   failed: Failed<C>[];
   /** Successful calls can clear their dead letters even when they produced no records. */
   succeededCallIds?: string[];
+  /** Terminal outcomes when a call spans batches. Omit to infer outcomes from call and record IDs. */
+  callsCompleted?: number;
+  /** Source progress committed with records and retry failures, never ahead of them. */
+  checkpoints?: Checkpoint[];
+};
+
+/** Optional runtime services. Direct callers can keep using extract(env, retry). */
+export type ExtractionContext<C> = {
+  /** Remaining bounded pages, after the retry array passed to extract. */
+  retryPages?: AsyncIterable<C[]>;
+  getCheckpoint?: (key: string) => Promise<unknown>;
 };
 
 /** What a stream source's outputs must be: records, or named lists of them that load together. */
@@ -47,8 +60,10 @@ interface SourceBase<E> {
  * parses is parked.
  */
 export interface Source<E, C> extends SourceBase<E> {
+  /** Opt in only when extract consumes context.retryPages; absent retains the full legacy retry array. */
+  retryMode?: "paged";
   call: z.ZodType<C>;
-  extract(env: E, retry: C[]): AsyncIterable<Batch<C>>;
+  extract(env: E, retry: C[], context?: ExtractionContext<C>): AsyncIterable<Batch<C>>;
 }
 
 /**
@@ -59,6 +74,17 @@ export interface Source<E, C> extends SourceBase<E> {
  * run resumes after the last batch that committed.
  */
 export interface StreamSource<E> extends SourceBase<E> {
+  /**
+   * Address keys used by the source, keys whose absence means all values, and runtime defaults.
+   * Read filter JSON through readJson while constructing the stream. Omit this contract for
+   * unknown semantics; an unregistered stream continues running without claiming verified history.
+   */
+  coverage?: {
+    filters: string[];
+    unrestricted: string[];
+    defaults?: Record<string, number>;
+    defaultPortalUrl?: string;
+  };
   /**
    * Blocks one run reads before it stops, on the batch that passes the cap.
    * `MAX_BLOCKS_PER_RUN` wins when it is set: the operator chose it for this run.

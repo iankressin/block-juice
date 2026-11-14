@@ -71,10 +71,17 @@ const env = (url: string, overrides: Partial<FactorySourceEnv>): FactorySourceEn
   ...overrides,
 });
 
-async function records(env: FactorySourceEnv) {
+async function records(env: FactorySourceEnv, cursor?: number) {
   const stream = await source.stream(env);
   const read: RawRecord[] = [];
-  for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
+  await stream.pipeTo({
+    async write({ read: batches }) {
+      const state = cursor === undefined ? undefined : { latest: { number: cursor }, finalized: null };
+      for await (const { data } of batches(state)) {
+        read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
+      }
+    },
+  });
   return read.map(({ id, data }) => ({ id, ...(data as Loaded) }));
 }
 
@@ -123,7 +130,7 @@ test("a later run follows the pools an earlier run found, from the factory store
   const first = env(url, { START_BLOCK: 102, END_BLOCK: 102 });
   await records(first);
 
-  const resumed = await records({ ...first, POOLS_START_BLOCK: 103, START_BLOCK: 103, END_BLOCK: undefined });
+  const resumed = await records({ ...first, END_BLOCK: undefined }, 102);
   assert.ok(
     resumed.some((r) => r.event === "Swap" && r.contract === early),
     "the Swaps of a pool created before this run started still load",

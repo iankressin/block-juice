@@ -215,6 +215,59 @@ def test_report_refuses_modified_result_file_from_another_generation(tmp_path):
         report.load(folder, "total")
 
 
+def test_result_hashes_use_portable_paths_and_read_old_windows_inventories(tmp_path, monkeypatch):
+    from pathlib import PureWindowsPath
+    from pipeline.analysis.store import current_run, file_hashes
+
+    folder = tmp_path / "total"
+    saved_answer(folder)
+    run = folder / "runs" / current_run(folder)
+    inventory = run / "artifacts.json"
+    original = Path.relative_to
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "relative_to", lambda self, base: PureWindowsPath(original(self, base)))
+        assert "results/total.csv" in file_hashes(run)
+
+    hashes = json.loads(inventory.read_text())
+    hashes[r"results\total.csv"] = hashes.pop("results/total.csv")
+    inventory.write_text(json.dumps(hashes))
+    assert report.load(folder, "total").tables[0].rows == [["100"]]
+    (folder / "results" / "total.csv").write_text("total\n999\n")
+    with pytest.raises(BadInput, match="does not match run"):
+        report.load(folder, "total")
+
+
+@pytest.mark.parametrize("evaluation", [False, True])
+def test_check_waits_for_publication_before_reading_answer(tmp_path, monkeypatch, evaluation):
+    from contextlib import contextmanager
+    from pipeline.analysis.store import current_run
+    from pipeline.cli import check
+
+    folder = tmp_path / "answers" / "total"
+    if evaluation:
+        folder = folder / "eval"
+    saved_answer(folder)
+    old_run = current_run(folder)
+    (folder / "answer.json").rename(folder / "previous-answer.json")
+    lock = check.answer_lock
+
+    @contextmanager
+    def finish_publication_then_lock(target):
+        assert target == folder
+        answer.write_answer(folder, [result(200)], document(200))
+        with lock(folder):
+            yield
+
+    monkeypatch.setattr(check, "answer_lock", finish_publication_then_lock)
+    assert check.run(tmp_path, "total", "cross_check", "passed", "agrees", evaluation=evaluation) == 0
+    new_run = current_run(folder)
+    assert old_run != new_run
+    assert not (folder / "editions" / old_run).exists()
+    [edition] = (folder / "editions" / new_run).iterdir()
+    checked = json.loads((edition / "answer.json").read_text())
+    assert checked["value"] == 200 and checked["checks"][0]["name"] == "cross_check"
+
+
 def test_reusing_an_existing_run_id_never_deletes_or_rewrites_it(tmp_path):
     folder = tmp_path / "total"
     folder.mkdir()

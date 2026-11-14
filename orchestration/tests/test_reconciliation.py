@@ -72,6 +72,10 @@ def compiled(tmp_path_factory):
             env.setenv(name, value)
         return {
             "loaded": compile_tests(tmp_path_factory.mktemp("loaded"), {"coverage": {LOADED.name: LOADED.to_json()}}),
+            "disjoint": compile_tests(tmp_path_factory.mktemp("disjoint"), {"coverage": {LOADED.name: {
+                **LOADED.to_json(), "covered": None, "verified_ranges": [[100, 150], [170, 200]],
+                "filter": {"tokens": [TOKEN]},
+            }}}),
             "no var": compile_tests(tmp_path_factory.mktemp("no-var"), None),
         }
 
@@ -131,3 +135,12 @@ def test_no_pair_of_readings_inside_the_loaded_blocks_warns(compiled):
 def test_without_the_coverage_var_no_test_returns_rows(compiled, balances):
     found = run(compiled["no var"], balances, [t for t in TRANSFERS if t[0] != "b"])
     assert {name: rows for name, (_, rows) in found.items() if rows} == {}
+
+
+def test_reconciles_each_verified_interval_without_crossing_a_gap(compiled):
+    readings = [(W, T, 99, 0), (W, T, 150, 1), (W, T, 169, 400), (W, T, 180, 402)]
+    result = run(compiled["disjoint"], readings, [("x", T, OTHER, OTHER, 110, 1)])
+    assert sorted(result["erc20_transfers_match_balances"][1]) == [
+        (W, T, 99, 150, 1, 0, 0), (W, T, 169, 180, 2, 0, 0),
+    ]
+    assert result["erc20_transfers_match_balances_has_pairs"][1] == []

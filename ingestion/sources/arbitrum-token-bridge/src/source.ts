@@ -14,8 +14,10 @@ import gatewayAbi from "../../../../catalog/protocols/arbitrum-token-bridge/abis
 // The catalog's ABI files are JSON, so their events are typed by name only.
 const events = defineAbi(gatewayAbi as readonly JsonAbiItem[]).events;
 
+const defaultPortalUrl = "https://portal.sqd.dev/datasets/arbitrum-one";
+
 const env = z.object({
-  PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/arbitrum-one"),
+  PORTAL_URL: z.url().default(defaultPortalUrl),
   // Sent with every Portal request when set. Without one, the public Portal answers at its anonymous limits.
   PORTAL_API_KEY: z.string().optional(),
   // Where the first run starts. Later runs resume after the cursor Pipes keeps in the warehouse.
@@ -58,6 +60,7 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
 export const source: StreamSource<TokenBridgeEnv> = {
   name: "arbitrum",
   table: "token_bridge",
+  coverage: { defaultPortalUrl, filters: ["tokens"], unrestricted: [] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

@@ -21,8 +21,10 @@ const negRisk = abiEvents(negRiskAdapterAbi);
 const collateralAdapter = abiEvents(collateralAdapterAbi);
 const autoRedeemer = abiEvents(autoRedeemerAbi);
 
+const defaultPortalUrl = "https://portal.sqd.dev/datasets/polygon-mainnet";
+
 const env = z.object({
-  PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/polygon-mainnet"),
+  PORTAL_URL: z.url().default(defaultPortalUrl),
   // Sent with every Portal request when set. Without one, the public Portal answers at its anonymous limits.
   PORTAL_API_KEY: z.string().optional(),
   // Where the first run starts. Later runs resume after the cursor Pipes keeps in the warehouse.
@@ -82,6 +84,7 @@ const records = (prefix: string) => (logs: Record<string, DecodedEvent<Record<st
 export const polygonPolymarketCtf: StreamSource<CtfEnv> = {
   name: "polygon",
   table: "polymarket_ctf",
+  coverage: { defaultPortalUrl, filters: Object.keys(addresses.shape), unrestricted: ["wallets"] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

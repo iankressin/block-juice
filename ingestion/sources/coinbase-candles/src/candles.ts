@@ -99,13 +99,17 @@ export const bucketStart = (time: number, interval: Interval) => time - (time % 
  * The windows of the market from the candle that holds `from`, the last one starting at or before
  * `now`. Each covers 300 candles, so its request stays inside Coinbase's limit.
  */
-export function windowCalls(market: Market, interval: Interval, from: number, now: number): CandleCall[] {
-  const span = WINDOW_CANDLES * intervalMs(interval);
-  const calls: CandleCall[] = [];
+export const windowSpan = (interval: Interval) => WINDOW_CANDLES * intervalMs(interval);
+
+export function* iterateWindowCalls(market: Market, interval: Interval, from: number, now: number): Generator<CandleCall> {
+  const span = windowSpan(interval);
   for (let start = bucketStart(from, interval); start <= now; start += span) {
-    calls.push({ kind: "candles", ...market, interval, start_time: start, end_time: start + span - 1 });
+    yield { kind: "candles", ...market, interval, start_time: start, end_time: start + span - 1 };
   }
-  return calls;
+}
+
+export function windowCalls(market: Market, interval: Interval, from: number, now: number): CandleCall[] {
+  return [...iterateWindowCalls(market, interval, from, now)];
 }
 
 const record = (call: CandleCall, candle: Candle): RawRecord => {

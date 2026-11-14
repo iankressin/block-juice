@@ -70,7 +70,7 @@ export const callId = (call: CandleCall) => `${call.symbol}:${call.interval}:${c
 /**
  * The open time of the market's first candle at or after `from`. It is where the market's
  * windows start, so none falls before a listing, and 3d and 1w windows stay on Binance's grid.
- * When the read fails for any reason but an unknown market or a ban, it returns `from`: the
+ * When the read fails for any reason but an unknown market or a ban, it returns undefined: the
  * market's windows still run, and any that fail wait as dead letters for the next run.
  */
 export async function firstOpenTime(
@@ -78,7 +78,7 @@ export async function firstOpenTime(
   market: Market,
   interval: Interval,
   from: number,
-): Promise<number> {
+): Promise<number | undefined> {
   let candles: Candle[];
   try {
     candles = await binance.candles({ symbol: market.symbol, interval, startTime: from, limit: 1 });
@@ -93,7 +93,7 @@ export async function firstOpenTime(
       { symbol: market.symbol, error: describeError(error) },
       "Could not read the market's first candle, so its windows start at START_TIME",
     );
-    return from;
+    return undefined;
   }
   const [first] = candles;
   if (!first) {
@@ -103,13 +103,17 @@ export async function firstOpenTime(
 }
 
 /** The windows of the market from `first`, the last one starting at or before `now`. */
-export function windowCalls(market: Market, interval: Interval, first: number, now: number): CandleCall[] {
-  const span = WINDOW_CANDLES * INTERVAL_MS[interval];
-  const calls: CandleCall[] = [];
+export const windowSpan = (interval: Interval) => WINDOW_CANDLES * INTERVAL_MS[interval];
+
+export function* iterateWindowCalls(market: Market, interval: Interval, first: number, now: number): Generator<CandleCall> {
+  const span = windowSpan(interval);
   for (let start = first; start <= now; start += span) {
-    calls.push({ kind: "candles", ...market, interval, start_time: start, end_time: start + span - 1 });
+    yield { kind: "candles", ...market, interval, start_time: start, end_time: start + span - 1 };
   }
-  return calls;
+}
+
+export function windowCalls(market: Market, interval: Interval, first: number, now: number): CandleCall[] {
+  return [...iterateWindowCalls(market, interval, first, now)];
 }
 
 const record = (call: CandleCall, candle: Candle): RawRecord => ({
@@ -148,10 +152,11 @@ export async function fetchWindows(
       return candles.filter((candle) => candle.close_time < cutoff);
     }),
   );
-  const batch: Batch<CandleCall> = { records: [], failed: [] };
+  const batch: Batch<CandleCall> = { records: [], failed: [], succeededCallIds: [] };
   calls.forEach((call, i) => {
     const outcome = outcomes[i]!;
     if (outcome.status === "fulfilled") {
+      batch.succeededCallIds!.push(callId(call));
       batch.records.push(...outcome.value.map((candle) => record(call, candle)));
     } else if (outcome.reason instanceof BinanceError && outcome.reason.banned) {
       throw outcome.reason;

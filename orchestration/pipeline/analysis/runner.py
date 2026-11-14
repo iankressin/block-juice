@@ -23,22 +23,31 @@ def apply_freshness_policy(check, question, last_runs, context, manifest, analys
                 failures.append(f"{source.name} exceeds {age} hours")
     if policy.get("require_model_build", False):
         builds = context.get("model_builds", {})
-        for uid in sorted(ancestors(manifest, analysis_ids)):
-            node = manifest.get("nodes", {}).get(uid, {})
-            if node.get("resource_type") != "model" or node.get("config", {}).get("materialized") in {"view", "ephemeral"}:
-                continue
-            dependencies = ancestors(manifest, [uid])
+        nodes = manifest.get("nodes", {})
+        materialized = {uid for uid in ancestors(manifest, analysis_ids) if uid in nodes
+                        and nodes[uid].get("resource_type") in {"model", "seed", "snapshot"}
+                        and nodes[uid].get("config", {}).get("materialized") not in {"view", "ephemeral"}}
+        for uid in sorted(materialized):
+            dependencies = ancestors(manifest, nodes[uid].get("depends_on", {}).get("nodes", []))
             input_names = {f"{source['source_name']}.{source['name']}" for key, source in manifest.get("sources", {}).items()
                            if key in dependencies and "source_name" in source}
             latest_input = max((run.finished_at.timestamp() for source, run in last_runs.items()
-                                if run and (not input_names or source.name in input_names)), default=0)
+                                if run and source.name in input_names), default=0)
             build = builds.get(uid)
             if not build or build["status"] != "success":
                 failures.append(f"{uid} has no successful latest recorded build")
             elif not build.get("started_at"):
                 failures.append(f"{uid} has no recorded build start")
-            elif datetime.fromisoformat(build["started_at"].replace("Z", "+00:00")).timestamp() < latest_input:
-                failures.append(f"{uid} was built before the latest input load completed")
+            else:
+                started = datetime.fromisoformat(build["started_at"].replace("Z", "+00:00"))
+                if started.timestamp() < latest_input:
+                    failures.append(f"{uid} was built before the latest input load completed")
+                for parent in sorted(dependencies & materialized):
+                    finished = builds.get(parent, {}).get("finished_at")
+                    if not finished:
+                        failures.append(f"{uid} has no recorded completion for upstream build {parent}")
+                    elif started < datetime.fromisoformat(finished.replace("Z", "+00:00")):
+                        failures.append(f"{uid} was built before upstream build {parent} completed")
     detail = check.detail + ("; " + "; ".join(failures) if failures else "; declared age/build policy satisfied")
     return replace(check, passed=check.passed and not failures, detail=detail)
 

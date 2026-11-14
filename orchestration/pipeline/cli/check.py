@@ -16,15 +16,23 @@ NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 ANSWER_CHECKS = ("dbt_tests", "dead_letters", "freshness", "coverage")
 
 
-def _run(repo_root: Path, slug: str, name: str, status: str, detail: str, *, evaluation: bool = False) -> int:
+def run(repo_root: Path, slug: str, name: str, status: str, detail: str, *, evaluation: bool = False) -> int:
     folder = answer_dir(repo_root, slug)
     if evaluation:
         folder = folder / "eval"
     path = folder / "answer.json"
     label = path.relative_to(repo_root)
     command = f"bj answer {slug}" + (" --eval" if evaluation else "")
-    if not path.is_file():
-        raise BadInput(f"{label} does not exist: run `{command}` first")
+    missing = f"{label} does not exist: run `{command}` first"
+    if not folder.is_dir():
+        raise BadInput(missing)
+    with answer_lock(folder):
+        if not path.is_file():
+            raise BadInput(missing)
+        return _record(path, label, command, name, status, detail)
+
+
+def _record(path: Path, label: Path, command: str, name: str, status: str, detail: str) -> int:
     if not NAME.match(name):
         raise BadInput(f"check name {name!r} must match {NAME.pattern}")
     if name in (*ANSWER_CHECKS, "lineage"):
@@ -46,17 +54,6 @@ def _run(repo_root: Path, slug: str, name: str, status: str, detail: str, *, eva
     else:
         checks.append(check)
     atomic_json(path, answer)
-    RunStore(folder).record_edition(kind="check")
+    RunStore(path.parent).record_edition(kind="check")
     print(f"{name}: {'passed' if status == 'passed' else 'FAILED'} ({check['detail']})")
     return 0 if status == "passed" else 1
-
-
-def run(repo_root: Path, slug: str, name: str, status: str, detail: str, *, evaluation: bool = False) -> int:
-    folder = answer_dir(repo_root, slug)
-    if evaluation:
-        folder = folder / "eval"
-    # A missing eval answer must not create an eval directory.
-    if not (folder / "answer.json").is_file():
-        return _run(repo_root, slug, name, status, detail, evaluation=evaluation)
-    with answer_lock(folder):
-        return _run(repo_root, slug, name, status, detail, evaluation=evaluation)

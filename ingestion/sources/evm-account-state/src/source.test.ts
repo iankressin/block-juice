@@ -78,3 +78,15 @@ test("ALSO_AT_BLOCKS takes block numbers separated by commas", () => {
   assert.deepEqual(parse("26294680,26316188").data?.ALSO_AT_BLOCKS, [26294680, 26316188]);
   assert.equal(parse("latest").success, false);
 });
+
+test("account state limits each batch to the configured transport capacity", async (t) => {
+  const { url } = await node(t);
+  const source = forChain("ethereum");
+  const env = source.env.parse({ EVM_RPC_URL: url, BLOCK_NUMBER: "120", RPC_BATCH_SIZE: 1,
+    RPC_MAX_CONCURRENCY: 1 });
+  for await (const batch of source.extract(env, [])) {
+    assert.equal(batch.records.length, 10);
+    return;
+  }
+  assert.fail("expected an account-state batch");
+});
