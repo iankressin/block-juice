@@ -22,9 +22,9 @@ def parse_project(project: Path) -> None:
 def load_pipelines() -> tuple[str, Collection[str]]:
     """The module that holds the Dagster definitions, and the pipeline names. pipeline.schedules needs
     the manifest that parse_project writes, so it is imported here, not at the top."""
-    from pipeline.schedules import PIPELINES
+    from pipeline.schedules import jobs
 
-    return "pipeline.definitions", PIPELINES
+    return "pipeline.definitions", tuple(job.name for job in jobs)
 
 
 def job_def(module: str, name: str) -> dg.JobDefinition:
