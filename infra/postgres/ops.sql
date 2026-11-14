@@ -57,6 +57,15 @@ CREATE TABLE IF NOT EXISTS ops.dbt_node_runs (
   PRIMARY KEY (invocation_id, unique_id)
 );
 
+-- Optional version evidence for new builds. Legacy node log rows remain valid without it.
+CREATE TABLE IF NOT EXISTS ops.dbt_node_versions (
+  invocation_id uuid NOT NULL,
+  unique_id text NOT NULL,
+  provenance jsonb NOT NULL,
+  PRIMARY KEY (invocation_id, unique_id),
+  FOREIGN KEY (invocation_id, unique_id) REFERENCES ops.dbt_node_runs ON DELETE CASCADE
+);
+
 -- One row per pipeline run: a Dagster run, or an ingestion run or dbt build started by hand.
 -- run_key is the Dagster run id, or the run's own id for one started by hand.
 CREATE OR REPLACE VIEW ops.pipeline_runs AS

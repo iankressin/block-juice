@@ -155,3 +155,156 @@ def test_missing_eval_check_never_falls_back_to_the_full_answer(tmp_path, monkey
     assert main(["check", "total", "--eval", "reference_match", "passed", "matches oracle"]) == 2
     assert "eval/answer.json does not exist: run `bj answer total --eval` first" in capsys.readouterr().err
     assert files(folder) == before
+
+
+def test_execution_snapshots_survive_later_checks_narrative_and_refreshes(tmp_path):
+    from pipeline.analysis.store import current_run
+    from pipeline.cli import check
+    folder = tmp_path / "answers" / "total"
+    saved_answer(folder)
+    first = current_run(folder)
+    immutable = files(folder / "runs" / first)
+    check.run(tmp_path, "total", "cross_check", "passed", "independent total agrees")
+    assert files(folder / "runs" / first) == immutable
+    assert list((folder / "editions" / first).iterdir())
+    answer.write_answer(folder, [result(200)], document(200))
+    assert current_run(folder) != first
+    assert files(folder / "runs" / first) == immutable
+    assert len(list((folder / "runs").iterdir())) == 2
+
+
+def test_pointer_failure_restores_projection_and_leaves_prior_snapshot(tmp_path, monkeypatch):
+    from pipeline.analysis.store import current_run
+    folder = tmp_path / "total"
+    saved_answer(folder)
+    before = files(folder)
+    original = Path.replace
+    def fail_pointer(self, target):
+        if Path(target) == folder / "latest.json":
+            raise OSError("pointer unavailable")
+        return original(self, target)
+    monkeypatch.setattr(Path, "replace", fail_pointer)
+    with pytest.raises(OSError, match="pointer unavailable"):
+        answer.write_answer(folder, [result(200)], document(200))
+    assert files(folder) == before
+
+
+def test_concurrent_publications_keep_complete_snapshots_and_one_current_generation(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from pipeline.analysis.store import current_run
+    folder = tmp_path / "total"
+    folder.mkdir()
+    def publish(value):
+        answer.write_answer(folder, [result(value)], document(value))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(publish, range(12)))
+    assert len(list((folder / "runs").iterdir())) == 12
+    for run in (folder / "runs").iterdir():
+        value = json.loads((run / "answer.json").read_text())["value"]
+        assert (run / "results" / "total.csv").read_text() == f"total\n{value}\n"
+    current = folder / "runs" / current_run(folder)
+    assert (folder / "answer.json").read_bytes() == (current / "answer.json").read_bytes()
+    assert (folder / "results" / "total.csv").read_bytes() == (current / "results" / "total.csv").read_bytes()
+
+
+def test_report_refuses_modified_result_file_from_another_generation(tmp_path):
+    folder = tmp_path / "total"
+    saved_answer(folder)
+    (folder / "results" / "total.csv").write_text("total\n999\n")
+    with pytest.raises(BadInput, match="does not match run"):
+        report.load(folder, "total")
+
+
+def test_result_hashes_use_portable_paths_and_read_old_windows_inventories(tmp_path, monkeypatch):
+    from pathlib import PureWindowsPath
+    from pipeline.analysis.store import current_run, file_hashes
+
+    folder = tmp_path / "total"
+    saved_answer(folder)
+    run = folder / "runs" / current_run(folder)
+    inventory = run / "artifacts.json"
+    original = Path.relative_to
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "relative_to", lambda self, base: PureWindowsPath(original(self, base)))
+        assert "results/total.csv" in file_hashes(run)
+
+    hashes = json.loads(inventory.read_text())
+    hashes[r"results\total.csv"] = hashes.pop("results/total.csv")
+    inventory.write_text(json.dumps(hashes))
+    assert report.load(folder, "total").tables[0].rows == [["100"]]
+    (folder / "results" / "total.csv").write_text("total\n999\n")
+    with pytest.raises(BadInput, match="does not match run"):
+        report.load(folder, "total")
+
+
+@pytest.mark.parametrize("evaluation", [False, True])
+def test_check_waits_for_publication_before_reading_answer(tmp_path, monkeypatch, evaluation):
+    from contextlib import contextmanager
+    from pipeline.analysis.store import current_run
+    from pipeline.cli import check
+
+    folder = tmp_path / "answers" / "total"
+    if evaluation:
+        folder = folder / "eval"
+    saved_answer(folder)
+    old_run = current_run(folder)
+    (folder / "answer.json").rename(folder / "previous-answer.json")
+    lock = check.answer_lock
+
+    @contextmanager
+    def finish_publication_then_lock(target):
+        assert target == folder
+        answer.write_answer(folder, [result(200)], document(200))
+        with lock(folder):
+            yield
+
+    monkeypatch.setattr(check, "answer_lock", finish_publication_then_lock)
+    assert check.run(tmp_path, "total", "cross_check", "passed", "agrees", evaluation=evaluation) == 0
+    new_run = current_run(folder)
+    assert old_run != new_run
+    assert not (folder / "editions" / old_run).exists()
+    [edition] = (folder / "editions" / new_run).iterdir()
+    checked = json.loads((edition / "answer.json").read_text())
+    assert checked["value"] == 200 and checked["checks"][0]["name"] == "cross_check"
+
+
+def test_reusing_an_existing_run_id_never_deletes_or_rewrites_it(tmp_path):
+    folder = tmp_path / "total"
+    folder.mkdir()
+    doc = {**document(1), "provenance": {"run_id": "a" * 32}}
+    answer.write_answer(folder, [result(1)], doc)
+    before = files(folder)
+    with pytest.raises(BadInput, match="already exists"):
+        answer.write_answer(folder, [result(2)], {**doc, "value": 2})
+    assert files(folder) == before
+
+
+def test_concurrent_report_identity_update_cannot_be_lost_during_answer_publication(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import shutil
+    from pipeline.analysis.store import answer_lock
+    folder = tmp_path / "total"
+    saved_answer(folder)
+    identity = folder / "reports" / "total.gdoc.json"
+    copied, updated = Event(), Event()
+    original_copy = shutil.copy2
+    def interleave_copy(source, target, *args, **kwargs):
+        result = original_copy(source, target, *args, **kwargs)
+        if Path(source) == identity:
+            copied.set()
+            # Without a shared publication lock the report updates now, and the later
+            # answer swap would replace that new identity with this stale copy.
+            updated.wait(0.1)
+        return result
+    def report_update():
+        assert copied.wait(5)
+        with answer_lock(folder):
+            identity.write_text('{"id": "new-document"}')
+        updated.set()
+    monkeypatch.setattr(shutil, "copy2", interleave_copy)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(report_update)
+        answer.write_answer(folder, [result(200)], document(200))
+        pending.result(timeout=5)
+    assert json.loads(identity.read_text())["id"] == "new-document"

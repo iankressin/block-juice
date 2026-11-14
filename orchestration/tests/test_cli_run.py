@@ -1,8 +1,29 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import dagster as dg
 import pytest
 
 from pipeline.cli import main
+from pipeline.cli import answer
 from pipeline.cli import run as run_command
+
+
+def test_parse_preserves_manifest_while_answer_tests_use_a_disposable_target(tmp_path, monkeypatch):
+    targets = []
+
+    def invoke(args):
+        target = Path(args[args.index("--target-path") + 1]) if "--target-path" in args else tmp_path / "target"
+        target.mkdir(exist_ok=True)
+        (target / "manifest.json").write_text(args[0])
+        targets.append(target)
+        return SimpleNamespace(success=True, exception=None, result=SimpleNamespace(results=[]))
+
+    monkeypatch.setattr(answer, "dbtRunner", lambda: SimpleNamespace(invoke=invoke))
+    run_command.parse_project(tmp_path)
+    answer.run_dbt_tests(tmp_path, ["total"], {})
+    assert (tmp_path / "target" / "manifest.json").read_text() == "parse"
+    assert not targets[1].exists()
 
 
 @pytest.fixture
