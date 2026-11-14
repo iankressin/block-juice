@@ -160,7 +160,7 @@ sys.exit(EXIT_CODE)
 
     from contextlib import nullcontext
 
-    monkeypatch.setattr(ingestion, "warehouse_slot", lambda *args: nullcontext())
+    monkeypatch.setattr(ingestion, "warehouse_slot", lambda *args: nullcontext(nullcontext))
     monkeypatch.setattr(ingestion.subprocess, "Popen", launch_fixture)
     ingest = ingestion.build_ingestion_asset("ethereum", "eth_balances").op.compute_fn.decorated_fn
     if exit_code:

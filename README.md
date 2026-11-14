@@ -53,7 +53,7 @@ When Dagster is up, open http://localhost:3000, configure the sources for the wa
 
 New installs set `LOCAL_BIND_ADDRESS=127.0.0.1` in the root `.env`, keeping warehouse and RPC host ports local. Existing `.env` files without this setting retain their previous binding; add it to opt into loopback. Set `LOCAL_BIND_ADDRESS=0.0.0.0` when remote clients need access, with restricted network access and non-example credentials. See [Local setup](docs/architecture.md#local-setup-detail) for configuration and port changes.
 
-To run all pipelines together, use `bj run daily` or enable `daily_schedule` in place of the individual schedules. The combined graph runs shared sources and models once. [Scheduling and concurrency](docs/scheduling.md) explains the warehouse-wide budgets and how to switch an existing installation.
+To run all pipelines together, use `bj run daily` or enable `daily_schedule` in place of the individual schedules. The combined graph runs shared sources and models once. If one source fails, the shared dbt build is skipped. Keep individual schedules when pipelines need to refresh independently. [Scheduling and concurrency](docs/scheduling.md) explains the warehouse-wide budgets and how to switch an existing installation.
 
 ## What
 

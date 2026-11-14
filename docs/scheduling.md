@@ -5,9 +5,13 @@ source and builds each shared model once. For example, accounts and transfers bo
 wallet transactions; their combined run shares that load and its upstream model work.
 
 For recurring runs of the whole project, open **Automation → Schedules** and enable
-`daily_schedule`, which runs at 06:00 UTC. Stop the individual pipeline schedules when switching
-to it. Enabling both requests both sets of runs. All schedules initially remain stopped, and an
-upgrade does not change the enabled schedules in an existing Dagster instance.
+`daily_schedule`, which runs at 06:00 UTC. The daily job runs the selected dbt models in
+one step. If any upstream ingestion fails, Dagster skips that step and even unrelated marts miss
+their refresh. Use individual schedules when pipelines need to refresh independently.
+
+Stop the individual schedules when switching to the daily schedule. Enabling both requests
+both sets of runs. All schedules initially remain stopped, and an upgrade preserves the enabled
+schedules in an existing Dagster instance.
 
 The existing eleven pipeline jobs, their schedules and their times are unchanged. Continue using
 `bj run balances`, for example, or enable only the individual schedules for the pipelines you need.
@@ -20,7 +24,9 @@ Dagster ingestion workers share a warehouse-wide budget of four active processes
 a budget of one. PostgreSQL advisory locks enforce these limits across `bj run`, scheduled runs,
 machines and Dagster instances connected to the same warehouse database. Waiting workers log once
 and start when capacity is available. Locks are released after failure or disconnection as well as
-success. Each waiting/active worker uses one additional warehouse connection.
+success. Each active worker holds one additional warehouse connection. Waiting workers close their
+connections between attempts and back off. If a worker detects that it lost its lock, it stops
+its subprocess and fails the step.
 
 Set `BJ_INGESTION_CONCURRENCY` or `BJ_DBT_CONCURRENCY` in the root `.env` to change these limits.
 Values must be whole numbers from 1 to 64; an absent or empty value uses the default. Configure the

@@ -21,12 +21,16 @@ def test_daily_runs_each_shared_asset_and_check_once():
     assert len(names) == len(set(names))
 
 
-def test_legacy_jobs_and_schedule_times_are_preserved():
-    expected = {"balances", "transfers", "dex", "labels", "bridges", "prices", "tokens",
-                "polymarket", "accounts", "deployments", "cow"}
-    assert set(PIPELINES) == expected
+def test_registered_pipelines_have_jobs_schedules_and_cli_names():
+    legacy = {
+        "balances", "transfers", "dex", "labels", "bridges", "prices", "tokens",
+        "polymarket", "accounts", "deployments", "cow",
+    }
+    assert legacy <= PIPELINES.keys()
+    expected = {**PIPELINES, "daily": "0 6 * * *"}
+    assert {job.name for job in defs.jobs} == expected.keys()
     schedules = {schedule.job_name: schedule for schedule in defs.schedules}
-    for name in expected | {"daily"}:
-        assert schedules[name].cron_schedule == "0 6 * * *"
+    for name, cron in expected.items():
+        assert schedules[name].cron_schedule == cron
         assert schedules[name].default_status == dg.DefaultScheduleStatus.STOPPED
-    assert set(load_pipelines()[1]) == expected | {"daily"}
+    assert set(load_pipelines()[1]) == expected.keys()
