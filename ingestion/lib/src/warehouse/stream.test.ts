@@ -49,7 +49,7 @@ function transfers(url: string, to: number, maxBlocksPerRun?: number, broken = (
     name: "test",
     table: "transfers",
     env: z.object({ START_BLOCK: z.number().default(1), PORTAL_URL: z.string().default(url) }),
-    coverage: { unrestricted: [] },
+    coverage: { filters: [], unrestricted: [] },
     maxBlocksPerRun,
     stream: async () =>
       evmPortalStream({
@@ -255,7 +255,7 @@ test("a changed contract backfills into existing rows under a new cursor and res
   const { db, warehouse } = await pgliteWarehouse(t);
   const source = transfers(await chain(t, 4), 4);
   await runSource(source, warehouse);
-  source.coverage = { unrestricted: ["wallets"] };
+  source.coverage = { filters: ["wallets"], unrestricted: ["wallets"] };
   await runSource(source, warehouse);
   await runSource(source, warehouse);
   assert.equal(process.exitCode, undefined);
@@ -290,7 +290,7 @@ test("an explicit backfill proves legacy history without deleting rows or the or
   const source = transfers(await chain(t, 4), 4);
   delete source.coverage;
   await runSource(source, warehouse);
-  source.coverage = { unrestricted: [] };
+  source.coverage = { filters: [], unrestricted: [] };
   process.env.SOURCE_BACKFILL_ID = "rebuild-history";
   await runSource(source, warehouse);
   assert.equal(process.exitCode, undefined);

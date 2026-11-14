@@ -65,7 +65,7 @@ const toRecord = (t: DecodedEvent<ReturnType<typeof Transfer.decode>>): RawRecor
 export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
   name: chainName.parse(chain),
   table: "erc20_transfers",
-  coverage: { unrestricted: ["wallets"] },
+  coverage: { filters: ["tokens", "wallets"], unrestricted: ["wallets"] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

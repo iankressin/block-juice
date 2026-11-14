@@ -44,6 +44,10 @@ def read_sources(text: str) -> list[SourceEntry]:
             contract = entry.coverage
             if (not isinstance(contract, dict) or not isinstance(contract.get("unrestricted"), list)
                     or not all(isinstance(key, str) for key in contract["unrestricted"])
+                    or not isinstance(contract.get("filters"), list)
+                    or not all(isinstance(key, str) for key in contract["filters"])
+                    or not set(contract["unrestricted"]) <= set(contract["filters"])
+                    or not isinstance(contract.get("defaultPortalUrl", ""), str)
                     or not isinstance(contract.get("defaults", {}), dict)
                     or not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
                                for value in contract.get("defaults", {}).values())):

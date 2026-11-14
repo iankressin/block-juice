@@ -123,3 +123,31 @@ def test_oracle_freshness_includes_new_generation_cursors_and_preserves_legacy_b
     with closing(psycopg2.connect(**scratch)) as connection, connection.cursor() as cursor:
         cursor.execute(query)
         assert [row[0:3] for row in cursor.fetchall()] == [('ethereum', 'feed', 'proxy')]
+
+
+def test_answer_input_fingerprint_belongs_to_the_exact_successful_run(database, scratch):
+    from pipeline.cli.answer import Input, last_successful_run
+    source = Input("ethereum", "events", "raw.ethereum_events")
+    first, last, failed = [str(uuid.uuid4()) for _ in range(3)]
+    database("create schema ops; create schema raw; create table ops.ingestion_runs "
+             "(run_id uuid, finished_at timestamptz, records_written int, dagster_run_id text, "
+             "source text, table_name text, succeeded boolean); insert into ops.ingestion_runs values "
+             f"('{first}', '2026-01-01', 5, null, 'ethereum', 'events', true),"
+             f"('{last}', '2026-01-02', 0, null, 'ethereum', 'events', true),"
+             f"('{failed}', '2026-01-03', 0, null, 'ethereum', 'events', false)")
+
+    def latest():
+        with closing(psycopg2.connect(**scratch)) as conn, conn.cursor() as cur:
+            return last_successful_run(cur, source)
+
+    assert latest().run_id == last
+    assert latest().config_hash is None
+    database("create table raw._ingestion_inputs (run_id text, source_table text, config_hash text, evidence jsonb); "
+             "insert into raw._ingestion_inputs values "
+             f"('{first}', 'ethereum_events', 'older', '{{}}'), ('{last}', 'other_events', 'other', '{{}}'), "
+             f"('{failed}', 'ethereum_events', 'failed', '{{}}')")
+    assert latest().config_hash is None
+    database(f"""insert into raw._ingestion_inputs values
+             ('{last}', 'ethereum_events', 'matching', '{{"complete":false}}')""")
+    run = latest()
+    assert (run.run_id, run.config_hash, run.inputs_complete) == (last, "matching", False)

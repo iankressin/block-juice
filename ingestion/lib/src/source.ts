@@ -73,11 +73,16 @@ export interface Source<E, C> extends SourceBase<E> {
  */
 export interface StreamSource<E> extends SourceBase<E> {
   /**
-   * Missing filter keys that mean all values, plus runtime defaults needed by coverage readers.
+   * Address keys used by the source, keys whose absence means all values, and runtime defaults.
    * Read filter JSON through readJson while constructing the stream. Omit this contract for
    * unknown semantics; an unregistered stream continues running without claiming verified history.
    */
-  coverage?: { unrestricted: string[]; defaults?: Record<string, number> };
+  coverage?: {
+    filters: string[];
+    unrestricted: string[];
+    defaults?: Record<string, number>;
+    defaultPortalUrl?: string;
+  };
   /**
    * Blocks one run reads before it stops, on the batch that passes the cap.
    * `MAX_BLOCKS_PER_RUN` wins when it is set: the operator chose it for this run.

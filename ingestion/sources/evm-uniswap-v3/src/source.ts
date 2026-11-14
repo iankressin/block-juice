@@ -102,7 +102,7 @@ export const forChain = (chain: string): StreamSource<FactorySourceEnv> => {
   return {
     name: chain,
     table: "uniswap_v3",
-    coverage: { unrestricted: [], defaults: { POOLS_START_BLOCK: factory.deployedBlock } },
+    coverage: { filters: ["tokens"], unrestricted: [], defaults: { POOLS_START_BLOCK: factory.deployedBlock } },
     env: envFor(chain, factory.deployedBlock),
     async stream(env) {
       // Read inside the run, not at import, so runSource reports a bad addresses.json.
@@ -157,8 +157,8 @@ export const forChain = (chain: string): StreamSource<FactorySourceEnv> => {
         start({ state }) {
           if (state.current && storeIsNew) {
             throw new Error(
-              `${env.FACTORY_DB} is new, but the cursor is at block ${state.current.number}: the pools created ` +
-                "before the cursor are gone, so their Swaps would be missed. Reset the source and load it again.",
+              `${factoryDb} is new, but the cursor is at block ${state.current.number}: the pools created ` +
+                "before the cursor are gone, so their Swaps would be missed. Set a new SOURCE_BACKFILL_ID to rebuild pool history.",
             );
           }
           openStore();

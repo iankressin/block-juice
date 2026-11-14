@@ -1,3 +1,4 @@
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -328,7 +329,61 @@ def test_cursor_follows_the_effective_generation_not_the_legacy_source_id(repo, 
 
 def test_earlier_pool_discovery_requires_a_generation_that_read_that_history():
     item = evidence(100, 180)
-    item["config"]["settings"] = {"POOLS_START_BLOCK": 50}
+    item["config"].update(version=2, settings={"POOLS_START_BLOCK": 50})
     read = replace(loaded(), evidence=(item,), settings={"POOLS_START_BLOCK": 1})
     assert read.covered is None
     assert read.gaps((100, 180), {})
+
+
+def test_pool_start_override_only_applies_to_factory_sources(repo, monkeypatch):
+    monkeypatch.setenv("POOLS_START_BLOCK", "50")
+    monkeypatch.setattr(coverage, "read_cursor", lambda table: None)
+    assert coverage.read(repo, "ethereum.erc20_transfers").settings == {}
+
+
+@pytest.mark.parametrize(("name", "dataset"), [
+    ("arbitrum.token_bridge", "arbitrum-one"),
+    ("polygon.polymarket_ctf", "polygon-mainnet"),
+    ("polygon.polymarket_ctf_exchange_v2", "polygon-mainnet"),
+])
+def test_empty_portal_url_uses_the_source_default(name, dataset, monkeypatch):
+    monkeypatch.setenv("RAW_SCHEMA", "raw")
+    monkeypatch.setenv("PORTAL_URL", "")
+    monkeypatch.setattr(coverage, "read_coverage", lambda table: [])
+    monkeypatch.setattr(coverage, "read_cursor", lambda table: None)
+    expected_hash = hashlib.sha256(f"https://portal.sqd.dev/datasets/{dataset}".encode()).hexdigest()
+    monkeypatch.setattr(coverage, "read_configuration_cursor",
+                        lambda table, config: (True, 500 if config["datasetHash"] == expected_hash else None))
+    assert coverage.read(REPO_ROOT, name).cursor == 500
+
+
+def test_legacy_extra_filter_cannot_certify_a_pool_the_source_never_queried(repo, monkeypatch):
+    entry = {**TRANSFERS, "coverage": {"filters": ["wallets", "tokens"], "unrestricted": ["wallets"]}}
+    (repo / SOURCES_FILE).write_text(json.dumps([entry]))
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    (folder / "addresses.json").write_text(json.dumps({"tokens": [USDC], "pools": ["p"]}))
+    monkeypatch.setattr(coverage, "read_cursor", lambda table: 180)
+    monkeypatch.setenv("PORTAL_URL", "portal")
+    item = evidence(100, 180, {"tokens": [USDC.lower()], "pools": ["p"]})
+    item["config"]["datasetHash"] = hashlib.sha256(b"portal").hexdigest()
+    monkeypatch.setattr(coverage, "read_coverage", lambda table: [item])
+    result = coverage.read(repo, "ethereum.erc20_transfers")
+    assert result.filter == {"tokens": [USDC]}
+    assert result.gaps((100, 180), {"tokens": [USDC]}) == []
+    assert result.gaps((100, 180), {"pools": ["p"]})
+
+
+def test_mixed_dataset_history_cannot_certify_either_dataset():
+    first, second = evidence(100, 120), evidence(100, 180)
+    second["config"]["datasetHash"] = "another"
+    read = replace(loaded(), evidence=(first, second), dataset_hash="dataset")
+    assert read.gaps((100, 120), {})
+
+
+def test_factory_history_from_a_shared_cache_requires_fresh_discovery():
+    item = evidence(100, 180)
+    item["config"]["settings"]["POOLS_START_BLOCK"] = 50
+    read = replace(loaded(), evidence=(item,), settings={"POOLS_START_BLOCK": 50})
+    assert read.gaps((100, 180), {})
+    rebuilt = {**item, "config": {**item["config"], "version": 2}}
+    assert replace(read, evidence=(item, rebuilt)).gaps((100, 180), {}) == []

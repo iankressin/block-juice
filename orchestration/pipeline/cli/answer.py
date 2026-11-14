@@ -3,6 +3,7 @@
 import csv
 import json
 import math
+import os
 import shutil
 import subprocess
 from collections import Counter
@@ -18,6 +19,7 @@ from typing import Any
 import psycopg2
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
+from psycopg2 import sql
 
 from pipeline.answer_artifacts import publish
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
@@ -54,6 +56,9 @@ class LastRun:
     finished_at: datetime
     records_written: int
     dagster_run_id: str | None
+    run_id: str | None = None
+    config_hash: str | None = None
+    inputs_complete: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -392,12 +397,26 @@ def run_dbt_tests(
 
 def last_successful_run(cursor, source: Input) -> LastRun | None:
     cursor.execute(
-        "select finished_at, records_written, dagster_run_id from ops.ingestion_runs"
-        " where source = %s and table_name = %s and succeeded order by finished_at desc limit 1",
+        "select finished_at, records_written, dagster_run_id, run_id::text from ops.ingestion_runs"
+        " where source = %s and table_name = %s and succeeded order by finished_at desc, run_id desc limit 1",
         (source.source, source.table),
     )
     row = cursor.fetchone()
-    return LastRun(*row) if row else None
+    if row is None:
+        return None
+    run = LastRun(*row)
+    schema = os.environ["RAW_SCHEMA"]
+    # Older warehouses may have no evidence table, or grant access only to the run log.
+    cursor.execute("select has_table_privilege(to_regclass(format('%%I._ingestion_inputs', %s)), 'SELECT')",
+                   (schema,))
+    if not cursor.fetchone()[0]:
+        return run
+    cursor.execute(sql.SQL(
+        "select config_hash, (evidence->>'complete')::boolean from {}._ingestion_inputs "
+        "where run_id = %s and source_table = %s"
+    ).format(sql.Identifier(schema)), (run.run_id, source.source_table))
+    evidence = cursor.fetchone()
+    return replace(run, config_hash=evidence[0], inputs_complete=evidence[1]) if evidence else run
 
 
 def read_warehouse(manifest: dict, analysis_ids: Sequence[str], inputs: Sequence[Input]):

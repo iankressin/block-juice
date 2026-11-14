@@ -19,7 +19,9 @@ import { readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-type Coverage = { unrestricted: string[]; defaults?: Record<string, number> };
+import type { StreamSource } from "../lib/src/source.ts";
+
+type Coverage = NonNullable<StreamSource<unknown>["coverage"]>;
 type SourceEntry = { name: string; table: string; package: string; settings?: string; coverage?: Coverage };
 
 const ingestionDir = path.resolve(import.meta.dirname, "..");

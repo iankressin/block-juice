@@ -74,7 +74,7 @@ export const forChain = (chain: string): StreamSource<StandardBridgeEnv> => {
   return {
     name: chain,
     table: "op_standard_bridge",
-    coverage: { unrestricted: [] },
+    coverage: { filters: ["tokens"], unrestricted: [] },
     env,
     async stream(env) {
       // Read inside the run, not at import, so runSource reports a bad addresses.json.

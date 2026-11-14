@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import type { StreamSource } from "#src/source.ts";
 import type { Query } from "#src/warehouse/index.ts";
 
 /** Only dataset settings belong here. Credentials and operational limits never do. */
 export type StreamProvenance = {
-  version: 1;
+  version: 1 | 2;
   source: string;
   table: string;
   startBlock: number;
@@ -28,7 +29,7 @@ export const fingerprint = (value: unknown): string =>
   createHash("sha256").update(canonical(value)).digest("hex");
 
 export function streamProvenance(
-  source: { name: string; table: string; coverage?: { unrestricted: string[] } },
+  source: Pick<StreamSource<unknown>, "name" | "table" | "coverage">,
   env: unknown,
   inputs: Record<string, unknown>,
 ): StreamProvenance | undefined {
@@ -38,7 +39,9 @@ export function streamProvenance(
   const filter: Record<string, string[]> = {};
   for (const [path, value] of Object.entries(inputs)) {
     if (!path.endsWith("addresses.json") || !value || typeof value !== "object") continue;
-    for (const [key, values] of Object.entries(value)) {
+    for (const key of source.coverage.filters) {
+      if (!Object.hasOwn(value, key)) continue;
+      const values = (value as Record<string, unknown>)[key];
       const list = typeof values === "string" ? [values] : values;
       if (!Array.isArray(list) || !list.every((item) => typeof item === "string")) {
         throw new Error(`Cannot record coverage for ${path}: ${key} must contain addresses`);
@@ -46,13 +49,14 @@ export function streamProvenance(
       filter[key] = [...new Set(list.map((item: string) => item.toLowerCase()))].sort();
     }
   }
+  const poolStart = settings.POOLS_START_BLOCK;
   return {
-    version: 1, source: source.name, table: source.table,
+    // Version 1 factory cursors may have used a cache rebuilt for a different block range.
+    version: typeof poolStart === "number" ? 2 : 1, source: source.name, table: source.table,
     startBlock: settings.START_BLOCK,
     datasetHash: createHash("sha256").update(settings.PORTAL_URL).digest("hex"),
     filter, unrestricted: source.coverage.unrestricted,
-    settings: typeof settings.POOLS_START_BLOCK === "number"
-      ? { POOLS_START_BLOCK: settings.POOLS_START_BLOCK } : {},
+    settings: typeof poolStart === "number" ? { POOLS_START_BLOCK: poolStart } : {},
     ...(process.env.SOURCE_BACKFILL_ID ? { backfill: process.env.SOURCE_BACKFILL_ID } : {}),
   };
 }
@@ -75,8 +79,13 @@ export async function prepareProvenance(q: Query, raw: string): Promise<void> {
 /** Existing installations keep their cursor. Every later contract gets independent backfill progress. */
 export async function configureStream(q: Query, raw: string, sourceTable: string, config: StreamProvenance) {
   const hash = fingerprint(config);
-  const { rows } = await q.query<{ fingerprint: string; cursor_id: string }>(
-    `select fingerprint, cursor_id from ${raw}."_source_configurations" where source_table = $1`, [sourceTable]);
+  const { rows } = await q.query<{ fingerprint: string; cursor_id: string; dataset_hash: string }>(
+    `select fingerprint, cursor_id, config->>'datasetHash' as dataset_hash
+     from ${raw}."_source_configurations" where source_table = $1`, [sourceTable]);
+  // open() holds the source lock until all writes finish. Raw event IDs are local to one dataset.
+  if (rows.some((row) => row.dataset_hash !== config.datasetHash)) {
+    throw new Error(`The dataset for ${sourceTable} differs from its recorded configuration. Use a separate raw schema.`);
+  }
   const existing = rows.find((row) => row.fingerprint === hash);
   if (existing) return existing.cursor_id;
   const cursorId = rows.length === 0 && !config.backfill ? sourceTable : `${sourceTable}_${hash.slice(0, 24)}`;
@@ -98,12 +107,12 @@ export async function recordCoverage(
     || (fresh && first <= config.settings.POOLS_START_BLOCK);
   if (!verified) {
     const { rows } = await q.query(`select 1 from ${raw}."_coverage"
-      where source_table = $1 and fingerprint = $2 and to_block = $3 - 1 and verified`,
+      where source_table = $1 and fingerprint = $2 and to_block = $3::bigint - 1 and verified`,
     [sourceTable, hash, first]);
     verified = rows.length > 0;
   }
   const updated = await q.query(`update ${raw}."_coverage" set to_block = $4, updated_at = now()
-    where source_table = $1 and fingerprint = $2 and to_block = $3 - 1 and verified = $5 returning from_block`,
+    where source_table = $1 and fingerprint = $2 and to_block = $3::bigint - 1 and verified = $5 returning from_block`,
   [sourceTable, hash, first, last, verified]);
   if (updated.rows.length) return;
   await q.query(`insert into ${raw}."_coverage" (source_table, fingerprint, from_block, to_block, config, verified)

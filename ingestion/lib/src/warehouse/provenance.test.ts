@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { factoryCachePath } from "#src/factory-cache.ts";
-import { streamProvenance, recordCoverage } from "#src/warehouse/provenance.ts";
+import { fingerprint, streamProvenance, recordCoverage } from "#src/warehouse/provenance.ts";
 import { captureJsonReads, readJson } from "#src/json.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 import { runSource } from "#src/run/index.ts";
@@ -26,7 +26,7 @@ test("provenance captures consumed inputs before edits and never persists creden
     value.tokens.push("modified-by-consumer");
     writeFileSync(path, '{"tokens":["later-file-edit"]}');
   });
-  const config = streamProvenance({ name: "ethereum", table: "events", coverage: { unrestricted: [] } },
+  const config = streamProvenance({ name: "ethereum", table: "events", coverage: { filters: ["tokens"], unrestricted: [] } },
     { START_BLOCK: 1, PORTAL_URL: "https://provider/secret", PORTAL_API_KEY: "secret", END_BLOCK: 100 }, inputs);
   assert.deepEqual(config!.filter, { tokens: ["0xaa"] });
   assert.equal(JSON.stringify(config).includes("secret"), false);
@@ -40,6 +40,12 @@ test("factory histories preserve the original file and use stable independent pa
   writeFileSync(path, "legacy cache remains");
   const settings = { START_BLOCK: 100, POOLS_START_BLOCK: 1, PORTAL_URL: "https://provider/secret" };
   assert.equal(factoryCachePath(path, settings, { tokens: ["a"] }), path);
+  const addresses = { tokens: ["a"] };
+  for (const other of [{ ...settings, START_BLOCK: 99 }, { ...settings, POOLS_START_BLOCK: 0 }]) {
+    const separate = factoryCachePath(path, other, addresses);
+    assert.notEqual(separate, path, "a partial rebuild must not replace the original cache");
+    assert.equal(factoryCachePath(path, other, addresses), separate);
+  }
   const changed = factoryCachePath(path, settings, { tokens: ["a", "b"] });
   assert.notEqual(changed, path);
   assert.equal(factoryCachePath(path, settings, { tokens: ["b", "a"] }), changed);
@@ -53,7 +59,7 @@ test("factory coverage needs evidenced pool history, including batches before th
   const { db, warehouse } = await pgliteWarehouse(t);
   await warehouse.open("ethereum_events");
   const q = { query: <R>(sql: string, params?: unknown[]) => db.query<R>(sql, params) };
-  const config = streamProvenance({ name: "ethereum", table: "events", coverage: { unrestricted: [] } },
+  const config = streamProvenance({ name: "ethereum", table: "events", coverage: { filters: ["tokens"], unrestricted: [] } },
     { START_BLOCK: 100, POOLS_START_BLOCK: 1, PORTAL_URL: "https://provider" }, {})!;
   await recordCoverage(q, '"raw"', "ethereum_events", config, 1, 50, true);
   await recordCoverage(q, '"raw"', "ethereum_events", config, 51, 120, false);
@@ -104,4 +110,50 @@ test("adding a Uniswap token backfills its old pool and swaps while retaining th
   const states = await db.query("select distinct id from raw._sync");
   assert.equal(states.rows.length, 2);
   assert.deepEqual((await db.query("select distinct verified from raw._coverage")).rows, [{ verified: true }]);
+});
+
+test("coverage records only the address dimensions used by the stream", () => {
+  const source = forChain("ethereum");
+  const filter = streamProvenance(source, { START_BLOCK: 1, PORTAL_URL: "portal" }, {
+    "chains/ethereum/addresses.json": { tokens: ["0xAA"], pools: ["unqueried"], revision: 2 },
+  })!.filter;
+  assert.deepEqual(filter, { tokens: ["0xaa"] });
+});
+
+test("a raw table rejects a different dataset before allocating its cursor", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("ethereum_events");
+  const config = streamProvenance(forChain("ethereum"), { START_BLOCK: 1, PORTAL_URL: "first" }, {})!;
+  const original = await table.configureStream(config);
+  await assert.rejects(table.configureStream({ ...config, datasetHash: "second" }), /dataset/i);
+  assert.equal(await table.configureStream(config), original);
+  assert.equal((await db.query("select * from raw._source_configurations")).rows.length, 1);
+});
+
+test("verified factory coverage spans the signed 32-bit block boundary", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  await warehouse.open("ethereum_events");
+  const start = 2 ** 31 - 1;
+  const config = streamProvenance(forChain("ethereum"), {
+    START_BLOCK: start, POOLS_START_BLOCK: start, PORTAL_URL: "portal",
+  }, {})!;
+  const q = { query: <R>(sql: string, params?: unknown[]) => db.query<R>(sql, params) };
+  await recordCoverage(q, '"raw"', "ethereum_events", config, start, start, true);
+  await recordCoverage(q, '"raw"', "ethereum_events", config, start + 1, start + 2, false);
+  assert.deepEqual((await db.query("select from_block, to_block, verified from raw._coverage")).rows,
+    [{ from_block: start, to_block: start + 2, verified: true }]);
+});
+
+test("a recorded shared-cache cursor is retained while its replacement replays discovery", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const table = await warehouse.open("ethereum_uniswap_v3");
+  const config = streamProvenance(forChain("ethereum"), {
+    START_BLOCK: 50, POOLS_START_BLOCK: 1, PORTAL_URL: "portal",
+  }, {})!;
+  const legacy = { ...config, version: 1 };
+  await db.query("insert into raw._source_configurations (source_table, fingerprint, cursor_id, config) " +
+    "values ('ethereum_uniswap_v3', $1, 'ethereum_uniswap_v3', $2::jsonb)", [fingerprint(legacy), JSON.stringify(legacy)]);
+  const rebuilt = await table.configureStream(config);
+  assert.notEqual(rebuilt, "ethereum_uniswap_v3");
+  assert.equal(await table.configureStream(config), rebuilt);
 });

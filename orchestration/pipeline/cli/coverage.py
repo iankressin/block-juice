@@ -41,6 +41,7 @@ class Coverage:
     evidence: tuple[dict[str, Any], ...] | None = None
     dataset_hash: str | None = None
     settings: dict[str, int] | None = None
+    supported_filters: frozenset[str] | None = None
 
     @property
     def name(self) -> str:
@@ -54,16 +55,26 @@ class Coverage:
         return (self.start_block, self.cursor) if self.cursor is not None else None
 
     def verified_ranges(self, wanted: dict[str, list[str]]) -> list[tuple[int, int]]:
+        if self.supported_filters is not None and not wanted.keys() <= self.supported_filters:
+            return []
+        # Older versions wrote multiple datasets into one raw table with overlapping event IDs.
+        evidence = self.evidence or ()
+        if len({item["config"]["datasetHash"] for item in evidence}) > 1:
+            return []
         wanted = {**self.filter, **wanted}
+        required_pool_start = (self.settings or {}).get("POOLS_START_BLOCK")
         ranges = []
-        for item in self.evidence or ():
+        for item in evidence:
             config = item["config"]
             if not item["verified"] or (self.dataset_hash is not None and config["datasetHash"] != self.dataset_hash):
                 continue
-            required_pool_start = (self.settings or {}).get("POOLS_START_BLOCK")
-            if required_pool_start is not None and config.get("settings", {}).get("POOLS_START_BLOCK", 2**53) > required_pool_start:
-                continue
+            if required_pool_start is not None:
+                pool_start = config.get("settings", {}).get("POOLS_START_BLOCK")
+                if config.get("version") != 2 or pool_start is None or pool_start > required_pool_start:
+                    continue
             loaded = config["filter"]
+            if self.supported_filters is not None:
+                loaded = {key: values for key, values in loaded.items() if key in self.supported_filters}
             # Removing an optional restriction requests all values; a previous restricted
             # generation cannot establish that coverage merely because the key is absent now.
             if any(key not in wanted for key in loaded):
@@ -197,7 +208,8 @@ def parse_start_block(value: str, origin: str) -> int:
         raise BadInput(f"START_BLOCK in {origin} must be a block number, not {value!r}") from None
 
 
-def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = False) -> dict[str, list[str]]:
+def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = False,
+                   supported: frozenset[str] | None = None) -> dict[str, list[str]]:
     path = folder / "addresses.json"
     label = path.relative_to(repo_root)
     try:
@@ -206,6 +218,8 @@ def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = Fa
         raise BadInput(f"could not read {label}: {error}") from None
     if not isinstance(addresses, dict):
         raise BadInput(f"{label} must map each key to an address or a list of addresses")
+    if supported is not None:
+        addresses = {key: values for key, values in addresses.items() if key in supported}
     if optional_wallets and "wallets" in addresses:
         wallets = addresses["wallets"]
         if not isinstance(wallets, list) or not wallets or not all(isinstance(w, str) and w for w in wallets):
@@ -219,7 +233,11 @@ def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = Fa
 
 def read(repo_root: Path, name: str) -> Coverage:
     source, table = name.split(".")
-    folder = folders(repo_root)[name]
+    entry = next(entry for entry in read_sources((repo_root / SOURCES_FILE).read_text())
+                 if (entry.name, entry.table) == (source, table))
+    folder = entry.folder(repo_root)
+    contract = entry.coverage or {}
+    supported = frozenset(contract["filters"]) if "filters" in contract else None
     block, block_file = start_block(repo_root, folder)
     schema = os.environ["RAW_SCHEMA"]
     try:
@@ -227,7 +245,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     except psycopg2.Error as error:
         raise BadInput(f"could not read the cursor in {schema}._sync: {' '.join(str(error).split())}") from None
     loaded_filter = address_filter(
-        repo_root, folder, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
+        repo_root, folder, supported=supported, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
     )
     try:
         evidence = tuple(read_coverage(f"{source}_{table}"))
@@ -240,16 +258,14 @@ def read(repo_root: Path, name: str) -> Coverage:
     for path in reversed(paths):
         settings.update(source_env_values(path))
     settings.update(os.environ)
-    portal = settings.get("PORTAL_URL")
+    portal = settings.get("PORTAL_URL") or contract.get("defaultPortalUrl")
     dataset_hash = hashlib.sha256(portal.encode()).hexdigest() if portal else ""
     pool_start = settings.get("POOLS_START_BLOCK")
-    entry = next(entry for entry in read_sources((repo_root / SOURCES_FILE).read_text())
-                 if (entry.name, entry.table) == (source, table))
-    contract = entry.coverage or {}
     contract_settings = dict(contract.get("defaults", {}))
-    if pool_start:
+    if "POOLS_START_BLOCK" in contract_settings and pool_start:
         contract_settings["POOLS_START_BLOCK"] = parse_start_block(pool_start, "POOLS_START_BLOCK")
-    expected = dict(version=1, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
+    version = 2 if "POOLS_START_BLOCK" in contract_settings else 1
+    expected = dict(version=version, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
                     filter={key: sorted({value.lower() for value in values}) for key, values in loaded_filter.items()},
                     unrestricted=contract.get("unrestricted", []), settings=contract_settings)
     if settings.get("SOURCE_BACKFILL_ID"):
@@ -261,7 +277,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     if tracked:
         cursor = current_cursor
     return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
-                    evidence, dataset_hash, contract_settings)
+                    evidence, dataset_hash, contract_settings, supported)
 
 
 def run(repo_root: Path, name: str | None) -> int:

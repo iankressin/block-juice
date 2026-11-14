@@ -14,8 +14,10 @@ import exchangeAbi from "../../../../catalog/protocols/polymarket/abis/ctf-excha
 // The catalog's ABI file is JSON, so its events are typed by name only.
 const events = defineAbi(exchangeAbi as readonly JsonAbiItem[]).events;
 
+const defaultPortalUrl = "https://portal.sqd.dev/datasets/polygon-mainnet";
+
 const env = z.object({
-  PORTAL_URL: z.url().default("https://portal.sqd.dev/datasets/polygon-mainnet"),
+  PORTAL_URL: z.url().default(defaultPortalUrl),
   // Sent with every Portal request when set. Without one, the public Portal answers at its anonymous limits.
   PORTAL_API_KEY: z.string().optional(),
   // Where the first run starts. Later runs resume after the cursor Pipes keeps in the warehouse.
@@ -64,7 +66,7 @@ function logRecord(event: string, log: DecodedEvent<Record<string, unknown>>): R
 export const polygonPolymarketCtfExchangeV2: StreamSource<ExchangeEnv> = {
   name: "polygon",
   table: "polymarket_ctf_exchange_v2",
-  coverage: { unrestricted: ["wallets"] },
+  coverage: { defaultPortalUrl, filters: Object.keys(addresses.shape), unrestricted: ["wallets"] },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.

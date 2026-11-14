@@ -102,7 +102,7 @@ export const forChain = (chain: string): StreamSource<PoolManagerSourceEnv> => {
   return {
     name: chain,
     table: "uniswap_v4",
-    coverage: { unrestricted: [], defaults: { POOLS_START_BLOCK: poolManager.deployedBlock } },
+    coverage: { filters: ["tokens"], unrestricted: [], defaults: { POOLS_START_BLOCK: poolManager.deployedBlock } },
     env: envFor(chain, poolManager.deployedBlock),
     async stream(env) {
       // Read inside the run, not at import, so runSource reports a bad addresses.json.
@@ -145,8 +145,8 @@ export const forChain = (chain: string): StreamSource<PoolManagerSourceEnv> => {
         async start({ state }) {
           if (state.current && storeIsNew) {
             throw new Error(
-              `${env.FACTORY_DB} is new, but the cursor is at block ${state.current.number}: the pools created ` +
-                "before the cursor are gone, so their Swaps would be missed. Reset the source and load it again.",
+              `${factoryDb} is new, but the cursor is at block ${state.current.number}: the pools created ` +
+                "before the cursor are gone, so their Swaps would be missed. Set a new SOURCE_BACKFILL_ID to rebuild pool history.",
             );
           }
           store = await contractFactorySqliteStore({ path: factoryDb });

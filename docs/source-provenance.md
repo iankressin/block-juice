@@ -5,16 +5,21 @@ address filters. Editing `START_BLOCK` or `addresses.json` cannot retroactively 
 Each interval commits in the same transaction as its raw rows and Pipes cursor, including batches
 that contain no matching events. A failed batch contributes no coverage.
 
-After the first recorded configuration, changing a source's dataset URL, start block, address
-filters or pool-discovery start creates an independent cursor. That generation backfills the new
-configuration into the existing raw table. Upserts preserve existing record IDs and data; previous
-cursors and coverage remain available. Raising `END_BLOCK` or changing a run's block cap continues
-the same generation. Source names, dbt models and Dagster asset keys remain unchanged.
+A source's first recorded dataset URL binds its raw table to that dataset. Event IDs can repeat
+across datasets. To ingest a different URL, select a separate raw schema. If an older version
+already wrote two datasets into the same table, backfill the desired dataset in a fresh raw schema
+before using its coverage.
 
-Uniswap's pool-discovery SQLite cache also belongs to its configuration. Changed configurations
-rebuild pool history in a separate cache file, so a newly tracked token's pools created before the
-swap window are discovered. The original cache is retained. Keep the cache files with the warehouse
-cursors; removing a cache alone still fails safely when its cursor has already advanced.
+Changing a start block, address filter or pool-discovery start creates an independent cursor within
+the dataset. The new generation backfills the existing raw table and preserves rows from earlier
+filters. Raising `END_BLOCK` or changing a run's block cap continues the same generation.
+
+Uniswap uses a separate pool-discovery cache for each token set, swap start, discovery start and
+backfill ID. Keep the cache and its identity file with the warehouse cursors. A cursor with a
+missing generation cache cannot resume. If its cache was lost, use a new `SOURCE_BACKFILL_ID`
+to rebuild from the discovery start. Upgrading a recorded generation that used a shared cache
+automatically starts a separate cursor and rebuilds discovery. Its previous intervals stay in
+the warehouse as diagnostics. Verification uses intervals from the rebuilt generation.
 
 ## Existing warehouses
 
@@ -22,7 +27,6 @@ On upgrade, the first configuration continues the existing cursor without resett
 data. History written before provenance existed is **unverified**: a cursor alone cannot establish
 which filters produced it. Ordinary stream sources can verify new blocks as they commit. A resumed
 legacy Uniswap cache remains unverified until pool discovery is rebuilt under a recorded contract.
-This changes the strength of coverage evidence, not whether existing ingestion jobs run.
 
 The `covered` field is null when there is no single verified interval for the current filters.
 `verified_ranges` preserves separate intervals, and `generations` shows their recorded contracts.
@@ -48,8 +52,9 @@ Evidence commits with each raw batch and checkpoint, initially with `complete: f
 extraction marks it complete, including successful runs that return no rows. A run interrupted
 after a committed batch retains incomplete evidence. Unavailable evidence permissions or metadata
 writes leave ingestion working, with a warning and absent or incomplete provenance. Missing records
-from older runs remain unknown. Analysis results associate the last successful ingestion run with
-only its exact matching evidence; they do not substitute a newer run's settings.
+from older runs remain unknown. In `answer.json`, each input's `last_run` includes the ingestion
+`run_id`, the matching `config_hash` and `inputs_complete`. The latter two fields are null when
+evidence for that run and source table is unavailable.
 
 These are input fingerprints, not replayable configuration history or lineage for every row in
 an accumulated raw table. `complete` means extraction finished without truncating this capture;
