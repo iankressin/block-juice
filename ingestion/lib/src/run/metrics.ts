@@ -103,7 +103,7 @@ export function progressMetrics(progress: RunProgress): Registry {
     ["delay_tasks", "Tasks currently in client rate-limit or retry-backoff delays.", transport.delayedTasks],
     ["delay_seconds", "Sum of completed client rate-limit and retry-backoff delay durations.", transport.delaySeconds],
   );
-  if (progress.committedBlock !== undefined) values.push(["committed_block", "Last stream block confirmed committed.", progress.committedBlock]);
+  values.push(["committed_block", "Last stream block committed in this run, or -1 before any commit.", progress.committedBlock ?? -1]);
   for (const [name, help, value] of values) new Gauge({ name: `ingestion_current_${name}`, help, registers: [registry] }).set(value);
   return registry;
 }

@@ -23,6 +23,8 @@ export type Batch<C = unknown> = {
   failed: Failed<C>[];
   /** Successful calls can clear their dead letters even when they produced no records. */
   succeededCallIds?: string[];
+  /** Terminal outcomes when a call spans batches. Omit to infer outcomes from call and record IDs. */
+  callsCompleted?: number;
   /** Source progress committed with records and retry failures, never ahead of them. */
   checkpoints?: Checkpoint[];
 };

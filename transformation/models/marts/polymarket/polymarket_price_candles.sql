@@ -29,10 +29,14 @@ select
     date_trunc('minute', l.block_timestamp) as minute,
     t.condition_id,
     t.outcome,
-    (array_agg(l.price order by l.block_number, l.log_index))[1] as open,
+    -- The source keys each fill by block:logIndex; a token has at most one leg at that position.
+    -- A fixed-width tuple orders by that unique position and carries its price.
+    -- MIN/MAX each retain three scalars, instead of sorting and collecting every price twice.
+    -- Keep the price inside the tuple: a NULL endpoint price must remain NULL.
+    (min(array[l.block_number::numeric, l.log_index::numeric, l.price]))[3] as open,
     max(l.price) as high,
     min(l.price) as low,
-    (array_agg(l.price order by l.block_number desc, l.log_index desc))[1] as close,
+    (max(array[l.block_number::numeric, l.log_index::numeric, l.price]))[3] as close,
     count(*) filter (where l.own) as trades,
     sum(l.shares) as shares_volume,
     sum(l.usdc) as usdc_volume

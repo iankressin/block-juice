@@ -82,8 +82,9 @@ export const forChain = (chain: string): Source<AccountStateEnv, StateCall> => (
     function* fresh() {
       for (const b of blocks) for (const wallet of selected) yield* stateCallsAt(b, [wallet]);
     }
+    const batchSize = Math.min(100, env.RPC_BATCH_SIZE * env.RPC_MAX_CONCURRENCY * 10);
     for await (const part of callBatches(fresh(), retry, callId,
-      (call) => blocks.includes(call.block) && selected.has(call.address), context)) {
+      (call) => blocks.includes(call.block) && selected.has(call.address), context, batchSize)) {
       yield await fetchState(client, part);
     }
   },

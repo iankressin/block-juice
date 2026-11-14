@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { PGlite } from "@electric-sql/pglite";
-import { Pushgateway } from "@prometheus-io/client";
+import { Pushgateway, type Registry } from "@prometheus-io/client";
 import * as z from "zod";
+import { callBatches } from "#src/batches.ts";
 import { runSource } from "#src/run/index.ts";
 import { readJson } from "#src/json.ts";
 import type { Batch, Source } from "#src/source.ts";
@@ -229,4 +230,45 @@ test("lazy call-source fingerprints follow exact runs, including empty success a
   assert.notEqual(rows[0]?.config_hash, rows[1]?.config_hash);
   assert.doesNotMatch(JSON.stringify(rows), /original-wallet|new-wallet/);
   assert.deepEqual((await db.query("select id from raw.test_wallets")).rows, [{ id: "one" }]);
+});
+
+test("fresh batches account for matching retries beyond the first page", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  const calls = Array.from({ length: 600 }, (_, i) => ({ wallet: String(i).padStart(3, "0") }));
+  const table = await warehouse.open("test_wallets");
+  await table.load({ records: [], failed: calls.map((call) => ({
+    id: call.wallet, call, error: "timeout",
+  })) });
+  await table.close();
+
+  const paged: Source<unknown, Wallet> = {
+    ...source(async function* () {}), retryMode: "paged",
+    async *extract(_env, retry, context) {
+      for await (const batch of callBatches(calls, retry, (call) => call.wallet, () => true, context)) {
+        yield { records: [], failed: [], succeededCallIds: batch.map((call) => call.wallet) };
+      }
+    },
+  };
+  await runSource(paged, warehouse);
+  const [report] = await runLog(db);
+  assert.equal(report?.dead_letters_pending, 0);
+  assert.equal(report?.retried_calls, calls.length);
+});
+
+test("the runner counts explicit terminal outcomes and infers outcomes for ordinary batches", async (t) => {
+  const { warehouse } = await pgliteWarehouse(t);
+  process.env.PUSHGATEWAY_URL = "http://metrics.invalid";
+  t.after(() => { process.env.PUSHGATEWAY_URL = ""; });
+  let completed: number | undefined;
+  t.mock.method(Pushgateway.prototype, "pushAdd", async function (this: { registry: Registry }) {
+    const metrics = await this.registry.getMetricsAsJSON();
+    const gauge = metrics.find((metric) => metric.name === "ingestion_current_calls_completed");
+    if (gauge) completed = gauge.values[0]!.value;
+  });
+  await runSource(source(async function* () {
+    yield { records: [{ id: "one", callId: "walk#0", data: {} }], failed: [], callsCompleted: 0 };
+    yield { records: [], failed: [], succeededCallIds: ["walk"], callsCompleted: 1 };
+    yield { records: [{ id: "two", callId: "other", data: {} }], failed: [] };
+  }), warehouse);
+  assert.equal(completed, 2);
 });

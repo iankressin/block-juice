@@ -28,3 +28,15 @@ jobs = [
 ]
 
 schedules = [dg.ScheduleDefinition(job=job, cron_schedule=PIPELINES[job.name]) for job in jobs]
+
+# A single graph shares upstream ingestion and dbt models across every mart. Keep the existing
+# individual jobs and schedules for installations that only run a subset of the project.
+daily = dg.define_asset_job(
+    "daily",
+    selection=build_dbt_asset_selection(
+        [transformation_assets], dbt_select="path:models/marts"
+    ).upstream(),
+    description="Build all pipelines with each shared source and model selected once.",
+)
+jobs.append(daily)
+schedules.append(dg.ScheduleDefinition(job=daily, cron_schedule="0 6 * * *"))

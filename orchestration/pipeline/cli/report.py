@@ -25,6 +25,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from pipeline.cli import BadInput
 from pipeline.cli.question import answer_dir
+from pipeline.analysis.store import answer_lock, RunStore, verify_current_results
 
 FORMATS = ("xlsx", "pdf", "docx", "gdoc")
 ROWS_SHOWN = 50
@@ -80,7 +81,7 @@ def parse_formats(text: str) -> list[str]:
     return formats
 
 
-def load(folder: Path, slug: str, *, row_limit: int | None = None) -> Report:
+def _load(folder: Path, slug: str, *, row_limit: int | None = None) -> Report:
     """Loads full detail by default; preview renderers can retain only their displayed rows."""
     answer_json, answer_md = folder / "answer.json", folder / "answer.md"
     if not answer_json.is_file():
@@ -91,6 +92,7 @@ def load(folder: Path, slug: str, *, row_limit: int | None = None) -> Report:
         answer = json.loads(answer_json.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise BadInput(f"answers/{slug}/answer.json is not valid JSON ({error}): run `bj answer {slug}` again") from None
+    verify_current_results(folder, answer)
     tables = []
     for result in answer["results"]:
         path = folder / result["path"]
@@ -106,6 +108,11 @@ def load(folder: Path, slug: str, *, row_limit: int | None = None) -> Report:
                     rows.append(row)
         tables.append(Table(result["analysis"], result["path"], columns, rows, total_rows))
     return Report(answer, answer_md.read_text(encoding="utf-8"), tables)
+
+
+def load(folder: Path, slug: str, *, row_limit: int | None = None) -> Report:
+    with answer_lock(folder, shared=True):
+        return _load(folder, slug, row_limit=row_limit)
 
 
 def cell_value(text: str) -> str | int | float | None:
@@ -144,10 +151,8 @@ def input_rows(answer: dict[str, Any]) -> list[list[Any]]:
         rows.append(
             [
                 item["source"],
-                item["raw_table"],
                 run.get("finished_at", "never"),
                 run.get("records_written"),
-                run.get("dagster_run_id"),
                 item["dead_letters"]["pending"],
                 item["dead_letters"]["parked"],
             ]
@@ -155,7 +160,14 @@ def input_rows(answer: dict[str, Any]) -> list[list[Any]]:
     return rows
 
 
-INPUT_COLUMNS = ["Source", "Raw table", "Last successful run", "Records", "Dagster run", "Pending", "Parked"]
+INPUT_COLUMNS = ["Source", "Last successful run", "Records", "Pending", "Parked"]
+
+
+def report_provenance(answer: dict[str, Any]) -> Iterable[tuple[str, Any]]:
+    provenance = answer["provenance"]
+    for key in ("git_sha", "git_dirty", "dbt_version"):
+        if key in provenance:
+            yield key, provenance[key]
 
 
 BOLD = Font(bold=True)
@@ -210,7 +222,7 @@ def write_xlsx(report: Report, path: Path) -> None:
     section("Definitions", ["Term", "Definition"], answer["definitions"].items())
     section("Checks", ["Check", "Status", "Detail"], ([c["name"], c["status"], c["detail"]] for c in answer["checks"]))
     section("Inputs", INPUT_COLUMNS, input_rows(answer))
-    section("Provenance", None, answer["provenance"].items())
+    section("Provenance", None, report_provenance(answer))
     sheet.column_dimensions["A"].width = 60
     sheet.column_dimensions["B"].width = 60
     sheet.column_dimensions["C"].width = 60
@@ -281,7 +293,7 @@ def write_pdf(report: Report, path: Path) -> None:
         table(result.columns, result.rows[:ROWS_SHOWN])
         line(row_count(result))
     heading("Provenance")
-    for key, value in answer["provenance"].items():
+    for key, value in report_provenance(answer):
         line(f"{key}: {value}")
     pdf.output(str(path))
 
@@ -456,7 +468,7 @@ def write_docx(report: Report, target: Path | IO[bytes]) -> None:
         add_table(document, text_table(result.columns, result.rows[:ROWS_SHOWN]))
         paragraph(Run(row_count(result)))
     paragraph(Run("Provenance"), style="Heading 2")
-    for key, value in answer["provenance"].items():
+    for key, value in report_provenance(answer):
         paragraph(Run(f"{key}: {value}"))
     document.save(target)
 
@@ -464,7 +476,7 @@ def write_docx(report: Report, target: Path | IO[bytes]) -> None:
 WRITERS = {"xlsx": write_xlsx, "pdf": write_pdf, "docx": write_docx}
 
 
-def run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
+def _run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
     chosen = parse_formats(formats)
     folder = answer_dir(repo_root, slug)
     report = load(folder, slug, row_limit=None if "xlsx" in chosen else ROWS_SHOWN)
@@ -481,4 +493,11 @@ def run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
             path = reports / f"{slug}.{name}"
             WRITERS[name](report, path)
             print(f"wrote {path.relative_to(repo_root)}")
+    RunStore(folder).record_edition(kind="report")
     return 0
+
+
+def run(repo_root: Path, slug: str, formats: str = "xlsx,pdf") -> int:
+    folder = answer_dir(repo_root, slug)
+    with answer_lock(folder):
+        return _run(repo_root, slug, formats)

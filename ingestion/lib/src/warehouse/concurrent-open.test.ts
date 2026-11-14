@@ -163,3 +163,32 @@ test("Postgres metadata permissions do not prevent a source from committing data
   assert.equal(await table.getCheckpoint("next"), 2);
   assert.deepEqual((await owner.query("select * from raw._ingestion_inputs")).rows, []);
 });
+
+test("a source keeps exclusive ownership until close while another source can open", async (t) => {
+  const server = serverConfig();
+  if (typeof server === "string") return t.skip(server);
+  let admin: Connection;
+  try { admin = await connect({ ...server, database: "postgres" }); }
+  catch (error) { if (process.env.CI) throw error; return t.skip(String(error)); }
+  const database = `bj_test_${randomBytes(6).toString("hex")}`;
+  await admin.query(`create database "${database}"`);
+  t.after(async () => {
+    await admin.query(`drop database "${database}" with (force)`);
+    await admin.close();
+  });
+  const warehouse = postgresWarehouse({
+    schema: "raw",
+    connect: () => connect({ ...server, database, options: "-c lock_timeout=500ms" }),
+  });
+  const owner = await warehouse.open("wallets");
+  try {
+    await owner.load({ records: [], failed: [] });
+    await (await warehouse.open("candles")).close();
+    await assert.rejects(async () => {
+      await (await warehouse.open("wallets")).close();
+    }, { code: "55P03" });
+  } finally {
+    await owner.close();
+  }
+  await (await warehouse.open("wallets")).close();
+});

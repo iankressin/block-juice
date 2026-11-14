@@ -1,0 +1,210 @@
+"""answers/<slug>/question.yaml, parsed in one place for bj answer and bj report."""
+
+import re
+import hashlib
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml
+
+from pipeline.cli import BadInput
+from pipeline.analysis.spec import ExecutionPolicy, validate_contracts
+from pipeline.analysis.scope import validate_token_scope
+
+SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# A dbt node name, and nothing a dbt selector would read as a method, graph operator or path.
+ANALYSIS = re.compile(r"^[A-Za-z0-9_]+$")
+SOURCE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
+CHAIN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+# The question's own span, or the slice of it that bj answer --eval runs: a factory build's eval window.
+WindowKey = Literal["window", "eval_window"]
+
+
+@dataclass(frozen=True)
+class SourceInput:
+    """An input that names the source it reads, as <source>.<table>, and the part of the source's
+    addresses.json it needs, keyed like that file. A key left out means all of it."""
+
+    source: str
+    filter: dict[str, list[str]]
+
+    @property
+    def chain(self) -> str:
+        """The chain the source reads, which names the source before the dot."""
+        return self.source.split(".")[0]
+
+
+@dataclass(frozen=True)
+class Question:
+    slug: str
+    question: str
+    asked: str | None
+    definitions: dict[str, str]
+    alternatives: tuple[str, ...]
+    # The window this answer runs over: question.yaml's window, or its eval_window when window_key says so.
+    window: dict[str, Any]
+    inputs: tuple[dict[str, Any], ...]
+    marts: tuple[str, ...]
+    analyses: tuple[str, ...]
+    # The blocks of that window, by chain.
+    blocks: dict[str, tuple[int, int]] = field(default_factory=dict)
+    sources: tuple[SourceInput, ...] = ()
+    window_key: WindowKey = "window"
+    parameters: dict[str, Any] = field(default_factory=dict)
+    expected_columns: dict[str, list[str]] = field(default_factory=dict)
+    execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
+    freshness: dict[str, Any] = field(default_factory=dict)
+    grain: dict[str, list[str]] = field(default_factory=dict)
+    parameter_scope: str | None = None
+    authored_sha256: str | None = field(default=None, compare=False)
+    authored_text: str | None = field(default=None, compare=False, repr=False)
+
+
+def _strings(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _string_map(value: Any) -> bool:
+    return isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+
+
+def _block_range(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == 2
+        and all(isinstance(block, int) and not isinstance(block, bool) and block >= 0 for block in value)
+        and value[0] <= value[1]
+    )
+
+
+def _window_blocks(window: dict[str, Any], label: str, key: WindowKey) -> dict[str, tuple[int, int]]:
+    """<key>.blocks by chain: [from, to] on <key>.chain, or a map of each chain to its [from, to]."""
+    if "blocks" not in window:
+        return {}
+    blocks = window["blocks"]
+    if isinstance(blocks, dict) and blocks and all(CHAIN.match(str(c)) and _block_range(r) for c, r in blocks.items()):
+        return {chain: tuple(span) for chain, span in blocks.items()}
+    if not _block_range(blocks):
+        raise BadInput(
+            f"{label}: '{key}.blocks' must be [from, to], two block numbers with from <= to,"
+            " or map each chain to its [from, to]"
+        )
+    if "chain" not in window:
+        raise BadInput(f"{label}: '{key}.blocks' as [from, to] needs '{key}.chain'; for several chains, map each to its [from, to]")
+    if not isinstance(window["chain"], str) or not CHAIN.match(window["chain"]):
+        raise BadInput(f"{label}: '{key}.chain' must be a chain name, such as ethereum")
+    return {window["chain"]: tuple(blocks)}
+
+
+def _filter(value: Any) -> bool:
+    return isinstance(value, dict) and all(isinstance(key, str) and _strings(v) for key, v in value.items())
+
+
+def _analyses(value: Any) -> bool:
+    return _strings(value) and len(value) > 0 and all(ANALYSIS.match(name) for name in value)
+
+
+# Every key question.yaml may have, the check its value must pass, and the type the error names.
+FIELDS: dict[str, tuple[Callable[[Any], bool], str]] = {
+    "question": (lambda v: isinstance(v, str) and v.strip() != "", "a non-empty string"),
+    "asked": (lambda v: isinstance(v, (date, str)), "a date or a string"),
+    "definitions": (_string_map, "a map of strings to strings"),
+    "alternatives": (_strings, "a list of strings"),
+    "window": (lambda v: isinstance(v, dict), "a map"),
+    "eval_window": (lambda v: isinstance(v, dict), "a map"),
+    "inputs": (lambda v: isinstance(v, list) and all(isinstance(item, dict) for item in v), "a list of maps"),
+    "marts": (_strings, "a list of strings"),
+    "analyses": (_analyses, f"a non-empty list of dbt analysis names matching {ANALYSIS.pattern}"),
+    "parameter_scope": (lambda v: v == "token_windows", "token_windows"),
+    **{key: (lambda v: isinstance(v, dict), "a map") for key in ("parameters", "values", "eval_values", "expected_columns", "execution", "freshness", "grain")},
+}
+
+
+def answer_dir(repo_root: Path, slug: str) -> Path:
+    if not SLUG.match(slug):
+        raise BadInput(f"slug {slug!r} must match {SLUG.pattern}")
+    folder = repo_root / "answers" / slug
+    if not folder.is_dir():
+        raise BadInput(f"answers/{slug}/ does not exist")
+    return folder
+
+
+def load_question(repo_root: Path, slug: str, window_key: WindowKey = "window") -> Question:
+    path = answer_dir(repo_root, slug) / "question.yaml"
+    label = f"answers/{slug}/question.yaml"
+    if not path.is_file():
+        raise BadInput(f"{label} does not exist")
+    try:
+        authored = path.read_bytes()
+        raw = yaml.safe_load(authored.decode("utf-8"))
+    except yaml.YAMLError as error:
+        raise BadInput(f"{label} is not valid YAML: {' '.join(str(error).split())}") from None
+    if not isinstance(raw, dict):
+        raise BadInput(f"{label} must be a map with a 'question' key")
+    for key, value in raw.items():
+        if key not in FIELDS:
+            raise BadInput(f"{label}: unknown key {key!r}; allowed keys: {', '.join(FIELDS)}")
+        check, kind = FIELDS[key]
+        if not check(value):
+            raise BadInput(f"{label}: {key!r} must be {kind}")
+    if "question" not in raw:
+        raise BadInput(f"{label}: 'question' is required")
+    if window_key == "eval_window" and "eval_window" not in raw:
+        raise BadInput(f"{label} has no 'eval_window'; run bj answer without --eval")
+    # Both windows are checked whichever one this run uses.
+    blocks = {key: _window_blocks(raw.get(key, {}), label, key) for key in ("window", "eval_window")}
+    sources = []
+    for index, item in enumerate(raw.get("inputs", [])):
+        if "source" not in item:
+            continue
+        if not isinstance(item["source"], str) or not SOURCE.match(item["source"]):
+            raise BadInput(f"{label}: 'inputs[{index}].source' must be <source>.<table>")
+        if not _filter(item.get("filter", {})):
+            raise BadInput(
+                f"{label}: 'inputs[{index}].filter' must map keys of addresses.json to lists of quoted addresses"
+                " (YAML reads an unquoted 0x... as a number)"
+            )
+        sources.append(SourceInput(item["source"], item.get("filter", {})))
+    resolved_parameters, policy = validate_contracts(raw)
+    if "eval_values" in raw:
+        evaluation, _ = validate_contracts({**raw, "values": {**raw.get("values", {}), **raw["eval_values"]}})
+        if window_key == "eval_window":
+            resolved_parameters = evaluation
+    if raw.get("parameter_scope") == "token_windows":
+        validate_token_scope(resolved_parameters, blocks[window_key], sources, label)
+    analysis_names = tuple(raw.get("analyses", [slug.replace("-", "_")]))
+    for field_name in ("expected_columns", "grain"):
+        unknown = set(raw.get(field_name, {})) - set(analysis_names)
+        if unknown:
+            raise BadInput(f"{label}: {field_name} names undeclared analyses: {', '.join(sorted(unknown))}")
+    asked = raw.get("asked")
+    return Question(
+        slug=slug,
+        question=raw["question"],
+        asked=asked.isoformat() if isinstance(asked, date) else asked,
+        definitions=raw.get("definitions", {}),
+        alternatives=tuple(raw.get("alternatives", [])),
+        window=raw.get(window_key, {}),
+        inputs=tuple(raw.get("inputs", [])),
+        marts=tuple(raw.get("marts", [])),
+        analyses=analysis_names,
+        blocks=blocks[window_key],
+        sources=tuple(sources),
+        window_key=window_key,
+        parameters=resolved_parameters,
+        expected_columns=raw.get("expected_columns", {}),
+        execution=policy,
+        freshness=raw.get("freshness", {}),
+        grain=raw.get("grain", {}),
+        parameter_scope=raw.get("parameter_scope"),
+        authored_sha256=hashlib.sha256(authored).hexdigest(),
+        authored_text=authored.decode("utf-8"),
+    )
+
+
+# The public Question name remains compatible with existing integrations.
+AnalysisSpec = Question

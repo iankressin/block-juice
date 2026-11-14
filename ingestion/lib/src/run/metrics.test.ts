@@ -85,6 +85,9 @@ test("finished progress duration excludes time spent publishing metrics", async 
   const registry = progressMetrics({ source: "test", table: "facts", startedAt: new Date(1000), finishedAt: new Date(2500), inProgress: false,
     recordsWritten: 0, failedCalls: 0, retriedCalls: 0, callsCompleted: 0, batchesCommitted: 0,
     loadSeconds: 0, writeSeconds: 0, commitSeconds: 0 });
-  const elapsed = (await registry.getMetricsAsJSON()).find((metric) => metric.name === "ingestion_current_elapsed_seconds");
+  const metrics = await registry.getMetricsAsJSON();
+  const block = metrics.find((metric) => metric.name === "ingestion_current_committed_block");
+  assert.equal(block?.values[0]?.value, -1, "clear the previous block when the run commits none");
+  const elapsed = metrics.find((metric) => metric.name === "ingestion_current_elapsed_seconds");
   assert.equal(elapsed!.values[0]!.value, 1.5);
 });

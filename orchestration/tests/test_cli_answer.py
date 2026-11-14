@@ -37,7 +37,7 @@ LOADED = Coverage("ethereum", "erc20_transfers", "raw.ethereum_erc20_transfers",
 
 
 def source(name, table):
-    return {"source_name": name, "name": table, "schema": "raw", "identifier": f"{name}_{table}"}
+    return {"resource_type": "source", "source_name": name, "name": table, "schema": "raw", "identifier": f"{name}_{table}"}
 
 
 MANIFEST = {
@@ -48,7 +48,7 @@ MANIFEST = {
         "source.t.ethereum.erc20_transfers": source("ethereum", "erc20_transfers"),
     },
     "nodes": {
-        "analysis.t.holders": {"depends_on": {"nodes": ["model.t.latest", "model.t.stg_eth"]}},
+        "analysis.t.holders": {"compiled_code": "select * from raw.ethereum_eth_balances", "depends_on": {"nodes": ["model.t.latest", "model.t.stg_eth"]}},
         "model.t.latest": {"depends_on": {"nodes": ["model.t.int_eth", "model.t.int_sol", "seed.t.labels"]}},
         "model.t.int_eth": {"depends_on": {"nodes": ["model.t.stg_eth"]}},
         "model.t.int_sol": {"depends_on": {"nodes": ["model.t.stg_sol"]}},
@@ -56,7 +56,7 @@ MANIFEST = {
         "model.t.stg_sol": {"depends_on": {"nodes": ["source.t.solana.sol_balances"]}},
         "seed.t.labels": {"depends_on": {"nodes": []}},
         "model.t.stg_btc": {"depends_on": {"nodes": ["source.t.bitcoin.btc_balances"]}},
-        "analysis.t.flows": {"depends_on": {"nodes": ["source.t.ethereum.erc20_transfers"]}},
+        "analysis.t.flows": {"compiled_code": "select * from raw.ethereum_erc20_transfers", "depends_on": {"nodes": ["source.t.ethereum.erc20_transfers"]}},
     },
 }
 
@@ -227,7 +227,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(answer, "compile_analyses", lambda project, names, blocks: (MANIFEST, ["analysis.t.holders"]))
     dbt_coverages = []
 
-    def run_dbt_tests(project, names, coverages, upstream=()):
+    def run_dbt_tests(project, names, coverages, upstream=(), **kwargs):
         dbt_coverages.append(coverages)
         return Check("dbt_tests", True, "3 passed")
 
@@ -247,7 +247,7 @@ def offline(monkeypatch):
         )
 
     def use(parked):
-        monkeypatch.setattr(answer, "read_warehouse", lambda *args: read_warehouse(*args, parked=parked))
+        monkeypatch.setattr(answer, "read_warehouse", lambda *args, **kwargs: read_warehouse(*args, parked=parked))
 
     use.dbt_coverages = dbt_coverages
     return use
@@ -350,7 +350,7 @@ def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total", "eth_total_by_wallet"], {})
-    assert calls == [
+    assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select",
             "1+eth_total", "+eth_total,tag:coverage", "1+eth_total_by_wallet", "+eth_total_by_wallet,tag:coverage",
@@ -368,7 +368,7 @@ def test_upstream_tests_are_named_by_the_tests_bj_answer_must_rerun(monkeypatch)
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total"], {}, ["unique_int_eth_id", "not_null_stg_eth_id"])
-    assert calls == [
+    assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select", "1+eth_total", "+eth_total,tag:coverage", "unique_int_eth_id", "not_null_stg_eth_id",
             "--exclude", "tag:reference",
@@ -506,7 +506,7 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
     flows, eth = calls
     assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "+usdc_flows,tag:coverage", "--exclude", "tag:reference")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
-    assert eth == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
+    assert eth[:eth.index("--target-path")] == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):

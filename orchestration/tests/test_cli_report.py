@@ -880,3 +880,26 @@ def test_the_other_formats_never_load_the_google_client(answered):
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
     assert result.stdout.splitlines()[-1] == "[]"
+
+
+def test_exports_keep_execution_evidence_in_the_saved_answer(answered, drive):
+    root, folder = answered
+    answer = json.loads((folder / "answer.json").read_text())
+    secret = "internal-fixture-value"
+    answer["provenance"].update(snapshot={"model_builds": {"m": secret}}, warehouse=secret,
+                                coverage_observations={"source": secret}, future_field=secret)
+    answer["inputs"][0]["raw_table"] = secret
+    answer["inputs"][0]["last_run"]["dagster_run_id"] = secret
+    (folder / "answer.json").write_text(json.dumps(answer))
+    assert run(root, "top-wallets", "xlsx,pdf,docx,gdoc") == 0
+    reports = folder / "reports"
+    workbook = openpyxl.load_workbook(reports / "top-wallets.xlsx")
+    exports = [
+        str(list(workbook["Answer"].values)),
+        page_text((reports / "top-wallets.pdf").read_bytes()).decode("latin-1"),
+        str(outline(reports / "top-wallets.docx")),
+        str(uploaded_text(drive.docs["doc-1"])),
+    ]
+    for exported in exports:
+        assert "abc123" in exported and secret not in exported
+    assert json.loads((folder / "answer.json").read_text()) == answer

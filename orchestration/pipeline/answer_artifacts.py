@@ -15,7 +15,7 @@ def remove(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def publish(folder: Path, prepared: Path) -> None:
+def publish(folder: Path, prepared: Path, *, on_published=None) -> None:
     """Serialization finishes before publication. An ordinary filesystem error restores the old
     files; backups stay outside temporary storage so even a failed restore leaves them recoverable.
     The old narrative leaves first, before any new data can reach the report renderer.
@@ -39,7 +39,9 @@ def publish(folder: Path, prepared: Path) -> None:
             if new.exists():
                 new.replace(folder / name)
                 published.append(name)
-    except OSError:
+        if on_published is not None:
+            on_published()
+    except BaseException:
         for name in reversed(published):
             remove(folder / name)
         for name in reversed(saved):

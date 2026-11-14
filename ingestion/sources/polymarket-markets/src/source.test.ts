@@ -134,6 +134,8 @@ test("walks the cursor to the end, one record per market holding the object as s
     records(batches).map(({ data }) => data),
     served.flat(),
   );
+  assert.deepEqual(batches.slice(0, 3).map((batch) => batch.callsCompleted), [1, 0, 1],
+    "the empty v2 walk completes first, and v1 completes on its third page");
   const walk = requests.filter((request) => request.includes("version=v1&closed=false&limit=2"));
   assert.deepEqual(walk, [
     "version=v1&closed=false&limit=2",

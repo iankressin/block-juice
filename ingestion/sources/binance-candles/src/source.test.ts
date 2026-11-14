@@ -408,3 +408,44 @@ test("committed Binance history resumes and routine refresh reads only the recen
   for await (const _ of source.extract({ ...envAt(url), HISTORY_FULL_REFRESH: "1" }, [], context)) {}
   assert.equal(requests.length, 4, "an explicit sweep revisits old corrected candles");
 });
+
+test("a transient listing failure is probed again before reusing checkpointed history", async (t) => {
+  let failProbe = true;
+  const requests: string[] = [];
+  const url = await fakeBinance(t, {
+    markets: { UNIUSDT: hourly(LISTED, 10) }, requests,
+    reply: (query) => failProbe && query.get("limit") === "1"
+      ? { status: 503, body: "unavailable" } : undefined,
+  });
+  const source = await sourceWith(t, uniTokens, fakeClock(LISTED + 9 * HOUR));
+  const state = new Map<string, unknown>();
+  const context = { getCheckpoint: async (key: string) => state.get(key) };
+  async function refresh() {
+    requests.length = 0;
+    for await (const batch of source.extract(envAt(url), [], context)) {
+      for (const checkpoint of batch.checkpoints ?? []) state.set(checkpoint.key, checkpoint.value);
+    }
+  }
+  await refresh();
+  failProbe = false;
+  await refresh();
+  assert.deepEqual(requests, [
+    `UNIUSDT ${START}-`, `UNIUSDT ${LISTED}-${LISTED + 1000 * HOUR - 1}`,
+  ]);
+  await refresh();
+  assert.equal(requests.length, 1, "a confirmed listing needs no further probes");
+});
+
+test("an old START_TIME checkpoint is revalidated once even when the listing matches it", async (t) => {
+  const requests: string[] = [];
+  const url = await fakeBinance(t, { markets: { UNIUSDT: hourly(START, 5) }, requests });
+  const source = await sourceWith(t, uniTokens, fakeClock(START + HOUR));
+  let saved: unknown = { origin: START, next: START + 1000 * HOUR, refreshedAt: START };
+  const context = { getCheckpoint: async () => saved };
+  for (let i = 0; i < 2; i++) {
+    for await (const batch of source.extract(envAt(url), [], context)) {
+      for (const checkpoint of batch.checkpoints ?? []) saved = checkpoint.value;
+    }
+  }
+  assert.equal(requests.filter((request) => request.endsWith("-")).length, 1);
+});

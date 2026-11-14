@@ -159,7 +159,7 @@ async function run<E, C>(source: Source<E, C> | StreamSource<E>, warehouse: Ware
             writeSeconds += timing.writeSeconds;
             commitSeconds += timing.commitSeconds;
             batchesCommitted++;
-            callsCompleted += new Set([...batch.records.map((record) => record.callId),
+            callsCompleted += batch.callsCompleted ?? new Set([...batch.records.map((record) => record.callId),
               ...batch.failed.map((failed) => failed.id), ...(batch.succeededCallIds ?? [])]).size;
             recordsWritten += batch.records.length;
             failedCalls += batch.failed.length;

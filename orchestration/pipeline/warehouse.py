@@ -6,7 +6,7 @@ import psycopg2
 from psycopg2 import sql
 
 
-def connect():
+def connect(**options):
     """A connection to the warehouse, from the WAREHOUSE_* settings that dbt and ingestion also read."""
     return psycopg2.connect(
         host=os.environ["WAREHOUSE_HOST"],
@@ -14,6 +14,7 @@ def connect():
         user=os.environ["WAREHOUSE_USER"],
         password=os.environ["WAREHOUSE_PASSWORD"],
         dbname=os.environ["WAREHOUSE_DB"],
+        **options,
     )
 
 

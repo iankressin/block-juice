@@ -4,12 +4,14 @@ import os
 import signal
 import subprocess
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from contextlib import nullcontext
 from pathlib import Path
 from typing import TextIO
 
 import dagster as dg
 
 from pipeline.project import INGESTION_DIR, REPO_ROOT
+from pipeline.concurrency import warehouse_slot
 from pipeline.sources import SOURCES_FILE, read_sources
 from pipeline.warehouse import count_dead_letters
 
@@ -99,7 +101,7 @@ def kill_ingestion_process(process: subprocess.Popen) -> None:
 
 
 def run_ingestion_process(
-    command: list[str], *, cwd: Path, env: dict[str, str], log
+    command: list[str], *, cwd: Path, env: dict[str, str], log, monitor=nullcontext
 ) -> tuple[int, str, str]:
     """Stream both pipes concurrently, returning the exit code and bounded error/stderr tails.
 
@@ -111,17 +113,18 @@ def run_ingestion_process(
             command, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", start_new_session=os.name == "posix",
         ) as process:
-            try:
-                stdout = readers.submit(read_process_log, process.stdout, log, stderr=False)
-                stderr = readers.submit(read_process_log, process.stderr, log, stderr=True)
-                done, _ = wait((stdout, stderr), return_when=FIRST_EXCEPTION)
-                for result in done:
-                    result.result()
-                return process.wait(), stdout.result(), stderr.result()
-            except BaseException:
-                # Kill before joining readers, to unblock a reader waiting for the child's EOF.
-                kill_ingestion_process(process)
-                raise
+            with monitor(lambda: kill_ingestion_process(process)):
+                try:
+                    stdout = readers.submit(read_process_log, process.stdout, log, stderr=False)
+                    stderr = readers.submit(read_process_log, process.stderr, log, stderr=True)
+                    done, _ = wait((stdout, stderr), return_when=FIRST_EXCEPTION)
+                    for result in done:
+                        result.result()
+                    return process.wait(), stdout.result(), stderr.result()
+                except BaseException:
+                    # Kill before joining readers, to unblock a reader waiting for the child's EOF.
+                    kill_ingestion_process(process)
+                    raise
 
 
 def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
@@ -131,14 +134,16 @@ def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
         kinds={"typescript", "postgres"},
     )
     def _ingest(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
-        returncode, errors, stderr = run_ingestion_process(
-            ["pnpm", "--silent", "ingest"],
-            cwd=package_dir(source, table),
-            # The source writes the run id into ops.ingestion_runs, next to the dbt results of the same run.
-            # CHAIN tells a package that loads several chains which one this asset is.
-            env={**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source},
-            log=context.log,
-        )
+        with warehouse_slot("ingestion", context.log) as monitor:
+            returncode, errors, stderr = run_ingestion_process(
+                ["pnpm", "--silent", "ingest"],
+                cwd=package_dir(source, table),
+                # The source writes the run id next to the dbt results of the same run.
+                # CHAIN tells a package that loads several chains which one this asset is.
+                env={**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source},
+                log=context.log,
+                monitor=monitor,
+            )
         if returncode != 0:
             raise dg.Failure(
                 description=f"Ingestion for {source} exited with code {returncode}",

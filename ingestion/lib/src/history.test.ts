@@ -14,3 +14,21 @@ test("history resumes interrupted sweeps, overlaps recent data and periodically 
   assert.equal(historyPlan("k", origin, DAY_MS, now, done, { HISTORY_FULL_REFRESH: "1" }).from, origin);
   assert.notEqual(historyKey(["endpoint", "token-a", origin]), historyKey(["endpoint", "token-b", origin]));
 });
+
+test("a closed window is revisited if its final candle was still open on the previous run", () => {
+  const span = 10 * DAY_MS;
+  const beforeClose = span - 1;
+  const afterOutage = span + 5 * DAY_MS;
+  const legacy = { origin: 0, next: span, refreshedAt: beforeClose };
+  const first = historyPlan("k", 0, span, beforeClose, undefined);
+  const saved = historyState(first.checkpoint(span).value)!;
+  for (const checkpoint of [legacy, saved]) {
+    for (const overlap of [0, 1]) {
+      const settings = { HISTORY_OVERLAP_DAYS: overlap };
+      const resumed = historyPlan("k", 0, span, afterOutage, checkpoint, settings);
+      assert.equal(resumed.from, 0);
+      const caughtUp = historyState(resumed.checkpoint(2 * span).value)!;
+      assert.equal(historyPlan("k", 0, span, afterOutage, caughtUp, settings).from, span);
+    }
+  }
+});
