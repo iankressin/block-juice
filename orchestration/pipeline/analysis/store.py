@@ -89,7 +89,7 @@ def file_hash(path):
 
 
 def file_hashes(folder):
-    return {str(path.relative_to(folder)): file_hash(path)
+    return {path.relative_to(folder).as_posix(): file_hash(path)
             for path in sorted(folder.rglob("*")) if path.is_file()}
 
 
@@ -154,5 +154,6 @@ def verify_current_results(folder, answer):
     for result in answer.get("results", []):
         path = result["path"]
         current = folder / path
-        if path not in hashes or not current.is_file() or file_hash(current) != hashes[path]:
+        expected = hashes.get(path, hashes.get(path.replace("/", "\\")))  # Older Windows inventories used backslashes.
+        if expected is None or not current.is_file() or file_hash(current) != expected:
             raise BadInput(f"saved result {path} does not match run {run_id}; run bj answer again")

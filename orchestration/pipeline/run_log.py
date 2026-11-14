@@ -111,6 +111,7 @@ def node_versions(manifest: dict, invocation_id: str, nodes: list[DbtNodeRun]) -
         code = node.get("compiled_code")
         raw = node.get("raw_code")
         evidence = {
+            "relation_name": node.get("relation_name"),
             "manifest_sha256": manifest_hash,
             "compiled_sql_sha256": hashlib.sha256(code.encode()).hexdigest() if isinstance(code, str) else None,
             "raw_code_sha256": hashlib.sha256(raw.encode()).hexdigest() if isinstance(raw, str) else None,

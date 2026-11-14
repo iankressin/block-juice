@@ -349,7 +349,7 @@ def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total", "eth_total_by_wallet"], {})
-    assert calls == [
+    assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select",
             "1+eth_total", "+eth_total,tag:coverage", "1+eth_total_by_wallet", "+eth_total_by_wallet,tag:coverage",
@@ -367,7 +367,7 @@ def test_upstream_tests_are_named_by_the_tests_bj_answer_must_rerun(monkeypatch)
 
     monkeypatch.setattr(answer, "dbt", dbt)
     answer.run_dbt_tests(Path("transformation"), ["eth_total"], {}, ["unique_int_eth_id", "not_null_stg_eth_id"])
-    assert calls == [
+    assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select", "1+eth_total", "+eth_total,tag:coverage", "unique_int_eth_id", "not_null_stg_eth_id",
             "--exclude", "tag:reference",
@@ -505,7 +505,7 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
     flows, eth = calls
     assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "+usdc_flows,tag:coverage", "--exclude", "tag:reference")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
-    assert eth == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
+    assert eth[:eth.index("--target-path")] == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):

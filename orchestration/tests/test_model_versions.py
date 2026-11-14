@@ -16,19 +16,20 @@ from pipeline.run_log import record_dbt_build
 UID = "model.transformation.latest_balances"
 SQL = "select 17::numeric as balance"
 MANIFEST = {"metadata": {"invocation_id": RUN_RESULTS["metadata"]["invocation_id"]}, "nodes": {
-    UID: {"resource_type": "model", "compiled_code": SQL, "raw_code": "select {{ var('amount') }}::numeric as balance",
+    UID: {"resource_type": "model", "relation_name": '"warehouse"."analytics"."balances"', "compiled_code": SQL, "raw_code": "select {{ var('amount') }}::numeric as balance",
           "config": {"materialized": "table", "schema": "analytics"}, "checksum": {"name": "sha256", "checksum": "source-checksum"}}
 }}
 
 
 class Invocation:
-    def __init__(self, manifest=MANIFEST):
+    def __init__(self, manifest=MANIFEST, results=RUN_RESULTS):
         self.manifest = manifest
+        self.results = results
     def get_error(self):
         return None
     def get_artifact(self, name):
         if name == "run_results.json":
-            return RUN_RESULTS
+            return self.results
         if name == "manifest.json" and self.manifest is not None:
             return self.manifest
         raise FileNotFoundError(name)
@@ -48,13 +49,13 @@ def ops(scratch, monkeypatch):
     return execute
 
 
-def record(manifest=MANIFEST):
-    record_dbt_build(logging.getLogger("test.model_versions"), "run-1", Invocation(manifest), STARTED)
+def record(manifest=MANIFEST, results=RUN_RESULTS):
+    record_dbt_build(logging.getLogger("test.model_versions"), "run-1", Invocation(manifest, results), STARTED)
 
 
-def read_build(scratch):
+def read_build(scratch, manifest=MANIFEST):
     with closing(psycopg2.connect(**scratch)) as connection, connection.cursor() as cursor:
-        return model_builds(cursor, MANIFEST, [UID])[UID]
+        return model_builds(cursor, manifest, [UID])[UID]
 
 
 def assert_core_log(ops):
@@ -79,6 +80,33 @@ def test_old_ops_schema_retains_core_logging_and_reports_version_unknown(ops, sc
     record()
     assert_core_log(ops)
     assert read_build(scratch)["version"]["status"] == "unknown"
+    assert read_build(scratch)["status"] == "unknown"
+
+
+def test_newer_build_in_another_schema_cannot_supply_timing_or_version(ops, scratch):
+    record()
+    other = copy.deepcopy(MANIFEST)
+    results = copy.deepcopy(RUN_RESULTS)
+    second_id = "00000000-0000-0000-0000-000000000002"
+    other["metadata"]["invocation_id"] = results["metadata"]["invocation_id"] = second_id
+    other["nodes"][UID]["relation_name"] = '"warehouse"."preview"."balances"'
+    other["nodes"][UID]["compiled_code"] = "select 18 as balance"
+    for phase in results["results"][0]["timing"]:
+        for key in ("started_at", "completed_at"):
+            phase[key] = phase[key].replace("11-04", "11-05")
+    record(other, results)
+    older = read_build(scratch)
+    assert older["invocation_id"] == RUN_RESULTS["metadata"]["invocation_id"]
+    assert older["version"]["compiled_sql_sha256"] == hashlib.sha256(SQL.encode()).hexdigest()
+    assert older["started_at"] == "2026-11-04T12:00:01Z"
+    assert read_build(scratch, other)["invocation_id"] == second_id
+
+    # A later, unidentified build could have replaced either relation.
+    ops("update ops.dbt_node_versions set provenance = provenance - 'relation_name' "
+        f"where invocation_id = '{second_id}'")
+    ambiguous = read_build(scratch)
+    assert ambiguous["status"] == ambiguous["version"]["status"] == "unknown"
+    assert ambiguous.get("started_at") is None
 
 
 def test_optional_version_write_failure_does_not_rollback_run_log(ops, scratch, caplog):

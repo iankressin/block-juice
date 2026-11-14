@@ -132,12 +132,52 @@ def test_age_and_model_build_policy_reports_stale_inputs_and_builds():
     now = datetime.now(timezone.utc)
     source = Input("test", "facts", "raw.facts")
     question = Question("q", "Q", None, {}, (), {}, (), (), ("q",), freshness={"max_age_hours": 1, "require_model_build": True})
-    manifest = {"nodes": {"model.test.m": {"resource_type": "model", "config": {"materialized": "table"}}}}
+    manifest = {
+        "nodes": {"model.test.m": {"resource_type": "model", "config": {"materialized": "table"},
+                                   "depends_on": {"nodes": ["source.test.facts"]}}},
+        "sources": {"source.test.facts": {"source_name": "test", "name": "facts"}},
+    }
     context = {"model_builds": {"model.test.m": {"status": "success", "started_at": (now-timedelta(hours=3)).isoformat(), "finished_at": (now-timedelta(hours=3)).isoformat()}}}
     check = apply_freshness_policy(Check("freshness", True, "loaded"), question,
                                   {source: LastRun(now-timedelta(hours=2), 1, None)}, context, manifest, ["model.test.m"])
     assert not check.passed
     assert "exceeds 1 hours" in check.detail and "before the latest input load" in check.detail
+
+
+@pytest.mark.parametrize("parent_end,passed", [("12:00:02", False), ("12:00:01", True)])
+def test_child_build_must_follow_materialized_parent_even_through_a_view(parent_end, passed):
+    question = Question("q", "Q", None, {}, (), {}, (), (), ("q",), freshness={"require_model_build": True})
+    parent, view, child = ("model.test.parent", "model.test.view", "model.test.child")
+    def model(materialized, *parents):
+        return {"resource_type": "model", "config": {"materialized": materialized}, "depends_on": {"nodes": parents}}
+
+    manifest = {"nodes": {parent: model("table"), view: model("view", parent), child: model("incremental", view)}}
+    def build(start, end):
+        return {"status": "success", "started_at": f"2026-11-04T{start}Z", "finished_at": f"2026-11-04T{end}Z"}
+
+    builds = {parent: build("12:00:00", parent_end), child: build("12:00:01", "12:00:03")}
+    result = apply_freshness_policy(Check("freshness", True, "loaded"), question, {}, {"model_builds": builds}, manifest, [child])
+    assert result.passed is passed
+    if not passed:
+        assert parent in result.detail and child in result.detail
+
+
+def test_seed_dependency_can_predate_an_independent_raw_input():
+    question = Question("q", "Q", None, {}, (), {}, (), (), ("q",), freshness={"require_model_build": True})
+    seed, model, raw = "seed.test.labels", "model.test.labeled", "source.test.facts"
+    manifest = {
+        "nodes": {seed: {"resource_type": "seed"},
+                  model: {"resource_type": "model", "depends_on": {"nodes": [seed, raw]}}},
+        "sources": {raw: {"source_name": "test", "name": "facts"}},
+    }
+    now = datetime.now(timezone.utc)
+    runs = {Input("test", "facts", "raw.facts"): LastRun(now, 1, None)}
+    builds = {uid: {"status": "success", "started_at": (now + delta).isoformat(),
+                    "finished_at": (now + delta).isoformat()}
+              for uid, delta in [(seed, -timedelta(days=1)), (model, timedelta(minutes=1))]}
+    result = apply_freshness_policy(Check("freshness", True, "loaded"), question, runs,
+                                    {"model_builds": builds}, manifest, [model])
+    assert result.passed, result.detail
 
 
 def test_lineage_finds_native_reads_mixed_with_a_declared_ref_and_ignores_ctes():
