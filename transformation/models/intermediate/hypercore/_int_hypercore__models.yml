@@ -1,0 +1,50 @@
+version: 2
+
+unit_tests:
+  - name: signed_size_is_sz_for_a_buy_and_minus_sz_for_a_sell
+    description: >-
+      Fills 0 and 1 of block 1223800001 (catalog/protocols/hypercore/NOTES.md) are the two sides of tid
+      374728780679102. Fill 0 buys 0.008 io:ANTH (side B); fill 1 sells it to close a long (side A). The
+      third row is made up: a side the notes do not show gets no sign, so the mart's not_null test fails.
+    model: int_hypercore_fills
+    given:
+      - input: ref('stg_hypercore__fills')
+        rows:
+          - {id: "1223800001:0", block_number: 1223800001, fill_index: 0, coin: "io:ANTH", tid: 374728780679102, side: B, dir: Open Long, crossed: true, px: "1694.7", sz: "0.008"}
+          - {id: "1223800001:1", block_number: 1223800001, fill_index: 1, coin: "io:ANTH", tid: 374728780679102, side: A, dir: Close Long, crossed: false, px: "1694.7", sz: "0.008"}
+          - {id: "made-up:0", block_number: 1223800001, fill_index: 0, coin: "io:ANTH", tid: 374728780679102, side: X, dir: Open Long, crossed: true, px: "1694.7", sz: "0.008"}
+    expect:
+      rows:
+        - {id: "1223800001:0", signed_size: "0.008"}
+        - {id: "1223800001:1", signed_size: "-0.008"}
+        - {id: "made-up:0", signed_size: null}
+
+  - name: notional_is_px_times_sz_on_both_sides
+    description: >-
+      Fills 0 and 1 of block 1223800001 trade 0.008 io:ANTH at 1694.7. Both sides of the trade have the
+      same notional, 1694.7 * 0.008 = 13.5576, whichever way they traded.
+    model: int_hypercore_fills
+    given:
+      - input: ref('stg_hypercore__fills')
+        rows:
+          - {id: "1223800001:0", block_number: 1223800001, fill_index: 0, coin: "io:ANTH", tid: 374728780679102, side: B, dir: Open Long, crossed: true, px: "1694.7", sz: "0.008"}
+          - {id: "1223800001:1", block_number: 1223800001, fill_index: 1, coin: "io:ANTH", tid: 374728780679102, side: A, dir: Close Long, crossed: false, px: "1694.7", sz: "0.008"}
+    expect:
+      rows:
+        - {id: "1223800001:0", notional: "13.5576"}
+        - {id: "1223800001:1", notional: "13.5576"}
+
+  - name: the_crossed_fill_is_the_taker
+    description: >-
+      Fill 0 of block 1223800001 is crossed and pays a fee of 0.001171. Fill 1, the other side of the
+      same trade, is not crossed and earns a rebate of 0.00004. Fill 0 is the taker.
+    model: int_hypercore_fills
+    given:
+      - input: ref('stg_hypercore__fills')
+        rows:
+          - {id: "1223800001:0", block_number: 1223800001, fill_index: 0, coin: "io:ANTH", tid: 374728780679102, side: B, crossed: true, fee: "0.001171"}
+          - {id: "1223800001:1", block_number: 1223800001, fill_index: 1, coin: "io:ANTH", tid: 374728780679102, side: A, crossed: false, fee: "-0.00004"}
+    expect:
+      rows:
+        - {id: "1223800001:0", is_taker: true}
+        - {id: "1223800001:1", is_taker: false}

@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: hypercore_fills
+    description: >-
+      One row per HyperCore fill: one user's side of one trade. The two sides of a trade share tid.
+    columns:
+      - name: id
+        description: The fill's key from the raw table, <block>:<fillIndex>.
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: user_address
+        data_tests: [not_null]
+      - name: coin
+        data_tests: [not_null]
+      - name: side
+        description: B for a buy and A for a sell, for this fill's user.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [A, B]
+      - name: px
+        data_tests: [not_null]
+      - name: sz
+        data_tests: [not_null]
+      - name: signed_size
+        description: sz for a buy and -sz for a sell, in coin units. Any other side gives null, which fails here.
+        data_tests: [not_null]
+      - name: notional
+        description: px * sz, in the coin's quote asset, which may not be USD.
+        data_tests: [not_null]
+      - name: is_taker
+        description: True on the crossed fill of a trade, the taker.
+      - name: tid
+        data_tests: [not_null]

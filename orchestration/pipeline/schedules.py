@@ -15,6 +15,7 @@ PIPELINES = {
     "accounts": "0 6 * * *",
     "deployments": "0 6 * * *",
     "cow": "0 6 * * *",
+    "hypercore": "0 6 * * *",
 }
 
 jobs = [

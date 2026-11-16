@@ -63,17 +63,18 @@ Every table below lives in the `analytics` schema of your warehouse. A source re
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
-| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | Binance, Coinbase |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [Balances](#balances) | ✓ | | | | ✓ | ✓ | |
-| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | |
-| [DEX trades](#dex-trades) | ✓ | | | | | | |
-| [Bridges](#bridges) | | ✓ | ✓ | | | | |
-| [Labels](#labels) | | ✓ | ✓ | | | | |
-| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | |
-| [Exchange prices](#exchange-prices) | | | | | | | ✓ |
-| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | |
-| [Polymarket](#polymarket) | | | | ✓ | | | |
+| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Binance, Coinbase |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| [Balances](#balances) | ✓ | | | | ✓ | ✓ | | |
+| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | | |
+| [DEX trades](#dex-trades) | ✓ | | | | | | | |
+| [Bridges](#bridges) | | ✓ | ✓ | | | | | |
+| [Labels](#labels) | | ✓ | ✓ | | | | | |
+| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | | |
+| [Exchange prices](#exchange-prices) | | | | | | | | ✓ |
+| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | | |
+| [Polymarket](#polymarket) | | | | ✓ | | | | |
+| [HyperCore fills](#hypercore-fills) | | | | | | | ✓ | |
 
 ### Balances
 
@@ -385,6 +386,42 @@ One row per market and wallet: every wallet that traded, split, merged, redeemed
 | `last_activity_at` | timestamptz | The wallet's last move in the market. |
 | `resolved` | boolean | True when the market has resolved. |
 | `history_complete` | boolean | The market's `history_complete`. When false, PnL misses what happened before the start block. |
+
+### HyperCore fills
+
+`analytics.hypercore_fills`
+
+One user's side of one trade on Hyperliquid's HyperCore. The two sides of a trade are two rows that share `tid`. One row per fill. Prices and `notional` are in the coin's quote asset, which may not be USD. Sizes are in units of the coin, and fees are in `fee_token`. Covers only the users and coins listed in `ingestion/sources/hypercore-fills/addresses.json`.
+
+The `hypercore` pipeline builds it from the stream source `hypercore-fills`, which reads Portal.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The fill's place on HyperCore, `<block>:<fillIndex>`. Unique. |
+| `block_number` | bigint | The block the fill was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `fill_time` | timestamptz | The fill's own time. |
+| `fill_index` | integer | The fill's position in the block. |
+| `tx_hash` | text | The action that made the trade. One action can make several trades. |
+| `tid` | bigint | The trade. Both of its sides share it. |
+| `oid` | bigint | The user's order. One order can fill in several trades. |
+| `cloid` | text | The user's own id for the order. Null when unset. |
+| `twap_id` | bigint | The TWAP order the fill belongs to. Null when unset. |
+| `user_address` | text | The user whose side this is, lowercased. |
+| `coin` | text | The coin as HyperCore spells it, such as `ZEC` or `xyz:SNDK`. |
+| `side` | text | `B` for a buy, `A` for a sell, for the user. |
+| `dir` | text | What the fill did to the user's position, such as `Open Long` or `Close Short`. |
+| `px` | numeric | The price, in the quote asset per coin. |
+| `sz` | numeric | How much of the coin traded. |
+| `signed_size` | numeric | `sz` for a buy, `-sz` for a sell. |
+| `notional` | numeric | `px * sz`, in the quote asset. |
+| `is_taker` | boolean | True on the taker's side of the trade. |
+| `start_position` | numeric | The user's position in the coin before the fill. Negative is short. |
+| `closed_pnl` | numeric | The profit or loss the fill realized by closing a position. |
+| `fee` | numeric | What the user paid, in `fee_token`. Negative is a rebate. |
+| `fee_token` | text | The token the fee is in, such as `USDC`. |
+| `builder` | text | The builder address on the order, lowercased. Null when none. |
+| `builder_fee` | numeric | The builder's fee. The data does not show whether `fee` includes it. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
