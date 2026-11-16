@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: stg_hypercore__fills
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: user_address
+        data_tests: [not_null]
+      - name: coin
+        data_tests: [not_null]
+      - name: px
+        data_tests: [not_null]
+      - name: sz
+        data_tests: [not_null]
+      - name: tid
+        data_tests: [not_null]

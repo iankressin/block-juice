@@ -249,6 +249,22 @@
     }
   },
   {
+    "name": "hypercore",
+    "table": "fills",
+    "package": "hypercore-fills",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/hyperliquid-fills",
+      "filters": [
+        "users",
+        "coins"
+      ],
+      "unrestricted": [
+        "users",
+        "coins"
+      ]
+    }
+  },
+  {
     "name": "polygon",
     "table": "polymarket_ctf",
     "package": "polygon-polymarket-ctf",
