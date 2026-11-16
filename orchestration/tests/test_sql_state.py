@@ -228,6 +228,7 @@ def test_latest_balances_keep_highest_block_then_latest_observation(postgres):
         );
         create temp table int_solana_balances (like int_ethereum_balances);
         create temp table int_bitcoin_balances (like int_ethereum_balances);
+        create temp table int_polygon_balances (like int_ethereum_balances);
         insert into int_ethereum_balances values
             ('ethereum', 'wallet', 'native', 'eth', 100, 10, '2026-01-01'),
             ('ethereum', 'wallet', 'native', 'eth', 100, 20, '2026-01-02'),

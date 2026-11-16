@@ -173,6 +173,57 @@ models:
       - name: price
         description: usdc / shares, in pUSD per share.
 
+  - name: polymarket_wallet_cash_flows
+    description: >-
+      One row per transfer of Polymarket's cash, pUSD or USDC.e, into or out of a wallet whose balance the
+      sources read: every change to the wallet's cash from its first balance reading on, with the kind of
+      move and the balance after it. Trades and position changes are told apart from the money that moved
+      for another reason, which is where deposits, withdrawals and payments such as rewards are.
+    columns:
+      - name: id
+        description: The Transfer log's key from the raw table, then the wallet.
+        data_tests: [unique, not_null]
+      - name: block_number
+        description: The block the transfer was in.
+        data_tests: [not_null]
+      - name: block_timestamp
+        description: When that block was mined.
+      - name: tx_hash
+        description: The transaction the transfer was in.
+        data_tests: [not_null]
+      - name: log_index
+        description: The transfer's position in that block's logs.
+      - name: wallet
+        description: The wallet whose cash moved.
+        data_tests: [not_null]
+      - name: token
+        description: The token's contract, pUSD's or USDC.e's.
+        data_tests: [not_null]
+      - name: symbol
+        description: pUSD or USDC.e.
+        data_tests: [not_null]
+      - name: counterparty
+        description: The other side of the transfer; the zero address on a mint or a burn.
+        data_tests: [not_null]
+      - name: kind
+        description: >-
+          trade, split, merge, redeem or convert when a CTF Exchange v2 fill or a position event of the wallet
+          sits in the transaction. Else unwrap (pUSD turned back into USDC.e, in two legs that cancel out),
+          mint (tokens from the zero address), burn (tokens to it) or transfer (any other transfer in or
+          out). Deposits, withdrawals and other payments are among the last three, with anything Polymarket
+          did that the sources do not tie to the wallet, such as a Protocol V2 payout.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [trade, split, merge, redeem, convert, unwrap, mint, burn, transfer]
+      - name: usdc_delta
+        description: Tokens the wallet got, negative when it sent them, in whole tokens.
+        data_tests: [not_null]
+      - name: balance
+        description: The wallet's balance of the token after this transfer, in whole tokens.
+        data_tests: [not_null]
+
   - name: polymarket_price_candles
     description: >-
       One row per outcome token and minute, the price chart in 1-minute OHLC. Prices are pUSD per share. A

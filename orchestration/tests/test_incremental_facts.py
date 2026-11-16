@@ -49,7 +49,7 @@ def fact_project(tmp_path, monkeypatch):
                     query.execute("create schema raw")
                     # Raw tables selected by the four facts; unrelated sources need no fixture.
                     tables = [
-                        *(f"{chain}_erc20_transfers" for chain in ("ethereum", "arbitrum", "base")),
+                        *(f"{chain}_erc20_transfers" for chain in ("ethereum", "arbitrum", "base", "polygon")),
                         *(f"{chain}_chainlink_price_feeds" for chain in ("ethereum", "arbitrum", "base")),
                         *(f"ethereum_uniswap_v{version}" for version in (2, 3, 4)),
                         "binance_candles", "coinbase_candles",

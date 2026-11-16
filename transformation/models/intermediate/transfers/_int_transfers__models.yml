@@ -16,3 +16,8 @@ models:
     columns:
       - name: id
         data_tests: [unique, not_null]
+  - name: int_polygon_erc20_transfers
+    description: Polygon ERC-20 transfers in the shape erc20_transfers reads.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]

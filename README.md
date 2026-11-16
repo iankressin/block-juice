@@ -292,11 +292,11 @@ The `prices` pipeline builds it from the stream source `evm-chainlink-price-feed
 
 ### Polymarket
 
-`analytics.polymarket_markets`, `analytics.polymarket_trades`, `analytics.polymarket_price_candles` and `analytics.polymarket_market_participants`
+`analytics.polymarket_markets`, `analytics.polymarket_trades`, `analytics.polymarket_price_candles`, `analytics.polymarket_market_participants` and `analytics.polymarket_wallet_cash_flows`
 
 Polymarket's prediction markets on Polygon. A market is one condition in ConditionalTokens, with one outcome token per outcome. Once the market resolves, a share of each outcome redeems for that outcome's payout fraction in pUSD. Amounts are whole pUSD and whole shares, not base units. The `addresses.json` files list Polymarket's own contracts, so the tables cover every market, from the block the stream sources start at. A market prepared before that block has `history_complete` false, and its trades, candles and PnL miss what came before.
 
-The `polymarket` pipeline builds all four from the call source `polymarket-markets`, which reads Polymarket's Gamma API for market names, and two stream sources that read Portal. `polygon-polymarket-ctf` loads each condition's preparation and resolution, and the splits, merges, redemptions and conversions of ConditionalTokens, the NegRiskAdapter, and the adapters and auto-redeemers in front of them. `polygon-polymarket-ctf-exchange-v2` loads every fill of the three CTF Exchange v2 contracts.
+The `polymarket` pipeline builds all five. The first four come from the call source `polymarket-markets`, which reads Polymarket's Gamma API for market names, and two stream sources that read Portal. `polygon-polymarket-ctf` loads each condition's preparation and resolution, and the splits, merges, redemptions and conversions of ConditionalTokens, the NegRiskAdapter, and the adapters and auto-redeemers in front of them. `polygon-polymarket-ctf-exchange-v2` loads every fill of the three CTF Exchange v2 contracts.
 
 To follow specific wallets, list them under `wallets` in both stream sources' `addresses.json`. New runs load those wallets' fills, splits, merges, redemptions and conversions. Conditions and resolutions still load for every market. The trades and candles use maker fills, so taker-only trades by the selected wallets do not contribute. With wallet-scoped history, `history_complete` describes block coverage and open positions are valued at the tracked wallets' trade prices. Trust PnL on resolved markets only.
 
@@ -385,6 +385,27 @@ One row per market and wallet: every wallet that traded, split, merged, redeemed
 | `last_activity_at` | timestamptz | The wallet's last move in the market. |
 | `resolved` | boolean | True when the market has resolved. |
 | `history_complete` | boolean | The market's `history_complete`. When false, PnL misses what happened before the start block. |
+
+#### `polymarket_wallet_cash_flows`
+
+One row per transfer of pUSD or USDC.e into or out of a followed wallet: every change to its cash, with the balance after it. Amounts are whole tokens.
+
+The table needs three things for a wallet. List the wallet under `wallets` in `chains/polygon/addresses.json` of `evm-erc20-transfers`, which loads its transfers, and of `evm-erc20-balances`. Read its balance once at the block before the transfers' `START_BLOCK`, with `BLOCK_NUMBER` set for one run of `polygon/erc20_balances`: the wallet's rows start after that reading, and `balance` adds to it. Load the same blocks in the two Polymarket stream sources, with the wallet in their `wallets` if they have a list, since `kind` comes from the wallet's fills and position events. A second reading at a later block lets `bj answer` check the rebuilt balance against the chain. Because the `polymarket` pipeline builds this table, each run of it also loads `polygon/erc20_transfers` and reads `polygon/erc20_balances` at that source's `BLOCK_NUMBER`.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The Transfer log's key from the raw table, then the wallet. Unique. |
+| `block_number` | bigint | The block the transfer was in. |
+| `block_timestamp` | timestamptz | When that block was mined. |
+| `tx_hash` | text | The transaction the transfer was in. |
+| `log_index` | integer | The transfer's position in the block's logs. |
+| `wallet` | text | The wallet whose cash moved. |
+| `token` | text | The token's contract. |
+| `symbol` | text | `pUSD` or `USDC.e`. |
+| `counterparty` | text | The other side of the transfer. The zero address on a mint or a burn. |
+| `kind` | text | `trade`, `split`, `merge`, `redeem` or `convert` when a CTF Exchange v2 fill or a position event of the wallet is in the transaction. Otherwise `unwrap` (pUSD turned back into USDC.e, in two legs that cancel out), `mint` (tokens from the zero address), `burn` (tokens to the zero address) or `transfer` (any other transfer). Deposits, withdrawals and payments such as rewards are among the last three. So is anything Polymarket did that the sources do not tie to the wallet, such as a Protocol V2 payout, so check `counterparty` before calling a mint a deposit. |
+| `usdc_delta` | numeric | Tokens the wallet got, negative when it sent them. |
+| `balance` | numeric | The wallet's balance of the token after the transfer. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

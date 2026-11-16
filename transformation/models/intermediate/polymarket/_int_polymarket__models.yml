@@ -256,6 +256,69 @@ models:
         description: True when the row leaves the wallet with none of the token, whatever it held.
         data_tests: [not_null]
 
+  - name: int_polygon_polymarket_cash_flows
+    description: >-
+      One row per transfer of pUSD or USDC.e into or out of a wallet whose balance the sources read, from
+      its first balance reading on, with the kind of move behind it and the balance after it. A fill or a
+      position event of the wallet in the transaction gives trade, split, merge, redeem or convert; with
+      neither, the kind is unwrap, mint, burn or transfer.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: id
+        data_type: text
+        description: The Transfer log's key from the raw table, then the wallet.
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_type: bigint
+        description: The block of the log.
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_type: timestamp with time zone
+        description: When that block was mined.
+      - name: tx_hash
+        data_type: text
+        description: The transaction of the log.
+        data_tests: [not_null]
+      - name: log_index
+        data_type: integer
+        description: The log's position in that block's logs.
+      - name: wallet
+        data_type: text
+        description: The wallet whose cash moved.
+        data_tests: [not_null]
+      - name: token
+        data_type: text
+        description: The token's contract, pUSD's or USDC.e's.
+        data_tests: [not_null]
+      - name: symbol
+        data_type: text
+        description: pUSD or USDC.e.
+        data_tests: [not_null, accepted_values: {arguments: {values: [pUSD, USDC.e]}}]
+      - name: counterparty
+        data_type: text
+        description: The other side of the transfer; the zero address on a mint or a burn.
+        data_tests: [not_null]
+      - name: kind
+        data_type: text
+        description: >-
+          trade, split, merge, redeem or convert from the wallet's fill or position event in the
+          transaction; else unwrap, mint, burn or transfer.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [trade, split, merge, redeem, convert, unwrap, mint, burn, transfer]
+      - name: usdc_delta
+        data_type: numeric
+        description: Tokens the wallet got, negative when it sent them, in whole tokens.
+        data_tests: [not_null]
+      - name: balance
+        data_type: numeric
+        description: The wallet's balance of the token after this transfer, in whole tokens.
+        data_tests: [not_null]
+
   - name: int_polymarket_markets
     description: >-
       One row per condition of a Gamma v1 market, with Gamma's names for it. A placeholder market has
@@ -1445,3 +1508,174 @@ unit_tests:
             false as neg_risk, array['Yes', 'No'] as outcomes, '2026-11-08 00:00:00+00'::timestamptz as end_date,
             true as is_sports, null::text as sports_market_type, 'mls-2026' as series_slug,
             null::timestamptz as game_start_time
+
+  - name: cash_takes_its_kind_from_the_wallets_transaction
+    description: >-
+      Real transfers of one wallet. A withdrawal unwraps 250,000 pUSD into USDC.e and sends the USDC.e on;
+      a merge and a redemption are paid in pUSD minted to the wallet; a buy pays the exchange; a daily
+      payment comes from an address with no fill or position event beside it. The balance starts at the
+      wallet's real readings at block 91743314, 1,115,926.995746 pUSD and no USDC.e, and adds only the seven
+      transfers here, so it is not the balance the chain had at these blocks.
+    model: int_polygon_polymarket_cash_flows
+    given:
+      - input: ref('int_polygon_balances')
+        rows:
+          - {wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", asset: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", block_number: 91743314, balance: 1115926995746}
+          - {wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", asset: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", block_number: 91743314, balance: 0}
+      - input: ref('int_polygon_erc20_transfers')
+        rows:
+          - {id: "92981016:417", block_number: 92981016, block_timestamp: "2026-08-31 11:42:32+00", tx_hash: "0x49b6ca282b70faa1bc95d55e1d4b18ca8221d7727edaca9e1d73b6d575976ab5", log_index: 417, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", to_address: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", value: 250000000000}
+          - {id: "92981016:418", block_number: 92981016, block_timestamp: "2026-08-31 11:42:32+00", tx_hash: "0x49b6ca282b70faa1bc95d55e1d4b18ca8221d7727edaca9e1d73b6d575976ab5", log_index: 418, token: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", from_address: "0xc417fd8e9661c0d2120b64a04bb3278c17e99db1", to_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", value: 250000000000}
+          - {id: "92981016:423", block_number: 92981016, block_timestamp: "2026-08-31 11:42:32+00", tx_hash: "0x49b6ca282b70faa1bc95d55e1d4b18ca8221d7727edaca9e1d73b6d575976ab5", log_index: 423, token: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", from_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", to_address: "0x4cd00e387622c35bddb9b4c962c136462338bc31", value: 250000000000}
+          - {id: "94555077:502", block_number: 94555077, block_timestamp: "2026-09-27 19:35:56+00", tx_hash: "0x3938352d3a7b7443fc4e888236b86423405f143c97d234d0b05c0364c685456c", log_index: 502, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", value: 2723814700}
+          - {id: "95949692:1153", block_number: 95949692, block_timestamp: "2026-10-22 00:45:06+00", tx_hash: "0xda9f8f6537e29c341c77b78a56764e3a769feee0801a0796a1a01080a2c700e2", log_index: 1153, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xfdb1b8dc7f5789a0c9a398026585b8b10fba5507", to_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", value: 4348027300}
+          - {id: "96000122:253", block_number: 96000122, block_timestamp: "2026-10-22 21:45:54+00", tx_hash: "0x05df84a0f98a3889dcf602d4223ac92216901d36e383cbdddffc58ff73caaff8", log_index: 253, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", to_address: "0xe111180000d2663c0091e4f400237545b87b996b", value: 403326000}
+          - {id: "96000284:639", block_number: 96000284, block_timestamp: "2026-10-22 21:49:57+00", tx_hash: "0x75249589c577b56c560d49e535a057e8555a2df102f652430fef3e31d2a9d5e5", log_index: 639, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", value: 2826988004}
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows:
+          - {id: "96000122:269", tx_hash: "0x05df84a0f98a3889dcf602d4223ac92216901d36e383cbdddffc58ff73caaff8", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea"}
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select
+              'collateral_adapter.PositionsMerged' as event,
+              '0x3938352d3a7b7443fc4e888236b86423405f143c97d234d0b05c0364c685456c' as tx_hash,
+              '0x2005d16a84ceefa912d4e380cd32e7ff827875ea' as initiator, null::text as from_address, null::text as stakeholder
+          union all
+          select
+              'auto_redeemer.BinaryRedemption',
+              '0x75249589c577b56c560d49e535a057e8555a2df102f652430fef3e31d2a9d5e5',
+              null, '0x2005d16a84ceefa912d4e380cd32e7ff827875ea', null
+    expect:
+      rows:
+        - {id: "92981016:417:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: pUSD, counterparty: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", kind: unwrap, usdc_delta: "-250000.000000", balance: "865926.995746"}
+        - {id: "92981016:418:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: USDC.e, counterparty: "0xc417fd8e9661c0d2120b64a04bb3278c17e99db1", kind: unwrap, usdc_delta: "250000.000000", balance: "250000.000000"}
+        - {id: "92981016:423:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: USDC.e, counterparty: "0x4cd00e387622c35bddb9b4c962c136462338bc31", kind: transfer, usdc_delta: "-250000.000000", balance: "0.000000"}
+        - {id: "94555077:502:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: merge, usdc_delta: "2723.814700", balance: "868650.810446"}
+        - {id: "95949692:1153:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: pUSD, counterparty: "0xfdb1b8dc7f5789a0c9a398026585b8b10fba5507", kind: transfer, usdc_delta: "4348.027300", balance: "872998.837746"}
+        - {id: "96000122:253:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: pUSD, counterparty: "0xe111180000d2663c0091e4f400237545b87b996b", kind: trade, usdc_delta: "-403.326000", balance: "872595.511746"}
+        - {id: "96000284:639:0x2005d16a84ceefa912d4e380cd32e7ff827875ea", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: redeem, usdc_delta: "2826.988004", balance: "875422.499750"}
+
+  - name: cash_rows_start_after_a_wallets_first_reading
+    description: >-
+      Made up. 0xaa is read at block 100 and 0xbb at block 120; 0xcc and 0xdd are never read. A transfer
+      at the reading's block, one from a wallet to itself, one between two unread wallets and one of a
+      token that is not cash give no row. A transfer between the two read wallets gives a row for each,
+      and a fill of 0xaa's in that transaction makes it a trade for 0xaa only. With no fill or position
+      event, tokens from the zero address are a mint and tokens to it a burn. A transaction with both a
+      fill and a position event of the wallet counts as a trade. An unwrap has a direction: USDC.e sent
+      to pUSD's vault, or pUSD got from pUSD's contract, is a plain transfer.
+    model: int_polygon_polymarket_cash_flows
+    given:
+      - input: ref('int_polygon_balances')
+        rows:
+          - {wallet: "0xaa", asset: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", block_number: 100, balance: 5000000}
+          - {wallet: "0xaa", asset: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", block_number: 200, balance: 9000000}
+          - {wallet: "0xaa", asset: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", block_number: 100, balance: 9000000}
+          - {wallet: "0xaa", asset: "0xff", block_number: 100, balance: 1}
+          - {wallet: "0xbb", asset: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", block_number: 120, balance: 1000000}
+      - input: ref('int_polygon_erc20_transfers')
+        rows:
+          - {id: "100:1", block_number: 100, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x01", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xcc", to_address: "0xaa", value: 1000000}
+          - {id: "110:1", block_number: 110, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x02", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xaa", to_address: "0xaa", value: 1000000}
+          - {id: "110:2", block_number: 110, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x03", log_index: 2, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 2000000}
+          - {id: "130:1", block_number: 130, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x04", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xaa", to_address: "0xbb", value: 3000000}
+          - {id: "140:1", block_number: 140, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x05", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xbb", to_address: "0x0000000000000000000000000000000000000000", value: 500000}
+          - {id: "150:1", block_number: 150, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x06", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xaa", to_address: "0xee", value: 1000000}
+          - {id: "150:2", block_number: 150, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x07", log_index: 2, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xcc", to_address: "0xdd", value: 1000000}
+          - {id: "160:1", block_number: 160, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x08", log_index: 1, token: "0xff", from_address: "0xcc", to_address: "0xaa", value: 1}
+          - {id: "170:1", block_number: 170, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x09", log_index: 1, token: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", from_address: "0xaa", to_address: "0xc417fd8e9661c0d2120b64a04bb3278c17e99db1", value: 2000000}
+          - {id: "170:2", block_number: 170, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0a", log_index: 2, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", to_address: "0xaa", value: 1000000}
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows:
+          - {id: "130:2", tx_hash: "0x04", wallet: "0xaa"}
+          - {id: "150:3", tx_hash: "0x06", wallet: "0xaa"}
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select
+              'collateral_adapter.PositionsMerged' as event, '0x06' as tx_hash,
+              '0xaa' as initiator, null::text as from_address, null::text as stakeholder
+    expect:
+      rows:
+        - {id: "110:2:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: mint, usdc_delta: "2.000000", balance: "7.000000"}
+        - {id: "130:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0xbb", kind: trade, usdc_delta: "-3.000000", balance: "4.000000"}
+        - {id: "130:1:0xbb", wallet: "0xbb", symbol: pUSD, counterparty: "0xaa", kind: transfer, usdc_delta: "3.000000", balance: "4.000000"}
+        - {id: "140:1:0xbb", wallet: "0xbb", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: burn, usdc_delta: "-0.500000", balance: "3.500000"}
+        - {id: "150:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0xee", kind: trade, usdc_delta: "-1.000000", balance: "3.000000"}
+        - {id: "170:1:0xaa", wallet: "0xaa", symbol: USDC.e, counterparty: "0xc417fd8e9661c0d2120b64a04bb3278c17e99db1", kind: transfer, usdc_delta: "-2.000000", balance: "7.000000"}
+        - {id: "170:2:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", kind: transfer, usdc_delta: "1.000000", balance: "4.000000"}
+
+  - name: cash_kinds_follow_each_position_event
+    description: >-
+      Made up. One pUSD is minted to 0xaa in each of 17 transactions. The first 13 each hold one of the
+      position events, with 0xaa in the argument that names the wallet: stakeholder for ctf and neg_risk
+      events, initiator for the adapters', from for the auto-redeemers'. Then an event that names no one,
+      an adapter event and an auto-redeemer event with 0xaa in the wrong argument, which leave the
+      transfer a mint, and a transaction with a redemption and a merge of 0xaa's, which counts as a merge.
+    model: int_polygon_polymarket_cash_flows
+    given:
+      - input: ref('int_polygon_balances')
+        rows:
+          - {wallet: "0xaa", asset: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", block_number: 100, balance: 100000000}
+      - input: ref('int_polygon_erc20_transfers')
+        rows:
+          - {id: "201:1", block_number: 201, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x01", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "202:1", block_number: 202, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x02", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "203:1", block_number: 203, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x03", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "204:1", block_number: 204, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x04", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "205:1", block_number: 205, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x05", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "206:1", block_number: 206, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x06", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "207:1", block_number: 207, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x07", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "208:1", block_number: 208, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x08", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "209:1", block_number: 209, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x09", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "210:1", block_number: 210, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0a", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "211:1", block_number: 211, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0b", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "212:1", block_number: 212, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0c", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "213:1", block_number: 213, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0d", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "214:1", block_number: 214, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0e", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "215:1", block_number: 215, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x0f", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "216:1", block_number: 216, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x10", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+          - {id: "217:1", block_number: 217, block_timestamp: "2026-08-10 00:00:00+00", tx_hash: "0x11", log_index: 1, token: "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb", from_address: "0x0000000000000000000000000000000000000000", to_address: "0xaa", value: 1000000}
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows: []
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select 'ctf.PositionSplit' as event, '0x01' as tx_hash, null::text as initiator, null::text as from_address, '0xaa' as stakeholder
+          union all select 'neg_risk.PositionSplit', '0x02', null, null, '0xaa'
+          union all select 'collateral_adapter.PositionSplit', '0x03', '0xaa', null, null
+          union all select 'ctf.PositionsMerge', '0x04', null, null, '0xaa'
+          union all select 'neg_risk.PositionsMerge', '0x05', null, null, '0xaa'
+          union all select 'collateral_adapter.PositionsMerged', '0x06', '0xaa', null, null
+          union all select 'ctf.PayoutRedemption', '0x07', null, null, '0xaa'
+          union all select 'neg_risk.PayoutRedemption', '0x08', null, null, '0xaa'
+          union all select 'collateral_adapter.PositionsRedeemed', '0x09', '0xaa', null, null
+          union all select 'auto_redeemer.BinaryRedemption', '0x0a', null, '0xaa', null
+          union all select 'auto_redeemer.NegRiskRedemption', '0x0b', null, '0xaa', null
+          union all select 'neg_risk.PositionsConverted', '0x0c', null, null, '0xaa'
+          union all select 'collateral_adapter.PositionsConverted', '0x0d', '0xaa', null, null
+          union all select 'ctf.ConditionResolution', '0x0e', null, null, null
+          union all select 'collateral_adapter.PositionsMerged', '0x0f', '0xbb', '0xaa', '0xaa'
+          union all select 'auto_redeemer.BinaryRedemption', '0x10', '0xaa', '0xbb', null
+          union all select 'auto_redeemer.BinaryRedemption', '0x11', null, '0xaa', null
+          union all select 'collateral_adapter.PositionsMerged', '0x11', '0xaa', null, null
+    expect:
+      rows:
+        - {id: "201:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: split, usdc_delta: "1.000000", balance: "101.000000"}
+        - {id: "202:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: split, usdc_delta: "1.000000", balance: "102.000000"}
+        - {id: "203:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: split, usdc_delta: "1.000000", balance: "103.000000"}
+        - {id: "204:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: merge, usdc_delta: "1.000000", balance: "104.000000"}
+        - {id: "205:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: merge, usdc_delta: "1.000000", balance: "105.000000"}
+        - {id: "206:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: merge, usdc_delta: "1.000000", balance: "106.000000"}
+        - {id: "207:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: redeem, usdc_delta: "1.000000", balance: "107.000000"}
+        - {id: "208:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: redeem, usdc_delta: "1.000000", balance: "108.000000"}
+        - {id: "209:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: redeem, usdc_delta: "1.000000", balance: "109.000000"}
+        - {id: "210:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: redeem, usdc_delta: "1.000000", balance: "110.000000"}
+        - {id: "211:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: redeem, usdc_delta: "1.000000", balance: "111.000000"}
+        - {id: "212:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: convert, usdc_delta: "1.000000", balance: "112.000000"}
+        - {id: "213:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: convert, usdc_delta: "1.000000", balance: "113.000000"}
+        - {id: "214:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: mint, usdc_delta: "1.000000", balance: "114.000000"}
+        - {id: "215:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: mint, usdc_delta: "1.000000", balance: "115.000000"}
+        - {id: "216:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: mint, usdc_delta: "1.000000", balance: "116.000000"}
+        - {id: "217:1:0xaa", wallet: "0xaa", symbol: pUSD, counterparty: "0x0000000000000000000000000000000000000000", kind: merge, usdc_delta: "1.000000", balance: "117.000000"}

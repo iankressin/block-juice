@@ -1,0 +1,65 @@
+question: What cash did RN1 hold on Polymarket, and what was it paid or did it take out apart from its trades?
+asked: 2026-11-12
+definitions:
+  RN1: The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea
+  cash: >-
+    pUSD 0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb and USDC.e 0x2791bca1f2de4661ed88a30c99a7a9449aa84174 on
+    Polygon, in whole tokens (6 decimals each)
+  balance: >-
+    RN1's balanceOf reading one block before the window, plus every Transfer of the token into or out of
+    the wallet since
+  trading: >-
+    A transfer in a transaction with an OrderFilled of RN1's order (trade), or with a merge or redemption
+    that names RN1
+  payment: A pUSD transfer to RN1 in a transaction with no fill, merge or redemption of RN1's
+  withdrawal: pUSD that RN1 unwrapped into USDC.e and then sent to another address
+alternatives:
+  - Count only the four addresses that paid RN1 on most days as payments (80.51 pUSD less).
+  - Count the pUSD RN1 held before the window as a deposit.
+  - Follow the withdrawn USDC.e to see whether it came back to another wallet of the same operator.
+window:
+  chain: polygon
+  from: 2026-08-10T00:00:00Z
+  to: 2026-11-10T00:00:00Z
+  blocks: [91743315, 97042228]
+inputs:
+  - name: cash_transfers
+    strategy: history
+    source: polygon.erc20_transfers
+    mart: polymarket_wallet_cash_flows
+    filter:
+      tokens:
+        - "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
+        - "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+      wallets:
+        - "0x2005d16a84ceefa912d4e380cd32e7ff827875ea"
+  - name: balance_readings
+    strategy: state
+    mart: polymarket_wallet_cash_flows
+  - name: fills
+    strategy: history
+    source: polygon.polymarket_ctf_exchange_v2
+    mart: polymarket_wallet_fills
+  - name: position_events
+    strategy: history
+    source: polygon.polymarket_ctf
+    mart: polymarket_wallet_cash_flows
+marts: [polymarket_wallet_cash_flows, polymarket_wallet_fills]
+analyses:
+  - rn1_polymarket_cash_2026_11_12
+  - rn1_polymarket_cash_2026_11_12_balance
+  - rn1_polymarket_cash_2026_11_12_by_kind
+  - rn1_polymarket_cash_2026_11_12_by_hour
+  - rn1_polymarket_cash_2026_11_12_payers
+  - rn1_polymarket_cash_2026_11_12_payments_by_day
+  - rn1_polymarket_cash_2026_11_12_withdrawals
+  - rn1_polymarket_cash_2026_11_12_merges
+expected_columns:
+  rn1_polymarket_cash_2026_11_12: [payments_usdc]
+  rn1_polymarket_cash_2026_11_12_balance: [pusd_transfers, opening_pusd, closing_pusd, lowest_pusd, lowest_at, highest_pusd, highest_at, usdc_e_transfers, opening_usdc_e, closing_usdc_e, highest_usdc_e]
+  rn1_polymarket_cash_2026_11_12_by_kind: [symbol, kind, direction, transfers, transactions, counterparties, usdc, first_at, last_at]
+  rn1_polymarket_cash_2026_11_12_by_hour: [hour, transfers, balance_low, balance_high, balance_end, trade_usdc, redeem_usdc, merge_usdc, payment_usdc, unwrap_usdc]
+  rn1_polymarket_cash_2026_11_12_payers: [payer, payments, days, usdc, smallest_usdc, median_usdc, largest_usdc, first_at, last_at, median_utc_hour]
+  rn1_polymarket_cash_2026_11_12_payments_by_day: [day, payer, payments, usdc, first_at, fee_usdc_day_before, maker_usdc_day_before, taker_usdc_day_before]
+  rn1_polymarket_cash_2026_11_12_withdrawals: [tx_hash, block_timestamp, pusd_unwrapped, usdc_e_received, usdc_e_sent, sent_to, destinations, pusd_before, pusd_after]
+  rn1_polymarket_cash_2026_11_12_merges: [tx_hash, block_timestamp, payouts, usdc, pusd_before, pusd_after]

@@ -15,3 +15,8 @@ union all
 
 select chain, id, block_number, block_timestamp, tx_hash, log_index, token, from_address, to_address, value
 from {{ ref('int_base_erc20_transfers') }}
+
+union all
+
+select chain, id, block_number, block_timestamp, tx_hash, log_index, token, from_address, to_address, value
+from {{ ref('int_polygon_erc20_transfers') }}
