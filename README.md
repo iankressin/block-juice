@@ -59,7 +59,7 @@ To run all pipelines together, use `bj run daily` or enable `daily_schedule` in 
 
 ## What
 
-Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<source>_<table>` it was built from, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule.
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<chain>_<table>` it was built from, such as `raw.ethereum_uniswap_v3`, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule.
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
@@ -74,6 +74,9 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Exchange prices](#exchange-prices) | | | | | | | ✓ |
 | [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | |
 | [Polymarket](#polymarket) | | | | ✓ | | | |
+| [Accounts](#accounts) | ✓ | | | | | | |
+| [Deployments](#deployments) | ✓ | | | | | | |
+| [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | |
 
 ### Balances
 
@@ -94,7 +97,7 @@ The `balances` pipeline builds it from five call sources: `evm-eth-balances`, `e
 
 ### Transfers
 
-`analytics.erc20_transfers` and `analytics.classified_transfers`
+`analytics.erc20_transfers`, `analytics.classified_transfers` and `analytics.labelled_wallet_flows`
 
 Every ERC-20 transfer of the tokens you list, or only those into or out of your wallets. One row per Transfer log, in the token's base units. `classified_transfers` adds what kind of address each side is and sorts the transfer into a category: bridge, exchange, contract, p2p or unknown. Covers Ethereum, Arbitrum and Base. Classification reads [labels](#labels), which cover Arbitrum and Base.
 
@@ -130,6 +133,23 @@ Every column of `erc20_transfers`, and these:
 | `to_entity` | text | As `from_entity`, for the receiver. |
 | `to_group` | text | As `from_group`, for the receiver. |
 | `category` | text | `bridge`, `exchange`, `contract`, `p2p` or `unknown`. |
+
+#### `labelled_wallet_flows`
+
+One row per value movement that touches a wallet in `seeds/wallet_labels`, seen from the labelled entity's side. A movement is a successful top-level transaction with value from `wallet_transactions` (asset `native`, value in wei) or an ERC-20 Transfer from `erc20_transfers` (asset is the token's address). A movement between two entities comes once for each.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | The chain the movement was on. |
+| `id` | text | The movement's id in its mart: `tx:<hash>` or `<block>:<logIndex>`. Unique with `chain` and `entity`. |
+| `block_number` | bigint | The block the movement was in. |
+| `asset` | text | `native`, or the token's address. |
+| `value` | numeric | The amount, in wei or the token's base units. |
+| `entity` | text | The labelled entity. |
+| `wallet` | text | The entity's side of the movement, the sender for `intra`. |
+| `direction` | text | `inflow`, `outflow` or `intra`. |
+| `counterparty_address` | text | The other side. |
+| `counterparty_entity` | text | The other side's entity; null when it has no label, or for `intra`. |
 
 ### DEX trades
 
@@ -292,11 +312,11 @@ The `prices` pipeline builds it from the stream source `evm-chainlink-price-feed
 
 ### Polymarket
 
-`analytics.polymarket_markets`, `analytics.polymarket_trades`, `analytics.polymarket_price_candles` and `analytics.polymarket_market_participants`
+`analytics.polymarket_markets`, `analytics.polymarket_trades`, `analytics.polymarket_wallet_fills`, `analytics.polymarket_price_candles` and `analytics.polymarket_market_participants`
 
 Polymarket's prediction markets on Polygon. A market is one condition in ConditionalTokens, with one outcome token per outcome. Once the market resolves, a share of each outcome redeems for that outcome's payout fraction in pUSD. Amounts are whole pUSD and whole shares, not base units. The `addresses.json` files list Polymarket's own contracts, so the tables cover every market, from the block the stream sources start at. A market prepared before that block has `history_complete` false, and its trades, candles and PnL miss what came before.
 
-The `polymarket` pipeline builds all four from the call source `polymarket-markets`, which reads Polymarket's Gamma API for market names, and two stream sources that read Portal. `polygon-polymarket-ctf` loads each condition's preparation and resolution, and the splits, merges, redemptions and conversions of ConditionalTokens, the NegRiskAdapter, and the adapters and auto-redeemers in front of them. `polygon-polymarket-ctf-exchange-v2` loads every fill of the three CTF Exchange v2 contracts.
+The `polymarket` pipeline builds all five from the call source `polymarket-markets`, which reads Polymarket's Gamma API for market names, and two stream sources that read Portal. `polygon-polymarket-ctf` loads each condition's preparation and resolution, and the splits, merges, redemptions and conversions of ConditionalTokens, the NegRiskAdapter, and the adapters and auto-redeemers in front of them. `polygon-polymarket-ctf-exchange-v2` loads every fill of the three CTF Exchange v2 contracts.
 
 To follow specific wallets, list them under `wallets` in both stream sources' `addresses.json`. New runs load those wallets' fills, splits, merges, redemptions and conversions. Conditions and resolutions still load for every market. The trades and candles use maker fills, so taker-only trades by the selected wallets do not contribute. With wallet-scoped history, `history_complete` describes block coverage and open positions are valued at the tracked wallets' trade prices. Trust PnL on resolved markets only.
 
@@ -347,6 +367,26 @@ One row per fill of a maker order. A match also logs the taker order's own fill,
 | `price` | numeric | `usdc / shares`, in pUSD per share. |
 | `fee_usdc` | numeric | The maker's fee, in pUSD. |
 
+#### `polymarket_wallet_fills`
+
+One row per fill per wallet: every OrderFilled, read for the wallet whose pUSD or shares moved, with its role in the match. Unlike `polymarket_trades`, which keeps maker fills only, it keeps the taker order's own fills too, so a wallet's taker fills count.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The OrderFilled log's key from the raw table. |
+| `block_timestamp` | timestamptz | When that block was mined. |
+| `tx_hash` | text | The transaction the fill was in. |
+| `wallet` | text | The order's owner, the proxy wallet or Safe that Polymarket shows as the trader. |
+| `role` | text | `taker` on the taker order's own fill; `maker` on every other fill, where the wallet's order rested on the book. |
+| `counterparty` | text | The taker order's owner on a maker fill; null on a taker fill. |
+| `condition_id` | text | The market the token belongs to; null when Gamma lacks the token. |
+| `token_id` | numeric | The outcome token traded. |
+| `side` | text | `buy` or `sell`, for the wallet. |
+| `shares` | numeric | Outcome tokens traded. |
+| `usdc` | numeric | pUSD paid or received, before fees. |
+| `fee_usdc` | numeric | The wallet's fee in pUSD. |
+| `price` | numeric | `usdc / shares`, in pUSD per share. |
+
 #### `polymarket_price_candles`
 
 One row per outcome token and minute, in pUSD per share. In a two-outcome market a trade of one outcome at a price also prices the other at 1 minus that price, so a token can have a candle in a minute it did not trade.
@@ -390,6 +430,59 @@ TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagste
 
 The code is ordinary software engineering: typed sources, tests, schedules and docs a teammate can follow. [docs/architecture.md](docs/architecture.md) has the details.
 
+### Accounts
+
+`analytics.wallet_transactions`, `analytics.wallet_eth_outflows`, `analytics.account_states` and `analytics.address_attributions`
+
+The wallets you follow on Ethereum. `wallet_transactions` holds each top-level transaction sent from or to them, in wei; internal transfers, which only traces show, are not here. `wallet_eth_outflows` takes each successful one with value and gives it one class: `sold` (a CoW Protocol ETH Flow order that settled into a stablecoin back to the sender), `sent_to_exchange` (to an address in `seeds/cex_addresses`) or `sent_out`. `account_states` holds each address's balance, nonce and code at the blocks a source read it. `address_attributions` lists the addresses a public body ties to an incident, from `seeds/attributed_addresses`.
+
+The `accounts` pipeline builds them from the sources `evm-wallet-transactions` and `evm-account-state` and those seeds. `wallet_eth_outflows` also reads [`cow_ethflow_orders`](#cow-eth-flow).
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`. |
+| `tx_hash` | text | The transaction. |
+| `from_address` | text | The sender. |
+| `to_address` | text | The receiver. |
+| `value_wei` | numeric | The ETH sent, in wei. It moved only when `succeeded` is true. |
+| `succeeded` | boolean | Whether the transaction succeeded. |
+| `fee_wei` | numeric | `gas_used × effective_gas_price`, paid by `from_address` either way. |
+| `outflow_class` | text | `sold`, `sent_to_exchange` or `sent_out` (`wallet_eth_outflows`). |
+| `code_kind` | text | `none`, `eip7702_delegation` or `contract` (`account_states`). |
+| `attribution` | text | The incident a public body ties the address to (`address_attributions`). |
+
+### Deployments
+
+`analytics.deployment_state_gas`
+
+One contract-deployment transaction per row on Ethereum: a successful transaction with at least one create or create2 that stood. `state_gas` is the EIP-8037 state gas its creates and new storage slots would cost, as a lower bound, and `rule_version` names the rule. The `deployments` pipeline builds it from the source `evm-contract-deployments`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`. |
+| `tx_hash` | text | The deployment transaction. Unique while the table holds one chain. |
+| `block_number` | bigint | The block it was in. |
+| `code_bytes` | bigint | The bytes of code its creates left. |
+| `new_slots` | bigint | The new storage slots it wrote. |
+| `state_gas` | bigint | The EIP-8037 state gas, in gas, as a lower bound. |
+| `rule_version` | text | The rule `state_gas` follows. |
+
+### CoW ETH Flow
+
+`analytics.cow_ethflow_orders`
+
+One CoW Protocol ETH Flow order placed by a wallet you follow on Ethereum, with the settlement that filled it when one did. Amounts are in token base units; the ETH sent is in wei. An order is settled when a later GPv2Settlement Trade carries its UID. An order with no such Trade may be open, expired, refunded or invalidated; this table does not tell them apart. The `cow` pipeline builds it from the source `evm-cow-ethflow`.
+
+| Column | Type | Description |
+|---|---|---|
+| `order_uid` | text | The 56-byte GPv2 order UID. |
+| `tx_hash` | text | The transaction that placed the order. |
+| `owner` | text | The wallet that placed it. |
+| `eth_value_wei` | numeric | The ETH sent, in wei. |
+| `buy_token` | text | The token the order buys. |
+| `settled` | boolean | True when a later GPv2Settlement Trade carries its UID. |
+| `received_amount` | numeric | The buy token sent to the receiver, in base units. Null when not settled. |
+
 ## How you use it
 
 1. Set up once with `bj install`, start the stack and Dagster with `bj dev`, then open the Dagster UI.
@@ -402,7 +495,7 @@ A new analyst should be able to get through these steps in an afternoon.
 
 ## Claude Code skill
 
-BlockJuice includes a Claude Code skill at `.claude/skills/blockjuice/`. Start it with `/bj` or `/blockjuice`. It lets an analyst run the stack without first learning every folder. It can:
+BlockJuice includes a Claude Code skill at `.claude/skills/blockjuice/`. Start it with `/bj`. It lets an analyst run the stack without first learning every folder. It can:
 
 - answer a question: scope it, find or build the marts, write a dbt analysis, run checks and write `answers/<slug>/` (`question.yaml`, `answer.json`, `answer.md`, `results/`)
 - turn an answer into XLSX, PDF, Word or a Google Doc with `bj report`, using rows from your warehouse
@@ -437,7 +530,7 @@ Orchestration tests fail if an asset belongs to no scheduled pipeline, so nothin
 
 ## Status
 
-BlockJuice is in active development. For now the framework is this repository: clone it, fill in `.env` and run your own warehouse. We're working on thinner packaging for customer apps. The parts analysts touch (`name`/`table`, mart shapes, `bj`) should stay the same when it ships.
+BlockJuice is in active development. For now the framework is this repository: clone it, run `bj install` and `bj dev`, and you have your own warehouse. No value in `.env` is required: the defaults read public RPCs and the keyless SQD Portal. Set `PORTAL_API_KEY` to raise Portal's limits. We're working on thinner packaging for customer apps. The parts analysts touch (`name`/`table`, mart shapes, `bj`) should stay the same when it ships.
 
 ## License
 
