@@ -25,6 +25,8 @@
 --   prepared before it.
 --   A condition missing from int_polymarket_outcome_tokens (Gamma) drops out, cash too.
 --   Amounts are base units with 6 decimals, divided by 1e6 and kept at 6 places.
+-- event is the one event that names the wallet, as <contract>.<Event>: it says who made the move, such as
+-- auto_redeemer.* when Polymarket's auto-redeemer redeemed for the wallet.
 -- Columns, for whoever sums them: a token row has usdc_delta null. A cash row has token_id and
 -- shares_delta null and zeroes_position false. Ids are <block>:<logIndex>:<token_id> and
 -- <block>:<logIndex>:cash, but a conversion's k cash rows are <block>:<logIndex>:cash:<condition_id>.
@@ -225,21 +227,21 @@ conversion_legs as (
 changes as (
     select id || ':' || token_id as id, block_number, block_timestamp, tx_hash, log_index, kind, wallet,
         condition_id, token_id, shares_base, null::numeric as usdc_base,
-        kind = 'redeem' and event <> 'neg_risk.PayoutRedemption' as zeroes_position
+        kind = 'redeem' and event <> 'neg_risk.PayoutRedemption' as zeroes_position, event
     from move_tokens
     union all
     select id || ':cash', block_number, block_timestamp, tx_hash, log_index, kind, wallet,
         condition_id, null, null,
         case kind when 'split' then -amount when 'merge' then amount else payout end,
-        false
+        false, event
     from moves
     union all
     select id || ':' || token_id, block_number, block_timestamp, tx_hash, log_index, kind, wallet,
-        question_condition_id, token_id, case when burned then -amount else amount_out_base end, null, false
+        question_condition_id, token_id, case when burned then -amount else amount_out_base end, null, false, event
     from conversion_legs
     union all
     select id || ':cash:' || question_condition_id, block_number, block_timestamp, tx_hash, log_index, kind, wallet,
-        question_condition_id, null, null, (burned_count - 1) * amount_out_base / burned_count, false
+        question_condition_id, null, null, (burned_count - 1) * amount_out_base / burned_count, false, event
     from conversion_legs
     where burned
 )
@@ -257,5 +259,6 @@ select
     token_id,
     round(shares_base / 1e6, 6) as shares_delta,
     round(usdc_base / 1e6, 6) as usdc_delta,
-    zeroes_position
+    zeroes_position,
+    event
 from changes

@@ -1,0 +1,25 @@
+ord,measure,n,total,pct,value
+1,sweeps that filled 2 or more of RN1's orders,20817,791866,2.63,
+2,"of those sweeps, the ones that filled 2 or more price levels",13908,20817,66.81,
+3,maker fills that came in a sweep across 2 or more price levels,33299,818363,4.07,
+4,maker fills priced on a whole cent,721570,818363,88.17,
+5,maker fills priced on a tenth of a cent,818343,818363,100.00,
+6,maker fills in a block where RN1's order on the other outcome also filled,14818,817677,1.81,
+7,market-minutes with maker fills on both outcomes,27910,435226,6.41,
+8,maker fills in a minute when both outcomes filled,130143,817677,15.92,
+9,maker orders filled in 2 or more fills,124625,514757,24.21,
+10,multi-fill maker orders whose fills span 60 seconds or more,9842,124625,7.90,
+11,multi-fill maker orders whose fills span 10 minutes or more,890,124625,0.71,
+12,taker orders filled for a whole number of shares,64645,93495,69.14,
+13,taker orders filled for a whole number of pUSD,20239,93495,21.65,
+14,maker orders filled for a whole number of shares,180814,514757,35.13,
+15,"maker price levels filled per market, outcome and 5 minutes, median",,353458,,1.000000
+16,"maker price levels filled per market, outcome and 5 minutes, 90th percentile",,353458,,2.000000
+17,"shares filled per maker order, median",,514757,,180.380000
+18,"shares filled per maker order, 90th percentile",,514757,,2049.000000
+19,"shares filled per maker order, 99th percentile",,514757,,5245.000000
+20,"shares filled per taker order, median",,93495,,200.000000
+21,"shares filled per taker order, 90th percentile",,93495,,2258.137600
+22,"shares filled per taker order, 99th percentile",,93495,,9231.350600
+23,taker orders that also rested on the book and filled as maker,30,93495,0.03,
+24,taker fills in a market where one of RN1's resting orders had filled earlier,74577,93480,79.78,

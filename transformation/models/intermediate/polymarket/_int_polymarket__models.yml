@@ -197,6 +197,12 @@ models:
         data_type: boolean
         description: True when the event leaves the wallet with none of the token, whatever it held.
         data_tests: [not_null]
+      - name: event
+        data_type: text
+        description: >-
+          The event that names the wallet, as <contract>.<Event>, such as ctf.PayoutRedemption or
+          auto_redeemer.BinaryRedemption. It says who made the move.
+        data_tests: [not_null]
 
   - name: int_polymarket_wallet_ledger
     description: >-
