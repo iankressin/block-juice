@@ -102,7 +102,9 @@ function blockRecords(block: Block): RawRecord[] {
 export const source: StreamSource<HypercoreFillsEnv> = {
   name: "hypercore",
   table: "fills",
-  coverage: { defaultPortalUrl, filters: ["users", "coins"], unrestricted: ["users", "coins"] },
+  coverage: {
+    defaultPortalUrl, filters: ["users", "coins"], unrestricted: ["users", "coins"], caseSensitive: ["coins"],
+  },
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
