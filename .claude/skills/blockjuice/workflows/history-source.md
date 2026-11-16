@@ -40,6 +40,7 @@ When a source already reads the right events:
    | Known contracts, such as gateways | `arbitrum-token-bridge` |
    | Contracts a factory creates, such as pools | `evm-uniswap-v3` |
    | One contract that names its children by id, such as the v4 PoolManager | `evm-uniswap-v4` |
+   | HyperCore fills | Nothing: set `users`, `coins` or both in `ingestion/sources/hypercore-fills/addresses.json` |
 
    ```sh
    uv run --project orchestration bj new-source ethereum pancakeswap_v3 --like evm-uniswap-v3
