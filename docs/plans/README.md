@@ -2,7 +2,7 @@
 
 These documents capture the specialist implementation **plans** for the ranked backlog. They are not code.
 
-Baseline: `main` @ `d24b6c4` (after PR #1 and PR #2).
+Baseline: `main` @ `9efbc61`.
 
 | File | Owner |
 |------|--------|
@@ -12,8 +12,8 @@ Baseline: `main` @ `d24b6c4` (after PR #1 and PR #2).
 | [03-skills-and-reports.md](./03-skills-and-reports.md) | BJ Skills & Reports |
 | [04-ingestion.md](./04-ingestion.md) | BJ Ingestion |
 | [05-orchestration.md](./05-orchestration.md) | BJ Orchestration |
-| [2026-11-16-lighter-drain.md](./2026-11-16-lighter-drain.md) | Plan for Analysis #70. Owners are named per change inside the doc. |
+| [2026-11-16-lighter-drain.md](./2026-11-16-lighter-drain.md) | BJ Team Lead |
 
-**Do not implement A–H until Ian says go after this docs PR.** Prefer local Mac worktrees when cloud agent credits are blocked. Quality Gate reviews before merge-ready.
+**Do not implement A–H until Ian says go after the A–H plans** (00 through 05). Prefer local Mac worktrees when cloud agent credits are blocked. Quality Gate reviews before merge-ready.
 
 The Lighter drain plan is separate from A–H. Nothing in it is built until Ian says go.
