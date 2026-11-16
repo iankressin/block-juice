@@ -9,7 +9,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: [ethereum, solana, bitcoin]
+                values: [ethereum, solana, bitcoin, polygon]
       - name: wallet
         description: The address whose balance was read.
         data_tests: [not_null]

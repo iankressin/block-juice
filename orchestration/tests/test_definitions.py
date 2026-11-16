@@ -31,6 +31,7 @@ def test_mart_reads_each_chain_through_its_intermediate_model():
         dg.AssetKey("int_ethereum_balances"),
         dg.AssetKey("int_solana_balances"),
         dg.AssetKey("int_bitcoin_balances"),
+        dg.AssetKey("int_polygon_balances"),
     }
     assert graph.get(dg.AssetKey("int_ethereum_balances")).parent_keys == {
         dg.AssetKey("stg_ethereum__eth_balances"),
@@ -42,6 +43,9 @@ def test_mart_reads_each_chain_through_its_intermediate_model():
     }
     assert graph.get(dg.AssetKey("int_bitcoin_balances")).parent_keys == {
         dg.AssetKey("stg_bitcoin__btc_balances"),
+    }
+    assert graph.get(dg.AssetKey("int_polygon_balances")).parent_keys == {
+        dg.AssetKey("stg_polygon__erc20_balances"),
     }
 
 
@@ -60,7 +64,7 @@ def test_dex_trades_reads_each_protocol_version_through_its_own_model():
 
 def test_erc20_transfers_reads_each_chain_through_its_own_model():
     graph = defs.resolve_asset_graph()
-    chains = ["ethereum", "arbitrum", "base"]
+    chains = ["ethereum", "arbitrum", "base", "polygon"]
     assert graph.get(dg.AssetKey("erc20_transfers")).parent_keys == {
         dg.AssetKey(f"int_{chain}_erc20_transfers") for chain in chains
     }

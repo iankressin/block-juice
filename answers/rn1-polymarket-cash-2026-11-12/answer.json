@@ -1,0 +1,258 @@
+{
+  "question": "What cash did RN1 hold on Polymarket, and what was it paid or did it take out apart from its trades?",
+  "slug": "rn1-polymarket-cash-2026-11-12",
+  "answered_at": "2026-11-12T18:10:35Z",
+  "value": "935443.112500",
+  "definitions": {
+    "RN1": "The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea",
+    "cash": "pUSD 0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb and USDC.e 0x2791bca1f2de4661ed88a30c99a7a9449aa84174 on Polygon, in whole tokens (6 decimals each)",
+    "balance": "RN1's balanceOf reading one block before the window, plus every Transfer of the token into or out of the wallet since",
+    "trading": "A transfer in a transaction with an OrderFilled of RN1's order (trade), or with a merge or redemption that names RN1",
+    "payment": "A pUSD transfer to RN1 in a transaction with no fill, merge or redemption of RN1's",
+    "withdrawal": "pUSD that RN1 unwrapped into USDC.e and then sent to another address"
+  },
+  "alternatives": [
+    "Count only the four addresses that paid RN1 on most days as payments (80.51 pUSD less).",
+    "Count the pUSD RN1 held before the window as a deposit.",
+    "Follow the withdrawn USDC.e to see whether it came back to another wallet of the same operator."
+  ],
+  "window": {
+    "chain": "polygon",
+    "from": "2026-08-10T00:00:00Z",
+    "to": "2026-11-10T00:00:00Z",
+    "blocks": [
+      91743315,
+      97042228
+    ]
+  },
+  "eval": false,
+  "results": [
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12",
+      "path": "results/rn1_polymarket_cash_2026_11_12.csv",
+      "columns": [
+        "payments_usdc"
+      ],
+      "rows": 1,
+      "sql": "-- The pUSD paid to RN1 in the answer's window outside its trades: every pUSD transfer into the wallet in a\n-- transaction with no fill, merge or redemption of RN1's, in whole pUSD.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n)\n\nselect sum(usdc_delta) as payments_usdc\nfrom flows\nwhere symbol = 'pUSD'\n    and kind = 'transfer'\n    and usdc_delta > 0"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_balance",
+      "path": "results/rn1_polymarket_cash_2026_11_12_balance.csv",
+      "columns": [
+        "pusd_transfers",
+        "opening_pusd",
+        "closing_pusd",
+        "lowest_pusd",
+        "lowest_at",
+        "highest_pusd",
+        "highest_at",
+        "usdc_e_transfers",
+        "opening_usdc_e",
+        "closing_usdc_e",
+        "highest_usdc_e"
+      ],
+      "rows": 1,
+      "sql": "-- RN1's pUSD balance over the answer's window, in whole pUSD: what it held before its first transfer and\n-- after its last, the lowest and highest it reached and when, and its USDC.e balance at both ends.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n),\n\npusd as (\n    select * from flows where symbol = 'pUSD'\n),\n\nusdc_e as (\n    select * from flows where symbol = 'USDC.e'\n)\n\nselect\n    (select count(*) from pusd) as pusd_transfers,\n    (select balance - usdc_delta from pusd order by block_number, log_index limit 1) as opening_pusd,\n    (select balance from pusd order by block_number desc, log_index desc limit 1) as closing_pusd,\n    (select min(balance) from pusd) as lowest_pusd,\n    (select block_timestamp from pusd order by balance, block_number, log_index limit 1) as lowest_at,\n    (select max(balance) from pusd) as highest_pusd,\n    (select block_timestamp from pusd order by balance desc, block_number, log_index limit 1) as highest_at,\n    (select count(*) from usdc_e) as usdc_e_transfers,\n    (select balance - usdc_delta from usdc_e order by block_number, log_index limit 1) as opening_usdc_e,\n    (select balance from usdc_e order by block_number desc, log_index desc limit 1) as closing_usdc_e,\n    (select max(balance) from usdc_e) as highest_usdc_e"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_by_kind",
+      "path": "results/rn1_polymarket_cash_2026_11_12_by_kind.csv",
+      "columns": [
+        "symbol",
+        "kind",
+        "direction",
+        "transfers",
+        "transactions",
+        "counterparties",
+        "usdc",
+        "first_at",
+        "last_at"
+      ],
+      "rows": 8,
+      "sql": "-- RN1's cash transfers in the answer's window by token, kind and direction: how many, in how many\n-- transactions, and the tokens moved, positive when the wallet got them. Whole tokens.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n)\n\nselect\n    symbol,\n    kind,\n    case when usdc_delta >= 0 then 'in' else 'out' end as direction,\n    count(*) as transfers,\n    count(distinct tx_hash) as transactions,\n    count(distinct counterparty) as counterparties,\n    sum(usdc_delta) as usdc,\n    min(block_timestamp) as first_at,\n    max(block_timestamp) as last_at\nfrom flows\ngroup by symbol, kind, case when usdc_delta >= 0 then 'in' else 'out' end\norder by symbol, abs(sum(usdc_delta)) desc"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_by_hour",
+      "path": "results/rn1_polymarket_cash_2026_11_12_by_hour.csv",
+      "columns": [
+        "hour",
+        "transfers",
+        "balance_low",
+        "balance_high",
+        "balance_end",
+        "trade_usdc",
+        "redeem_usdc",
+        "merge_usdc",
+        "payment_usdc",
+        "unwrap_usdc"
+      ],
+      "rows": 2204,
+      "sql": "-- RN1's pUSD balance in each UTC hour of the answer's window that had a transfer: the lowest and highest\n-- balance after any transfer in the hour, the balance after the hour's last transfer, and the hour's pUSD\n-- by kind, positive when the wallet got it. Whole pUSD.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n        and symbol = 'pUSD'\n)\n\nselect\n    date_trunc('hour', block_timestamp, 'UTC') as hour,\n    count(*) as transfers,\n    min(balance) as balance_low,\n    max(balance) as balance_high,\n    (array_agg(balance order by block_number desc, log_index desc))[1] as balance_end,\n    coalesce(sum(usdc_delta) filter (where kind = 'trade'), 0) as trade_usdc,\n    coalesce(sum(usdc_delta) filter (where kind = 'redeem'), 0) as redeem_usdc,\n    coalesce(sum(usdc_delta) filter (where kind = 'merge'), 0) as merge_usdc,\n    coalesce(sum(usdc_delta) filter (where kind = 'transfer'), 0) as payment_usdc,\n    coalesce(sum(usdc_delta) filter (where kind = 'unwrap'), 0) as unwrap_usdc\nfrom flows\ngroup by date_trunc('hour', block_timestamp, 'UTC')\norder by hour"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_payers",
+      "path": "results/rn1_polymarket_cash_2026_11_12_payers.csv",
+      "columns": [
+        "payer",
+        "payments",
+        "days",
+        "usdc",
+        "smallest_usdc",
+        "median_usdc",
+        "largest_usdc",
+        "first_at",
+        "last_at",
+        "median_utc_hour"
+      ],
+      "rows": 15,
+      "sql": "-- Each address that paid RN1 pUSD outside its trades in the answer's window: how often, on how many UTC\n-- days, how much, and the size and hour of its payments. Whole pUSD.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n        and symbol = 'pUSD'\n        and kind = 'transfer'\n        and usdc_delta > 0\n)\n\nselect\n    counterparty as payer,\n    count(*) as payments,\n    count(distinct (block_timestamp at time zone 'UTC')::date) as days,\n    sum(usdc_delta) as usdc,\n    min(usdc_delta) as smallest_usdc,\n    percentile_cont(0.5) within group (order by usdc_delta) as median_usdc,\n    max(usdc_delta) as largest_usdc,\n    min(block_timestamp) as first_at,\n    max(block_timestamp) as last_at,\n    percentile_cont(0.5) within group (\n        order by extract(epoch from (block_timestamp at time zone 'UTC')::time) / 3600\n    ) as median_utc_hour\nfrom flows\ngroup by counterparty\norder by usdc desc"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_payments_by_day",
+      "path": "results/rn1_polymarket_cash_2026_11_12_payments_by_day.csv",
+      "columns": [
+        "day",
+        "payer",
+        "payments",
+        "usdc",
+        "first_at",
+        "fee_usdc_day_before",
+        "maker_usdc_day_before",
+        "taker_usdc_day_before"
+      ],
+      "rows": 297,
+      "sql": "-- The pUSD paid to RN1 outside its trades, per UTC day and payer, with what RN1 did the day before: the\n-- taker fees it paid and the pUSD it bought as maker and as taker, from its fills. A payer that pays a\n-- rebate shows a steady ratio to one of them. The day before the window's first day has no fills loaded,\n-- so its three columns are null. Whole pUSD.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n        and symbol = 'pUSD'\n        and kind = 'transfer'\n        and usdc_delta > 0\n),\n\nfills as (\n    select\n        (block_timestamp at time zone 'UTC')::date as day,\n        sum(fee_usdc) as fee_usdc,\n        sum(usdc) filter (where role = 'maker') as maker_usdc,\n        sum(usdc) filter (where role = 'taker') as taker_usdc\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n    group by (block_timestamp at time zone 'UTC')::date\n),\n\npayments as (\n    select\n        (block_timestamp at time zone 'UTC')::date as day,\n        counterparty as payer,\n        count(*) as payments,\n        sum(usdc_delta) as usdc,\n        min(block_timestamp) as first_at\n    from flows\n    group by (block_timestamp at time zone 'UTC')::date, counterparty\n)\n\nselect\n    p.day,\n    p.payer,\n    p.payments,\n    p.usdc,\n    p.first_at,\n    f.fee_usdc as fee_usdc_day_before,\n    f.maker_usdc as maker_usdc_day_before,\n    f.taker_usdc as taker_usdc_day_before\nfrom payments as p\nleft join fills as f on f.day = p.day - 1\norder by p.day, p.usdc desc"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_withdrawals",
+      "path": "results/rn1_polymarket_cash_2026_11_12_withdrawals.csv",
+      "columns": [
+        "tx_hash",
+        "block_timestamp",
+        "pusd_unwrapped",
+        "usdc_e_received",
+        "usdc_e_sent",
+        "sent_to",
+        "destinations",
+        "pusd_before",
+        "pusd_after"
+      ],
+      "rows": 7,
+      "sql": "-- Each transaction in the answer's window in which RN1 unwrapped pUSD: the pUSD it gave up, the USDC.e it\n-- got for it and sent on, where the USDC.e went, and its pUSD balance before and after. Whole tokens.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n),\n\nunwraps as (\n    select distinct tx_hash from flows where kind = 'unwrap'\n)\n\nselect\n    f.tx_hash,\n    min(f.block_timestamp) as block_timestamp,\n    -sum(f.usdc_delta) filter (where f.symbol = 'pUSD' and f.kind = 'unwrap') as pusd_unwrapped,\n    sum(f.usdc_delta) filter (where f.symbol = 'USDC.e' and f.kind = 'unwrap') as usdc_e_received,\n    -sum(f.usdc_delta) filter (where f.symbol = 'USDC.e' and f.kind = 'transfer' and f.usdc_delta < 0) as usdc_e_sent,\n    min(f.counterparty) filter (where f.symbol = 'USDC.e' and f.kind = 'transfer' and f.usdc_delta < 0) as sent_to,\n    count(distinct f.counterparty) filter (\n        where f.symbol = 'USDC.e' and f.kind = 'transfer' and f.usdc_delta < 0\n    ) as destinations,\n    max(f.balance - f.usdc_delta) filter (where f.symbol = 'pUSD' and f.kind = 'unwrap') as pusd_before,\n    min(f.balance) filter (where f.symbol = 'pUSD' and f.kind = 'unwrap') as pusd_after\nfrom flows as f\ninner join unwraps as u on u.tx_hash = f.tx_hash\ngroup by f.tx_hash\norder by block_timestamp"
+    },
+    {
+      "analysis": "rn1_polymarket_cash_2026_11_12_merges",
+      "path": "results/rn1_polymarket_cash_2026_11_12_merges.csv",
+      "columns": [
+        "tx_hash",
+        "block_timestamp",
+        "payouts",
+        "usdc",
+        "pusd_before",
+        "pusd_after"
+      ],
+      "rows": 45,
+      "sql": "-- Each transaction in the answer's window that paid RN1 for merges: how many payouts, the pUSD they paid,\n-- and RN1's pUSD balance just before the first and just after the last. Whole pUSD.\nwith flows as (\n    select *\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_cash_flows\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n        and symbol = 'pUSD'\n        and kind = 'merge'\n)\n\nselect\n    tx_hash,\n    min(block_timestamp) as block_timestamp,\n    count(*) as payouts,\n    sum(usdc_delta) as usdc,\n    (array_agg(balance - usdc_delta order by block_number, log_index))[1] as pusd_before,\n    (array_agg(balance order by block_number desc, log_index desc))[1] as pusd_after\nfrom flows\ngroup by tx_hash\norder by block_timestamp"
+    }
+  ],
+  "inputs": [
+    {
+      "source": "polygon.erc20_balances",
+      "raw_table": "raw.polygon_erc20_balances",
+      "last_run": {
+        "finished_at": "2026-11-12T17:30:06.068000Z",
+        "records_written": 2,
+        "dagster_run_id": "80420f8d-6555-47d8-b8ac-73301360557b"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "polygon.erc20_transfers",
+      "raw_table": "raw.polygon_erc20_transfers",
+      "last_run": {
+        "finished_at": "2026-11-12T17:41:45.456000Z",
+        "records_written": 981799,
+        "dagster_run_id": "9174ba16-9c91-4934-aced-a31ae00ed888"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "polygon.polymarket_ctf",
+      "raw_table": "raw.polygon_polymarket_ctf",
+      "last_run": {
+        "finished_at": "2026-11-12T03:46:52.098000Z",
+        "records_written": 7762541,
+        "dagster_run_id": "77bbc30d-63ac-4c17-9452-9ec7b5492a30"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "polygon.polymarket_ctf_exchange_v2",
+      "raw_table": "raw.polygon_polymarket_ctf_exchange_v2",
+      "last_run": {
+        "finished_at": "2026-11-12T03:46:13.276000Z",
+        "records_written": 843266,
+        "dagster_run_id": "77bbc30d-63ac-4c17-9452-9ec7b5492a30"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "polymarket.markets",
+      "raw_table": "raw.polymarket_markets",
+      "last_run": {
+        "finished_at": "2026-11-12T05:48:48.156000Z",
+        "records_written": 3635649,
+        "dagster_run_id": "77bbc30d-63ac-4c17-9452-9ec7b5492a30"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "dbt_tests",
+      "status": "passed",
+      "detail": "80 passed, 1 warned: polymarket_resolved_markets_are_zero_sum; 13 upstream passed since the marts were built"
+    },
+    {
+      "name": "dead_letters",
+      "status": "passed",
+      "detail": "polygon.erc20_balances 0 pending, 0 parked; polygon.erc20_transfers 0 pending, 0 parked; polygon.polymarket_ctf 0 pending, 0 parked; polygon.polymarket_ctf_exchange_v2 0 pending, 0 parked; polymarket.markets 0 pending, 0 parked"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "detail": "polygon.erc20_balances finished 2026-11-12T17:30:06.068000Z; polygon.erc20_transfers finished 2026-11-12T17:41:45.456000Z; polygon.polymarket_ctf finished 2026-11-12T03:46:52.098000Z; polygon.polymarket_ctf_exchange_v2 finished 2026-11-12T03:46:13.276000Z; polymarket.markets finished 2026-11-12T05:48:48.156000Z"
+    },
+    {
+      "name": "coverage",
+      "status": "passed",
+      "detail": "polygon.erc20_transfers (loaded 91743315-97042228) covers blocks 91743315-97042228 and the filter; polygon.polymarket_ctf_exchange_v2 (loaded 91743315-97042228) covers blocks 91743315-97042228 and the filter; polygon.polymarket_ctf (loaded 91743315-97042228) covers blocks 91743315-97042228 and the filter"
+    },
+    {
+      "name": "cross_check",
+      "status": "passed",
+      "detail": "Portal MCP (portal_evm_query_logs, polygon-mainnet) over blocks 96000000-96000600, pUSD and USDC.e Transfer logs with the wallet as topic2 or topic1: 2 in and 3 out. polymarket_wallet_cash_flows over the same blocks: 2 in and 3 out."
+    }
+  ],
+  "provenance": {
+    "git_sha": "31f9ba1600547857b12d559f4bf7f9863af52256",
+    "git_dirty": true,
+    "dbt_version": "1.12.6"
+  }
+}

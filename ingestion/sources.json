@@ -250,6 +250,27 @@
   },
   {
     "name": "polygon",
+    "table": "erc20_balances",
+    "package": "evm-erc20-balances",
+    "settings": "chains/polygon"
+  },
+  {
+    "name": "polygon",
+    "table": "erc20_transfers",
+    "package": "evm-erc20-transfers",
+    "settings": "chains/polygon",
+    "coverage": {
+      "filters": [
+        "tokens",
+        "wallets"
+      ],
+      "unrestricted": [
+        "wallets"
+      ]
+    }
+  },
+  {
+    "name": "polygon",
     "table": "polymarket_ctf",
     "package": "polygon-polymarket-ctf",
     "coverage": {

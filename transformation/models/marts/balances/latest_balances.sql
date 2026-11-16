@@ -14,6 +14,11 @@ with balances as (
 
     select chain, wallet, asset_type, asset, block_number, balance, _loaded_at
     from {{ ref('int_bitcoin_balances') }}
+
+    union all
+
+    select chain, wallet, asset_type, asset, block_number, balance, _loaded_at
+    from {{ ref('int_polygon_balances') }}
 )
 
 select distinct on (chain, wallet, asset)
