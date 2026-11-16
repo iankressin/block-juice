@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { RawRecord } from "@ingestion/lib";
+import { defineAbi, type JsonAbiItem } from "@subsquid/pipes/evm";
 import { mockPortal } from "@subsquid/pipes/testing";
 import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import type { Abi, Hex } from "viem";
@@ -37,13 +38,60 @@ const filled = (address: Hex, tokenId = 7n, orderMaker = maker) =>
     metadata,
   });
 
-async function records(t: TestContext, logs: ReturnType<typeof log>[], env: { START_BLOCK?: number; END_BLOCK?: number } = {}) {
-  const mock = await mockPortal({ blocks: logs.map((l, i) => mockBlock({ number: i + 1, transactions: [{ logs: [l] }] })) });
+type Env = { START_BLOCK?: number; END_BLOCK?: number };
+
+// Every record a run over these blocks writes, logs and transactions, by block.
+async function streamed(t: TestContext, blocks: ReturnType<typeof mockBlock>[], env: Env = {}) {
+  const mock = await mockPortal({ blocks });
   t.after(() => mock.close());
   const stream = await source.stream({ PORTAL_URL: mock.url, START_BLOCK: 1, ...env });
   const read: RawRecord[] = [];
   for await (const { data } of stream) read.push(...(Array.isArray(data) ? data : Object.values(data).flat()));
   return read.sort((a, b) => Number(a.data.block_number) - Number(b.data.block_number));
+}
+
+// The log records of a run with one log per block, each in a transaction of its own.
+async function records(t: TestContext, logs: ReturnType<typeof log>[], env: Env = {}) {
+  const blocks = logs.map((l, i) => callBlock(i + 1, exchange, "0x", [l]));
+  return (await streamed(t, blocks, env)).filter((r) => r.data.kind === "log");
+}
+
+const matchOrders = defineAbi(exchangeAbi as readonly JsonAbiItem[]).functions.matchOrders!;
+const signer = "0x00000000000000000000000000000000000000cc" as Hex;
+const conditionId = `0x${"44".repeat(32)}` as Hex;
+
+// One signed order as matchOrders takes it: a buy of token 7 at 0.5.
+const order = (orderMaker: Hex, salt: bigint) => ({
+  salt,
+  maker: orderMaker,
+  signer,
+  tokenId: 7n,
+  makerAmount: 5_000_000n,
+  takerAmount: 10_000_000n,
+  side: 0,
+  signatureType: 1,
+  timestamp: 1_786_383_561_160n,
+  metadata,
+  builder,
+  signature: `0x${"ab".repeat(65)}`,
+});
+
+const match = {
+  conditionId,
+  takerOrder: order(stranger, 1n),
+  makerOrders: [order(maker, 2n), order(maker, 3n)],
+  takerFillAmount: 4_000_000n,
+  makerFillAmounts: [2_500_000n, 1_500_000n],
+  takerFeeAmount: 40_000n,
+  makerFeeAmounts: [0n, 0n],
+};
+
+// A block whose one transaction calls `to` with `input` and emits `logs`. mockBlock leaves out a
+// transaction's input, so it is set here.
+function callBlock(number: number, to: Hex, input: string, logs: ReturnType<typeof log>[]) {
+  const block = mockBlock({ number, transactions: [{ from: stranger, to, logs }] });
+  Object.assign(block.transactions[0]!, { input });
+  return block;
 }
 
 async function useAddresses(t: TestContext, listed: object) {
@@ -109,6 +157,50 @@ test("with wallets listed, only the fills whose maker is listed load", async (t)
     read.map((r) => [r.data.block_number, (r.data.args as { maker: string }).maker]),
     [[2, maker]],
   );
+});
+
+test("a fill's transaction becomes a record of its own, with its matchOrders call decoded", async (t) => {
+  const read = await streamed(t, [callBlock(1, exchange, matchOrders.encode(match), [filled(exchange)])]);
+  const [fill] = read.filter((r) => r.data.kind === "log");
+  const transactions = read.filter((r) => r.data.kind === "transaction");
+  assert.equal(transactions.length, 1);
+  const { id, callId, data } = transactions[0]!;
+  assert.equal(id, `tx:${fill!.data.tx_hash}`, "a transaction's id is its hash");
+  assert.equal(callId, id);
+  assert.deepEqual(data, {
+    kind: "transaction",
+    block_number: 1,
+    timestamp: fill!.data.timestamp,
+    hash: fill!.data.tx_hash,
+    from: stranger,
+    to: exchange,
+    function: "matchOrders",
+    args: match,
+  });
+  assert.equal("from" in fill!.data, false, "a log never carries its transaction's fields");
+});
+
+test("a transaction that is not a matchOrders call keeps its input as sent", async (t) => {
+  const read = await streamed(t, [callBlock(1, stranger, "0xdeadbeef", [filled(exchange)])]);
+  const { data } = read.find((r) => r.data.kind === "transaction")!;
+  assert.equal(data.function, null);
+  assert.equal(data.input, "0xdeadbeef");
+  assert.equal("args" in data, false);
+});
+
+test("with wallets listed, only the transactions of the fills written load", async (t) => {
+  await useAddresses(t, { ...addresses, wallets: [maker] });
+  const input = matchOrders.encode(match);
+  const read = await streamed(t, [
+    callBlock(1, exchange, input, [filled(exchange, 1n, stranger)]),
+    callBlock(2, exchange, input, [filled(exchange, 2n)]),
+  ]);
+  const fills = read.filter((r) => r.data.kind === "log");
+  assert.deepEqual(
+    read.filter((r) => r.data.kind === "transaction").map((r) => r.id),
+    fills.map((r) => `tx:${r.data.tx_hash}`),
+  );
+  assert.deepEqual(fills.map((r) => r.data.block_number), [2]);
 });
 
 test("an empty exchanges list fails the run", async (t) => {

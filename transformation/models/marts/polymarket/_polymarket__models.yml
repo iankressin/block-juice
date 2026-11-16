@@ -258,6 +258,53 @@ models:
         description: The market's history_complete; when false, PnL misses what happened before the window.
         data_tests: [not_null]
 
+  - name: polymarket_wallet_orders
+    description: >-
+      One row per order that loaded fills name and whose signed order a loaded transaction holds: what its
+      owner posted, when it was signed, and how much of it the loaded fills took. An order not filled in
+      full was cancelled off chain, at a time the chain does not record, or is still open. Orders that never
+      filled are not on chain.
+    columns:
+      - name: order_hash
+        description: The order's hash, as its fills name it.
+        data_tests: [unique, not_null]
+      - name: wallet
+        description: The order's owner, the wallet whose assets move.
+        data_tests: [not_null]
+      - name: signer
+        description: The key that signed the order; for a proxy or Safe wallet, the wallet's owner.
+        data_tests: [not_null]
+      - name: side
+        description: buy or sell, for the wallet.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [buy, sell]
+      - name: posted_shares
+        description: The shares the order offered to buy or sell.
+        data_tests: [not_null]
+      - name: posted_usdc
+        description: The pUSD the order offered to pay or asked to get.
+        data_tests: [not_null]
+      - name: limit_price
+        description: posted_usdc / posted_shares, in pUSD per share.
+      - name: signed_at
+        description: The order's own timestamp, set by the client that signed it, to the millisecond.
+        data_tests: [not_null]
+      - name: fills
+        description: The order's loaded fills.
+        data_tests: [not_null]
+      - name: taker_fills
+        description: Of those, the fills in which the order was the taker order.
+      - name: filled_shares
+        description: Shares the loaded fills took, before fees.
+      - name: filled_usdc
+        description: pUSD the loaded fills took, before fees.
+      - name: filled_in_full
+        description: True when the loaded fills took all of the order's posted maker asset.
+        data_tests: [not_null]
+
 unit_tests:
   - name: trades_keep_maker_fills_only
     description: >-

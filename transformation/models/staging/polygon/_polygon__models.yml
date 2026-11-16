@@ -56,3 +56,20 @@ models:
               arguments:
                 values: [0, 1]
                 quote: false
+
+  - name: stg_polygon__polymarket_ctf_exchange_v2_txs
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: block_timestamp
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [unique, not_null]
+      - name: function_name
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - matchOrders

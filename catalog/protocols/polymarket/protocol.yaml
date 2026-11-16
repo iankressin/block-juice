@@ -969,7 +969,9 @@ abi_sources:
   abis/ctf-exchange-v2.json: >-
     OrderFilled, OrdersMatched and FeeCharged from exchangeV2Abi in Polymarket/clob-client-v2
     src/order-utils/abi/ExchangeV2.ts at 27633b3c7d. They match ITrading.sol and Events.sol in
-    ctf-exchange-v2.
+    ctf-exchange-v2. The matchOrders function, whose input holds the signed orders (NOTES.md, Q12), from
+    the Etherscan-verified CTFExchange (v0.8.34) at all three v2 exchange addresses; it has the same 31
+    parameter names and types as exchangeV2Abi.
   abis/collateral-adapter.json: >-
     The four position events of the Sourcify-verified NegRiskCtfCollateralAdapter at
     0xadA2005600Dec949baf300f4C6120000bDB6eAab. The verified CtfCollateralAdapter at
