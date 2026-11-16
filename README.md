@@ -481,7 +481,7 @@ One CoW Protocol ETH Flow order placed by a wallet you follow on Ethereum, with 
 | `eth_value_wei` | numeric | The ETH sent, in wei. |
 | `buy_token` | text | The token the order buys. |
 | `settled` | boolean | True when a later GPv2Settlement Trade carries its UID. |
-| `received_amount` | numeric | The buy token sent to the receiver, in base units. Null when not settled. |
+| `received_amount` | numeric | The buy token sent to the receiver, in base units. Null when not settled; 0 when nothing came or the receiver is not a wallet you follow. |
 
 ## How you use it
 
