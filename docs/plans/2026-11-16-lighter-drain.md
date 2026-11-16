@@ -16,7 +16,7 @@
 
 An analyst can reproduce a fixed trail: one USDC withdrawal, six CoW fills, the ETH splits, an inferred hop from Ethereum to Arbitrum, and twelve USDC deposits into the Hyperliquid bridge. Reported figures sit beside the observed ones. Rows that were not followed stay open at the cutoff.
 
-Three shared components are defined once, so later cards can use them without a second copy. Possible future consumers, not part of this work: the pending EF-history wallet ETH sales, and the pending named-whale ETH buys.
+Three shared components from the approved card are defined once, so later cards can use them without a second copy. A fourth, `evm-internal-eth-transfers`, is planned and not built, and needs Ian's scope approval before any work on it starts. Possible future consumers, not part of this work: the pending EF-history wallet ETH sales, and the pending named-whale ETH buys.
 
 ## Non-goals
 
@@ -49,11 +49,11 @@ Checked on `main` @ `9efbc61`. These findings are the reason the file list below
 
 **Candles.** `coinbase-candles` loads ETH against USD at `CANDLE_INTERVAL=1h` (`tokens.json` quote `USD`, tokens include `ETH`). `binance-candles` loads ETH against USDT at `1h`, not ETH against USD. Both already feed `analytics.token_prices`.
 
-**Finality.** `portalClient` sets `finalized: true`, and `finalizedHead` reads Portal's finalized head (`ingestion/lib/src/portal.ts`). Every stream ends at `min(END_BLOCK, finalized head)`. The repo does not say how that head is defined on an L2.
+**Finality.** `portalClient` sets `finalized: true` (`ingestion/lib/src/portal.ts` L16-19), and `finalizedHead` reads Portal's finalized head (L27-32). Every stream ends at `min(END_BLOCK, finalized head)`. The repo does not say how that head is defined on an L2. BJ Ingestion's read-only check is recorded below: observed to match Arbitrum's finalized tag; not guaranteed by Portal docs.
 
 **Cursor.** A new filter does not re-read blocks the cursor has passed. `docs/source-provenance.md` describes `SOURCE_BACKFILL_ID` for a new generation that keeps old rows. `README.md` says a changed wallet list keeps rows already loaded.
 
-No new source is required for top-level native transfers. CoW capture and the pool read are changes to sources that exist. Internal ETH paid by a settlement is a new source, decided below. A separate Trade-only source stays the alternative under Open questions, and only if the EthFlow-owner request is too wide.
+No new source is required for top-level native transfers. CoW capture and the pool read are changes to sources that exist. Internal ETH paid by a settlement is the fourth source below: planned, not built, and waiting on Ian's scope approval. The EthFlow-owner `Trade` request stays inside `evm-cow-ethflow`. A separate Trade-only source is not the plan.
 
 ## Shared components
 
@@ -67,7 +67,9 @@ Both paths live in `evm-cow-ethflow`. One shared fix covers a stablecoin-to-ETH 
 
 **(a) Direct orders.** Keep a GPv2 `Trade` when its indexed `owner` (`topic1`) is a listed wallet, whatever tokens move in the transaction. Add a Portal log request: settlement address, `topic0` = `Trade`, `topic1` = the listed wallets, with `transactionLogs: true` so the settlement's other logs come along. All six Lighter fills are path (a). None is an EthFlow order. Five paid native ETH, so the current into-wallet ERC-20 filter misses those five. The sixth, `0x2470732faf5b293e62f77cd7c4167733c9f6a097c1f4ec8e8b495bd12373fffd`, paid `1,109.432164870954654976` WETH and was unwrapped in `0x50e8df7d4e15be03534f4f54c6986e1e82209fb0367c1bf9b96206d3cc9a1ed4`. The "no ERC-20 into the wallet" check applies to the five native fills only. Tests assert the raw `Trade.buyAmount`, or allow at most ±0.000001. The six raw buy amounts sum to `5,764.470028229757` ETH.
 
-**(b) EthFlow orders.** On an EthFlow sale the `Trade` owner is the EthFlow contract `0xba3cb449bd2b4adddbc894d8697f5170800eadec`, not the user. An owner filter on `0x5CBC…2059` would miss its sales. Keep the existing `OrderPlacement` request, which already filters `sender` (`topic1`) to a listed wallet. Add a Portal log request for `Trade` with `topic1` equal to the EthFlow addresses in `addresses.json`. Transform joins `OrderPlacement` to `Trade` on the order UID, using the UID `int_ethereum_cow_ethflow_orders` already builds. A `Trade` owned by EthFlow with no matching placement is not a fill of a listed wallet.
+**(b) EthFlow orders.** On an EthFlow sale the `Trade` owner is the EthFlow contract `0xba3cb449bd2b4adddbc894d8697f5170800eadec`, not the user. An owner filter on `0x5CBC…2059` would miss its sales. Keep the existing `OrderPlacement` request, which already filters `sender` (`topic1`) to a listed wallet. Add a Portal log request for `Trade` with `topic1` equal to the EthFlow addresses in `addresses.json`. Transform joins `OrderPlacement` to `Trade` on the order UID, using the UID `int_ethereum_cow_ethflow_orders` already builds. A `Trade` owned by EthFlow with no matching placement is not a fill of a listed wallet. Transform drops those.
+
+BJ Ingestion counted this request read-only. Settlement `0x9008D19f58AAbD9eD0D60971565AA8510560ab41`, `topic0` `Trade`, `topic1` `0xba3cb449bd2b4adddbc894d8697f5170800eadec` padded to 32 bytes. `orderUid` is not indexed. Blocks 26423855–26428942 hold 268 matching logs, and the proof `Trade` at block 26380873 matched. There is no full-history count from `START_BLOCK` 21160715 yet: those requests hit HTTP 529. The request stays inside `evm-cow-ethflow`.
 
 Stop selecting `Trade` logs by "this transaction also transferred an ERC-20 into a listed wallet". Keep that transfer request: `int_ethereum_cow_wallet_transfers` and the existing payment leg use it. Also keep a `Transfer` that shares a transaction with a kept `Trade`, even when `to` is not a listed wallet, so a payment to another receiver is visible. Today `keptEvent` drops those logs.
 
@@ -75,7 +77,7 @@ Stop selecting `Trade` logs by "this transaction also transferred an ERC-20 into
 
 No fill is dropped for size. There is no 0.05 ETH minimum in this repo, and this work does not add one. The coverage check reports any excluded fill and the reason. The four whale fills that were dropped elsewhere for a 0.05 ETH minimum are in scope of the shared decoder when that card joins.
 
-**Alternative, not the recommendation.** A separate Trade-only source keyed on owner. Use it only if Open question 3 says the EthFlow-owner request is too wide.
+**Not the plan.** A separate Trade-only source is not used. The EthFlow-owner request stays in `evm-cow-ethflow`, and Transform drops an EthFlow `Trade` that has no `OrderPlacement`.
 
 ### 2. Native ETH transfers
 
@@ -85,17 +87,19 @@ Owner: BJ Ingestion for the wallet list and the backfill id. BJ Transform for th
 
 Native-ETH CoW fills are not in that source. Five of the six Lighter fills pay the payer by an internal call from GPv2Settlement, with zero fee. The WETH fill is not one of those five. In the whale trace, all 218 Voorhees fills and all 99 7 Siblings fills are the same native-ETH internal transfer. A native fill has no ERC-20 `Transfer` to reconcile, so its `Trade.buyAmount` is unverified until a trace matches it.
 
-**Decision.** BJ Ingestion builds a traces-based internal ETH transfer source, rated Medium, as the check on `Trade.buyAmount`. Portal already serves Ethereum traces. `evm-cow-ethflow` already calls `addTraceRequest`, but only for `createOrder` (`callFrom` the listed wallets, `callTo` EthFlow, `callSighash` `0x322bba21`). That request does not load settlement payouts. The new source stays on Portal, the same origin, and does not use RPC or archive reads. Archive balance reads of the receiver at the settlement block are rejected.
+**Decision.** BJ Ingestion plans a traces-based internal ETH transfer source, rated Medium, as the check on `Trade.buyAmount`. `evm-internal-eth-transfers` is planned and not built. The approved card covered three shared components. This fourth source needs Ian's scope approval before any work on it starts. Portal already serves Ethereum traces. `evm-cow-ethflow` already calls `addTraceRequest`, but only for `createOrder` (`callFrom` the listed wallets, `callTo` EthFlow, `callSighash` `0x322bba21`). That request does not load settlement payouts. The new source stays on Portal, the same origin, and does not use RPC or archive reads. Archive balance reads of the receiver at the settlement block are rejected.
 
 Scope is Ethereum first. Scaffold with `uv run --project orchestration bj new-source ethereum internal_eth_transfers --like evm-cow-ethflow`, which names the package `evm-internal-eth-transfers` and the raw table `ethereum_internal_eth_transfers`. The trace request is calls with `callFrom` GPv2Settlement and `callTo` the listed wallets, the same wallet set as `evm-cow-ethflow`. dbt keeps a successful call whose value is non-zero. A native fill is reconciled only when that call's value equals the raw `Trade.buyAmount` (or differs by at most ±0.000001) and `feeAmount` is 0. Until the source is built, the coverage check labels the five native Lighter fills `checked against buyAmount only` and does not count them as reconciled.
 
-Whether Portal serves Arbitrum traces is Open question 6. Do not add `chains/arbitrum/` on this source before that is answered.
+Portal serves Arbitrum traces. The docs list them, and a live finalized-stream check returned call traces with `value`, in a shape `evm-cow-ethflow` already maps. Arbitrum stays a later addition: this trail's Arbitrum hops are ERC-20. Do not add `chains/arbitrum/` on this source in this work. On its first run the source gets no `SOURCE_BACKFILL_ID`. Its default cursor is `ethereum_internal_eth_transfers`.
 
 ### 3. One pool's hourly prices, with a candle cross-check
 
 Owner: BJ Ingestion for the pool read. BJ Transform for the hourly model and the cross-check.
 
-Add an optional `pools` list to `evm-uniswap-v3`. When it is set, request `Swap` logs for those pool addresses directly, from the chain's existing `START_BLOCK`, beside the factory path. Leave the factory cache and the PEPE/UNI generation alone. The list for this work is one pool: `0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640` (WETH/USDC 0.05% on Ethereum).
+Add an optional `pools` list to `evm-uniswap-v3`. When it is set, request `Swap` logs for those pool addresses directly, from the chain's existing `START_BLOCK`, beside the factory path. The list for this work is one pool: `0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640` (WETH/USDC 0.05% on Ethereum).
+
+Adding `pools` does not change the factory-cache hash. `factoryCachePath` is called with `{ tokens }` only (`ingestion/sources/evm-uniswap-v3/src/source.ts` L109-113). The existing cursor does not move either, so pool history behind it is not re-read. To load that history, add `pools` to `coverage.filters` (`ingestion/lib/src/warehouse/provenance.ts` L39-50 and L80-94). That records a new fingerprint and a new cursor, and `{ tokens }` stays the argument to `factoryCachePath`. Do not set `SOURCE_BACKFILL_ID` on v3, so the run reuses `factory.sqlite`. Leave the PEPE/UNI generation alone.
 
 dbt builds one row per pool per UTC hour from those swaps: open, high, low, close, in USDC per WETH. The cross-check places that close beside `token_prices` for the same hour: Coinbase ETH-USD, and Binance ETH-USDT. The test fails when a candle is missing. It prints the gap. A numeric tolerance stays unset until Ian sets one. The Binance quote is USDT.
 
@@ -207,14 +211,14 @@ Files:
 - `ingestion/sources/evm-cow-ethflow/src/source.ts` and `src/source.test.ts`. Paths (a) and (b). Keep `OrderPlacement` and the into-wallet `Transfer` request. Keep transfers that share a tx with a kept `Trade`.
 - `ingestion/sources/evm-cow-ethflow/chains/ethereum/addresses.json`. Add the withdrawing wallet. Leave the EF wallet.
 - `catalog/protocols/cow-protocol/protocol.yaml` and `NOTES.md`. Record path (a), and that path (b)'s `Trade` owner is the EthFlow contract. One proof row from the six settlements, plus the existing EF proof row.
-- `ingestion/sources/evm-internal-eth-transfers/` (new, Medium, Ethereum only). `uv run --project orchestration bj new-source ethereum internal_eth_transfers --like evm-cow-ethflow`, then a trace request for calls from GPv2Settlement to the listed wallets. `src/source.test.ts` uses the regression set in Tests: the five native-ETH Lighter fills, and the optional whale §10 set. Wallet list matches `evm-cow-ethflow`.
+- `ingestion/sources/evm-internal-eth-transfers/` (new, Medium, Ethereum only). Planned, not built. Needs Ian's scope approval before any work starts. After that approval: `uv run --project orchestration bj new-source ethereum internal_eth_transfers --like evm-cow-ethflow`, then a trace request for calls from GPv2Settlement to the listed wallets. `src/source.test.ts` uses the regression set in Tests: the five native-ETH Lighter fills, and the optional whale §10 set. Wallet list matches `evm-cow-ethflow`. No `SOURCE_BACKFILL_ID` on the first run. Default cursor `ethereum_internal_eth_transfers`.
 - `ingestion/sources/evm-wallet-transactions/chains/ethereum/addresses.json`. Add every seed row with `load = true` on Ethereum wallet txs.
 - `ingestion/sources/evm-erc20-transfers/chains/ethereum/addresses.json`. Same wallets. Add WETH.
 - `ingestion/sources/evm-erc20-transfers/chains/arbitrum/addresses.json`. Add the twelve `split_traced` wallets and native USDC `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`. Do not substitute USDC.e.
-- `ingestion/sources/evm-uniswap-v3/src/source.ts`, `src/source.test.ts`, and `chains/ethereum/addresses.json`. Optional `pools` list and a direct `Swap` request. Do not put WETH or USDC on the token list for this purpose.
+- `ingestion/sources/evm-uniswap-v3/src/source.ts`, `src/source.test.ts`, and `chains/ethereum/addresses.json`. Optional `pools` list, a direct `Swap` request, and `pools` added to `coverage.filters`. Do not put WETH or USDC on the token list. Do not set `SOURCE_BACKFILL_ID`.
 - `ingestion/sources.json`, only if `pnpm generate-sources` changes coverage. A new wallet on an existing chain does not add a row.
 
-Each changed source gets its own `SOURCE_BACKFILL_ID` when Ian approves the load (`docs/source-provenance.md`). Do not commit `END_BLOCK` into the shared examples. Do not start the load in this work.
+Proposed `SOURCE_BACKFILL_ID` values, one run per source, proposals only. No backfill runs without Ian. `lighter-drain-2026-11-16-cow-ethflow`, `lighter-drain-2026-11-16-wallet-transactions`, `lighter-drain-2026-11-16-erc20-ethereum`, `lighter-drain-2026-11-16-erc20-arbitrum`. `evm-uniswap-v3` gets none, so it reuses `factory.sqlite`. `evm-internal-eth-transfers` gets none on its first run. Do not commit `END_BLOCK` into the shared examples. Do not start the load in this work.
 
 ### Phase 2. BJ Transform
 
@@ -233,7 +237,7 @@ Files:
 - `transformation/analyses/lighter_drain.sql`. One result an analyst can rerun.
 - `answers/lighter-drain/answer.md`. Written after a load exists. This plan does not write the answer.
 
-An ERC-20 fill compares `buyAmount` with the transfers of the buy token in the same settlement tx. A payment to a different receiver is a flagged column, not a silent 0. The five native-ETH Lighter fills have no ERC-20 `Transfer` into the withdrawing wallet. Their buy token is the native sentinel (the editorial trace writes it `0xeee…`; the full address is not in the repo, so the fixture copies it from the pinned log). The sixth fill, `0x2470732faf5b293e62f77cd7c4167733c9f6a097c1f4ec8e8b495bd12373fffd`, paid `1,109.432164870954654976` WETH and was unwrapped in `0x50e8df7d4e15be03534f4f54c6986e1e82209fb0367c1bf9b96206d3cc9a1ed4`. That fill is the ERC-20 WETH check, not the internal-ETH check. Until `stg_ethereum__internal_eth_transfers` is loaded, each of the five native fills is labeled `checked against buyAmount only` and is not reconciled. After it is loaded, Transform reconciles a native fill only when a successful call from GPv2Settlement to the payer in that tx has value equal to the raw `buyAmount` (or within ±0.000001) and `feeAmount` is 0.
+An ERC-20 fill compares `buyAmount` with the transfers of the buy token in the same settlement tx. A payment to a different receiver is a flagged column, not a silent 0. The five native-ETH Lighter fills have no ERC-20 `Transfer` into the withdrawing wallet. Their buy token is the native sentinel `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`. `buyAmount` is the executed amount and includes surplus. `feeAmount` is 0 on all six fills, and the receiver is not in the event, so the label stays `checked against buyAmount only`. The sixth fill, `0x2470732faf5b293e62f77cd7c4167733c9f6a097c1f4ec8e8b495bd12373fffd`, paid `1,109.432164870954654976` WETH and was unwrapped in `0x50e8df7d4e15be03534f4f54c6986e1e82209fb0367c1bf9b96206d3cc9a1ed4`. That fill is the ERC-20 WETH check, not the internal-ETH check. Until `stg_ethereum__internal_eth_transfers` is loaded, each of the five native fills is labeled `checked against buyAmount only` and is not reconciled. After it is loaded, Transform reconciles a native fill only when a successful call from GPv2Settlement to the payer in that tx has value equal to the raw `buyAmount` (or within ±0.000001) and `feeAmount` is 0.
 
 The six raw `buyAmount`s sum to `5,764.470028229757` ETH, the `eth_bought` figure. That sum is the reported-figure mismatch. It is not a reconciled payout.
 
@@ -243,11 +247,11 @@ The six raw `buyAmount`s sum to `5,764.470028229757` ETH, the `eth_bought` figur
 
 ## Gates
 
-- **Finality.** Streams already request Portal's finalized head. Ethereum rows in the marts have `block_number <= 26428942`. Arbitrum rows have `block_number <= 524806268`. Open question 1 is a gate on the Arbitrum load: until Ingestion records what the finalized head means on `arbitrum-one`, the Arbitrum hops are loaded and labelled with that open question, and the reconciliation does not call them finalized beyond what the trace already checked.
+- **Finality.** Streams already request Portal's finalized head (`ingestion/lib/src/portal.ts` L16-19 and L27-32). Ethereum rows in the marts have `block_number <= 26428942`. Arbitrum rows have `block_number <= 524806268`. On `arbitrum-one` the finalized head was observed to match Arbitrum's finalized tag; that match is not guaranteed by Portal docs. At 2026-11-16 17:43:12 UTC, Portal `/finalized-head` returned 524811782, the same number and hash as `eth_getBlockByNumber("finalized")` on two RPC endpoints, about 3,829 blocks (~18 min) behind `/head`. The cutoff 524806268 is behind that head. This is a documented caveat, not a blocker and not a gate.
 - **Cutoff.** Marts drop rows after 2026-11-16 17:00:00 UTC. The seed is not extended after that time.
 - **Decoding coverage.** For the withdrawing wallet, decoded fills equal the six pinned settlements. The check lists any pinned tx that is missing, and any extra fill, with a reason. It has no size threshold. A threshold added later has to appear in that list or the check fails. Each of the five native-ETH fills is labeled `checked against buyAmount only` until the internal-call value matches the raw `buyAmount`. The check never counts that label as reconciled. The noted ledger gap is not an input to this gate.
 - **Reconciliation.** The mart's statuses equal the table above. The ~5.4k gap is a `mismatch` row. Gross outflow is 2,680.0002 ETH. The returned 320 ETH counts in that gross only, never in the net and never as untraced. Net outflow is 2,360.0002 ETH, equal to 1,920 ETH traced plus 440.0002 ETH untraced. The 440.0002 ETH, the 3,404.545986694514354229 ETH leftover at block 26428942, and the 240.04 ETH are `open_at_cutoff`. The reported-total gap is `untraced`. The twelve bridge deposits are `match`, and the cross-chain link is `inferred`. No test forces net out plus leftover to equal ETH bought.
-- **Backfill.** No `SOURCE_BACKFILL_ID` is started until Ian says go.
+- **Backfill.** The four ids above are proposals only. No `SOURCE_BACKFILL_ID` is started until Ian says go. v3 and the first run of `evm-internal-eth-transfers` get none.
 
 ## Tests
 
@@ -266,7 +270,22 @@ Hop fixtures, hashes from the editorial trace only:
 
 - **Sixteen split txs** from the withdrawing wallet: `0xdedaf598b2f9a1c91377222acc50b3b62191eb02c8d1b16f6fd36003291345e0`, `0xa7226316cc6a6c12bebc0d09b0fd01ee42bdb0c72d223bbf1132d8417d8cd3ba`, `0x46f65b0784dd909f42a026a5848b2fb047471624753acc370ca635af766e7d9e`, `0xc52c7f47a0b8dcd2e818618f7d208ec3dcc53c34231cecbfb185f12099abaeed`, `0xaca58d110852249da9948fd83fbe418a8acfe126517b412d5d07621a6f7e9d3a`, `0x86e22d2e9b11405010875104d346e55f1d9c86518f940fccab7bb27399d827f2`, `0x8638e4d2773c36e3a2e5d2d8390f7c878259469ad7b86659d6d8fd928c6afea7`, `0x3a14e58298e9af2b95e6afcdc6712ea32998357db4d6f1f7de654834927b61bf`, `0x6d789a0edfd7a1733906bb8fe211213b0eb04757c10c6b794729785ddae6b41b`, `0x966255baae6e655ad0b73b5ec2d2e1def643f78b82e908fc29691aaf0645e0a2`, `0x3a1608cc390a7ca221904b881a4a472b2386836a3c1408e95e830c11d01aec27`, `0xac70c7a21ce011070b76f0b4241e549151a832d0ba030d8382c0c7b039c320ab`, `0xd2148be2c11164a298194983c8da7c76c8607222a2544161b7aefb7a26edf93f`, `0x42cd8c65fc4c736d0e43f7bab17a2a8869c1a29b6f4b58bc5d6183415f8b6810`, `0x84004385b50f6a21c9ca83d05b1336995767940372227e25e66b4daf1beb5800` (160 ETH to `0x4a9c…`, which forwarded 159.90020288 ETH), `0x31446169c31cd03e74375dba028c2af1964613dab9ed82282ac81f6d9612a27a` (160.00020293 ETH direct to `0x46f3…94b`).
 - **120 ETH send** `0x30b5124636cc941caa574b3cd74feed39364d59e5486159be8266b2196081d26`.
-- **Sends to `0x1231…4EaE`.** The trace file records one example, `0xbdf8f520588dc0971b6fb0d018661d2a45fdf322935ba4e54ed9aa11f4abd9aa` (160 ETH, 10:21:35 UTC, selector `0xee9e98e0`). The other eleven hashes are not in the trace file, so they are not listed here.
+- **Twelve sends to `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`.** Copied from the Analyst's trace JSON (`eth_bridge_hops`). Quality Gate re-checked the hashes on chain. Each is 160 ETH as recorded in the trace (total 1,920), status 1, selector `0xee9e98e0`. The fixture asserts the exact on-chain `value` in wei, read at test time, not a rounded 160.
+
+| Tx | Block | From |
+|---|---|---|
+| `0xbdf8f520588dc0971b6fb0d018661d2a45fdf322935ba4e54ed9aa11f4abd9aa` | 26426959 | `0x63d09d9bd23c3ed507771db8bdd65bf557fe968c` |
+| `0x0bdf800b6dd2f60e3ea73c417879c8ecdfa814cd659e87abcd3578327e91f58a` | 26426964 | `0x5c239e7607975be5cf44ec71d2cf1c66d878f746` |
+| `0xf64d2feb95c14acdf258fc217cd415ab86d0247c22cecf6583c48dfb20b339fb` | 26427053 | `0x8b3a5786d4503faeffa78e30c31a57bfda93b121` |
+| `0xbecc9f15ae0e6b54d8d75b9fb5cfe12771d7a2248446db37981be0d2697b413f` | 26427058 | `0xd8427872a4e9ddf00ee07f02c644447aa6b99926` |
+| `0x64a7c0e46fda92b61cd4311ab7077008cdfd614646bb79d8db14c01591b18843` | 26427144 | `0xd1fd67c883466947e1f7dbf06f284cb2785b8c77` |
+| `0x0be58ac7db1d0a4e48e8a6a772b0cff806ec5627688495484f4ea01daee045ca` | 26427147 | `0x26f3cc7d0c4fa5566f33cdbf8569b96f11cfc74e` |
+| `0xa0fdaaed57b5ae0b3df63649518c42c1a62d7bbe7e050fda817fcb3791831113` | 26427241 | `0xb57c2a0a4b20d7ec73395dc23fe182e9e6830ab1` |
+| `0xbf4a6ea33628e8b30e1c42603a15ac33756522a7b48b3573242b401e85f0b185` | 26427246 | `0xed762776faa72631083f02b0dc91593426634c14` |
+| `0x826ce2b220b4392e3f63a9551cc2d8b125087be44c431053917313bcccc3d5a6` | 26427337 | `0x5f75b9a476d0012ffbb0af69bf43ddd03beb8bcd` |
+| `0xe90a340c2cd198268228a1a1f755644d30797d81ec782595a4872dee2326a21c` | 26427341 | `0x2e10f4d519e3414fdf7a9baabdc396219276ddb4` |
+| `0x5f6bfed06737031020cd828496f6294da933e422f113e600fe08a47d3c1f8bdb` | 26427436 | `0xb90f1af1fbe8c87e867be6966348309bf9fad8cd` |
+| `0xc4183e8885ed4cbf031590efbb524332d70a0ca9f17a3a3ac19b9adaaa67fb63` | 26427437 | `0x64f909336976236d88cd2684c1ea3d59b57bb6db` |
 - **WETH unwrap** `0x50e8df7d4e15be03534f4f54c6986e1e82209fb0367c1bf9b96206d3cc9a1ed4`, the `1,109.432164870954654976` WETH from fill `0x2470732faf5b293e62f77cd7c4167733c9f6a097c1f4ec8e8b495bd12373fffd`.
 
 dbt tests:
@@ -294,12 +313,16 @@ Shared models an analyst can use without the Lighter marts: `int_ethereum_cow_fi
 - Candle tolerance is unset. The cross-check reports the gap and fails only when a candle is missing, until Ian sets a tolerance.
 - The cross-chain link can attach the wrong receipt if a split wallet has another USDC transfer to the bridge in the window. The link requires both pinned legs, and it stays `inferred`.
 - Archive balance reads are rejected. They are not a fallback if the trace source is late. Until that source is built, native-ETH fills stay `checked against buyAmount only`.
+- `evm-internal-eth-transfers` is planned and not built. The approved card covered three shared components. This fourth source needs Ian's scope approval before any work on it starts.
 
-## Open questions for BJ Ingestion
+## Answers from BJ Ingestion
 
-1. **L2 finality.** `portalClient` asks for finalized blocks. Nothing in the repo says how Portal defines the finalized head on `arbitrum-one`. Record that before an Arbitrum load is treated as finalized-blocks-only. This is a gate.
+Read-only checks. Nothing here starts a load. One decision is still open: scope approval for `evm-internal-eth-transfers`, recorded under Risks.
+
+1. **L2 finality.** Closed as a caveat, not a gate and not a blocker. On `arbitrum-one` the finalized head was observed to match Arbitrum's finalized tag; that match is not guaranteed by Portal docs. At 2026-11-16 17:43:12 UTC, Portal `/finalized-head` returned 524811782, the same number and hash as `eth_getBlockByNumber("finalized")` on two RPC endpoints. It was about 3,829 blocks (~18 min) behind `/head`. The cutoff 524806268 is behind that head. `portalClient` sets `finalized: true` and `finalizedHead` reads that head (`ingestion/lib/src/portal.ts` L16-19 and L27-32).
 2. **Arbitrum USDC contract.** Closed. Native Arbitrum USDC is `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`, listed with the twelve split wallets. Do not substitute USDC.e. `chains/arbitrum/addresses.json` on main still lists only UNI, so Phase 1 adds this token.
-3. **Width of path (b).** `orderUid` is not indexed, so the EthFlow `Trade` request is every `Trade` whose owner is `0xba3cb449bd2b4adddbc894d8697f5170800eadec`, from `START_BLOCK` 21160715. Count those logs over the editorial window and from that start block before the first load. If the count is too wide, the alternative is a separate Trade-only source with its own start. The recommendation stays the two paths in `evm-cow-ethflow`.
-4. **Factory cache.** The direct `pools` request is meant to leave `chains/ethereum/factory.sqlite` and its cursor alone. Confirm the cache hash does not change when `pools` is added, or give that request its own backfill id without rebuilding the PEPE/UNI generation.
-5. **Backfill ids.** Confirm one `SOURCE_BACKFILL_ID` per changed source, and that `bj coverage` shows the new generation, when a load is approved. No load is part of this plan.
-6. **Arbitrum traces.** The internal-transfer source is Ethereum first. `evm-cow-ethflow` and `evm-contract-deployments` already request traces on Ethereum, and the Polymarket notes record Portal traces for `polygon-mainnet`. Nothing in the repo requests traces for `arbitrum-one`. Ingestion confirms whether Portal serves them before any Arbitrum trace source is added. This trail's Arbitrum hops are ERC-20 transfers, so they do not wait on that answer.
+3. **Width of path (b).** Closed for this plan. Settlement `0x9008D19f58AAbD9eD0D60971565AA8510560ab41`, `topic0` `Trade`, `topic1` `0xba3cb449bd2b4adddbc894d8697f5170800eadec` padded to 32 bytes. `orderUid` is not indexed. Blocks 26423855–26428942 hold 268 matching logs, and the proof `Trade` at block 26380873 matched. There is no full-history count from `START_BLOCK` 21160715 yet, because the requests hit HTTP 529. The request stays inside `evm-cow-ethflow`. Transform drops an EthFlow `Trade` that has no `OrderPlacement`.
+4. **Factory cache.** Closed. Adding `pools` does not change the factory-cache hash, because `factoryCachePath` receives `{ tokens }` only (`ingestion/sources/evm-uniswap-v3/src/source.ts` L109-113). The existing cursor does not move, so pool history behind it is not re-read. Add `pools` to `coverage.filters` (`ingestion/lib/src/warehouse/provenance.ts` L39-50 and L80-94). That gives a new cursor and keeps `{ tokens }` in `factoryCachePath`. Do not set `SOURCE_BACKFILL_ID` on v3.
+5. **Backfill ids.** Closed as proposals only. No run without Ian. One id per source: `lighter-drain-2026-11-16-cow-ethflow`, `lighter-drain-2026-11-16-wallet-transactions`, `lighter-drain-2026-11-16-erc20-ethereum`, `lighter-drain-2026-11-16-erc20-arbitrum`. v3 gets none, so it reuses `factory.sqlite`. `evm-internal-eth-transfers` gets none on its first run; its default cursor is `ethereum_internal_eth_transfers`.
+6. **Arbitrum traces.** Closed. Portal serves them. The docs list them, and a live finalized-stream check returned call traces with `value`, in a shape `evm-cow-ethflow` already maps. Arbitrum stays a later addition, because this trail's Arbitrum hops are ERC-20.
+7. **`buyAmount`.** Closed. `buyAmount` is the executed amount and includes surplus. `feeAmount` is 0 on all six fills, and the receiver is not in the event, so the label stays `checked against buyAmount only`. The native sentinel is `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`.
