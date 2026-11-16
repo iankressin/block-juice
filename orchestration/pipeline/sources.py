@@ -47,6 +47,9 @@ def read_sources(text: str) -> list[SourceEntry]:
                     or not isinstance(contract.get("filters"), list)
                     or not all(isinstance(key, str) for key in contract["filters"])
                     or not set(contract["unrestricted"]) <= set(contract["filters"])
+                    or not isinstance(contract.get("caseSensitive", []), list)
+                    or not all(isinstance(key, str) for key in contract.get("caseSensitive", []))
+                    or not set(contract.get("caseSensitive", [])) <= set(contract["filters"])
                     or not isinstance(contract.get("defaultPortalUrl", ""), str)
                     or not isinstance(contract.get("defaults", {}), dict)
                     or not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0

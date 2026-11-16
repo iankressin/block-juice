@@ -27,6 +27,12 @@ OPTIONAL_WALLET_SOURCES = {
 }
 
 
+def recorded_value(key: str, value: str, case_sensitive: frozenset[str]) -> str:
+    """A filter value as ingestion records it: as written under a case-sensitive key, such as
+    HyperCore's coin names, and lowercased under any other key, which holds addresses."""
+    return value if key in case_sensitive else value.lower()
+
+
 @dataclass(frozen=True)
 class Coverage:
     source: str
@@ -42,6 +48,7 @@ class Coverage:
     dataset_hash: str | None = None
     settings: dict[str, int] | None = None
     supported_filters: frozenset[str] | None = None
+    case_sensitive: frozenset[str] = frozenset()
 
     @property
     def name(self) -> str:
@@ -84,7 +91,7 @@ class Coverage:
             if any(key not in wanted for key in loaded):
                 continue
             if any(key not in loaded and key not in config["unrestricted"]
-                   or key in loaded and not {value.lower() for value in values} <= set(loaded[key])
+                   or key in loaded and not {recorded_value(key, value, self.case_sensitive) for value in values} <= set(loaded[key])
                    for key, values in wanted.items()):
                 continue
             first = max(item["first"], config["startBlock"])
@@ -125,8 +132,8 @@ class Coverage:
                     continue
                 gaps.append(f"addresses.json has no {key!r}")
                 continue
-            loaded = {value.lower() for value in self.filter[key]}
-            missing = [value for value in values if value.lower() not in loaded]
+            loaded = {recorded_value(key, value, self.case_sensitive) for value in self.filter[key]}
+            missing = [value for value in values if recorded_value(key, value, self.case_sensitive) not in loaded]
             if missing:
                 gaps.append(f"{key} not in addresses.json: {', '.join(missing)}")
         return gaps
@@ -248,6 +255,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     folder = entry.folder(repo_root)
     contract = entry.coverage or {}
     supported = frozenset(contract["filters"]) if "filters" in contract else None
+    case_sensitive = frozenset(contract.get("caseSensitive", []))
     block, block_file = start_block(repo_root, folder)
     schema = os.environ["RAW_SCHEMA"]
     try:
@@ -276,7 +284,8 @@ def read(repo_root: Path, name: str) -> Coverage:
         contract_settings["POOLS_START_BLOCK"] = parse_start_block(pool_start, "POOLS_START_BLOCK")
     version = 2 if "POOLS_START_BLOCK" in contract_settings else 1
     expected = dict(version=version, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
-                    filter={key: sorted({value.lower() for value in values}) for key, values in loaded_filter.items()},
+                    filter={key: sorted({recorded_value(key, value, case_sensitive) for value in values})
+                            for key, values in loaded_filter.items()},
                     unrestricted=contract.get("unrestricted", []), settings=contract_settings)
     if settings.get("SOURCE_BACKFILL_ID"):
         expected["backfill"] = settings["SOURCE_BACKFILL_ID"]
@@ -287,7 +296,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     if tracked:
         cursor = current_cursor
     return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
-                    evidence, dataset_hash, contract_settings, supported)
+                    evidence, dataset_hash, contract_settings, supported, case_sensitive)
 
 
 def run(repo_root: Path, name: str | None) -> int:
