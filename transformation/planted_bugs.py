@@ -44,7 +44,7 @@ NOT = re.compile(r"\bnot (?!null\b|in\b|like\b|ilike\b|exists\b|between\b|distin
 JOIN = re.compile(r"\b(?:(\w+)\s+)?join\b")
 OTHER_JOINS = {"right", "full", "cross", "outer", "natural"}
 PICK = re.compile(r"\b(min|max|greatest|least)\(")
-COUNT_DISTINCT = re.compile(r"\bcount\((distinct )")
+COUNT_DISTINCT = re.compile(r"\bcount\((distinct)\b")
 SELECT_DISTINCT = re.compile(r"\bselect distinct\b(?!\s+on\b)")
 THEN_ELSE = re.compile(r"\bthen\b(.+?)\belse\b(.+?)\bend\b")
 NUMBER = re.compile(r"(?<![\w.$:])(?:\d+e)?(\d+)(?![\w.])")
@@ -134,7 +134,8 @@ def join(code: str, sql: str) -> list[Edit]:
 def pick(code: str, sql: str) -> list[Edit]:
     """Swap min with max, greatest with least and asc with desc, and drop a `distinct`."""
     edits = [(m.start(1), m.end(1), SWAPPED[m[1]]) for m in [*PICK.finditer(code), *DIRECTION.finditer(code)]]
-    edits += [(m.start(1), m.end(1), "") for m in COUNT_DISTINCT.finditer(code)]
+    # The blank after the word goes with it only when it is a blank in the SQL too, not a blanked comment.
+    edits += [(m.start(1), m.end(1) + (sql[m.end(1)] == " "), "") for m in COUNT_DISTINCT.finditer(code)]
     edits += [(m.start(), m.end(), "select") for m in SELECT_DISTINCT.finditer(code)]
     return sorted(edits)
 
@@ -191,7 +192,8 @@ def bugs(model: str, sql: str, per_operator: int = BUGS_PER_OPERATOR, per_model:
 def outcome(baseline: dict[str, str], run: dict[str, tuple[str, str]] | None, same_output: bool) -> tuple[str, list[str]]:
     """What became of one planted bug, and the tests that caught it. `baseline` and `run` map each dbt node to
     its status before and after the bug; `run` also holds the node's message, and is None when dbt could not
-    start the build. A test catches a bug when it passed before and fails now."""
+    start the build. A test catches a bug when it passed or only warned before, and fails or
+    errors now."""
     if run is None:
         return "build_error", []
     broken = [message for node, (status, message) in run.items() if node.startswith("model.") and status == "error"]
@@ -224,7 +226,7 @@ def table(results: list[dict], notes: list[str]) -> str:
         lines.append(f"| {name or '**all**'} | {len(rows)} | " + " | ".join(str(counts[kind]) for kind in OUTCOMES) + f" | {rate(counts)} |")
     missed = [result for result in results if result["outcome"] == "missed"]
     if missed:
-        lines += ["", "Missed: the output changed and no test that passed before failed."]
+        lines += ["", "Missed: the output changed, and no test that passed or only warned before failed."]
         lines += [f"- {r['model']}:{r['line']} ({r['operator']}) `{r['before']}` became `{r['after']}`" for r in missed]
     if notes:
         lines += ["", *(f"Note: {note}" for note in notes)]

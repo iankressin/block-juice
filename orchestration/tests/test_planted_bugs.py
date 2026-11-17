@@ -104,6 +104,7 @@ def test_a_where_that_is_one_whole_line_can_go_and_one_with_more_conditions_cann
 def test_a_dropped_word_takes_no_comment_or_string_with_it():
     assert [bug.sql for bug in planted_bugs.bugs("m", "select 1 from t\nwhere not flag -- why\n") if bug.operator == "negation"] == ["select 1 from t\nwhere flag -- why\n"]
     assert [bug.sql for bug in planted_bugs.bugs("m", "select count(distinct 'x') from t\n") if bug.operator == "pick"] == ["select count('x') from t\n"]
+    assert [bug.sql for bug in planted_bugs.bugs("m", "select count(distinct/* keep */'x') from t\n") if bug.operator == "pick"] == ["select count(/* keep */'x') from t\n"]
 
 
 def test_the_limits_keep_the_same_evenly_spaced_bugs_every_run():
@@ -149,7 +150,7 @@ def test_the_table_counts_per_model_and_rates_only_the_bugs_that_changed_the_out
         "| trades | 2 | 0 | 0 | 0 | 1 | 1 |  |\n"
         "| **all** | 6 | 2 | 1 | 1 | 1 | 1 | 66% |\n"
         "\n"
-        "Missed: the output changed and no test that passed before failed.\n"
+        "Missed: the output changed, and no test that passed or only warned before failed.\n"
         "- fills:3 (bound) `a >= 1` became `a > 1`\n"
         "\n"
         "Note: 1 test(s) fail before any bug is planted, so they catch nothing: slow\n"

@@ -38,8 +38,8 @@ Each bug is one rewrite of the model's SQL, outside comments, Jinja and string l
 
 | Outcome | Meaning |
 |---|---|
-| `caught` | A test that passed before the bug failed with it. |
-| `missed` | The model's rows, or the rows of a model that reads it, changed, and no test that passed before the bug failed with it. Each one is listed under the table with its line. |
+| `caught` | A test that passed, or only warned, before the bug fails or errors with it. |
+| `missed` | The model's rows, or the rows of a model that reads it, changed, and no test that passed or only warned before the bug failed or errored with it. Each one is listed under the table with its line. |
 | `not_exercised` | Nothing changed. Either the rewrite means the same, or the data has no row that takes that path. |
 | `build_error` | The rewritten SQL did not run, or a view built from it could not be read. |
 | `timeout` | A statement ran past 60 seconds, as a dropped join condition can. |
