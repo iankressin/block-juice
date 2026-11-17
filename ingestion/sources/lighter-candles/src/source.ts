@@ -143,7 +143,7 @@ export const candlesSource = (clock: Clock = systemClock): Source<LighterCandles
     const planKey = (market_id: number, price: Price) => `${market_id}:${price}`;
     for (const market of markets) {
       for (const price of prices) {
-        const key = historyKey(["lighter", env.LIGHTER_API_URL, market.symbol, price, res, env.START_TIME]);
+        const key = historyKey(["lighter", env.LIGHTER_API_URL, market.market_id, market.symbol, price, res, env.START_TIME]);
         const saved = historyState(await context?.getCheckpoint?.(key));
         const origin = saved?.origin ?? bucketStart(env.START_TIME, res);
         plans.set(planKey(market.market_id, price), historyPlan(key, origin, span, now, saved, env));

@@ -144,9 +144,16 @@ export function createLighterClient(env: LighterEnv, clock: Clock = systemClock)
     async resolveMarkets(symbols) {
       const all = await markets();
       return [...new Set(symbols)].map((symbol) => {
-        const found = all.find((m) => m.symbol === symbol);
-        if (!found) throw new Error(`Lighter lists no market with the symbol ${symbol}`);
-        return found;
+        const named = all.filter((m) => m.symbol === symbol);
+        if (named.length === 0) throw new Error(`Lighter lists no market with the symbol ${symbol}`);
+        if (named.length === 1) return named[0]!;
+        // A symbol can name several markets: Lighter reuses it once a market goes dead.
+        const active = named.filter((m) => m.status === "active");
+        if (active.length !== 1) {
+          const ids = named.map((m) => `${m.market_id} (${m.status})`).join(", ");
+          throw new Error(`Lighter lists ${named.length} markets with the symbol ${symbol} and ${active.length} are active: ${ids}`);
+        }
+        return active[0]!;
       });
     },
   };
