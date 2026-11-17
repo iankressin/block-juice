@@ -1,0 +1,17 @@
+version: 2
+
+# Source name + table name must match the ingestion Source's `name` + `table`.
+sources:
+  - name: hypercore
+    schema: "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    tables:
+      - name: fills
+        identifier: hypercore_fills
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: actions
+        identifier: hypercore_actions
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

@@ -120,6 +120,27 @@ test("coverage records only the address dimensions used by the stream", () => {
   assert.deepEqual(filter, { tokens: ["0xaa"] });
 });
 
+const portalHash = "d0960501f8971be812f2e5494426e08cdbb2cbc3b3190ba60075f14b8da7178a";
+
+test("a contract without caseSensitive keeps the configuration and fingerprint it recorded before", () => {
+  const config = streamProvenance({ name: "ethereum", table: "events", coverage: { filters: ["tokens"], unrestricted: [] } },
+    { START_BLOCK: 1, PORTAL_URL: "portal" }, { "addresses.json": { tokens: ["0xAa", "0xaA"] } })!;
+  assert.deepEqual(config.filter, { tokens: ["0xaa"] });
+  assert.equal(fingerprint(config), "0cf5d0dc5cc67c3343ebc399948a89f01f18a2425bd9fda91eb8ec4286bda570",
+    "a changed fingerprint would start a new generation for every existing source");
+});
+
+test("coverage records names under caseSensitive keys as listed and still lowercases addresses", () => {
+  const coverage = { filters: ["users", "coins"], unrestricted: ["users", "coins"], caseSensitive: ["coins"] };
+  const config = streamProvenance({ name: "hypercore", table: "fills", coverage }, { START_BLOCK: 1, PORTAL_URL: "portal" }, {
+    "addresses.json": { users: ["0xAbC"], coins: ["io:ANTH", "ZEC", "ZEC"] },
+  });
+  assert.deepEqual(config, {
+    version: 1, source: "hypercore", table: "fills", startBlock: 1, datasetHash: portalHash,
+    filter: { users: ["0xabc"], coins: ["ZEC", "io:ANTH"] }, unrestricted: ["users", "coins"], settings: {},
+  }, "the values carry the case, so the contract's caseSensitive list stays out of the record");
+});
+
 test("a raw table rejects a different dataset before allocating its cursor", async (t) => {
   const { db, warehouse } = await pgliteWarehouse(t);
   const table = await warehouse.open("ethereum_events");

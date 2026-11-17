@@ -52,6 +52,14 @@ def read_sources(text: str) -> list[SourceEntry]:
                     or not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
                                for value in contract.get("defaults", {}).values())):
                 raise BadInput(f"{SOURCES_FILE} has an invalid coverage contract for {entry.name}.{entry.table}")
+            invalid = f"{SOURCES_FILE} has an invalid coverage contract for {entry.name}.{entry.table}: caseSensitive"
+            case_sensitive = contract.get("caseSensitive", [])
+            if not isinstance(case_sensitive, list):
+                raise BadInput(f"{invalid} must be a list")
+            if not all(isinstance(key, str) for key in case_sensitive):
+                raise BadInput(f"{invalid} must contain filter names")
+            if not set(case_sensitive) <= set(contract["filters"]):
+                raise BadInput(f"{invalid} names {sorted(set(case_sensitive) - set(contract['filters']))}, which are not filters")
     pairs = [(entry.name, entry.table) for entry in entries]
     repeated = sorted({pair for pair in pairs if pairs.count(pair) > 1})
     if repeated:

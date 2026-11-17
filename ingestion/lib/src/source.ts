@@ -75,13 +75,18 @@ export interface Source<E, C> extends SourceBase<E> {
  */
 export interface StreamSource<E> extends SourceBase<E> {
   /**
-   * Address keys used by the source, keys whose absence means all values, and runtime defaults.
+   * addresses.json keys used by the source, keys whose absence means all values, and runtime defaults.
    * Read filter JSON through readJson while constructing the stream. Omit this contract for
    * unknown semantics; an unregistered stream continues running without claiming verified history.
    */
   coverage?: {
     filters: string[];
     unrestricted: string[];
+    /**
+     * Filter keys that hold names, such as coins, whose values match exactly as written.
+     * Every other key holds addresses, which coverage lowercases.
+     */
+    caseSensitive?: string[];
     defaults?: Record<string, number>;
     defaultPortalUrl?: string;
   };

@@ -37,6 +37,7 @@ export function streamProvenance(
   const settings = env as Record<string, unknown>;
   if (typeof settings.START_BLOCK !== "number" || typeof settings.PORTAL_URL !== "string") return undefined;
   const filter: Record<string, string[]> = {};
+  const exact = new Set(source.coverage.caseSensitive ?? []);
   for (const [path, value] of Object.entries(inputs)) {
     if (!path.endsWith("addresses.json") || !value || typeof value !== "object") continue;
     for (const key of source.coverage.filters) {
@@ -44,9 +45,9 @@ export function streamProvenance(
       const values = (value as Record<string, unknown>)[key];
       const list = typeof values === "string" ? [values] : values;
       if (!Array.isArray(list) || !list.every((item) => typeof item === "string")) {
-        throw new Error(`Cannot record coverage for ${path}: ${key} must contain addresses`);
+        throw new Error(`Cannot record coverage for ${path}: ${key} must contain ${exact.has(key) ? "names" : "addresses"}`);
       }
-      filter[key] = [...new Set(list.map((item: string) => item.toLowerCase()))].sort();
+      filter[key] = [...new Set(exact.has(key) ? list : list.map((item: string) => item.toLowerCase()))].sort();
     }
   }
   const poolStart = settings.POOLS_START_BLOCK;

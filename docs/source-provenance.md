@@ -14,6 +14,10 @@ Changing a start block, address filter or pool-discovery start creates an indepe
 the dataset. The new generation backfills the existing raw table and preserves rows from earlier
 filters. Raising `END_BLOCK` or changing a run's block cap continues the same generation.
 
+Coverage ignores the case of filter values, because most keys hold addresses. A source can list
+keys under `caseSensitive` in its coverage contract, such as HyperCore's `coins`. Coverage records
+and compares those values exactly as written, so `ZEC` and `zec` are different coins.
+
 Uniswap uses a separate pool-discovery cache for each token set, swap start, discovery start and
 backfill ID. Keep the cache and its identity file with the warehouse cursors. A cursor with a
 missing generation cache cannot resume. If its cache was lost, use a new `SOURCE_BACKFILL_ID`

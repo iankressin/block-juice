@@ -316,6 +316,52 @@ def test_committed_contract_not_edited_files_establishes_coverage():
     assert restored.gaps((100, 180), {}) == []
 
 
+FILLS = {"name": "hypercore", "table": "fills", "package": "hypercore-fills", "coverage": {
+    "filters": ["users", "coins"], "unrestricted": ["users", "coins"], "caseSensitive": ["coins"]}}
+
+
+def fills_evidence(first, last, coins):
+    item = evidence(first, last, {"users": [WALLET.lower()], "coins": coins})
+    item["config"].update(source="hypercore", table="fills", unrestricted=["users", "coins"])
+    return item
+
+
+def test_case_sensitive_names_cover_only_their_exact_spelling_while_addresses_ignore_case():
+    read = Coverage("hypercore", "fills", "raw.hypercore_fills", 100, ".env", 180,
+                    {"users": [WALLET], "coins": ["ZEC"]}, (fills_evidence(100, 180, ["ZEC"]),), "dataset",
+                    {}, frozenset({"users", "coins"}), frozenset({"coins"}))
+    assert read.covered == (100, 180)
+    assert read.gaps((100, 180), {"coins": ["ZEC"]}) == []
+    assert read.gaps((100, 180), {"coins": ["zec"]})
+    assert read.gaps((100, 180), {"users": [WALLET.upper().replace("0X", "0x")], "coins": ["ZEC"]}) == []
+    legacy = replace(read, evidence=None)
+    assert legacy.gaps((100, 180), {"coins": ["ZEC"]}) == []
+    assert legacy.gaps((100, 180), {"coins": ["zec"]}) == ["coins not in addresses.json: zec"]
+    assert legacy.gaps((100, 180), {"users": [WALLET.lower()]}) == []
+
+
+def test_read_expects_coin_names_in_the_case_ingestion_recorded(repo, monkeypatch):
+    (repo / SOURCES_FILE).write_text(json.dumps([FILLS]))
+    folder = repo / "ingestion" / "sources" / "hypercore-fills"
+    folder.mkdir(parents=True)
+    (folder / ".env.example").write_text("START_BLOCK=100\n")
+    (folder / "addresses.json").write_text(json.dumps({"users": [WALLET], "coins": ["io:ANTH", "ZEC"]}))
+    monkeypatch.setenv("PORTAL_URL", "portal")
+    monkeypatch.setattr(coverage, "read_cursor", lambda table: 180)
+    item = fills_evidence(100, 180, ["ZEC", "io:ANTH"])
+    item["config"]["datasetHash"] = hashlib.sha256(b"portal").hexdigest()
+    monkeypatch.setattr(coverage, "read_coverage", lambda table: [item])
+    expected = []
+    def current(source_table, config):
+        expected.append(config)
+        return True, 180
+    monkeypatch.setattr(coverage, "read_configuration_cursor", current)
+    result = coverage.read(repo, "hypercore.fills")
+    assert expected[0]["filter"] == {"users": [WALLET.lower()], "coins": ["ZEC", "io:ANTH"]}
+    assert result.covered == (100, 180)
+    assert result.gaps((100, 180), {"coins": ["zec"]})
+
+
 def test_all_wallets_requires_unrestricted_evidence_throughout_the_window():
     restricted = evidence(100, 180, {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]})
     unrestricted = evidence(100, 170)

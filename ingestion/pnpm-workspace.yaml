@@ -7,3 +7,9 @@ packages:
 # they share one copy of Pipes. Its install script fetches a prebuilt binary.
 onlyBuiltDependencies:
   - better-sqlite3
+
+# The patch adds Portal's hyperliquidReplicaCmds query (HyperCore actions) to Pipes under the names the
+# SDK will use. It also lets both HyperCore streams take a PortalClient as `portal`, as evmPortalStream does.
+# Delete it, and this entry, once a Pipes release ships hyperliquidReplicaCmds and that fills `portal` type.
+patchedDependencies:
+  '@subsquid/pipes@1.0.0-beta.11': patches/@subsquid__pipes@1.0.0-beta.11.patch

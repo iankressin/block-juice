@@ -249,6 +249,37 @@
     }
   },
   {
+    "name": "hypercore",
+    "table": "actions",
+    "package": "hypercore-actions",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/hyperliquid-replica-cmds",
+      "filters": [
+        "users"
+      ],
+      "unrestricted": []
+    }
+  },
+  {
+    "name": "hypercore",
+    "table": "fills",
+    "package": "hypercore-fills",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/hyperliquid-fills",
+      "filters": [
+        "users",
+        "coins"
+      ],
+      "unrestricted": [
+        "users",
+        "coins"
+      ],
+      "caseSensitive": [
+        "coins"
+      ]
+    }
+  },
+  {
     "name": "polygon",
     "table": "polymarket_ctf",
     "package": "polygon-polymarket-ctf",
