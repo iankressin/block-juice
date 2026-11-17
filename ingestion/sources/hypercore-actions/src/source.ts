@@ -49,8 +49,8 @@ const noUsers =
 function users(addresses: Record<string, unknown>): string[] {
   if (!Object.hasOwn(addresses, "users")) throw new Error(noUsers);
   const values = addresses.users;
-  if (!Array.isArray(values) || !values.every((value) => typeof value === "string")) {
-    throw new Error("addresses.json: users must be a list of addresses");
+  if (!Array.isArray(values) || !values.every((value) => typeof value === "string" && value !== "")) {
+    throw new Error("addresses.json: users must be a list of non-empty strings");
   }
   if (values.length === 0) throw new Error(noUsers);
   return validateEthAddressList(values).map(toLower);

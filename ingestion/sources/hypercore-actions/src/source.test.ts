@@ -168,7 +168,8 @@ for (const [holds, json, message] of [
   ["no users key", '{ "coins": ["HYPE"] }', /^addresses\.json lists no users\. List at least one: HyperCore users send about 1\.2 billion/],
   ["an empty list of users", '{ "users": [] }', /^addresses\.json lists no users\. List at least one/],
   ["an invalid user", '{ "users": ["0x123"] }', /^Invalid Ethereum addresses:\n {2}0x123$/],
-  ["a user that is not in a list", `{ "users": "${wallet}" }`, /^addresses\.json: users must be a list of addresses$/],
+  ["an empty user", `{ "users": ["${wallet}", ""] }`, /^addresses\.json: users must be a list of non-empty strings$/],
+  ["a user that is not in a list", `{ "users": "${wallet}" }`, /^addresses\.json: users must be a list of non-empty strings$/],
 ] as const) {
   test(`an addresses.json with ${holds} fails the run, not the import`, async (t) => {
     await addressesHold(t, json);
