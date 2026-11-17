@@ -1,0 +1,173 @@
+import { createWriteStream } from "node:fs";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
+import { DuckDBInstance } from "@duckdb/node-api";
+import * as z from "zod";
+import { describeError } from "#src/calls.ts";
+import type { Batch, Checkpoint, RawRecord } from "#src/source.ts";
+
+// Lighter publishes one Parquet file per UTC day on a public bucket: catalog/vendors/lighter/NOTES.md, "S3 files".
+export const lighterS3Env = z.object({
+  LIGHTER_S3_URL: z.url().default("https://aws-public-blockchain.s3.amazonaws.com"),
+  LIGHTER_S3_PREFIX: z.string().default("v1.1/lighter/core/mainnet"),
+});
+
+export type LighterS3Env = z.infer<typeof lighterS3Env>;
+
+export type LighterDataset = "trades" | "open_interest_hourly";
+
+const FILE_NAMES = { trades: "trades.parquet", open_interest_hourly: "oi.parquet" } as const;
+
+export type DayFile = { dataset: LighterDataset; date: string; key: string; etag: string; size: number };
+
+/** What a retry needs to read one day again. */
+export type DayCall = { date: string; etag: string };
+
+export const dayCallSchema: z.ZodType<DayCall> = z.object({ date: z.string(), etag: z.string() });
+
+const xmlText = (s: string) =>
+  s.replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+
+const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}>([^<]*)</${name}>`))?.[1];
+
+/** The day files of `dataset` from `from` to `to`, both included, oldest first. */
+export async function listDays(env: LighterS3Env, dataset: LighterDataset, from: string, to: string): Promise<DayFile[]> {
+  const fileName = FILE_NAMES[dataset];
+  const days: DayFile[] = [];
+  let token: string | undefined;
+  do {
+    const query = new URLSearchParams({ "list-type": "2", prefix: `${env.LIGHTER_S3_PREFIX}/${dataset}/` });
+    if (token) query.set("continuation-token", token);
+    const response = await fetch(`${env.LIGHTER_S3_URL}/?${query}`);
+    if (!response.ok) throw new Error(`Lighter S3 list of ${dataset} answered HTTP ${response.status}`);
+    const xml = await response.text();
+    for (const [, item] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+      const key = xmlText(tag(item!, "Key") ?? "");
+      const date = key.match(/date=(\d{4}-\d{2}-\d{2})\/[^/]+$/)?.[1];
+      if (!date || !key.endsWith(`/${fileName}`) || date < from || date > to) continue;
+      const etag = xmlText(tag(item!, "ETag") ?? "").replaceAll('"', "");
+      days.push({ dataset, date, key, etag, size: Number(tag(item!, "Size")) });
+    }
+    token = tag(xml, "IsTruncated") === "true" ? xmlText(tag(xml, "NextContinuationToken") ?? "") || undefined : undefined;
+  } while (token);
+  return days.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Streams the file to `path`, so a 200 MB day never sits in memory, and checks the byte count. */
+async function download(env: LighterS3Env, file: DayFile, path: string): Promise<void> {
+  const response = await fetch(`${env.LIGHTER_S3_URL}/${file.key}`);
+  if (!response.ok || !response.body) throw new Error(`Lighter S3 ${file.key} answered HTTP ${response.status}`);
+  await pipeline(Readable.fromWeb(response.body as WebReadableStream), createWriteStream(path));
+  const { size } = await stat(path);
+  if (size !== file.size) throw new Error(`Lighter S3 ${file.key} gave ${size} bytes, expected ${file.size} bytes`);
+}
+
+/**
+ * One day file as chunks of rows. It downloads the file to a temporary folder, then lets DuckDB read
+ * it with a memory cap, so memory stays flat. 64-bit integers come as strings and times in UTC.
+ * `where` is trusted SQL: callers build it only from validated integers.
+ */
+export async function* readDay(
+  env: LighterS3Env,
+  file: DayFile,
+  options: { where?: string; rowsPerChunk?: number; tmpDir?: string } = {},
+): AsyncGenerator<Record<string, unknown>[]> {
+  const { where, rowsPerChunk = 10_000, tmpDir = tmpdir() } = options;
+  const folder = await mkdtemp(join(tmpDir, "lighter-"));
+  try {
+    const path = join(folder, "day.parquet");
+    await download(env, file, path);
+    const instance = await DuckDBInstance.create(":memory:");
+    try {
+      const connection = await instance.connect();
+      try {
+        await connection.run("SET memory_limit = '512MB'");
+        await connection.run("SET threads = 2");
+        await connection.run("SET TimeZone = 'UTC'");
+        const source = `read_parquet('${path.replaceAll("'", "''")}')`;
+        // The JSON reader prints a timestamptz in the process's zone and ignores TimeZone, so cast those columns.
+        const columns = (await connection.runAndReadAll(`select column_name, column_type from (describe select * from ${source})`)).getRowObjectsJson();
+        const casts = columns
+          .filter((c) => c.column_type === "TIMESTAMP WITH TIME ZONE")
+          .map((c) => `"${String(c.column_name).replaceAll('"', '""')}"::varchar as "${String(c.column_name).replaceAll('"', '""')}"`);
+        const select = casts.length ? `* replace (${casts.join(", ")})` : "*";
+        const filter = where ? ` where ${where}` : "";
+        const result = await connection.stream(`select ${select} from ${source}${filter}`);
+        let pending: Record<string, unknown>[] = [];
+        for await (const rows of result.yieldRowObjectJson()) {
+          pending.push(...rows);
+          while (pending.length >= rowsPerChunk) {
+            yield pending.slice(0, rowsPerChunk);
+            pending = pending.slice(rowsPerChunk);
+          }
+        }
+        if (pending.length) yield pending;
+      } finally {
+        connection.closeSync();
+      }
+    } finally {
+      instance.closeSync();
+    }
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+}
+
+const manifestSchema = z.object({ files: z.record(z.string(), z.string()) });
+
+/**
+ * Which day files still need a load. A day is done when the saved manifest holds its ETag.
+ * `loaded(day)` gives the checkpoint that records it, next to every day recorded before.
+ */
+export function dayManifest(key: string, saved: unknown, days: readonly DayFile[]) {
+  const files: Record<string, string> = { ...(manifestSchema.safeParse(saved).data?.files ?? {}) };
+  return {
+    pending: days.filter((day) => files[day.date] !== day.etag),
+    loaded(day: DayFile): Checkpoint {
+      files[day.date] = day.etag;
+      return { key, value: { files: { ...files } } };
+    },
+  };
+}
+
+/**
+ * One day as batches. It reads a chunk ahead, so each batch but the last gives its records the call id
+ * `<dataset>:<date>#<n>`. The last gives them the day's id and clears its dead letter, and holds the
+ * checkpoint, so a day that fails halfway records nothing and its retry rewrites the chunks by id.
+ */
+export async function* dayBatches(
+  env: LighterS3Env,
+  file: DayFile,
+  options: {
+    where?: string;
+    rowId(row: Record<string, unknown>): string;
+    checkpoint: Checkpoint;
+    rowsPerChunk?: number;
+  },
+): AsyncGenerator<Batch<DayCall>> {
+  const id = `${file.dataset}:${file.date}`;
+  const records = (rows: Record<string, unknown>[], callId: string): RawRecord[] =>
+    rows.map((data) => ({ id: options.rowId(data), callId, data }));
+  const readOptions = { ...(options.where ? { where: options.where } : {}), ...(options.rowsPerChunk ? { rowsPerChunk: options.rowsPerChunk } : {}) };
+  try {
+    let ahead: Record<string, unknown>[] | undefined;
+    let n = 0;
+    for await (const rows of readDay(env, file, readOptions)) {
+      if (ahead) yield { records: records(ahead, `${id}#${n++}`), failed: [] };
+      ahead = rows;
+    }
+    yield {
+      records: records(ahead ?? [], id),
+      failed: [],
+      succeededCallIds: [id],
+      callsCompleted: 1,
+      checkpoints: [options.checkpoint],
+    };
+  } catch (error) {
+    yield { records: [], failed: [{ id, call: { date: file.date, etag: file.etag }, error: describeError(error) }], callsCompleted: 1 };
+  }
+}
