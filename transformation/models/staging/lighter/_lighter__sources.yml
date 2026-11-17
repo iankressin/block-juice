@@ -25,3 +25,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: open_interest
+        identifier: lighter_open_interest
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
