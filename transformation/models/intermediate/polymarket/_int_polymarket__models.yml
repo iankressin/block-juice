@@ -333,7 +333,87 @@ models:
           Polymarket raw tables' lowest blocks; false while either table is empty.
         data_tests: [not_null]
 
+  - name: int_polygon_polymarket_ctf_exchange_v2_orders
+    description: >-
+      One row per CTF Exchange v2 fill whose transaction is loaded as a matchOrders call, with the order its
+      owner signed, read from the call: what was posted, who signed it, its salt and when it was signed.
+      Amounts are base units with 6 decimals; side 0 is a buy. A fill that matches no order of its call keeps
+      its row with the order's columns null, so the not_null tests on them fail.
+    columns:
+      - name: id
+        description: The OrderFilled log's key from the raw table.
+        data_tests: [unique, not_null]
+      - name: order_hash
+        description: The order's hash, from the OrderFilled log.
+        data_tests: [not_null]
+      - name: is_taker_order
+        description: True for the taker order's own fill, whose taker is the exchange.
+        data_tests: [not_null]
+      - name: call_position
+        description: 0 for the call's taker order, i + 1 for its maker order i.
+        data_tests: [not_null]
+      - name: maker
+        description: The order's owner, the wallet whose assets move, from the OrderFilled log.
+        data_tests: [not_null]
+      - name: signer
+        description: The key that signed the order; for a proxy or Safe wallet, the wallet's owner.
+        data_tests: [not_null]
+      - name: side
+        description: 0 for a buy, 1 for a sell, from the signed order.
+        data_tests: [not_null]
+      - name: maker_amount
+        description: What the order posted to give, in its maker asset (pUSD for a buy, shares for a sell).
+        data_tests: [not_null]
+      - name: taker_amount
+        description: What the order posted to get, in its taker asset.
+        data_tests: [not_null]
+      - name: signed_at
+        description: The order's own timestamp, set by the client that signed it, to the millisecond.
+        data_tests: [not_null]
+
 unit_tests:
+  - name: signed_orders_match_their_fills
+    description: >-
+      Proof rows 44 and 45. Row 44: RN1's order rests and is maker order 0 of the call. Row 45: RN1's order
+      is the call's taker order; its fill names the exchange as taker. Each fill gets the order its owner
+      signed: the posted amounts, the signer, the salt and the time it was signed.
+    model: int_polygon_polymarket_ctf_exchange_v2_orders
+    given:
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2_txs')
+        rows:
+          - {tx_hash: "0xa336fb4506bb19ad1adfc6c8e4c7b1c3791b55570b6b8b0600bd7f1ec18078cd", function_name: "matchOrders", condition_id: "0x5c0e7a0638287625c11d21fa836f30f53a6362dbb1cf49caa095f9a89fac006c", args: '{"conditionId":"0x5c0e7a0638287625c11d21fa836f30f53a6362dbb1cf49caa095f9a89fac006c","takerOrder":{"salt":"1243196759298","maker":"0x0d10fdbccf762e55a70e7df0856fb6914cb1780b","signer":"0xa07205fca78cdf89e5d0eed849e7d65c94b4f851","tokenId":"19101153740025241729081818049437738044349545941452511530990813655350020578908","makerAmount":"15000000","takerAmount":"30000000","side":0,"signatureType":1,"timestamp":"1786392811092","metadata":"0x0000000000000000000000000000000000000000000000000000000000000000","builder":"0x0000000000000000000000000000000000000000000000000000000000000000","signature":"0xb105242f23e8b8de2c81d8ab9be9c51c90077b048f34c4b3bd72acddefa9524b1d0bdcc570284aadb9df3140440b31529aedfda4350c779964c87ab0fe4007971c"},"makerOrders":[{"salt":"728077508255","maker":"0x2005d16a84ceefa912d4e380cd32e7ff827875ea","signer":"0x5d4fd194c4181ad61b1b5cb72dab8f9c4f9a2edc","tokenId":"113189056057339740737682606346452982143200737868567631326195404302822797248674","makerAmount":"2511500000","takerAmount":"5023000000","side":0,"signatureType":1,"timestamp":"1786392771743","metadata":"0x0000000000000000000000000000000000000000000000000000000000000000","builder":"0x0000000000000000000000000000000000000000000000000000000000000000","signature":"0xaf149b79765b832752e46660c9593e98814fd74c5891504c6be8e8c395d413c865eed7ecd5c78723f5095ebf16c1db1847a20ebb3591f82e3016cf42d49cc33a1b"}],"takerFillAmount":"15000000","makerFillAmounts":["15000000"],"takerFeeAmount":"375000","makerFeeAmounts":["0"]}'}
+          - {tx_hash: "0x43a64e54fffbc3255523fd8e057ca40e308965f155021dba6f935f26899a40f1", function_name: "matchOrders", condition_id: "0xaa363007027efc4ee46d169ec921e86b05eb45eefa678a70c12bbba433ff3910", args: '{"conditionId":"0xaa363007027efc4ee46d169ec921e86b05eb45eefa678a70c12bbba433ff3910","takerOrder":{"salt":"1034959613603","maker":"0x2005d16a84ceefa912d4e380cd32e7ff827875ea","signer":"0x5d4fd194c4181ad61b1b5cb72dab8f9c4f9a2edc","tokenId":"91810937088529895756522382162298328476746321205424067394965160814129238517101","makerAmount":"29700000","takerAmount":"540000000","side":0,"signatureType":1,"timestamp":"1786523504884","metadata":"0x0000000000000000000000000000000000000000000000000000000000000000","builder":"0x0000000000000000000000000000000000000000000000000000000000000000","signature":"0x63e864880e02a392b8c77ffadd95d61293eadd04b8f3fd41afc919a89cf14d0a14a946acf2d17e7ed14319a0d431b52637cb9f093fbf77fce53252b2182d9f301b"},"makerOrders":[{"salt":"1530274258317","maker":"0xfe787d2da716d60e8acff57fb87eb13cd4d10319","signer":"0xc214e3bba5e8b15f787de6d4a2a4ca1d1ae16ca3","tokenId":"58274815283618903761417433241799743924846614332561242460055822324197262636281","makerAmount":"1154100150","takerAmount":"1221270000","side":0,"signatureType":1,"timestamp":"1786523502000","metadata":"0x0000000000000000000000000000000000000000000000000000000000000000","builder":"0x0000000000000000000000000000000000000000000000000000000000000000","signature":"0x5ef8064a4f0e0ccc15bdba94b2e0c3c95c9278d2102ddb76de647fd01c5a184f589141612cd6b4fc5610bc743bc398f88dd8e5a609f9f394b7d920fbf092217a1c"}],"takerFillAmount":"29700000","makerFillAmounts":["510300000"],"takerFeeAmount":"1403320","makerFeeAmounts":["0"]}'}
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2')
+        rows:
+          - {id: "91791857:426", event: "ctf_exchange_v2.OrderFilled", block_number: 91791857, block_timestamp: "2026-08-10 20:13:33+00", tx_hash: "0xa336fb4506bb19ad1adfc6c8e4c7b1c3791b55570b6b8b0600bd7f1ec18078cd", log_index: 426, contract: "0xe111180000d2663c0091e4f400237545b87b996b", order_hash: "0x506c8c385be8a4e54af34fa91edb83707e25cc6134beb9065fb1a0cb86830a28", maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", taker: "0x0d10fdbccf762e55a70e7df0856fb6914cb1780b", side: 0, token_id: "113189056057339740737682606346452982143200737868567631326195404302822797248674", maker_amount_filled: "15000000", taker_amount_filled: "30000000", fee: "0"}
+          - {id: "91878987:376", event: "ctf_exchange_v2.OrderFilled", block_number: 91878987, block_timestamp: "2026-08-12 08:31:48+00", tx_hash: "0x43a64e54fffbc3255523fd8e057ca40e308965f155021dba6f935f26899a40f1", log_index: 376, contract: "0xe111180000d2663c0091e4f400237545b87b996b", order_hash: "0x7c60998686409e480f797aa1621ab7a7f14498812cba38955443601c734047d8", maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", taker: "0xe111180000d2663c0091e4f400237545b87b996b", side: 0, token_id: "91810937088529895756522382162298328476746321205424067394965160814129238517101", maker_amount_filled: "29700000", taker_amount_filled: "540000000", fee: "1403320"}
+    expect:
+      rows:
+        - {id: "91791857:426", order_hash: "0x506c8c385be8a4e54af34fa91edb83707e25cc6134beb9065fb1a0cb86830a28", condition_id: "0x5c0e7a0638287625c11d21fa836f30f53a6362dbb1cf49caa095f9a89fac006c", is_taker_order: false, call_position: 1, maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", signer: "0x5d4fd194c4181ad61b1b5cb72dab8f9c4f9a2edc", signature_type: 1, token_id: "113189056057339740737682606346452982143200737868567631326195404302822797248674", side: 0, maker_amount: "2511500000", taker_amount: "5023000000", salt: "728077508255", signed_at: "2026-08-10 20:12:51.743+00"}
+        - {id: "91878987:376", order_hash: "0x7c60998686409e480f797aa1621ab7a7f14498812cba38955443601c734047d8", condition_id: "0xaa363007027efc4ee46d169ec921e86b05eb45eefa678a70c12bbba433ff3910", is_taker_order: true, call_position: 0, maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", signer: "0x5d4fd194c4181ad61b1b5cb72dab8f9c4f9a2edc", signature_type: 1, token_id: "91810937088529895756522382162298328476746321205424067394965160814129238517101", side: 0, maker_amount: "29700000", taker_amount: "540000000", salt: "1034959613603", signed_at: "2026-08-12 08:31:44.884+00"}
+
+  - name: orders_tied_on_amount_match_by_position
+    description: >-
+      Made up: one call holds two maker orders of the same wallet on the same token that fill the same
+      amount. The nth such order in the call matches the nth such fill by log index. A fill whose amount no
+      order of the call fills keeps its row with no order. A fill whose transaction is not loaded has no row.
+    model: int_polygon_polymarket_ctf_exchange_v2_orders
+    given:
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2_txs')
+        rows:
+          - {tx_hash: "0xbb", function_name: matchOrders, condition_id: "0xcc", args: '{"conditionId":"0xcc","takerOrder":{"salt":"1","maker":"0x00000000000000000000000000000000000000bb","signer":"0x00000000000000000000000000000000000000bb","tokenId":"8","makerAmount":"2000000","takerAmount":"4000000","side":0,"signatureType":0,"timestamp":"1786383561000","metadata":"0x00","builder":"0x00","signature":"0x01"},"makerOrders":[{"salt":"11","maker":"0x00000000000000000000000000000000000000aa","signer":"0x00000000000000000000000000000000000000cc","tokenId":"7","makerAmount":"1000000","takerAmount":"2000000","side":0,"signatureType":1,"timestamp":"1786383560000","metadata":"0x00","builder":"0x00","signature":"0x02"},{"salt":"22","maker":"0x00000000000000000000000000000000000000aa","signer":"0x00000000000000000000000000000000000000cc","tokenId":"7","makerAmount":"3000000","takerAmount":"6000000","side":0,"signatureType":1,"timestamp":"1786383559000","metadata":"0x00","builder":"0x00","signature":"0x03"}],"takerFillAmount":"2000000","makerFillAmounts":["1000000","1000000"],"takerFeeAmount":"0","makerFeeAmounts":["0","0"]}'}
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2')
+        rows:
+          - {id: "1:7", event: ctf_exchange_v2.OrderFilled, block_number: 1, tx_hash: "0xbb", log_index: 7, contract: "0xee", order_hash: "0xh2", maker: "0x00000000000000000000000000000000000000aa", taker: "0x00000000000000000000000000000000000000bb", side: 0, token_id: "7", maker_amount_filled: "1000000", taker_amount_filled: "2000000", fee: "0"}
+          - {id: "1:5", event: ctf_exchange_v2.OrderFilled, block_number: 1, tx_hash: "0xbb", log_index: 5, contract: "0xee", order_hash: "0xh1", maker: "0x00000000000000000000000000000000000000aa", taker: "0x00000000000000000000000000000000000000bb", side: 0, token_id: "7", maker_amount_filled: "1000000", taker_amount_filled: "2000000", fee: "0"}
+          - {id: "1:9", event: ctf_exchange_v2.OrderFilled, block_number: 1, tx_hash: "0xbb", log_index: 9, contract: "0xee", order_hash: "0xh3", maker: "0x00000000000000000000000000000000000000aa", taker: "0x00000000000000000000000000000000000000bb", side: 0, token_id: "7", maker_amount_filled: "999", taker_amount_filled: "1998", fee: "0"}
+          - {id: "2:1", event: ctf_exchange_v2.OrderFilled, block_number: 2, tx_hash: "0xdd", log_index: 1, contract: "0xee", order_hash: "0xh4", maker: "0x00000000000000000000000000000000000000aa", taker: "0x00000000000000000000000000000000000000bb", side: 0, token_id: "7", maker_amount_filled: "1000000", taker_amount_filled: "2000000", fee: "0"}
+    expect:
+      rows:
+        - {id: "1:5", order_hash: "0xh1", call_position: 1, salt: "11", maker_amount: "1000000"}
+        - {id: "1:7", order_hash: "0xh2", call_position: 2, salt: "22", maker_amount: "3000000"}
+        - {id: "1:9", order_hash: "0xh3", call_position: null, salt: null, maker_amount: null}
+
   - name: fills_of_a_buy_against_a_sell
     description: Proof row 1. The maker sells 5.106383 shares for 4.8 pUSD; the taker order buys them.
     model: int_polygon_polymarket_ctf_exchange_v2_fills
