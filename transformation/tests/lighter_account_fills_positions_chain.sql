@@ -1,6 +1,7 @@
 -- Lists each fill whose position_before differs from the previous fill's position_after, for the same
 -- account and market in trade_id order. A first fill has no previous row and is skipped. It warns, not
--- fails: a change that is not a trade, such as an exit at delisting, also moves a position.
+-- fails: it warns for every account whose history is only partly loaded, such as any counterparty of
+-- a filtered load, whose other trades never load. A break for a listed account is the signal to look for.
 {{ config(severity='warn') }}
 
 with chained as (

@@ -30,6 +30,9 @@ models:
     description: >-
       One Lighter candle per market, price series and bucket. Only closed candles load.
     columns:
+      - name: id
+        description: The candle's key, `<market_id>:<price>:<resolution>:<open_time in ms>`.
+        data_tests: [unique, not_null]
       - name: market_id
         description: The public market id the API uses. Join on this, not on `symbol`.
         data_tests: [not_null]
@@ -175,6 +178,8 @@ models:
       lists, from Lighter's daily S3 files. A day's file appears about 07:03 UTC the next day, so only
       ended days load. Values are in real units, from `catalog/vendors/lighter/NOTES.md`. A binary
       option has no row in `lighter_markets`, so its `symbol`, `price`, `size` and positions are null.
+      Every trade of a market is scaled by that market's latest decimals, so a change in a market's
+      decimals would mis-scale its older trades. The candle cross-check would catch that.
     columns:
       - name: trade_id
         description: Lighter's trade id, unique across days.
@@ -207,7 +212,7 @@ models:
         description: The size as the file holds it, times 10^`size_decimals`.
         data_tests: [not_null]
       - name: notional_usdc
-        description: "`size` times `price`, in USDC."
+        description: "The trade value in USDC, `usdc_amount / 10^6`. Set for a binary option, whose `size` and `price` are null."
       - name: maker_account_index
         description: The ask account when `is_maker_ask`, else the bid account.
       - name: taker_account_index
@@ -239,7 +244,7 @@ models:
     description: >-
       One fill per account and trade: each trade gives its maker one row and its taker one row, with the
       account's position before and after. A side with no account (281474976710655, on
-      market-settlement trades) has no row. A binary option has no market row, so its `symbol`, `size`
+      market-settlement trades) has no row. A binary option has no market row, so its `symbol`, `signed_size`
       and positions are null.
     columns:
       - name: id
@@ -260,6 +265,7 @@ models:
         description: The account that made this side of the trade.
         data_tests: [not_null]
       - name: role
+        description: "`maker` for the resting order's account, `taker` for the account that crossed it."
         data_tests:
           - accepted_values:
               arguments:
