@@ -75,6 +75,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | | |
 | [Polymarket](#polymarket) | | | | ✓ | | | | |
 | [HyperCore fills](#hypercore-fills) | | | | | | | ✓ | |
+| [HyperCore actions](#hypercore-actions) | | | | | | | ✓ | |
 
 ### Balances
 
@@ -422,6 +423,28 @@ The `hypercore` pipeline builds it from the stream source `hypercore-fills`, whi
 | `fee_token` | text | The token the fee is in, such as `USDC`. |
 | `builder` | text | The builder address on the order, lowercased. Null when none. |
 | `builder_fee` | numeric | The builder's fee. The data does not show whether `fee` includes it. |
+
+### HyperCore actions
+
+`analytics.hypercore_actions`
+
+One signed action a user sent to Hyperliquid's HyperCore: an order, a cancel, a modify, a leverage change, a transfer and the rest, accepted or rejected. One row per action. The payload and the L1's response stay as JSON. Orders name assets by number, not by coin. Covers only the users listed in `ingestion/sources/hypercore-actions/addresses.json`, which must list at least one.
+
+The `hypercore` pipeline builds it from the stream source `hypercore-actions`, which reads Portal. Portal serves actions about two hours behind fills.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The action's place on HyperCore, `<block>:<actionIndex>`. Unique. |
+| `block_number` | bigint | The block the action was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `action_index` | integer | The action's position in the block. |
+| `user_address` | text | The user who sent the action, lowercased. |
+| `vault_address` | text | The vault the user acted for, lowercased. Null when the user acted for itself. |
+| `action_type` | text | The kind of action, such as `order`, `cancelByCloid`, `batchModify` or `usdSend`. |
+| `action` | jsonb | The action as the user signed it. Its keys depend on `action_type`. |
+| `status` | text | `ok` or `err`, for the action as a whole. An `ok` action can still fail item by item. |
+| `response` | jsonb | The L1's answer, with per-item results. An object on most actions, a JSON string on some rejected ones. |
+| `nonce` | bigint | A time in milliseconds that the signer picks. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

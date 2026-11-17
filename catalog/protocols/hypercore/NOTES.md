@@ -1,6 +1,6 @@
-# HyperCore fills: notes
+# HyperCore: notes
 
-These notes cover HyperCore fills as SQD Portal's `hyperliquid-fills` dataset serves them. Every fact below comes from the 24 fills of block 1223800001 (2026-11-16 20:38:52.843 UTC), read through the Portal MCP, unless it says it comes from the notation page in `protocol.yaml`. The proof table at the end lists the fills each fact rests on.
+These notes cover HyperCore fills as SQD Portal's `hyperliquid-fills` dataset serves them, then HyperCore actions as its `hyperliquid-replica-cmds` dataset serves them. Every fact about fills comes from the 24 fills of block 1223800001 (2026-11-16 20:38:52.843 UTC), read through the Portal MCP, unless it says it comes from the notation page in `protocol.yaml`. The fills proof table lists the fills each fact rests on. The actions sections say where their facts come from and end with a proof table of their own.
 
 ## What one fill is
 
@@ -32,7 +32,7 @@ Two forms appear in the block: a bare name (`ZEC`, fills 18 to 23) and a name wi
 
 Block hashes are all zeros: block 1223800001 has `hash` and `parentHash` `0x0000…0000`. Never key or join on a block hash. A block with no fills that match the query arrives as a bare header.
 
-## Proof table
+## Fills proof table
 
 All rows are block 1223800001.
 
@@ -47,3 +47,31 @@ All rows are block 1223800001.
 | 7 | `0x0cf7…3e5b` | io:ANTH | A | false | -0.001027 | Open Short, startPosition -1.057 | Negative position is short |
 | 18 | `0xc634…8f95` | ZEC | B | true | 0.203615 | builder `0x524c…571e`, builderFee 0.107166, cloid null | Builder fill |
 | 19 | `0x4d96…0b4c` | ZEC | A | false | -0.002143 | Close Long, closedPnl -1.205952 | Closing at a loss |
+
+## What one action is
+
+An action is one signed request a user sent to the L1: an order, a cancel, a modify, a leverage change, a transfer such as `usdSend`, and the rest. Portal serves every action, accepted or rejected, with the L1's response. The facts below come from two loads through the hypercore-actions source on 2026-11-17: the 7,299 actions that `0x6978…1cb5` sent in blocks 1223800000 to 1223802000, and 333 actions of three other users in blocks 1223800000 to 1223800200. The actions proof table lists the actions each fact rests on.
+
+`actionIndex` is the action's position in its block, unique within the block. The source keys each record by `<block>:<actionIndex>`.
+
+The dataset is large and not real-time. An unfiltered request over blocks 1223800000 to 1223802000 returned 1,973,373 actions, about 986 a block, which is about 1.2 billion a day. That is why the source requires `users`. On 2026-11-17 its finalized head was 112,905 blocks behind that of `hyperliquid-fills`, about two hours.
+
+## Action fields
+
+- `action` is the payload as the user signed it. Its `type` names the kind of action, and its other keys depend on the type: an order has `orders` and `grouping`, a cancel by cloid `cancels`, a batch modify `modifies`, a scheduled cancel `time`.
+- Orders name assets by number, not by coin, with short keys: `a` asset, `b` is-buy, `p` price, `s` size, `r` reduce-only, `t` order type, `c` cloid. Action 570 of block 1223800001 rests two buys of asset 223. A cancel by cloid names the asset `asset`, not `a`. Neither dataset maps an asset number to a coin.
+- `status` is `ok` or `err` and covers the action as a whole. An `ok` action can still fail item by item, and the per-item results sit in `response`. Action 13 of block 1223800001 cancels three orders, two of the cancels fail, and its status is `ok`. Of the wallet's 7,299 actions, all `ok`, 1,620 hold an `error` in `response`.
+- `response` is an object with `type` and `data` on most actions, but some rejected actions answer with a plain string. Action 301 of block 1223800003 has status `err` and response `"Invalid leverage value"`. Staging keeps `response` as jsonb, so that response is a JSON string.
+- `vaultAddress` is null when the user acted for itself, as in action 301 of block 1223800003. For `0x6978…1cb5`, a market-maker vault, `user` and `vaultAddress` are the same address on all 7,299 actions.
+- `nonce` is a time in milliseconds that the signer picks. On all 7,299 of the wallet's actions it falls 144 to 822 ms before the block's `timestamp`.
+- `signature` holds `r`, `s` and `v`. The source does not load it.
+- Block headers are as in fills: `timestamp` is in Unix milliseconds, and `hash` and `parentHash` are zeros. A block with no matching action arrives as a bare header.
+
+## Actions proof table
+
+| Block | Action | User | Type | Status | What it shows |
+|---|---|---|---|---|---|
+| 1223800001 | 13 | `0x6978…1cb5` | cancelByCloid | ok | Two of three cancels fail inside an `ok` action. `vaultAddress` is the user's own address. |
+| 1223800001 | 570 | `0x6978…1cb5` | order | ok | Orders name asset 223 by number, with short keys, and both orders rest. |
+| 1223800003 | 301 | `0x7fca…6b8d` | updateLeverage | err | A string response, and a null `vaultAddress`. |
+| 1223800013 | 501 | `0x19f2…7dfb` | usdSend | ok | A transfer is an action too: amount 0.131539 to destination `0xd884…34dc`. |

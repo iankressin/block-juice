@@ -1,14 +1,18 @@
 name: hypercore
 scope: >-
-  HyperCore fills as SQD Portal serves them in its hyperliquid-fills dataset: one record for each user's
-  side of each trade on Hyperliquid's L1 order books. Orders that did not fill, cancels, funding and
-  transfers are not in this dataset. HyperEVM is a separate EVM chain (Portal dataset
-  hyperliquid-mainnet) and is not covered here.
+  HyperCore fills and actions as SQD Portal serves them. Fills come from its hyperliquid-fills dataset: one
+  record for each user's side of each trade on Hyperliquid's L1 order books, with no funding. Actions come
+  from its hyperliquid-replica-cmds dataset: one record for each signed L1 action, such as an order, a
+  cancel, a modify or a transfer, accepted or rejected, with the L1's response. HyperEVM is a separate EVM
+  chain (Portal dataset hyperliquid-mainnet) and is not covered here.
 docs:
   - https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/notation
+  - https://docs.sqd.dev/en/data/hyperliquid/hyperliquid-replica-cmds
+  - https://docs.sqd.dev/en/api/hyperliquid-replica-cmds/finalized-stream
 chains:
   hypercore:
     portal_dataset: hyperliquid-fills
-    # HyperCore is not an EVM chain. Fills are L1 records that Portal serves as they are, not logs a
-    # contract emits, so there is no contract, topic or ABI to list.
+    actions_portal_dataset: hyperliquid-replica-cmds
+    # HyperCore is not an EVM chain. Fills and actions are L1 records that Portal serves as they are, not
+    # logs a contract emits, so there is no contract, topic or ABI to list.
     contracts: {}

@@ -124,6 +124,7 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd ingestion/sources/solana-spl-balances && pnpm ingest)
 (cd ingestion/sources/bitcoin-btc-balances && pnpm ingest)
 (cd ingestion/sources/hypercore-fills && pnpm ingest)
+(cd ingestion/sources/hypercore-actions && pnpm ingest)
 (cd ingestion/sources/binance-candles && pnpm ingest)
 (cd ingestion/sources/coinbase-candles && pnpm ingest)
 (cd ingestion/sources/evm-chainlink-price-feeds && CHAIN=ethereum pnpm ingest)
