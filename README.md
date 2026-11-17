@@ -83,6 +83,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter candles](#lighter-candles) | | | | | | | | ✓ | |
 | [Lighter funding rates](#lighter-funding-rates) | | | | | | | | ✓ | |
 | [Lighter exchange metrics](#lighter-exchange-metrics) | | | | | | | | ✓ | |
+| [Lighter open interest](#lighter-open-interest) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -571,6 +572,23 @@ The `lighter` pipeline builds it from the call source `lighter-exchange-metrics`
 | `kind` | text | The metric: `volume`, `maker_fee`, `taker_fee`, `liquidation_fee`, `trade_count`, `liquidation_count`, `liquidation_volume`, `open_interest`, `attribution_maker_fee`, `attribution_taker_fee`, `account_count`, `active_account_count`, `inflow`, `outflow`, `transfer_fee`, `withdraw_fee`, `buyback` (from 2025-12-30) or `buyback_usdc`. |
 | `market` | text | The symbol for a per-market series. Null for an exchange-wide one, and always null for the last eight kinds. |
 | `value` | numeric | USDC for volumes, fees, flows and `open_interest`; LIT for `buyback`; a count for the rest. Only `volume`, the fee kinds and the counts are proven; see `catalog/vendors/lighter/NOTES.md`. |
+
+### Lighter open interest
+
+`analytics.lighter_open_interest`
+
+One end-of-hour open interest reading per Lighter market, about 5,000 rows a day. Lighter names the market by symbol only, so there is no `market_id`. Covers every market, from `START_DATE`. Only ended UTC days load: a day's file appears about 07:03 UTC the next day.
+
+The `lighter` pipeline builds it from the call source `lighter-open-interest`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<symbol>:<hour>`. Unique. |
+| `hour` | timestamptz | The start of the hour the reading closes. |
+| `symbol` | text | The market's symbol. |
+| `open_interest` | numeric | Open interest in base units. |
+| `mark_price` | numeric | The mark price at the end of the hour. |
+| `open_interest_usd` | numeric | `open_interest` times `mark_price`, in USDC. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

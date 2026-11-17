@@ -145,3 +145,26 @@ models:
       - name: value
         description: The day's value in the kind's unit, as Lighter sends it.
         data_tests: [not_null]
+
+  - name: lighter_open_interest
+    description: >-
+      One end-of-hour open interest reading per Lighter market, from Lighter's hourly S3 files.
+      `hour` is the start of the hour the reading closes. The file names the market by symbol only,
+      and two markets can share a symbol, so there is no `market_id`. A day's file appears about
+      07:03 UTC the next day, so only ended days load.
+    columns:
+      - name: id
+        description: "`<symbol>:<hour>`."
+        data_tests: [unique]
+      - name: hour
+        description: The start of the hour the reading closes, in UTC.
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: open_interest
+        description: Open interest in base units.
+        data_tests: [not_null]
+      - name: mark_price
+        description: The mark price at the end of the hour, in USDC.
+      - name: open_interest_usd
+        description: "`open_interest` times `mark_price`, in USDC."
