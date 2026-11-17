@@ -1,0 +1,5 @@
+kind,event,made_by,events,transactions,markets,days,usdc,avg_usdc,events_before_resolution,median_minutes_from_start,median_minutes_from_resolution,p90_minutes_from_resolution
+redeem,auto_redeemer.BinaryRedemption,polymarket auto-redeemer,42222,42222,41995,92,169579698.807162,4016.382426,0,229.3,0.2,0.2
+redeem,auto_redeemer.NegRiskRedemption,polymarket auto-redeemer,20033,20033,19977,92,51933446.972607,2592.394897,0,239.4,0.2,0.3
+merge,collateral_adapter.PositionsMerged,the wallet,434,45,429,3,3036890.183237,6997.442819,434,157.7,-113.5,-28.3
+redeem,collateral_adapter.PositionsRedeemed,the wallet,73,13,73,1,4045.086357,55.412142,2,31854.7,28799.8,51845.2

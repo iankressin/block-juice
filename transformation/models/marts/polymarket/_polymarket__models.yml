@@ -173,6 +173,59 @@ models:
       - name: price
         description: usdc / shares, in pUSD per share.
 
+  - name: polymarket_position_changes
+    description: >-
+      One row per split, merge, redemption or conversion of a wallet in one market: the moves that change a
+      position without a trade. usdc is the collateral the wallet got, negative when it paid, in pUSD.
+      shares_delta lists the change in shares of each outcome, in outcome_index order. A conversion gives
+      a row for each market it touches.
+    columns:
+      - name: id
+        description: <block>:<logIndex>:<condition_id>, the event's place in the chain and the market.
+        data_tests: [unique, not_null]
+      - name: version
+        description: The protocol version the event belongs to.
+        data_tests: [not_null]
+      - name: block_number
+        description: The block of the event.
+        data_tests: [not_null]
+      - name: block_timestamp
+        description: When that block was mined.
+      - name: tx_hash
+        description: The transaction of the event.
+      - name: log_index
+        description: The event's position in that block's logs.
+      - name: kind
+        description: split, merge, redeem or convert.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [split, merge, redeem, convert]
+      - name: event
+        description: >-
+          The contract event that names the wallet, as <contract>.<Event>. auto_redeemer.* means
+          Polymarket's auto-redeemer made the move for the wallet.
+        data_tests: [not_null]
+      - name: wallet
+        description: The proxy wallet or Safe that Polymarket shows as the trader.
+        data_tests: [not_null]
+      - name: condition_id
+        description: The market.
+        data_tests: [not_null]
+      - name: usdc
+        description: >-
+          Collateral the wallet got from the event, negative when it paid; 0 when the event moved no cash
+          for this market.
+        data_tests: [not_null]
+      - name: shares_delta
+        description: >-
+          The wallet's change in shares of each outcome, in outcome_index order; negative when burned, null
+          for an outcome the event does not move or names no amount for.
+      - name: zeroes_position
+        description: True when the event burns the wallet's whole balance of the market's tokens, whatever it held.
+        data_tests: [not_null]
+
   - name: polymarket_price_candles
     description: >-
       One row per outcome token and minute, the price chart in 1-minute OHLC. Prices are pUSD per share. A
@@ -534,3 +587,82 @@ unit_tests:
             'D.C. United SC vs. New York City FC - Exact Score', true, 'ctf', array['Yes', 'No'], '2026-11-07 21:00:00+00',
             null, '2026-11-07 23:34:18+00', array[0, 1]::numeric[], false, true, 'exact_score', 'mls-2026',
             '2026-11-07 19:00:00+00'
+
+  - name: a_merge_and_a_redemption_give_one_row_each
+    description: >-
+      Two real moves of wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea on 2026-09-27. Block 94555077, log
+      505: it merges 2723.8147 shares of each outcome of "Will Austria win on 2026-09-27?" into 2723.8147
+      pUSD. Block 94555101, log 321: it redeems "Jets vs. Lions: O/U 36.5" for 14 pUSD; the event names no
+      shares, so both outcomes are null and zeroes_position is true.
+    model: polymarket_position_changes
+    given:
+      - input: ref('int_polygon_polymarket_ctf_position_changes')
+        rows:
+          - {id: "94555077:505:42141341986820927805114896366600970936733714052874505517471033381566973078831", version: ctf, block_number: 94555077, block_timestamp: "2026-09-27 19:35:56+00", tx_hash: "0x3938352d3a7b7443fc4e888236b86423405f143c97d234d0b05c0364c685456c", log_index: 505, kind: merge, event: collateral_adapter.PositionsMerged, wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", condition_id: "0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300", token_id: "42141341986820927805114896366600970936733714052874505517471033381566973078831", shares_delta: "-2723.814700", usdc_delta: null, zeroes_position: false}
+          - {id: "94555077:505:81048650100689273894188087205203777137046922630197621575643837738396411229059", version: ctf, block_number: 94555077, block_timestamp: "2026-09-27 19:35:56+00", tx_hash: "0x3938352d3a7b7443fc4e888236b86423405f143c97d234d0b05c0364c685456c", log_index: 505, kind: merge, event: collateral_adapter.PositionsMerged, wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", condition_id: "0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300", token_id: "81048650100689273894188087205203777137046922630197621575643837738396411229059", shares_delta: "-2723.814700", usdc_delta: null, zeroes_position: false}
+          - {id: "94555077:505:cash", version: ctf, block_number: 94555077, block_timestamp: "2026-09-27 19:35:56+00", tx_hash: "0x3938352d3a7b7443fc4e888236b86423405f143c97d234d0b05c0364c685456c", log_index: 505, kind: merge, event: collateral_adapter.PositionsMerged, wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", condition_id: "0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300", token_id: null, shares_delta: null, usdc_delta: "2723.814700", zeroes_position: false}
+          - {id: "94555101:321:15629694243756390170694603874219508644575942051853071585098420167723271439496", version: ctf, block_number: 94555101, block_timestamp: "2026-09-27 19:36:32+00", tx_hash: "0x3cf6b7abbbb84b6ba9eda9282b708f592185e6083623556d8c177c84a2c33bc9", log_index: 321, kind: redeem, event: auto_redeemer.BinaryRedemption, wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", condition_id: "0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d", token_id: "15629694243756390170694603874219508644575942051853071585098420167723271439496", shares_delta: null, usdc_delta: null, zeroes_position: true}
+          - {id: "94555101:321:60444892530501692889079609134552150763007289791061426225811162671395741356617", version: ctf, block_number: 94555101, block_timestamp: "2026-09-27 19:36:32+00", tx_hash: "0x3cf6b7abbbb84b6ba9eda9282b708f592185e6083623556d8c177c84a2c33bc9", log_index: 321, kind: redeem, event: auto_redeemer.BinaryRedemption, wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", condition_id: "0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d", token_id: "60444892530501692889079609134552150763007289791061426225811162671395741356617", shares_delta: null, usdc_delta: null, zeroes_position: true}
+          - {id: "94555101:321:cash", version: ctf, block_number: 94555101, block_timestamp: "2026-09-27 19:36:32+00", tx_hash: "0x3cf6b7abbbb84b6ba9eda9282b708f592185e6083623556d8c177c84a2c33bc9", log_index: 321, kind: redeem, event: auto_redeemer.BinaryRedemption, wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", condition_id: "0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d", token_id: null, shares_delta: null, usdc_delta: "14.000000", zeroes_position: false}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "81048650100689273894188087205203777137046922630197621575643837738396411229059", condition_id: "0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300", outcome_index: 0}
+          - {token_id: "42141341986820927805114896366600970936733714052874505517471033381566973078831", condition_id: "0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300", outcome_index: 1}
+          - {token_id: "15629694243756390170694603874219508644575942051853071585098420167723271439496", condition_id: "0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d", outcome_index: 0}
+          - {token_id: "60444892530501692889079609134552150763007289791061426225811162671395741356617", condition_id: "0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d", outcome_index: 1}
+    expect:
+      format: sql
+      rows: |
+        select '94555077:505:0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300' as id, 'ctf' as version,
+            94555077::bigint as block_number, '2026-09-27 19:35:56+00'::timestamptz as block_timestamp,
+            '0x3938352d3a7b7443fc4e888236b86423405f143c97d234d0b05c0364c685456c' as tx_hash, 505 as log_index,
+            'merge' as kind, 'collateral_adapter.PositionsMerged' as event,
+            '0x2005d16a84ceefa912d4e380cd32e7ff827875ea' as wallet,
+            '0x68cf7774ba502815fb8effd4c791dfe503bd494f5d138271c6878ef517735300' as condition_id,
+            2723.814700::numeric as usdc, array[-2723.814700, -2723.814700]::numeric[] as shares_delta,
+            false as zeroes_position
+        union all
+        select '94555101:321:0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d', 'ctf', 94555101,
+            '2026-09-27 19:36:32+00', '0x3cf6b7abbbb84b6ba9eda9282b708f592185e6083623556d8c177c84a2c33bc9', 321,
+            'redeem', 'auto_redeemer.BinaryRedemption', '0x2005d16a84ceefa912d4e380cd32e7ff827875ea',
+            '0xdcc73b51bf1573a4dc4dbed72cb3d5cd5a65f2155ba2267d4264de0d25e95b0d', 14.000000,
+            array[null, null]::numeric[], true
+
+  - name: a_conversion_gives_a_row_per_market
+    description: >-
+      Made up: a wallet converts 5 NO of markets 0xc1 and 0xc2 of a three-market neg-risk event. It gets 5
+      YES of 0xc3 and (2 - 1) x 5 = 5 pUSD, booked 2.5 to each NO market. Each market's row holds only its
+      own outcome: NO burned at index 1, YES paid at index 0, the other null.
+    model: polymarket_position_changes
+    given:
+      - input: ref('int_polygon_polymarket_ctf_position_changes')
+        rows:
+          - {id: "300:7:2", version: ctf, block_number: 300, block_timestamp: "2026-10-10 10:00:00+00", tx_hash: "0xt1", log_index: 7, kind: convert, event: neg_risk.PositionsConverted, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: -5, usdc_delta: null, zeroes_position: false}
+          - {id: "300:7:cash:0xc1", version: ctf, block_number: 300, block_timestamp: "2026-10-10 10:00:00+00", tx_hash: "0xt1", log_index: 7, kind: convert, event: neg_risk.PositionsConverted, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: "2.5", zeroes_position: false}
+          - {id: "300:7:4", version: ctf, block_number: 300, block_timestamp: "2026-10-10 10:00:00+00", tx_hash: "0xt1", log_index: 7, kind: convert, event: neg_risk.PositionsConverted, wallet: "0xaa", condition_id: "0xc2", token_id: 4, shares_delta: -5, usdc_delta: null, zeroes_position: false}
+          - {id: "300:7:cash:0xc2", version: ctf, block_number: 300, block_timestamp: "2026-10-10 10:00:00+00", tx_hash: "0xt1", log_index: 7, kind: convert, event: neg_risk.PositionsConverted, wallet: "0xaa", condition_id: "0xc2", token_id: null, shares_delta: null, usdc_delta: "2.5", zeroes_position: false}
+          - {id: "300:7:5", version: ctf, block_number: 300, block_timestamp: "2026-10-10 10:00:00+00", tx_hash: "0xt1", log_index: 7, kind: convert, event: neg_risk.PositionsConverted, wallet: "0xaa", condition_id: "0xc3", token_id: 5, shares_delta: 5, usdc_delta: null, zeroes_position: false}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: 1, condition_id: "0xc1", outcome_index: 0}
+          - {token_id: 2, condition_id: "0xc1", outcome_index: 1}
+          - {token_id: 3, condition_id: "0xc2", outcome_index: 0}
+          - {token_id: 4, condition_id: "0xc2", outcome_index: 1}
+          - {token_id: 5, condition_id: "0xc3", outcome_index: 0}
+          - {token_id: 6, condition_id: "0xc3", outcome_index: 1}
+    expect:
+      format: sql
+      rows: |
+        select '300:7:0xc1' as id, 'ctf' as version, 300::bigint as block_number,
+            '2026-10-10 10:00:00+00'::timestamptz as block_timestamp, '0xt1' as tx_hash, 7 as log_index,
+            'convert' as kind, 'neg_risk.PositionsConverted' as event, '0xaa' as wallet, '0xc1' as condition_id,
+            2.5::numeric as usdc,
+            array[null, -5]::numeric[] as shares_delta, false as zeroes_position
+        union all
+        select '300:7:0xc2', 'ctf', 300, '2026-10-10 10:00:00+00', '0xt1', 7, 'convert',
+            'neg_risk.PositionsConverted', '0xaa', '0xc2', 2.5,
+            array[null, -5]::numeric[], false
+        union all
+        select '300:7:0xc3', 'ctf', 300, '2026-10-10 10:00:00+00', '0xt1', 7, 'convert',
+            'neg_risk.PositionsConverted', '0xaa', '0xc3', 0,
+            array[5, null]::numeric[], false

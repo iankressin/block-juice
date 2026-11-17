@@ -1,30 +1,52 @@
-question: "What share of RN1's Polymarket fills were maker-side in Polygon blocks 96972629\u201396975028,\
-  \ and how do those fills break down?"
+question: How does RN1 trade on Polymarket, by outcome token, role, market, phase and complementary pairs?
 definitions:
   RN1: The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea.
   maker-side: The wallet's order rested on the book, as recorded by the exchange OrderFilled role; this
     is not the buy/sell direction.
-  window: The existing reference fixture covers Polygon blocks 96972629 through 96975028 on 2026-11-08.
-    This is a bounded reference window, not a claim to cover the full UTC day.
+  window: Polygon blocks 91743315 through 97042228, 10 Aug to 10 Nov 2026, the 92 days the RN1 Strategy
+    Teardown article covers. bj answer --eval runs the reference fixture instead, blocks 96972629 through
+    96975028 on 2026-11-08.
+  loading: List RN1's wallet under wallets in the addresses.json of both polygon-polymarket-ctf and
+    polygon-polymarket-ctf-exchange-v2 before the first load, then run the polymarket pipeline over the window.
   amounts: Whole shares and pUSD; fee_usdc is kept separate from the pre-fee traded amount.
 marts:
 - polymarket_wallet_fills
 - polymarket_markets
+- polymarket_market_participants
+- polymarket_position_changes
 analyses:
 - rn1_polymarket_fills_2026_11_08
+- rn1_polymarket_fills_2026_11_08_by_counterparty
+- rn1_polymarket_fills_2026_11_08_by_day
+- rn1_polymarket_fills_2026_11_08_by_day_strategy
+- rn1_polymarket_fills_2026_11_08_by_imbalance
 - rn1_polymarket_fills_2026_11_08_by_market
+- rn1_polymarket_fills_2026_11_08_by_minute
 - rn1_polymarket_fills_2026_11_08_by_phase
+- rn1_polymarket_fills_2026_11_08_by_price
 - rn1_polymarket_fills_2026_11_08_by_role
+- rn1_polymarket_fills_2026_11_08_by_segment
+- rn1_polymarket_fills_2026_11_08_by_size
 - rn1_polymarket_fills_2026_11_08_by_token
+- rn1_polymarket_fills_2026_11_08_cash_by_hour
+- rn1_polymarket_fills_2026_11_08_exits
+- rn1_polymarket_fills_2026_11_08_merge_batches
+- rn1_polymarket_fills_2026_11_08_open_cost_by_hour
+- rn1_polymarket_fills_2026_11_08_order_sizes
 - rn1_polymarket_fills_2026_11_08_pairs
+- rn1_polymarket_fills_2026_11_08_pnl_by_market
+- rn1_polymarket_fills_2026_11_08_quote_evidence
+- rn1_polymarket_fills_2026_11_08_replay
 window:
   chain: polygon
-  blocks: &id001
-  - 96972629
-  - 96975028
+  blocks:
+  - 91743315
+  - 97042228
 eval_window:
   chain: polygon
-  blocks: *id001
+  blocks:
+  - 96972629
+  - 96975028
 inputs:
 - name: wallet_fills
   strategy: history
@@ -57,6 +79,22 @@ expected_columns:
   rn1_polymarket_fills_2026_11_08_pairs: [kind, markets, markets_bought_both, markets_bought_both_pct,
     cost_usdc, pair_shares, pair_cost_usdc, avg_pair_cost, markets_pair_below_1, pairs_below_1_pct, pair_edge_usdc,
     unmatched_shares, unmatched_cost_usdc]
+  rn1_polymarket_fills_2026_11_08_by_counterparty: [rank, counterparty, takers, fills, markets, shares, usdc, resolved_cost_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_day: [day, role, fills, markets, shares, usdc, fee_usdc, resolved_cost_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_day_strategy: [day, role, phase, fills, markets, usdc, resolved_cost_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_imbalance: [role, imbalance_band, inventory_side, fills, shares, usdc, resolved_cost_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_minute: [minute_bucket, role, fills, markets, shares, usdc, avg_price, resolved_shares, resolved_cost_usdc, payout_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_price: [price_cent, role, fills, shares, usdc, fee_usdc, resolved_shares, resolved_cost_usdc, payout_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_segment: [series_slug, sports_market_type, role, phase, fills, markets, shares, usdc, fee_usdc, resolved_cost_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_by_size: [size_from, role, fills, shares, usdc, avg_price, resolved_shares, resolved_cost_usdc, payout_usdc, pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_cash_by_hour: [hour, buy_cost_usdc, merge_usdc, redeem_usdc, cash_low_usdc, cash_end_usdc]
+  rn1_polymarket_fills_2026_11_08_exits: [kind, event, made_by, events, transactions, markets, days, usdc, avg_usdc, events_before_resolution, median_minutes_from_start, median_minutes_from_resolution, p90_minutes_from_resolution]
+  rn1_polymarket_fills_2026_11_08_merge_batches: [tx_hash, block_timestamp, merges, usdc, largest_usdc, smallest_usdc, unresolved_markets, live_markets]
+  rn1_polymarket_fills_2026_11_08_open_cost_by_hour: [hour, tied_high_usdc, tied_end_usdc]
+  rn1_polymarket_fills_2026_11_08_order_sizes: [role, unit, rank, size, orders, pct_of_orders]
+  rn1_polymarket_fills_2026_11_08_pnl_by_market: [condition_id, question, series_slug, sports_market_type, game_start_time, resolved_at, payout_0, payout_1, fills, maker_fills, cost_usdc, pair_shares, pair_cost, unmatched_shares, unmatched_outcome_index, pnl_usdc, pair_pnl_usdc, unmatched_pnl_usdc, participant_pnl_usdc]
+  rn1_polymarket_fills_2026_11_08_quote_evidence: [ord, measure, n, total, pct, value]
+  rn1_polymarket_fills_2026_11_08_replay: [condition_id, question, game_start_time, resolved_at, payout_0, payout_1, block_number, log_index, block_timestamp, role, side, outcome_index, outcome, price, shares, usdc, fee_usdc, held_0, held_1, cost_0, cost_1]
 grain:
   rn1_polymarket_fills_2026_11_08_by_market: [condition_id]
   rn1_polymarket_fills_2026_11_08_by_token: [token_id, side, role]

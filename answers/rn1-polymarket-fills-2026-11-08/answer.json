@@ -1,0 +1,502 @@
+{
+  "question": "How does RN1 trade on Polymarket, by outcome token, role, market, phase and complementary pairs?",
+  "slug": "rn1-polymarket-fills-2026-11-08",
+  "answered_at": "2026-11-12T14:30:00Z",
+  "value": "89.75",
+  "definitions": {
+    "RN1": "The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea",
+    "fill": "An OrderFilled log from the Polymarket exchange where RN1 is maker or taker",
+    "maker-side": "RN1's order rested on the book (role maker), from the exchange's own logs",
+    "profit to payout": "Each share RN1 bought valued at what it redeems for (payout_fractions) less its cost with fees, as if held to resolution; resolved markets only"
+  },
+  "alternatives": [],
+  "window": {
+    "blocks": {
+      "polygon": [
+        91743315,
+        97042228
+      ]
+    }
+  },
+  "results": [
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08",
+      "path": "results/rn1_polymarket_fills_2026_11_08.csv",
+      "columns": [
+        "maker_fill_pct"
+      ],
+      "rows": 1,
+      "sql": "-- The share of RN1's Polymarket fills that were maker-side, in percent, on Polygon blocks 91743315 to\n-- 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). RN1 is the wallet\n-- 0x2005d16a84ceefa912d4e380cd32e7ff827875ea.\n-- A fill is maker-side when RN1's order rested on the book (role maker), from the exchange's own\n-- OrderFilled logs, not from the trade's direction.\nselect\n    round(100.0 * count(*) filter (where role = 'maker') / nullif(count(*), 0), 2) as maker_fill_pct\nfrom \"warehouse\".\"analytics\".\"polymarket_wallet_fills\"\nwhere wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n    and block_number between 91743315 and 97042228"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_token",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_token.csv",
+      "columns": [
+        "token_id",
+        "side",
+        "role",
+        "condition_id",
+        "question",
+        "outcome",
+        "fills",
+        "shares",
+        "usdc",
+        "fee_usdc",
+        "avg_price"
+      ],
+      "rows": 156161,
+      "sql": "-- RN1's fills per outcome token, side and role on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to\n-- 2026-11-10 00:00 UTC): fills, shares, pUSD paid before fees, fees, and the share-weighted price in pUSD per share.\n-- tests/reference/rn1_polymarket_fills_2026_11_08_matches_reference.sql checks the shares against the\n-- Polymarket Data API.\nselect\n    f.token_id::text as token_id,\n    f.side,\n    f.role,\n    f.condition_id,\n    m.question,\n    f.outcome,\n    count(*) as fills,\n    sum(f.shares) as shares,\n    sum(f.usdc) as usdc,\n    sum(f.fee_usdc) as fee_usdc,\n    round(sum(f.usdc) / nullif(sum(f.shares), 0), 6) as avg_price\nfrom \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\nleft join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\nwhere f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n    and f.block_number between 91743315 and 97042228\ngroup by f.token_id, f.side, f.role, f.condition_id, m.question, f.outcome\norder by shares desc, token_id, f.role"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_role",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_role.csv",
+      "columns": [
+        "kind",
+        "role",
+        "side",
+        "fills",
+        "pct_of_fills",
+        "shares",
+        "usdc",
+        "fee_usdc",
+        "avg_fill_shares",
+        "median_fill_shares",
+        "avg_fill_usdc",
+        "avg_price",
+        "tokens",
+        "markets",
+        "fills_per_minute"
+      ],
+      "rows": 4,
+      "sql": "-- RN1's maker behaviour on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC), per\n-- market kind (sports or not, from Gamma) and role: fills, the shares and pUSD (before fees), fees, the typical\n-- fill size, and the share-weighted price in pUSD per share. fills_per_minute spreads the fills over the\n-- window's 132480 minutes (92 days). A market Gamma lacks counts as kind unknown.\nwith fills as (\n    select\n        f.*,\n        case when m.is_sports then 'sports' when m.is_sports is not null then 'other' else 'unknown' end as kind\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n)\n\nselect\n    kind,\n    role,\n    side,\n    count(*) as fills,\n    round(100.0 * count(*) / sum(count(*)) over (), 2) as pct_of_fills,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    sum(fee_usdc) as fee_usdc,\n    round(avg(shares), 6) as avg_fill_shares,\n    percentile_cont(0.5) within group (order by shares) as median_fill_shares,\n    round(avg(usdc), 6) as avg_fill_usdc,\n    round(sum(usdc) / nullif(sum(shares), 0), 6) as avg_price,\n    count(distinct token_id) as tokens,\n    count(distinct condition_id) as markets,\n    round(count(*) / 132480.0, 2) as fills_per_minute\nfrom fills\ngroup by kind, role, side\norder by kind, role, side"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_market",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_market.csv",
+      "columns": [
+        "condition_id",
+        "question",
+        "event_title",
+        "is_sports",
+        "sports_market_type",
+        "series_slug",
+        "game_start_time",
+        "outcomes",
+        "fills",
+        "maker_fills",
+        "shares_0",
+        "cost_0",
+        "avg_cost_0",
+        "shares_1",
+        "cost_1",
+        "avg_cost_1",
+        "sold_shares",
+        "pair_shares",
+        "bought_both",
+        "pair_cost",
+        "pair_edge_usdc",
+        "unmatched_shares",
+        "unmatched_outcome",
+        "unmatched_cost_usdc",
+        "first_fill_at",
+        "last_fill_at"
+      ],
+      "rows": 87642,
+      "sql": "-- RN1's complementary accumulation per two-outcome market on Polygon blocks 91743315 to 97042228\n-- (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD; shares are outcome tokens.\n-- Per outcome (outcome_index 0 and 1): the shares RN1 bought and what they cost, fees included, so\n-- avg_cost is pUSD per share after fees.\n-- A complete pair is one share of each outcome; it redeems or merges for exactly 1 pUSD.\n--   pair_shares = least(shares_0, shares_1), the pairs RN1 could merge from this window's buys alone.\n--   pair_cost = avg_cost_0 + avg_cost_1, the cost of one pair at the window's average prices.\n--   pair_edge_usdc = pair_shares * (1 - pair_cost): the profit locked in by those pairs, before any\n--   disposal. It is negative when a pair cost more than 1.\n--   unmatched_shares sit on unmatched_outcome: directional exposure, worth its payout at resolution.\n-- Only buys count; sold_shares shows what RN1 sold per market, which the pair figures leave out. Markets\n-- with more than two outcomes have no complement token and stay out. game_start_time comes from Gamma.\nwith fills as (\n    select f.*\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.complement_token_id is not null\n),\n\nper_market as (\n    select\n        condition_id,\n        count(*) as fills,\n        count(*) filter (where role = 'maker') as maker_fills,\n        coalesce(sum(shares) filter (where side = 'buy' and outcome_index = 0), 0) as shares_0,\n        coalesce(sum(usdc + fee_usdc) filter (where side = 'buy' and outcome_index = 0), 0) as cost_0,\n        coalesce(sum(shares) filter (where side = 'buy' and outcome_index = 1), 0) as shares_1,\n        coalesce(sum(usdc + fee_usdc) filter (where side = 'buy' and outcome_index = 1), 0) as cost_1,\n        coalesce(sum(shares) filter (where side = 'sell'), 0) as sold_shares,\n        min(block_timestamp) as first_fill_at,\n        max(block_timestamp) as last_fill_at\n    from fills\n    group by condition_id\n),\n\npriced as (\n    select\n        *,\n        round(cost_0 / nullif(shares_0, 0), 6) as avg_cost_0,\n        round(cost_1 / nullif(shares_1, 0), 6) as avg_cost_1,\n        least(shares_0, shares_1) as pair_shares\n    from per_market\n)\n\nselect\n    p.condition_id,\n    m.question,\n    m.event_title,\n    m.is_sports,\n    m.sports_market_type,\n    m.series_slug,\n    m.game_start_time,\n    m.outcomes,\n    p.fills,\n    p.maker_fills,\n    p.shares_0,\n    p.cost_0,\n    p.avg_cost_0,\n    p.shares_1,\n    p.cost_1,\n    p.avg_cost_1,\n    p.sold_shares,\n    p.pair_shares,\n    p.shares_0 > 0 and p.shares_1 > 0 as bought_both,\n    p.avg_cost_0 + p.avg_cost_1 as pair_cost,\n    round(p.pair_shares * (1 - (p.avg_cost_0 + p.avg_cost_1)), 6) as pair_edge_usdc,\n    abs(p.shares_0 - p.shares_1) as unmatched_shares,\n    case when p.shares_0 > p.shares_1 then m.outcomes[1] when p.shares_1 > p.shares_0 then m.outcomes[2] end\n        as unmatched_outcome,\n    round(\n        case\n            when p.shares_0 > p.shares_1 then (p.shares_0 - p.shares_1) * p.avg_cost_0\n            when p.shares_1 > p.shares_0 then (p.shares_1 - p.shares_0) * p.avg_cost_1\n            else 0\n        end, 6\n    ) as unmatched_cost_usdc,\n    p.first_fill_at,\n    p.last_fill_at\nfrom priced as p\nleft join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = p.condition_id\norder by p.cost_0 + p.cost_1 desc"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_phase",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_phase.csv",
+      "columns": [
+        "phase",
+        "fills",
+        "maker_fill_pct",
+        "shares",
+        "usdc",
+        "avg_price",
+        "markets",
+        "underweight_buys",
+        "overweight_buys",
+        "balanced_buys",
+        "underweight_buy_pct"
+      ],
+      "rows": 3,
+      "sql": "-- RN1's fills in two-outcome markets by game phase on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00\n-- to 2026-11-10 00:00 UTC), with how it balances inventory. Shares are outcome tokens; prices pUSD per share.\n-- phase: pre_game before Gamma's game_start_time, in_game from it on, no_game_time when Gamma gives none.\n-- Inventory is what RN1 bought in this window only, fill by fill in (block, log index) order; holdings\n-- from before the window are not in it. A buy is of the underweight outcome when RN1 held fewer shares\n-- of that outcome than of the other just before it; balanced when it held equal amounts (at the first\n-- fill of a market, both are 0).\nwith fills as (\n    select\n        f.*,\n        m.game_start_time,\n        case\n            when m.game_start_time is null then 'no_game_time'\n            when f.block_timestamp < m.game_start_time then 'pre_game'\n            else 'in_game'\n        end as phase\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.complement_token_id is not null\n),\n\nrunning as (\n    select\n        *,\n        coalesce(sum(case when side = 'buy' then shares else -shares end) filter (where outcome_index = 0) over w, 0)\n            - case when outcome_index = 0 then (case when side = 'buy' then shares else -shares end) else 0 end\n            as held_0_before,\n        coalesce(sum(case when side = 'buy' then shares else -shares end) filter (where outcome_index = 1) over w, 0)\n            - case when outcome_index = 1 then (case when side = 'buy' then shares else -shares end) else 0 end\n            as held_1_before\n    from fills\n    window w as (partition by condition_id order by block_number, log_index rows unbounded preceding)\n),\n\nclassified as (\n    select\n        *,\n        case\n            when side <> 'buy' then 'sell'\n            when held_0_before = held_1_before then 'balanced'\n            when (outcome_index = 0 and held_0_before < held_1_before)\n                or (outcome_index = 1 and held_1_before < held_0_before) then 'underweight'\n            else 'overweight'\n        end as inventory_side\n    from running\n)\n\nselect\n    phase,\n    count(*) as fills,\n    round(100.0 * count(*) filter (where role = 'maker') / count(*), 2) as maker_fill_pct,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    round(sum(usdc) / nullif(sum(shares), 0), 6) as avg_price,\n    count(distinct condition_id) as markets,\n    count(*) filter (where inventory_side = 'underweight') as underweight_buys,\n    count(*) filter (where inventory_side = 'overweight') as overweight_buys,\n    count(*) filter (where inventory_side = 'balanced') as balanced_buys,\n    round(\n        100.0 * count(*) filter (where inventory_side = 'underweight')\n        / nullif(count(*) filter (where inventory_side in ('underweight', 'overweight')), 0), 2\n    ) as underweight_buy_pct\nfrom classified\ngroup by rollup (phase)\norder by phase nulls last"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_pairs",
+      "path": "results/rn1_polymarket_fills_2026_11_08_pairs.csv",
+      "columns": [
+        "kind",
+        "markets",
+        "markets_bought_both",
+        "markets_bought_both_pct",
+        "cost_usdc",
+        "pair_shares",
+        "pair_cost_usdc",
+        "avg_pair_cost",
+        "markets_pair_below_1",
+        "pairs_below_1_pct",
+        "pair_edge_usdc",
+        "unmatched_shares",
+        "unmatched_cost_usdc"
+      ],
+      "rows": 2,
+      "sql": "-- RN1's complementary accumulation summed over its two-outcome markets, per market kind (sports or not,\n-- from Gamma), on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts\n-- are pUSD.\n-- The per-market figures and their rules are in rn1_polymarket_fills_2026_11_08_by_market.sql:\n-- pair_shares = least(shares bought of each outcome), pair_cost = the sum of the two average costs after\n-- fees, pair_edge = pair_shares * (1 - pair_cost). pairs_below_1_pct weights each market by its pairs.\nwith fills as (\n    select f.*\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.complement_token_id is not null\n),\n\nper_market as (\n    select\n        condition_id,\n        coalesce(sum(shares) filter (where side = 'buy' and outcome_index = 0), 0) as shares_0,\n        coalesce(sum(usdc + fee_usdc) filter (where side = 'buy' and outcome_index = 0), 0) as cost_0,\n        coalesce(sum(shares) filter (where side = 'buy' and outcome_index = 1), 0) as shares_1,\n        coalesce(sum(usdc + fee_usdc) filter (where side = 'buy' and outcome_index = 1), 0) as cost_1\n    from fills\n    group by condition_id\n),\n\npriced as (\n    select\n        p.*,\n        case when m.is_sports then 'sports' when m.is_sports is not null then 'other' else 'unknown' end as kind,\n        least(p.shares_0, p.shares_1) as pair_shares,\n        p.cost_0 / nullif(p.shares_0, 0) + p.cost_1 / nullif(p.shares_1, 0) as pair_cost,\n        case\n            when p.shares_0 > p.shares_1 then (p.shares_0 - p.shares_1) * p.cost_0 / p.shares_0\n            when p.shares_1 > p.shares_0 then (p.shares_1 - p.shares_0) * p.cost_1 / p.shares_1\n            else 0\n        end as unmatched_cost\n    from per_market as p\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = p.condition_id\n)\n\nselect\n    kind,\n    count(*) as markets,\n    count(*) filter (where pair_shares > 0) as markets_bought_both,\n    round(100.0 * count(*) filter (where pair_shares > 0) / count(*), 2) as markets_bought_both_pct,\n    sum(cost_0 + cost_1) as cost_usdc,\n    sum(pair_shares) as pair_shares,\n    round(sum(pair_shares * pair_cost) filter (where pair_shares > 0), 6) as pair_cost_usdc,\n    round(sum(pair_shares * pair_cost) filter (where pair_shares > 0) / nullif(sum(pair_shares), 0), 6)\n        as avg_pair_cost,\n    count(*) filter (where pair_shares > 0 and pair_cost < 1) as markets_pair_below_1,\n    round(100.0 * sum(pair_shares) filter (where pair_cost < 1) / nullif(sum(pair_shares), 0), 2)\n        as pairs_below_1_pct,\n    round(sum(pair_shares * (1 - pair_cost)) filter (where pair_shares > 0), 6) as pair_edge_usdc,\n    sum(abs(shares_0 - shares_1)) as unmatched_shares,\n    round(sum(unmatched_cost), 6) as unmatched_cost_usdc\nfrom priced\ngroup by rollup (kind)\norder by kind nulls last"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_pnl_by_market",
+      "path": "results/rn1_polymarket_fills_2026_11_08_pnl_by_market.csv",
+      "columns": [
+        "condition_id",
+        "question",
+        "series_slug",
+        "sports_market_type",
+        "game_start_time",
+        "resolved_at",
+        "payout_0",
+        "payout_1",
+        "fills",
+        "maker_fills",
+        "cost_usdc",
+        "pair_shares",
+        "pair_cost",
+        "unmatched_shares",
+        "unmatched_outcome_index",
+        "pnl_usdc",
+        "pair_pnl_usdc",
+        "unmatched_pnl_usdc",
+        "participant_pnl_usdc"
+      ],
+      "rows": 87642,
+      "sql": "-- RN1's profit to payout per two-outcome market on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to\n-- 2026-11-10 00:00 UTC), split into its complete pairs and its unmatched shares. Amounts are pUSD.\n-- Profit to payout values each share RN1 bought in the window at what it redeems for (payout_fractions), less\n-- what it cost with fees, as if RN1 held every share to resolution. A merged pair pays 1 pUSD, the same as the\n-- two payouts, so merges do not change it. Null until the market resolves.\n-- pair_pnl_usdc is pair_shares * (1 - pair_cost), the pair edge of the by_market analysis, priced at each\n-- outcome's average cost after fees; unmatched_pnl_usdc is the rest of pnl_usdc.\n-- participant_pnl_usdc is RN1's pnl_usdc in polymarket_market_participants, which also counts splits, merges,\n-- redemptions and transfers, and what came before the window in markets whose history it has.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.complement_token_id is not null\n),\n\nper_market as (\n    select\n        condition_id,\n        count(*) as fills,\n        count(*) filter (where role = 'maker') as maker_fills,\n        coalesce(sum(shares) filter (where side = 'buy' and outcome_index = 0), 0) as shares_0,\n        coalesce(sum(usdc + fee_usdc) filter (where side = 'buy' and outcome_index = 0), 0) as cost_0,\n        coalesce(sum(shares) filter (where side = 'buy' and outcome_index = 1), 0) as shares_1,\n        coalesce(sum(usdc + fee_usdc) filter (where side = 'buy' and outcome_index = 1), 0) as cost_1,\n        sum(case when side = 'buy' then shares * payout - usdc - fee_usdc else usdc - fee_usdc - shares * payout end)\n            as pnl_usdc\n    from fills\n    group by condition_id\n),\n\npriced as (\n    select\n        *,\n        least(shares_0, shares_1) as pair_shares,\n        cost_0 / nullif(shares_0, 0) + cost_1 / nullif(shares_1, 0) as pair_cost\n    from per_market\n)\n\nselect\n    p.condition_id,\n    m.question,\n    m.series_slug,\n    m.sports_market_type,\n    m.game_start_time,\n    m.resolved_at,\n    m.payout_fractions[1] as payout_0,\n    m.payout_fractions[2] as payout_1,\n    p.fills,\n    p.maker_fills,\n    p.cost_0 + p.cost_1 as cost_usdc,\n    p.pair_shares,\n    round(p.pair_cost, 6) as pair_cost,\n    abs(p.shares_0 - p.shares_1) as unmatched_shares,\n    case when p.shares_0 > p.shares_1 then 0 when p.shares_1 > p.shares_0 then 1 end as unmatched_outcome_index,\n    round(p.pnl_usdc, 6) as pnl_usdc,\n    round(coalesce(p.pair_shares * (1 - p.pair_cost), 0), 6) as pair_pnl_usdc,\n    round(p.pnl_usdc - coalesce(p.pair_shares * (1 - p.pair_cost), 0), 6) as unmatched_pnl_usdc,\n    round(pp.pnl_usdc, 6) as participant_pnl_usdc\nfrom priced as p\nleft join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = p.condition_id\nleft join \"warehouse\".\"analytics\".\"polymarket_market_participants\" as pp\n    on pp.condition_id = p.condition_id\n    and pp.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\norder by p.cost_0 + p.cost_1 desc"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_segment",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_segment.csv",
+      "columns": [
+        "series_slug",
+        "sports_market_type",
+        "role",
+        "phase",
+        "fills",
+        "markets",
+        "shares",
+        "usdc",
+        "fee_usdc",
+        "resolved_cost_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 2030,
+      "sql": "-- RN1's fills and profit to payout per series, market type, role and game phase on Polygon blocks 91743315 to\n-- 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD.\n-- Profit to payout values each share at what it redeems for (payout_fractions) less its cost with fees, as if\n-- RN1 held it to resolution; resolved_cost_usdc and pnl_usdc cover resolved markets only.\n-- phase: pre_game before Gamma's game_start_time, in_game from it on, no_game_time when Gamma gives none.\n-- A fill whose token Gamma lacks has no series, type or phase other than no_game_time.\nwith fills as (\n    select\n        f.*,\n        m.series_slug,\n        m.sports_market_type,\n        m.payout_fractions[f.outcome_index + 1] as payout,\n        case\n            when m.game_start_time is null then 'no_game_time'\n            when f.block_timestamp < m.game_start_time then 'pre_game'\n            else 'in_game'\n        end as phase\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n)\n\nselect\n    series_slug,\n    sports_market_type,\n    role,\n    phase,\n    count(*) as fills,\n    count(distinct condition_id) as markets,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    sum(fee_usdc) as fee_usdc,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(\n        case when side = 'buy' then shares * payout - usdc - fee_usdc else usdc - fee_usdc - shares * payout end\n    ), 6), 0) as pnl_usdc\nfrom fills\ngroup by series_slug, sports_market_type, role, phase\norder by usdc desc"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_day",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_day.csv",
+      "columns": [
+        "day",
+        "role",
+        "fills",
+        "markets",
+        "shares",
+        "usdc",
+        "fee_usdc",
+        "resolved_cost_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 184,
+      "sql": "-- RN1's fills and profit to payout per UTC day and role on Polygon blocks 91743315 to 97042228 (2026-08-10\n-- 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD. Profit to payout counts on the day of the fill: each share\n-- at what it redeems for (payout_fractions) less its cost with fees. resolved_cost_usdc and pnl_usdc cover\n-- resolved markets only.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n)\n\nselect\n    (block_timestamp at time zone 'UTC')::date as day,\n    role,\n    count(*) as fills,\n    count(distinct condition_id) as markets,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    sum(fee_usdc) as fee_usdc,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(\n        case when side = 'buy' then shares * payout - usdc - fee_usdc else usdc - fee_usdc - shares * payout end\n    ), 6), 0) as pnl_usdc\nfrom fills\ngroup by 1, role\norder by 1, role"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_price",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_price.csv",
+      "columns": [
+        "price_cent",
+        "role",
+        "fills",
+        "shares",
+        "usdc",
+        "fee_usdc",
+        "resolved_shares",
+        "resolved_cost_usdc",
+        "payout_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 200,
+      "sql": "-- RN1's fills per price cent and role on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10\n-- 00:00 UTC), with what the shares paid at resolution. Prices and amounts are pUSD.\n-- price_cent is floor(price * 100): 47 holds fills priced 0.47 to 0.479999.\n-- payout_usdc is what the shares bought in resolved markets redeem for (payout_fractions); payout_usdc /\n-- resolved_shares is the share of them that won, to set against the price paid. pnl_usdc is payout_usdc less\n-- resolved_cost_usdc, the cost with fees.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.side = 'buy'\n)\n\nselect\n    least(floor(price * 100), 99)::int as price_cent,\n    role,\n    count(*) as fills,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    sum(fee_usdc) as fee_usdc,\n    coalesce(sum(shares) filter (where payout is not null), 0) as resolved_shares,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(shares * payout), 6), 0) as payout_usdc,\n    coalesce(round(sum(shares * payout - usdc - fee_usdc), 6), 0) as pnl_usdc\nfrom fills\ngroup by 1, role\norder by 1, role"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_minute",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_minute.csv",
+      "columns": [
+        "minute_bucket",
+        "role",
+        "fills",
+        "markets",
+        "shares",
+        "usdc",
+        "avg_price",
+        "resolved_shares",
+        "resolved_cost_usdc",
+        "payout_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 146,
+      "sql": "-- RN1's fills per five minutes from game start and role, in two-outcome markets with a Gamma game_start_time,\n-- on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD.\n-- minute_bucket is the fill's minutes since game_start_time, floored to 5: 0 holds the game's first five\n-- minutes, -5 the five before it. -60 gathers everything an hour or more before, 300 everything five hours or\n-- more after. payout_usdc and pnl_usdc are as in the by_price analysis: resolved markets only, each share at\n-- what it redeems for, pnl after fees.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout,\n        extract(epoch from f.block_timestamp - m.game_start_time) / 60 as minutes\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    inner join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.complement_token_id is not null\n        and m.game_start_time is not null\n        and f.side = 'buy'\n)\n\nselect\n    greatest(-60, least(300, floor(minutes / 5) * 5))::int as minute_bucket,\n    role,\n    count(*) as fills,\n    count(distinct condition_id) as markets,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    round(sum(usdc) / nullif(sum(shares), 0), 6) as avg_price,\n    coalesce(sum(shares) filter (where payout is not null), 0) as resolved_shares,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(shares * payout), 6), 0) as payout_usdc,\n    coalesce(round(sum(shares * payout - usdc - fee_usdc), 6), 0) as pnl_usdc\nfrom fills\ngroup by 1, role\norder by 1, role"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_size",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_size.csv",
+      "columns": [
+        "size_from",
+        "role",
+        "fills",
+        "shares",
+        "usdc",
+        "avg_price",
+        "resolved_shares",
+        "resolved_cost_usdc",
+        "payout_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 26,
+      "sql": "-- RN1's fills per fill size and role on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10\n-- 00:00 UTC). size_from is the band's lowest share count; a band runs to the next one. Amounts are pUSD.\n-- payout_usdc and pnl_usdc are as in the by_price analysis: resolved markets only, each share at what it\n-- redeems for, pnl after fees.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.side = 'buy'\n),\n\nbanded as (\n    select\n        *,\n        case\n            when shares < 1 then 0\n            when shares < 5 then 1\n            when shares < 10 then 5\n            when shares < 25 then 10\n            when shares < 50 then 25\n            when shares < 100 then 50\n            when shares < 250 then 100\n            when shares < 500 then 250\n            when shares < 1000 then 500\n            when shares < 2500 then 1000\n            when shares < 5000 then 2500\n            when shares < 10000 then 5000\n            else 10000\n        end as size_from\n    from fills\n)\n\nselect\n    size_from,\n    role,\n    count(*) as fills,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    round(sum(usdc) / nullif(sum(shares), 0), 6) as avg_price,\n    coalesce(sum(shares) filter (where payout is not null), 0) as resolved_shares,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(shares * payout), 6), 0) as payout_usdc,\n    coalesce(round(sum(shares * payout - usdc - fee_usdc), 6), 0) as pnl_usdc\nfrom banded\ngroup by size_from, role\norder by size_from, role"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_counterparty",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_counterparty.csv",
+      "columns": [
+        "rank",
+        "counterparty",
+        "takers",
+        "fills",
+        "markets",
+        "shares",
+        "usdc",
+        "resolved_cost_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 51,
+      "sql": "-- Who took RN1's resting orders on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00\n-- UTC): the 50 takers with the most of RN1's maker fills, then one row for all the others. Amounts are pUSD.\n-- pnl_usdc is RN1's profit to payout on those fills (resolved markets only, each share at what it redeems for,\n-- after fees); the taker made the opposite, before its own fees. markets is null on the all-others row.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.role = 'maker'\n),\n\nper_taker as (\n    select\n        counterparty,\n        count(*) as fills,\n        count(distinct condition_id) as markets,\n        sum(shares) as shares,\n        sum(usdc) as usdc,\n        coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n        coalesce(sum(\n            case when side = 'buy' then shares * payout - usdc - fee_usdc else usdc - fee_usdc - shares * payout end\n        ), 0) as pnl_usdc\n    from fills\n    group by counterparty\n),\n\nranked as (\n    select *, row_number() over (order by fills desc, counterparty) as rank\n    from per_taker\n)\n\nselect\n    case when rank <= 50 then rank end as rank,\n    case when rank <= 50 then counterparty else 'all others' end as counterparty,\n    count(*) as takers,\n    sum(fills) as fills,\n    case when min(rank) <= 50 then sum(markets) end as markets,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    sum(resolved_cost_usdc) as resolved_cost_usdc,\n    round(sum(pnl_usdc), 6) as pnl_usdc\nfrom ranked\ngroup by 1, 2\norder by rank nulls last"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_replay",
+      "path": "results/rn1_polymarket_fills_2026_11_08_replay.csv",
+      "columns": [
+        "condition_id",
+        "question",
+        "game_start_time",
+        "resolved_at",
+        "payout_0",
+        "payout_1",
+        "block_number",
+        "log_index",
+        "block_timestamp",
+        "role",
+        "side",
+        "outcome_index",
+        "outcome",
+        "price",
+        "shares",
+        "usdc",
+        "fee_usdc",
+        "held_0",
+        "held_1",
+        "cost_0",
+        "cost_1"
+      ],
+      "rows": 1493,
+      "sql": "-- Every RN1 fill, in order, in five heavily traded two-outcome markets on Polygon blocks 91743315 to 97042228\n-- (2026-08-10 00:00 to 2026-11-10 00:00 UTC), with RN1's holdings and cost after each fill. Amounts are pUSD.\n-- The five, from the by_market analysis: two maker-heavy markets with pairs on either side of 1 (US Open ATP\n-- Tiafoe vs Michelsen, NFL Ravens vs Cowboys), the busier of RN1's two largest counter-strike markets by spend\n-- (Liquid vs Aurora), a football totals market with dear pairs (Coventry vs Newcastle O/U 3.5), and\n-- RN1's largest market, bought almost all as taker (Barranquilla: Pareja vs Stefanini).\n-- held_0 and held_1 count only this window's fills; cost_0 and cost_1 include fees.\nwith fills as (\n    select\n        f.*,\n        m.question,\n        m.game_start_time,\n        m.resolved_at,\n        m.payout_fractions[1] as payout_0,\n        m.payout_fractions[2] as payout_1\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    inner join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.condition_id in (\n            '0x2e1e684b3312b9f06072575f01fb77237e0b94bdcfcc477a553e8685cea91b82',\n            '0xca6189581f97c5b82d256a196e708e21f6b95e1a982b9928e29eb69fe7ca222e',\n            '0xb3190794885f832e508d086ffa82d4b84ca1e0ada9c734550637e6fdd9bb1cff',\n            '0x2b2a7f39e9cbb73214856088bd98bace012fd77a3fc2920801fe1720ad8796f4',\n            '0xf4ae1e2d985191bb2249a435c3b31a4e1d7089b987b27070763226cf4c04b280'\n        )\n)\n\nselect\n    condition_id,\n    question,\n    game_start_time,\n    resolved_at,\n    payout_0,\n    payout_1,\n    block_number,\n    log_index,\n    block_timestamp,\n    role,\n    side,\n    outcome_index,\n    outcome,\n    price,\n    shares,\n    usdc,\n    fee_usdc,\n    sum(case when outcome_index = 0 then (case when side = 'buy' then shares else -shares end) else 0 end) over w\n        as held_0,\n    sum(case when outcome_index = 1 then (case when side = 'buy' then shares else -shares end) else 0 end) over w\n        as held_1,\n    sum(case when outcome_index = 0 and side = 'buy' then usdc + fee_usdc else 0 end) over w as cost_0,\n    sum(case when outcome_index = 1 and side = 'buy' then usdc + fee_usdc else 0 end) over w as cost_1\nfrom fills\nwindow w as (partition by condition_id order by block_number, log_index rows unbounded preceding)\norder by condition_id, block_number, log_index"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_quote_evidence",
+      "path": "results/rn1_polymarket_fills_2026_11_08_quote_evidence.csv",
+      "columns": [
+        "ord",
+        "measure",
+        "n",
+        "total",
+        "pct",
+        "value"
+      ],
+      "rows": 24,
+      "sql": "-- Evidence on how RN1 places its orders, from its fills alone, on Polygon blocks 91743315 to 97042228\n-- (2026-08-10 00:00 to 2026-11-10 00:00 UTC). One row per measure: n out of total, or a plain value.\n-- Resting orders that never filled, and cancels, are off chain and not in it.\n--   A sweep is one transaction's maker fills on one token: one taker order matched against RN1's orders.\n--   A maker fill's price is the limit price of RN1's order; prices are rounded to 4 decimals to count levels.\n--   An order is one order_hash; its size here is what filled, a floor on what RN1 posted.\nwith fills as (\n    select f.*, round(f.price, 4) as px\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n),\n\nmaker as (\n    select * from fills where role = 'maker'\n),\n\nsweeps as (\n    select tx_hash, token_id, count(*) as fills, count(distinct order_hash) as orders, count(distinct px) as prices\n    from maker\n    group by tx_hash, token_id\n),\n\norders as (\n    select\n        order_hash,\n        role,\n        count(*) as fills,\n        sum(shares) as shares,\n        sum(usdc) as usdc,\n        extract(epoch from max(block_timestamp) - min(block_timestamp)) as span_s\n    from fills\n    group by order_hash, role\n),\n\nmaker_block_tokens as (\n    select distinct block_number, token_id from maker\n),\n\npaired_maker as (\n    select\n        m.id,\n        o.token_id is not null as other_side_same_block\n    from maker as m\n    left join maker_block_tokens as o\n        on o.block_number = m.block_number and o.token_id = m.complement_token_id\n    where m.complement_token_id is not null\n),\n\nminutes as (\n    select\n        condition_id,\n        date_trunc('minute', block_timestamp) as minute,\n        count(distinct outcome_index) as outcomes,\n        count(*) as fills\n    from maker\n    where complement_token_id is not null\n    group by 1, 2\n),\n\nlevels as (\n    select\n        condition_id,\n        outcome_index,\n        floor(extract(epoch from block_timestamp) / 300) as five_minutes,\n        count(distinct px) as levels\n    from maker\n    where complement_token_id is not null\n    group by 1, 2, 3\n),\n\norder_roles as (\n    select order_hash, bool_or(role = 'taker') as took, bool_or(role = 'maker') as rested\n    from fills\n    group by order_hash\n),\n\nin_market_order as (\n    select\n        role,\n        count(*) filter (where role = 'maker') over (\n            partition by condition_id order by block_number, log_index\n            rows between unbounded preceding and 1 preceding\n        ) as maker_fills_before\n    from fills\n    where condition_id is not null\n),\n\nmeasures as (\n    select 1 as ord, 'sweeps that filled 2 or more of RN1''s orders' as measure,\n        count(*) filter (where orders >= 2) as n, count(*) as total, null::numeric as value\n    from sweeps\n    union all\n    select 2, 'of those sweeps, the ones that filled 2 or more price levels',\n        count(*) filter (where prices >= 2), count(*) filter (where orders >= 2), null\n    from sweeps\n    union all\n    select 3, 'maker fills that came in a sweep across 2 or more price levels',\n        coalesce(sum(fills) filter (where prices >= 2), 0), sum(fills), null\n    from sweeps\n    union all\n    select 4, 'maker fills priced on a whole cent',\n        count(*) filter (where abs(price * 100 - round(price * 100)) < 0.01), count(*), null\n    from maker\n    union all\n    select 5, 'maker fills priced on a tenth of a cent',\n        count(*) filter (where abs(price * 1000 - round(price * 1000)) < 0.01), count(*), null\n    from maker\n    union all\n    select 6, 'maker fills in a block where RN1''s order on the other outcome also filled',\n        count(*) filter (where other_side_same_block), count(*), null\n    from paired_maker\n    union all\n    select 7, 'market-minutes with maker fills on both outcomes',\n        count(*) filter (where outcomes = 2), count(*), null\n    from minutes\n    union all\n    select 8, 'maker fills in a minute when both outcomes filled',\n        coalesce(sum(fills) filter (where outcomes = 2), 0), sum(fills), null\n    from minutes\n    union all\n    select 9, 'maker orders filled in 2 or more fills',\n        count(*) filter (where fills >= 2), count(*), null\n    from orders where role = 'maker'\n    union all\n    select 10, 'multi-fill maker orders whose fills span 60 seconds or more',\n        count(*) filter (where span_s >= 60), count(*), null\n    from orders where role = 'maker' and fills >= 2\n    union all\n    select 11, 'multi-fill maker orders whose fills span 10 minutes or more',\n        count(*) filter (where span_s >= 600), count(*), null\n    from orders where role = 'maker' and fills >= 2\n    union all\n    select 12, 'taker orders filled for a whole number of shares',\n        count(*) filter (where abs(shares - round(shares)) < 0.000001), count(*), null\n    from orders where role = 'taker'\n    union all\n    select 13, 'taker orders filled for a whole number of pUSD',\n        count(*) filter (where abs(usdc - round(usdc)) < 0.000001), count(*), null\n    from orders where role = 'taker'\n    union all\n    select 14, 'maker orders filled for a whole number of shares',\n        count(*) filter (where abs(shares - round(shares)) < 0.000001), count(*), null\n    from orders where role = 'maker'\n    union all\n    select 15, 'maker price levels filled per market, outcome and 5 minutes, median',\n        null, count(*), percentile_cont(0.5) within group (order by levels)::numeric\n    from levels\n    union all\n    select 16, 'maker price levels filled per market, outcome and 5 minutes, 90th percentile',\n        null, count(*), percentile_cont(0.9) within group (order by levels)::numeric\n    from levels\n    union all\n    select 17, 'shares filled per maker order, median',\n        null, count(*), percentile_cont(0.5) within group (order by shares)::numeric\n    from orders where role = 'maker'\n    union all\n    select 18, 'shares filled per maker order, 90th percentile',\n        null, count(*), percentile_cont(0.9) within group (order by shares)::numeric\n    from orders where role = 'maker'\n    union all\n    select 19, 'shares filled per maker order, 99th percentile',\n        null, count(*), percentile_cont(0.99) within group (order by shares)::numeric\n    from orders where role = 'maker'\n    union all\n    select 20, 'shares filled per taker order, median',\n        null, count(*), percentile_cont(0.5) within group (order by shares)::numeric\n    from orders where role = 'taker'\n    union all\n    select 21, 'shares filled per taker order, 90th percentile',\n        null, count(*), percentile_cont(0.9) within group (order by shares)::numeric\n    from orders where role = 'taker'\n    union all\n    select 22, 'shares filled per taker order, 99th percentile',\n        null, count(*), percentile_cont(0.99) within group (order by shares)::numeric\n    from orders where role = 'taker'\n    union all\n    select 23, 'taker orders that also rested on the book and filled as maker',\n        count(*) filter (where took and rested), count(*) filter (where took), null\n    from order_roles\n    union all\n    select 24, 'taker fills in a market where one of RN1''s resting orders had filled earlier',\n        count(*) filter (where maker_fills_before > 0), count(*), null\n    from in_market_order where role = 'taker'\n)\n\nselect\n    ord,\n    measure,\n    n,\n    total,\n    round(100.0 * n / nullif(total, 0), 2) as pct,\n    round(value, 6) as value\nfrom measures\norder by ord"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_imbalance",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_imbalance.csv",
+      "columns": [
+        "role",
+        "imbalance_band",
+        "inventory_side",
+        "fills",
+        "shares",
+        "usdc",
+        "resolved_cost_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 24,
+      "sql": "-- RN1's buys in two-outcome markets by how lopsided its position was just before each fill, on Polygon blocks\n-- 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). Amounts are pUSD.\n-- The position counts what RN1 bought in this window, fill by fill in (block, log index) order; merges, which\n-- remove equal shares of both outcomes, are not in it. The gap is |held_this - held_other| over their sum.\n-- inventory_side: underweight when RN1 held fewer shares of the bought outcome than of the other, overweight\n-- when more, level when equal (both 0 at a market's first fill).\n-- pnl_usdc is profit to payout: resolved markets only, each share at what it redeems for, after fees.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.complement_token_id is not null\n        and f.side = 'buy'\n),\n\nrunning as (\n    select\n        *,\n        coalesce(sum(shares) filter (where outcome_index = 0) over w, 0)\n            - case when outcome_index = 0 then shares else 0 end as held_0,\n        coalesce(sum(shares) filter (where outcome_index = 1) over w, 0)\n            - case when outcome_index = 1 then shares else 0 end as held_1\n    from fills\n    window w as (partition by condition_id order by block_number, log_index rows unbounded preceding)\n),\n\nsided as (\n    select\n        *,\n        case when outcome_index = 0 then held_0 else held_1 end as held_this,\n        case when outcome_index = 0 then held_1 else held_0 end as held_other\n    from running\n)\n\nselect\n    role,\n    case\n        when held_this = 0 and held_other = 0 then '0: no position yet'\n        when held_this = 0 or held_other = 0 then '5: one outcome only'\n        when abs(held_this - held_other) / (held_this + held_other) < 0.10 then '1: gap under 10%'\n        when abs(held_this - held_other) / (held_this + held_other) < 0.25 then '2: gap 10 to 25%'\n        when abs(held_this - held_other) / (held_this + held_other) < 0.50 then '3: gap 25 to 50%'\n        else '4: gap 50% or more'\n    end as imbalance_band,\n    case\n        when held_this = held_other then 'level'\n        when held_this < held_other then 'underweight'\n        else 'overweight'\n    end as inventory_side,\n    count(*) as fills,\n    sum(shares) as shares,\n    sum(usdc) as usdc,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(shares * payout - usdc - fee_usdc), 6), 0) as pnl_usdc\nfrom sided\ngroup by 1, 2, 3\norder by 1, 2, 3"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_order_sizes",
+      "path": "results/rn1_polymarket_fills_2026_11_08_order_sizes.csv",
+      "columns": [
+        "role",
+        "unit",
+        "rank",
+        "size",
+        "orders",
+        "pct_of_orders"
+      ],
+      "rows": 48,
+      "sql": "-- The most common sizes of RN1's orders, by what filled, on Polygon blocks 91743315 to 97042228 (2026-08-10\n-- 00:00 to 2026-11-10 00:00 UTC): per role, the 12 most common share totals and the 12 most common pUSD\n-- totals (before fees), each rounded to 2 decimals. An order is one order_hash. What filled is a floor on\n-- what RN1 posted: a maker order's fills depend on the takers' sizes.\nwith fills as (\n    select f.*\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n),\n\norders as (\n    select order_hash, role, sum(shares) as shares, sum(usdc) as usdc\n    from fills\n    group by order_hash, role\n),\n\nsizes as (\n    select role, 'shares' as unit, round(shares, 2) as size, count(*) as orders from orders group by 1, 3\n    union all\n    select role, 'pusd' as unit, round(usdc, 2) as size, count(*) as orders from orders group by 1, 3\n),\n\nranked as (\n    select\n        *,\n        row_number() over (partition by role, unit order by orders desc, size) as rank,\n        sum(orders) over (partition by role, unit) as total\n    from sizes\n)\n\nselect\n    role,\n    unit,\n    rank,\n    size,\n    orders,\n    round(100.0 * orders / total, 2) as pct_of_orders\nfrom ranked\nwhere rank <= 12\norder by role, unit, rank"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_by_day_strategy",
+      "path": "results/rn1_polymarket_fills_2026_11_08_by_day_strategy.csv",
+      "columns": [
+        "day",
+        "role",
+        "phase",
+        "fills",
+        "markets",
+        "usdc",
+        "resolved_cost_usdc",
+        "pnl_usdc"
+      ],
+      "rows": 367,
+      "sql": "-- RN1's profit to payout per UTC day, role and game phase on Polygon blocks 91743315 to 97042228 (2026-08-10\n-- 00:00 to 2026-11-10 00:00 UTC), to judge how steady each of the four strategies is. Amounts are pUSD.\n-- phase: pre_game before Gamma's game_start_time, in_game from it on; fills in markets with no game time are\n-- left out. Profit counts on the day of the fill: resolved markets only, each share at what it redeems for\n-- (payout_fractions) less its cost with fees.\nwith fills as (\n    select\n        f.*,\n        m.payout_fractions[f.outcome_index + 1] as payout,\n        case when f.block_timestamp < m.game_start_time then 'pre_game' else 'in_game' end as phase\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    inner join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and m.game_start_time is not null\n)\n\nselect\n    (block_timestamp at time zone 'UTC')::date as day,\n    role,\n    phase,\n    count(*) as fills,\n    count(distinct condition_id) as markets,\n    sum(usdc) as usdc,\n    coalesce(sum(usdc + fee_usdc) filter (where payout is not null), 0) as resolved_cost_usdc,\n    coalesce(round(sum(\n        case when side = 'buy' then shares * payout - usdc - fee_usdc else usdc - fee_usdc - shares * payout end\n    ), 6), 0) as pnl_usdc\nfrom fills\ngroup by 1, role, phase\norder by 1, role, phase"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_exits",
+      "path": "results/rn1_polymarket_fills_2026_11_08_exits.csv",
+      "columns": [
+        "kind",
+        "event",
+        "made_by",
+        "events",
+        "transactions",
+        "markets",
+        "days",
+        "usdc",
+        "avg_usdc",
+        "events_before_resolution",
+        "median_minutes_from_start",
+        "median_minutes_from_resolution",
+        "p90_minutes_from_resolution"
+      ],
+      "rows": 4,
+      "sql": "-- How RN1 turns shares back into pUSD on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10\n-- 00:00 UTC): one row per kind of exit and the contract event behind it, with its count, its pUSD and its\n-- timing. RN1 sold nothing on the exchange in the window, so these are its only exits.\n-- usdc is what RN1 got. A merge pays 1 pUSD per pair; a redemption pays the market's payout.\n-- made_by reads the event: auto_redeemer.* events are Polymarket's auto-redeemer acting for the wallet; any\n-- other event is the wallet's own call.\n-- Minutes are measured from Gamma's game_start_time and from the market's resolved_at; events of a market\n-- that lacks one are left out of that measure. events_before_resolution counts exits of a market that had\n-- not resolved yet, or never did.\nwith exits as (\n    select\n        c.*,\n        m.game_start_time,\n        m.resolved_at,\n        extract(epoch from c.block_timestamp - m.game_start_time) / 60 as minutes_from_start,\n        extract(epoch from c.block_timestamp - m.resolved_at) / 60 as minutes_from_resolution\n    from \"warehouse\".\"analytics\".\"polymarket_position_changes\" as c\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = c.condition_id\n    where c.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and c.block_number between 91743315 and 97042228\n)\n\nselect\n    kind,\n    event,\n    case when event like 'auto_redeemer.%' then 'polymarket auto-redeemer' else 'the wallet' end as made_by,\n    count(*) as events,\n    count(distinct tx_hash) as transactions,\n    count(distinct condition_id) as markets,\n    count(distinct (block_timestamp at time zone 'UTC')::date) as days,\n    sum(usdc) as usdc,\n    round(avg(usdc), 6) as avg_usdc,\n    count(*) filter (where resolved_at is null or block_timestamp < resolved_at) as events_before_resolution,\n    round(percentile_cont(0.5) within group (order by minutes_from_start)::numeric, 1) as median_minutes_from_start,\n    round(percentile_cont(0.5) within group (order by minutes_from_resolution)::numeric, 1)\n        as median_minutes_from_resolution,\n    round(percentile_cont(0.9) within group (order by minutes_from_resolution)::numeric, 1)\n        as p90_minutes_from_resolution\nfrom exits\ngroup by kind, event\norder by usdc desc"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_cash_by_hour",
+      "path": "results/rn1_polymarket_fills_2026_11_08_cash_by_hour.csv",
+      "columns": [
+        "hour",
+        "buy_cost_usdc",
+        "merge_usdc",
+        "redeem_usdc",
+        "cash_low_usdc",
+        "cash_end_usdc"
+      ],
+      "rows": 2202,
+      "sql": "-- RN1's cash flow per UTC hour on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00\n-- UTC): what it paid for shares, what merges and redemptions paid back, and the running balance. Amounts\n-- are pUSD.\n-- buy_cost_usdc is usdc + fee_usdc of its buys (sells would count as cash in; it has none).\n-- net_cash_usdc runs from 0 at the window's first block, in (block, log index) order: negative means RN1 has\n-- paid in more than it got back so far. cash_low_usdc is the lowest it reached in the hour and\n-- cash_end_usdc where the hour ended. Positions from before the window are not in the starting 0: their\n-- redemptions come in as cash with no cost, so the early days understate the cash tied up.\nwith flows as (\n    select\n        block_number,\n        log_index,\n        block_timestamp,\n        case when side = 'buy' then -(usdc + fee_usdc) else usdc - fee_usdc end as cash,\n        case when side = 'buy' then usdc + fee_usdc else 0 end as buy_cost,\n        0::numeric as merged,\n        0::numeric as redeemed\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n    union all\n    select\n        block_number,\n        log_index,\n        block_timestamp,\n        usdc,\n        0,\n        case when kind = 'merge' then usdc else 0 end,\n        case when kind = 'redeem' then usdc else 0 end\n    from \"warehouse\".\"analytics\".\"polymarket_position_changes\"\n    where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and block_number between 91743315 and 97042228\n),\n\nrunning as (\n    select\n        *,\n        sum(cash) over (order by block_number, log_index rows unbounded preceding) as net_cash\n    from flows\n)\n\nselect\n    date_trunc('hour', block_timestamp at time zone 'UTC') as hour,\n    sum(buy_cost) as buy_cost_usdc,\n    sum(merged) as merge_usdc,\n    sum(redeemed) as redeem_usdc,\n    min(net_cash) as cash_low_usdc,\n    (array_agg(net_cash order by block_number desc, log_index desc))[1] as cash_end_usdc\nfrom running\ngroup by 1\norder by 1"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_merge_batches",
+      "path": "results/rn1_polymarket_fills_2026_11_08_merge_batches.csv",
+      "columns": [
+        "tx_hash",
+        "block_timestamp",
+        "merges",
+        "usdc",
+        "largest_usdc",
+        "smallest_usdc",
+        "unresolved_markets",
+        "live_markets"
+      ],
+      "rows": 45,
+      "sql": "-- RN1's merges on Polygon blocks 91743315 to 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC), one row per\n-- transaction: a batch of merges sent at once. Amounts are pUSD; a merge pays 1 pUSD per pair.\n-- unresolved_markets counts the batch's markets that had not resolved when it ran; live_markets those whose\n-- game had started by then (Gamma's game_start_time) and had not resolved.\nwith merges as (\n    select\n        c.*,\n        m.game_start_time,\n        m.resolved_at\n    from \"warehouse\".\"analytics\".\"polymarket_position_changes\" as c\n    left join \"warehouse\".\"analytics\".\"polymarket_markets\" as m on m.condition_id = c.condition_id\n    where c.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and c.block_number between 91743315 and 97042228\n        and c.kind = 'merge'\n)\n\nselect\n    tx_hash,\n    min(block_timestamp) as block_timestamp,\n    count(*) as merges,\n    sum(usdc) as usdc,\n    max(usdc) as largest_usdc,\n    min(usdc) as smallest_usdc,\n    count(*) filter (where resolved_at is null or block_timestamp < resolved_at) as unresolved_markets,\n    count(*) filter (\n        where game_start_time <= block_timestamp and (resolved_at is null or block_timestamp < resolved_at)\n    ) as live_markets\nfrom merges\ngroup by tx_hash\norder by 2"
+    },
+    {
+      "analysis": "rn1_polymarket_fills_2026_11_08_open_cost_by_hour",
+      "path": "results/rn1_polymarket_fills_2026_11_08_open_cost_by_hour.csv",
+      "columns": [
+        "hour",
+        "tied_high_usdc",
+        "tied_end_usdc"
+      ],
+      "rows": 2202,
+      "sql": "-- The pUSD RN1 has tied up in markets that have not resolved yet, per UTC hour, on Polygon blocks 91743315 to\n-- 97042228 (2026-08-10 00:00 to 2026-11-10 00:00 UTC). It is the cash a wallet needs to carry these\n-- positions.\n-- A buy ties up its cost, usdc + fee_usdc. A merge frees the pUSD it pays. When a market resolves,\n-- everything still tied up in it is freed: Polymarket's auto-redeemer pays RN1 out within seconds (the exits\n-- analysis). tied_high_usdc is the most tied up at any moment of the hour, tied_end_usdc the amount at its\n-- end. Positions bought before the window are not in it, so its first hours read low. Fills of a token\n-- Gamma lacks, and fills or merges at or after their market's resolution, are left out.\nwith markets as (\n    select condition_id, resolved_at\n    from \"warehouse\".\"analytics\".\"polymarket_markets\"\n),\n\nbuys as (\n    select f.condition_id, m.resolved_at, f.block_timestamp as at, f.usdc + f.fee_usdc as amount\n    from \"warehouse\".\"analytics\".\"polymarket_wallet_fills\" as f\n    inner join markets as m on m.condition_id = f.condition_id\n    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and f.block_number between 91743315 and 97042228\n        and f.side = 'buy'\n        and (m.resolved_at is null or f.block_timestamp < m.resolved_at)\n),\n\nmerges as (\n    select c.condition_id, m.resolved_at, c.block_timestamp as at, c.usdc as amount\n    from \"warehouse\".\"analytics\".\"polymarket_position_changes\" as c\n    inner join markets as m on m.condition_id = c.condition_id\n    where c.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'\n        and c.block_number between 91743315 and 97042228\n        and c.kind = 'merge'\n        and (m.resolved_at is null or c.block_timestamp < m.resolved_at)\n),\n\nmoves as (\n    select condition_id, resolved_at, at, amount as delta from buys\n    union all\n    select condition_id, resolved_at, at, -amount from merges\n),\n\n-- What is still tied up in each market when it resolves.\nreleased as (\n    select resolved_at as at, -sum(delta) as delta\n    from moves\n    where resolved_at is not null\n    group by condition_id, resolved_at\n),\n\nflows as (\n    select at, delta from moves\n    union all\n    select at, delta from released\n),\n\nrunning as (\n    select\n        at,\n        delta,\n        sum(delta) over (order by at, delta desc rows unbounded preceding) as tied\n    from flows\n    where at < '2026-11-10 00:00:00+00'\n)\n\nselect\n    date_trunc('hour', at at time zone 'UTC') as hour,\n    round(max(tied), 6) as tied_high_usdc,\n    round((array_agg(tied order by at desc, delta))[1], 6) as tied_end_usdc\nfrom running\ngroup by 1\norder by 1"
+    }
+  ],
+  "inputs": [
+    {
+      "source": "polygon.polymarket_ctf",
+      "raw_table": "raw.polygon_polymarket_ctf",
+      "last_run": {
+        "finished_at": "2026-11-12T03:46:52.098000Z",
+        "records_written": 7762541,
+        "dagster_run_id": "77bbc30d-63ac-4c17-9452-9ec7b5492a30"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "polygon.polymarket_ctf_exchange_v2",
+      "raw_table": "raw.polygon_polymarket_ctf_exchange_v2",
+      "last_run": {
+        "finished_at": "2026-11-12T03:46:13.276000Z",
+        "records_written": 843266,
+        "dagster_run_id": "77bbc30d-63ac-4c17-9452-9ec7b5492a30"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    },
+    {
+      "source": "polymarket.markets",
+      "raw_table": "raw.polymarket_markets",
+      "last_run": {
+        "finished_at": "2026-11-12T05:48:48.156000Z",
+        "records_written": 3635649,
+        "dagster_run_id": "77bbc30d-63ac-4c17-9452-9ec7b5492a30"
+      },
+      "dead_letters": {
+        "pending": 0,
+        "parked": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "dbt_tests",
+      "status": "passed",
+      "detail": "68 passed, 1 warned: polymarket_resolved_markets_are_zero_sum; 66 upstream passed since the marts were built"
+    },
+    {
+      "name": "dead_letters",
+      "status": "passed",
+      "detail": "polygon.polymarket_ctf 0 pending, 0 parked; polygon.polymarket_ctf_exchange_v2 0 pending, 0 parked; polymarket.markets 0 pending, 0 parked"
+    },
+    {
+      "name": "freshness",
+      "status": "passed",
+      "detail": "polygon.polymarket_ctf finished 2026-11-12T03:46:52.098000Z; polygon.polymarket_ctf_exchange_v2 finished 2026-11-12T03:46:13.276000Z; polymarket.markets finished 2026-11-12T05:48:48.156000Z"
+    },
+    {
+      "name": "coverage",
+      "status": "passed",
+      "detail": "polygon.polymarket_ctf_exchange_v2 (loaded 91743315-97042228) covers blocks 91743315-97042228 and the filter; polygon.polymarket_ctf (loaded 91743315-97042228) covers blocks 91743315-97042228 and the filter"
+    }
+  ],
+  "provenance": {
+    "git_sha": "c1cd5569b8bdc2ed39f6f77312e57f9a3d92b6b7",
+    "git_dirty": true,
+    "dbt_version": "1.12.6"
+  }
+}
