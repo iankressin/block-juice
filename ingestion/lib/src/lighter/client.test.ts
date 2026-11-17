@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import { createLighterClient, lighterEnv, type Clock } from "#src/lighter/client.ts";
 
+/** `status` 0 drops the connection instead of answering. */
 type Reply = { status: number; body: unknown };
 
 const market = (market_id: number, symbol: string, market_type: string) => ({
@@ -22,15 +23,20 @@ const DETAILS = {
 };
 
 /** Lighter's API on a local port. `replies` scripts the answers to `/api/v1/x`, one per request. */
-async function fakeLighter(t: TestContext, replies: Reply[]) {
+async function fakeLighter(t: TestContext, replies: Reply[], delayMs = 0) {
   const requests: string[] = [];
-  const server = createServer((req, res) => {
+  const state = { inFlight: 0, maxInFlight: 0 };
+  const server = createServer(async (req, res) => {
     requests.push(req.url!);
+    state.maxInFlight = Math.max(state.maxInFlight, ++state.inFlight);
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    state.inFlight--;
     const { pathname } = new URL(req.url!, "http://lighter");
     const { status, body } =
       pathname === "/api/v1/orderBookDetails"
         ? { status: 200, body: DETAILS }
         : (replies.shift() ?? { status: 200, body: { code: 200 } });
+    if (status === 0) return void req.socket.destroy();
     res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -38,7 +44,7 @@ async function fakeLighter(t: TestContext, replies: Reply[]) {
     server.closeAllConnections();
     server.close();
   });
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests };
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests, state };
 }
 
 /** A clock that a sleep moves forward at once. `sleeps` gets each wait. */
@@ -55,14 +61,14 @@ function fakeClock(): Clock & { sleeps: number[] } {
   };
 }
 
-async function setup(t: TestContext, replies: Reply[] = []) {
-  const { url, requests } = await fakeLighter(t, replies);
+async function setup(t: TestContext, replies: Reply[] = [], { perMinute = 15, delayMs = 0 } = {}) {
+  const { url, requests, state } = await fakeLighter(t, replies, delayMs);
   const clock = fakeClock();
   const client = createLighterClient(
-    lighterEnv.parse({ LIGHTER_API_URL: url, LIGHTER_REQUESTS_PER_MINUTE: "15" }),
+    lighterEnv.parse({ LIGHTER_API_URL: url, LIGHTER_REQUESTS_PER_MINUTE: String(perMinute) }),
     clock,
   );
-  return { client, clock, requests };
+  return { client, clock, requests, state };
 }
 
 test("spaces requests by 60000 / LIGHTER_REQUESTS_PER_MINUTE ms", async (t) => {
@@ -78,7 +84,41 @@ test("a 429 waits and is sent again", async (t) => {
   ]);
   assert.deepEqual(await client.get("/api/v1/x"), { code: 200, x: 1 });
   assert.equal(requests.length, 2);
-  assert.equal(clock.sleeps.includes(2000), true);
+  // 4000 ms spacing less the 2000 ms retry wait leaves 2000 ms more.
+  assert.deepEqual(clock.sleeps, [2000, 2000]);
+});
+
+test("retries wait 2 s, 10 s, then 60 s, and the fourth failure is thrown", async (t) => {
+  const down = { status: 429, body: { code: 429, message: "slow down" } };
+  // 60 a minute spaces requests by 1000 ms, so every sleep here is a retry wait.
+  const { client, clock, requests } = await setup(t, [down, down, down, down], { perMinute: 60 });
+  await assert.rejects(client.get("/api/v1/x"), /HTTP 429/);
+  assert.equal(requests.length, 4);
+  assert.deepEqual(clock.sleeps, [2000, 10_000, 60_000]);
+});
+
+test("a 405, a 5xx and a dropped connection are each sent again", async (t) => {
+  const { client, clock, requests } = await setup(
+    t,
+    [
+      { status: 405, body: { code: 405, message: "blocked" } },
+      { status: 503, body: { code: 503, message: "down" } },
+      { status: 0, body: null },
+      { status: 200, body: { code: 200, x: 2 } },
+    ],
+    { perMinute: 60 },
+  );
+  assert.deepEqual(await client.get("/api/v1/x"), { code: 200, x: 2 });
+  assert.equal(requests.length, 4);
+  assert.deepEqual(clock.sleeps, [2000, 10_000, 60_000]);
+});
+
+test("concurrent gets run one at a time, spaced as in a row", async (t) => {
+  const { client, clock, requests, state } = await setup(t, [], { delayMs: 20 });
+  await Promise.all([client.get("/api/v1/x"), client.get("/api/v1/x"), client.get("/api/v1/x")]);
+  assert.equal(requests.length, 3);
+  assert.equal(state.maxInFlight, 1);
+  assert.deepEqual(clock.sleeps, [4000, 4000]);
 });
 
 test("a 400 fails at once, quoting Lighter's message", async (t) => {
