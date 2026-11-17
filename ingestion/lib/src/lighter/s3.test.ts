@@ -206,7 +206,15 @@ test("a download that answers 500 then 200 loads the whole file", async (t) => {
 test("a body that stalls after its headers fails at the deadline", async (t) => {
   const stalled = await fakeS3(t, { file: Buffer.alloc(4096), fileStatuses: ["stall", "stall", "stall", "stall"] });
   const started = Date.now();
-  await assert.rejects(collect(readDay(stalled.env, dayOf(Buffer.alloc(4096)), { clock: fakeClock(), downloadTimeoutMs: 150 })));
+  await assert.rejects(
+    collect(readDay(stalled.env, dayOf(Buffer.alloc(4096)), { clock: fakeClock(), downloadTimeoutMs: 150 })),
+    (error: Error) => {
+      // The error names the key and keeps the timeout as its cause.
+      assert.match(error.message, /date=2026-11-16.*timeout/);
+      assert.equal((error.cause as Error).name, "TimeoutError");
+      return true;
+    },
+  );
   assert.equal(stalled.requests.length, 4);
   assert.ok(Date.now() - started < 10_000);
 });

@@ -62,7 +62,15 @@ function httpError(what: string, response: Response, clock: Clock): S3Error {
   );
 }
 
-/** Runs `attempt` again after a retryable failure, waiting as `S3_RETRY_WAITS_MS` says, then throws the last failure. */
+/** A transport failure: undici's TypeError ("fetch failed", "terminated") or an abort from the deadline. A local error, such as a full disk, is not. */
+function isTransportFailure(error: Error): boolean {
+  return error instanceof TypeError || error.name === "TimeoutError" || error.name === "AbortError";
+}
+
+/**
+ * Runs `attempt` again after a retryable failure, waiting as `S3_RETRY_WAITS_MS` says, then throws the last failure.
+ * Only a retryable S3Error or a transport failure is retried. A failure that is not an S3Error is thrown with `what` in its message.
+ */
 async function withRetries<T>(what: string, clock: Clock, attempt: () => Promise<T>): Promise<T> {
   for (let n = 0; ; n++) {
     try {
@@ -70,7 +78,10 @@ async function withRetries<T>(what: string, clock: Clock, attempt: () => Promise
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       const scheduledMs = S3_RETRY_WAITS_MS[n];
-      if ((error instanceof S3Error && !error.retryable) || scheduledMs === undefined) throw error;
+      const retryable = error instanceof S3Error ? error.retryable : isTransportFailure(error);
+      if (!retryable || scheduledMs === undefined) {
+        throw error instanceof S3Error ? error : new Error(`Lighter S3 ${what}: ${describeError(error)}`, { cause: error });
+      }
       const asked = error instanceof S3Error ? error.retryAfterMs : undefined;
       const waitMs = asked === undefined ? scheduledMs : Math.min(asked, RETRY_AFTER_CAP_MS);
       logger.info({ what, error: describeError(error), waitMs }, "Lighter S3 failed a request, waiting before trying again");
