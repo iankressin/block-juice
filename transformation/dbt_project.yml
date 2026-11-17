@@ -59,6 +59,9 @@ models:
       # Views, so each source's orders, trades and transfers show up as their own step in Dagster.
       cow:
         +materialized: view
+      # Views, so each Lighter model shows up as its own step in Dagster.
+      lighter:
+        +materialized: view
     marts:
       +materialized: table
       polymarket:
