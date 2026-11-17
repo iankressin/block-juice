@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./evm": "./src/evm/index.ts",
     "./solana": "./src/solana/index.ts",
+    "./lighter": "./src/lighter/index.ts",
     "./bitcoin": "./src/bitcoin/index.ts"
   },
   "imports": {
