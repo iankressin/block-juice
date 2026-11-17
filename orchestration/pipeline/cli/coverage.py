@@ -4,6 +4,7 @@ import json
 import os
 import re
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,10 @@ class Coverage:
             return ranges[0] if len(ranges) == 1 else None
         return (self.start_block, self.cursor) if self.cursor is not None else None
 
+    def recorded(self, key: str, values: Iterable[str]) -> set[str]:
+        """The values as ingestion records them under this key."""
+        return {recorded_value(key, value, self.case_sensitive) for value in values}
+
     def verified_ranges(
         self, wanted: dict[str, list[str]], *, all_wallets: bool = False,
     ) -> list[tuple[int, int]]:
@@ -91,7 +96,7 @@ class Coverage:
             if any(key not in wanted for key in loaded):
                 continue
             if any(key not in loaded and key not in config["unrestricted"]
-                   or key in loaded and not {recorded_value(key, value, self.case_sensitive) for value in values} <= set(loaded[key])
+                   or key in loaded and not self.recorded(key, values) <= set(loaded[key])
                    for key, values in wanted.items()):
                 continue
             first = max(item["first"], config["startBlock"])
@@ -132,7 +137,7 @@ class Coverage:
                     continue
                 gaps.append(f"addresses.json has no {key!r}")
                 continue
-            loaded = {recorded_value(key, value, self.case_sensitive) for value in self.filter[key]}
+            loaded = self.recorded(key, self.filter[key])
             missing = [value for value in values if recorded_value(key, value, self.case_sensitive) not in loaded]
             if missing:
                 gaps.append(f"{key} not in addresses.json: {', '.join(missing)}")
