@@ -4,7 +4,7 @@ These notes cover the hosts, endpoints and S3 files in `vendor.yaml`. Every limi
 
 Three answers that later tasks branch on:
 
-- **Trade ids are unique across day files.** 4,484,699 rows over 2026-11-15 and 2026-11-16 hold 4,484,699 distinct ids (P8).
+- **Trade ids were unique across the two day files checked.** 4,484,699 rows over 2026-11-15 and 2026-11-16 hold 4,484,699 distinct ids (P8). Uniqueness across all files is not proven. Raw trades are keyed on the id, so a repeated id would merge two trades into one row.
 - **`ask_account_pnl` and `bid_account_pnl` are USDC × 10^6.** On all 52 trades where the API sent a pnl, the API's value × 10^6 equals the S3 integer (P9). Scale pnl by 10^6.
 - **`direction` follows the sign of the rate; that it names the paying side is inferred.** (a) Proven: `direction` is `long` exactly when the WebSocket's signed `funding_rate` is positive, on all 40 markets paid at 14:00 UTC (P10). (b) Documented: the funding page says a positive funding rate means longs pay shorts. (c) Inferred from (a) and (b): `direction` names the side that pays. No doc page ties the funding page's rule to the WebSocket field, or says what `direction` means.
 

@@ -178,8 +178,9 @@ models:
       lists, from Lighter's daily S3 files. A day's file appears about 07:03 UTC the next day, so only
       ended days load. Values are in real units, from `catalog/vendors/lighter/NOTES.md`. A binary
       option has no row in `lighter_markets`, so its `symbol`, `price`, `size` and positions are null.
-      Every trade of a market is scaled by that market's latest decimals, so a change in a market's
-      decimals would mis-scale its older trades. The candle cross-check would catch that.
+      Every trade of a market is scaled by that market's latest decimals. The test
+      `lighter_markets_keep_their_decimals` fails the build if a market's decimals ever change, since
+      older trades would then mis-scale: they would need scaling by the reading in effect at trade time.
     columns:
       - name: trade_id
         description: Lighter's trade id, unique across days.
