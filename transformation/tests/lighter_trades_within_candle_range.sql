@@ -13,6 +13,6 @@ inner join {{ ref('lighter_candles') }} as candles
     on candles.market_id = trades.market_id
     and candles.price = 'trade'
     and candles.resolution = '1h'
-    and candles.open_time = date_trunc('hour', trades.trade_time)
+    and candles.open_time = date_trunc('hour', trades.trade_time, 'UTC')
 where trades.price < candles.low * (1 - 1e-9)
     or trades.price > candles.high * (1 + 1e-9)

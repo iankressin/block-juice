@@ -2,6 +2,7 @@
 -- bucket start. Prices are USDC per base unit; base_volume is in base units and quote_volume in USDC.
 -- Only trade candles carry volume and last_trade_id, and only mark candles carry samples.
 select
+    id,
     market_id,
     symbol,
     price,

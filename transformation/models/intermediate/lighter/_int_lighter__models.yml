@@ -131,6 +131,20 @@ unit_tests:
         - {id: "40627877458:maker", trade_id: 40627877458, account_index: 757337, role: maker, side: sell, signed_size: -0.3491, fee_ppm: 50, fee_usdc: 0.0317597216, realized_pnl: 1.5}
         - {id: "40627877458:taker", trade_id: 40627877458, account_index: 313004, role: taker, side: buy, signed_size: 0.3491, fee_ppm: 200, fee_usdc: 0.1270388864, realized_pnl: null}
 
+  - name: a_bid_maker_buys_and_the_ask_taker_sells
+    description: >-
+      With is_maker_ask false the maker is the bid and buys 2, and the taker is the ask and sells 2.
+      Each row takes its own role's fee and its own side's pnl: the maker the bid pnl, the taker the ask pnl.
+    model: int_lighter_account_fills
+    given:
+      - input: ref('int_lighter_trades')
+        rows:
+          - {trade_id: 8, market_id: 0, symbol: ETH, size: 2, is_maker_ask: false, maker_account_index: 313004, taker_account_index: 757337, ask_account_index: 757337, bid_account_index: 313004, maker_fee_ppm: 50, taker_fee_ppm: 200, maker_fee_usdc: 0.5, taker_fee_usdc: 2, ask_account_pnl: 3, bid_account_pnl: -4}
+    expect:
+      rows:
+        - {id: "8:maker", account_index: 313004, role: maker, side: buy, signed_size: 2, fee_ppm: 50, fee_usdc: 0.5, realized_pnl: -4}
+        - {id: "8:taker", account_index: 757337, role: taker, side: sell, signed_size: -2, fee_ppm: 200, fee_usdc: 2, realized_pnl: 3}
+
   - name: position_after_adds_the_signed_size
     description: >-
       The taker held 0 and buys 0.3491, so it holds 0.3491. The maker held -0.2252 ETH and sells 0.3491,
