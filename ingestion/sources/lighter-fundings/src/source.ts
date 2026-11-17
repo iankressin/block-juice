@@ -73,9 +73,10 @@ const hourStart = (at: number) => at - (at % HOUR_MS);
 const fundingReply = z.object({ fundings: z.array(z.looseObject({ timestamp: z.number() })) });
 
 /**
- * Reads one window. An entry counts only when its hour mark lies inside the window and its hour
- * closed before the request went out. Lighter sends no entry for the hour still accruing, but the
- * time rule does not lean on that, and a closed hour can pay a zero, so a zero says nothing.
+ * Reads one window. An entry's timestamp is the hour mark it is paid at, and Lighter sends no entry
+ * for the hour still accruing. An entry counts when its mark lies inside the window and had passed
+ * before the request went out. The time rule does not lean on Lighter's silence, and a paid hour can
+ * be a zero, so a zero says nothing. Later runs read recent windows again, so no payment is lost.
  */
 async function fetchWindow(lighter: LighterClient, call: FundingCall, clock: Clock): Promise<RawRecord[]> {
   const cutoff = clock.now();
@@ -91,7 +92,7 @@ async function fetchWindow(lighter: LighterClient, call: FundingCall, clock: Clo
   return reply.fundings
     .filter(({ timestamp }) => {
       const paidAt = timestamp * 1000;
-      return paidAt >= call.start_time && paidAt <= call.end_time && paidAt + HOUR_MS <= cutoff;
+      return paidAt >= call.start_time && paidAt <= call.end_time && paidAt <= cutoff;
     })
     .map((funding) => ({
       id: `${call.market_id}:${funding.timestamp}`,
