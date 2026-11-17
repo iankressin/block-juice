@@ -115,3 +115,45 @@ unit_tests:
     expect:
       rows:
         - {trade_id: 40839017087, ask_account_pnl: null, bid_account_pnl: -0.43963, maker_entry_quote_before_usdc: 0, taker_entry_quote_before_usdc: 1194.870377}
+
+  # The int_lighter_account_fills tests use trade 40627877458 (catalog/vendors/lighter/NOTES.md, Units, P9).
+  - name: a_trade_gives_a_maker_row_and_a_taker_row
+    description: >-
+      Trade 40627877458 has is_maker_ask true. So 757337, the ask, is the maker and sells 0.3491, and
+      313004, the bid, is the taker and buys 0.3491. Each row takes the fee and pnl of its own role and side.
+    model: int_lighter_account_fills
+    given:
+      - input: ref('int_lighter_trades')
+        rows:
+          - {trade_id: 40627877458, market_id: 0, symbol: ETH, size: 0.3491, is_maker_ask: true, maker_account_index: 757337, taker_account_index: 313004, ask_account_index: 757337, bid_account_index: 313004, maker_fee_ppm: 50, taker_fee_ppm: 200, maker_fee_usdc: 0.0317597216, taker_fee_usdc: 0.1270388864, ask_account_pnl: 1.5, bid_account_pnl: null}
+    expect:
+      rows:
+        - {id: "40627877458:maker", trade_id: 40627877458, account_index: 757337, role: maker, side: sell, signed_size: -0.3491, fee_ppm: 50, fee_usdc: 0.0317597216, realized_pnl: 1.5}
+        - {id: "40627877458:taker", trade_id: 40627877458, account_index: 313004, role: taker, side: buy, signed_size: 0.3491, fee_ppm: 200, fee_usdc: 0.1270388864, realized_pnl: null}
+
+  - name: position_after_adds_the_signed_size
+    description: >-
+      The taker held 0 and buys 0.3491, so it holds 0.3491. The maker held -0.2252 ETH and sells 0.3491,
+      so it goes from -0.2252 to -0.5743.
+    model: int_lighter_account_fills
+    given:
+      - input: ref('int_lighter_trades')
+        rows:
+          - {trade_id: 40627877458, market_id: 0, symbol: ETH, size: 0.3491, is_maker_ask: true, maker_account_index: 757337, taker_account_index: 313004, ask_account_index: 757337, bid_account_index: 313004, maker_position_before: -0.2252, taker_position_before: 0}
+    expect:
+      rows:
+        - {id: "40627877458:maker", position_before: -0.2252, position_after: -0.5743}
+        - {id: "40627877458:taker", position_before: 0, position_after: 0.3491}
+
+  - name: a_side_with_no_account_has_no_row
+    description: >-
+      A market-settlement trade has ask account 281474976710655, which means no account. Only the bid
+      side keeps a row.
+    model: int_lighter_account_fills
+    given:
+      - input: ref('int_lighter_trades')
+        rows:
+          - {trade_id: 7, market_id: 0, symbol: ETH, size: 1, is_maker_ask: false, maker_account_index: 313004, taker_account_index: 281474976710655, ask_account_index: 281474976710655, bid_account_index: 313004, maker_position_before: 2, taker_position_before: 0}
+    expect:
+      rows:
+        - {id: "7:maker", account_index: 313004, role: maker, side: buy, signed_size: 1, position_before: 2, position_after: 3}

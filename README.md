@@ -85,6 +85,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter exchange metrics](#lighter-exchange-metrics) | | | | | | | | ✓ | |
 | [Lighter open interest](#lighter-open-interest) | | | | | | | | ✓ | |
 | [Lighter trades](#lighter-trades) | | | | | | | | ✓ | |
+| [Lighter account fills](#lighter-account-fills) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -628,6 +629,35 @@ The `lighter` pipeline builds it from the call source `lighter-trades`, which re
 | `maker_entry_quote_before_usdc`, `taker_entry_quote_before_usdc` | numeric | The entry value of each side's position before the trade, in USDC. |
 | `maker_position_sign_changed`, `taker_position_sign_changed` | boolean | True when the trade changed the sign of that side's position. Opening from 0 sets it, as on trade 40627877458. |
 | `ask_account_pnl`, `bid_account_pnl` | numeric | The pnl the trade realized for the seller and the buyer, in USDC. Null when none. |
+
+### Lighter account fills
+
+`analytics.lighter_account_fills`
+
+One fill per account and trade: each Lighter trade gives its maker one row and its taker one row, with the account's position before and after. A side with no account (281474976710655, on market-settlement trades) has no row. Covers the trades in `lighter_trades`, so the same accounts, markets and days.
+
+The `lighter` pipeline builds it from `lighter_trades`' source. Two tests check it against other data. `lighter_trades_within_candle_range` fails when a trade's price lies outside its hour's `lighter_candles` range. `lighter_account_fills_positions_chain` warns when an account's `position_before` differs from its previous fill's `position_after`, since a change that is not a trade, such as an exit at delisting, also moves a position.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<trade_id>:<role>`. Unique. |
+| `trade_id` | bigint | Lighter's trade id. |
+| `trade_time` | timestamptz | The block time of the trade. |
+| `market_id` | integer | The market's public id in Lighter's API. Join on this. |
+| `symbol` | text | The market's name. Null for a binary option. |
+| `account_index` | bigint | The account that made this side of the trade. |
+| `role` | text | `maker` or `taker`. |
+| `side` | text | `sell` for the ask account, `buy` for the bid account. |
+| `signed_size` | numeric | Base units, positive for a buy and negative for a sell. Null for a binary option. |
+| `price` | numeric | USDC per base unit. Null for a binary option. |
+| `notional_usdc` | numeric | The trade's value in USDC. |
+| `fee_ppm` | integer | The fee of this row's role, in parts per million of notional. |
+| `fee_usdc` | numeric | The fee of this row's role, in USDC. |
+| `position_before` | numeric | The account's position before the trade, in base units. Negative is short. |
+| `position_after` | numeric | `position_before` plus `signed_size`. |
+| `entry_quote_before_usdc` | numeric | The entry value of the account's position before the trade, in USDC. |
+| `position_sign_changed` | boolean | True when the trade changed the sign of the account's position. |
+| `realized_pnl` | numeric | The pnl the trade realized for this account, in USDC. Null when none. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
