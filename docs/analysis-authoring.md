@@ -83,12 +83,13 @@ inputs:
 ```
 
 Quote addresses in YAML. Apply the same window in SQL with `in_window('block_number', 'ethereum')`.
-`bj coverage` reads the current `START_BLOCK`, address filter and saved cursor. The cursor belongs
-to the source table and survives filter changes. If the filter or start block changed, or the
-settings used for earlier blocks are unknown, [reset the affected source](../.claude/skills/blockjuice/workflows/history-source.md#reuse-before-you-build).
-This clears its raw rows and cursor. Factory sources also need their pool store reset. Rerun the
-pipeline from the required start block until the cursor covers the end of the window, then check
-coverage with the rebuilt data.
+`bj coverage` reads the current `START_BLOCK` and address filter, and the blocks each generation
+has verified under them. To cover an earlier start or new addresses, change `START_BLOCK` or
+`addresses.json`: the next run backfills a new generation into the same raw table and keeps the
+rows already loaded. When the settings used for earlier blocks are unknown, set a
+`SOURCE_BACKFILL_ID` and follow the [nondestructive backfill](source-provenance.md#nondestructive-backfill).
+Rerun the pipeline until `bj coverage` shows the window verified, as
+[reuse before you build](../.claude/skills/blockjuice/workflows/history-source.md#reuse-before-you-build) says.
 
 For a transfer analysis covering every wallet, set `all_wallets: true` on the source input.
 Coverage then requires the source's `addresses.json` to omit `wallets`. For a specific wallet
