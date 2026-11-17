@@ -27,6 +27,8 @@ export const marketsSource = (clock: Clock = systemClock): Source<LighterEnv, Ma
           data: { read_at: readAt, market },
         })),
         failed: [],
+        // With no markets there is no record to carry the call id, so name it here to clear a dead letter.
+        succeededCallIds: [CALL_ID],
       };
     } catch (error) {
       yield { records: [], failed: [{ id: CALL_ID, call: { kind: CALL_ID }, error: describeError(error) }] };
