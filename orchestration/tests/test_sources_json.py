@@ -111,7 +111,12 @@ def test_read_sources_accepts_case_sensitive_filter_keys():
     assert read_sources(entry_with_case_sensitive(["coins"]))[0].coverage["caseSensitive"] == ["coins"]
 
 
-@pytest.mark.parametrize("keys", ["coins", [1], ["tokens"], ["coins", "tokens"]])
-def test_read_sources_rejects_case_sensitive_keys_that_are_not_filter_names(keys):
-    with pytest.raises(BadInput, match="invalid coverage contract for a.t"):
+@pytest.mark.parametrize("keys, match", [
+    ("coins", "caseSensitive must be a list"),
+    ([1], "caseSensitive must contain filter names"),
+    (["tokens"], r"caseSensitive names \['tokens'\], which are not filters"),
+    (["coins", "tokens"], r"caseSensitive names \['tokens'\], which are not filters"),
+])
+def test_read_sources_rejects_case_sensitive_keys_that_are_not_filter_names(keys, match):
+    with pytest.raises(BadInput, match=f"invalid coverage contract for a.t: {match}"):
         read_sources(entry_with_case_sensitive(keys))
