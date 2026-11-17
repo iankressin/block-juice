@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { createLighterClient, lighterEnv, type Clock } from "#src/lighter/client.ts";
+import { createLighterClient, lighterEnv, retryAfterMs, RETRY_AFTER_CAP_MS, type Clock } from "#src/lighter/client.ts";
 
 /** `status` 0 drops the connection instead of answering. */
-type Reply = { status: number; body: unknown };
+type Reply = { status: number; body: unknown; headers?: Record<string, string> };
 
 const market = (market_id: number, symbol: string, market_type: string, status = "active") => ({
   market_id,
@@ -38,12 +38,12 @@ async function fakeLighter(t: TestContext, replies: Reply[], delayMs = 0) {
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     state.inFlight--;
     const { pathname } = new URL(req.url!, "http://lighter");
-    const { status, body } =
+    const { status, body, headers } =
       pathname === "/api/v1/orderBookDetails"
         ? { status: 200, body: DETAILS }
         : (replies.shift() ?? { status: 200, body: { code: 200 } });
     if (status === 0) return void req.socket.destroy();
-    res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+    res.writeHead(status, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => {
@@ -117,6 +117,54 @@ test("a 405, a 5xx and a dropped connection are each sent again", async (t) => {
   assert.deepEqual(await client.get("/api/v1/x"), { code: 200, x: 2 });
   assert.equal(requests.length, 4);
   assert.deepEqual(clock.sleeps, [2000, 10_000, 60_000]);
+});
+
+const slow = (headers: Record<string, string>): Reply => ({ status: 429, body: { code: 429, message: "slow down" }, headers });
+const ok: Reply = { status: 200, body: { code: 200 } };
+
+test("Retry-After in seconds replaces the first retry wait", async (t) => {
+  // 60 a minute spaces requests by 1000 ms, so the only sleep is the retry wait.
+  const { client, clock } = await setup(t, [slow({ "retry-after": "5" }), ok], { perMinute: 60 });
+  await client.get("/api/v1/x");
+  assert.deepEqual(clock.sleeps, [5000]);
+});
+
+test("Retry-After as an HTTP date waits until that date", async (t) => {
+  const date = new Date(1_000_000 + 7000).toUTCString();
+  const { client, clock } = await setup(t, [slow({ "retry-after": date }), ok], { perMinute: 60 });
+  await client.get("/api/v1/x");
+  assert.deepEqual(clock.sleeps, [7000]);
+});
+
+test("a Retry-After above the cap waits the cap", async (t) => {
+  const { client, clock } = await setup(t, [slow({ "retry-after": "86400" }), ok], { perMinute: 60 });
+  await client.get("/api/v1/x");
+  assert.deepEqual(clock.sleeps, [RETRY_AFTER_CAP_MS]);
+});
+
+test("an invalid Retry-After falls back to the retry wait", async (t) => {
+  const { client, clock } = await setup(t, [slow({ "retry-after": "soon" }), ok], { perMinute: 60 });
+  await client.get("/api/v1/x");
+  assert.deepEqual(clock.sleeps, [2000]);
+});
+
+test("Retry-After does not add attempts", async (t) => {
+  const down = slow({ "retry-after": "1" });
+  const { client, requests } = await setup(t, [down, down, down, down, down], { perMinute: 60 });
+  await assert.rejects(client.get("/api/v1/x"), /HTTP 429/);
+  assert.equal(requests.length, 4);
+});
+
+test("retryAfterMs reads seconds, decimals and HTTP dates, and refuses the rest", () => {
+  assert.equal(retryAfterMs("5", 0), 5000);
+  assert.equal(retryAfterMs("0", 0), 0);
+  assert.equal(retryAfterMs("1.5", 0), 1500);
+  assert.equal(retryAfterMs(new Date(10_000).toUTCString(), 4000), 6000);
+  assert.equal(retryAfterMs(new Date(1000).toUTCString(), 4000), 0);
+  assert.equal(retryAfterMs("-3", 0), undefined);
+  assert.equal(retryAfterMs("soon", 0), undefined);
+  assert.equal(retryAfterMs("", 0), undefined);
+  assert.equal(retryAfterMs(null, 0), undefined);
 });
 
 test("concurrent gets run one at a time, spaced as in a row", async (t) => {

@@ -20,17 +20,32 @@ export type LighterEnv = z.infer<typeof lighterEnv>;
 // or times out. The last wait spans Lighter's 60 s block.
 const RETRY_WAITS_MS = [2_000, 10_000, 60_000];
 const TIMEOUT_MS = 60_000;
+/** The longest a `Retry-After` can make a retry wait. */
+export const RETRY_AFTER_CAP_MS = 120_000;
+
+/** A `Retry-After` header as ms to wait: seconds, or an HTTP date taken against `nowMs`. Undefined when absent or invalid. */
+export function retryAfterMs(header: string | null, nowMs: number): number | undefined {
+  const text = header?.trim();
+  if (!text) return undefined;
+  if (/^\d+(\.\d+)?$/.test(text)) return Math.round(Number(text) * 1000);
+  // Date.parse reads "-3" as a year, so only text that names a month can be a date.
+  if (!/[a-z]/i.test(text)) return undefined;
+  const date = Date.parse(text);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - nowMs);
+}
 
 const errorBody = z.object({ code: z.number().optional(), message: z.string().optional() });
 
 export class LighterError extends Error {
   readonly status: number;
   readonly code?: number;
+  readonly retryAfterMs?: number;
 
-  constructor(status: number, message: string, code?: number) {
+  constructor(status: number, message: string, code?: number, retryAfterMs?: number) {
     super(message);
     this.status = status;
     if (code !== undefined) this.code = code;
+    if (retryAfterMs !== undefined) this.retryAfterMs = retryAfterMs;
   }
 
   get retryable() {
@@ -46,7 +61,7 @@ function parseJson(text: string): unknown {
   }
 }
 
-async function lighterError(response: Response): Promise<LighterError> {
+async function lighterError(response: Response, nowMs: number): Promise<LighterError> {
   // The status is known, so a body that fails to read must not turn this into a network error.
   const text = await response.text().catch(() => "");
   const body = errorBody.safeParse(parseJson(text));
@@ -56,6 +71,7 @@ async function lighterError(response: Response): Promise<LighterError> {
     response.status,
     `Lighter answered HTTP ${response.status}${detail}: ${message ?? text.slice(0, 200)}`,
     code,
+    retryAfterMs(response.headers.get("retry-after"), nowMs),
   );
 }
 
@@ -98,7 +114,7 @@ export function createLighterClient(env: LighterEnv, clock: Clock = systemClock)
       let error: Error;
       try {
         const response = await observedFetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-        if (!response.ok) throw await lighterError(response);
+        if (!response.ok) throw await lighterError(response, clock.now());
         const body = (await response.json()) as Record<string, unknown>;
         if (body.code !== 200) {
           throw new LighterError(
@@ -111,8 +127,10 @@ export function createLighterClient(env: LighterEnv, clock: Clock = systemClock)
       } catch (cause) {
         error = cause instanceof Error ? cause : new Error(String(cause));
       }
-      const retryWaitMs = RETRY_WAITS_MS[attempt];
-      if ((error instanceof LighterError && !error.retryable) || retryWaitMs === undefined) throw error;
+      const scheduledWaitMs = RETRY_WAITS_MS[attempt];
+      if ((error instanceof LighterError && !error.retryable) || scheduledWaitMs === undefined) throw error;
+      const asked = error instanceof LighterError ? error.retryAfterMs : undefined;
+      const retryWaitMs = asked === undefined ? scheduledWaitMs : Math.min(asked, RETRY_AFTER_CAP_MS);
       logger.info(
         { path: request.pathname, error: describeError(error), waitMs: retryWaitMs },
         "Lighter failed a request, waiting before trying again",
