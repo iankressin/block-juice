@@ -1,0 +1,411 @@
+diff --git a/dist/hyperliquid/hyperliquid-replica-cmds-portal-source.d.ts b/dist/hyperliquid/hyperliquid-replica-cmds-portal-source.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..16742c79ff96c76c3c7d3a2f072b78845be9ff67
+--- /dev/null
++++ b/dist/hyperliquid/hyperliquid-replica-cmds-portal-source.d.ts
+@@ -0,0 +1,32 @@
++import { MetricsServer } from "../core/metrics-server.js";
++import { ProgressTrackerOptions } from "../core/progress-tracker.js";
++import * as hl from "../portal-client/query/hyperliquid-replica-cmds.js";
++import { LogLevel, Logger, Outputs, PortalCache, PortalStream, SpanHooks, Transformer } from '../core/index.js';
++import { PortalClientOptions } from '../portal-client/index.js';
++import { HyperliquidReplicaCmdsPortalData, HyperliquidReplicaCmdsQueryBuilder } from './hyperliquid-replica-cmds-query-builder.js';
++export type HyperliquidReplicaCmdsFieldSelection = hl.FieldSelection;
++export * as replicaCmdsApi from '../portal-client/query/hyperliquid-replica-cmds.js';
++export type HyperliquidReplicaCmdsOutputs = Outputs<hl.FieldSelection, HyperliquidReplicaCmdsQueryBuilder<any>>;
++type HyperliquidReplicaCmdsPortalStream<T extends HyperliquidReplicaCmdsOutputs> = T extends HyperliquidReplicaCmdsQueryBuilder<infer Q> ? HyperliquidReplicaCmdsPortalData<Q> : T extends Transformer<any, infer O> ? O : T extends Record<string, Transformer<any, any> | HyperliquidReplicaCmdsQueryBuilder<any>> ? {
++    [K in keyof T]: T[K] extends Transformer<any, infer O> ? O : T[K] extends HyperliquidReplicaCmdsQueryBuilder<infer Q> ? HyperliquidReplicaCmdsPortalData<Q> : never;
++} : never;
++export declare function hyperliquidReplicaCmdsPortalStream<Out extends HyperliquidReplicaCmdsOutputs>({ id, portal, outputs, cache, logger, metrics, profiler, progress, }: {
++    /**
++     * Globally unique, stable identifier for this pipe.
++     * Targets use it as a cursor key to persist progress — two pipes with the
++     * same `id` will share (and overwrite) each other's cursor.
++     */
++    id: string;
++    portal: string | PortalClientOptions;
++    outputs: Out;
++    cache?: PortalCache;
++    metrics?: MetricsServer;
++    logger?: Logger | LogLevel;
++    profiler?: boolean | SpanHooks;
++    progress?: ProgressTrackerOptions;
++}): PortalStream<HyperliquidReplicaCmdsQueryBuilder<{
++    block: {
++        hash: true;
++        number: true;
++    };
++}>, HyperliquidReplicaCmdsPortalStream<Out>>;
+diff --git a/dist/hyperliquid/hyperliquid-replica-cmds-portal-source.js b/dist/hyperliquid/hyperliquid-replica-cmds-portal-source.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..c802af22ba9f23d9debc7ac36197a2cecfb03c63
+--- /dev/null
++++ b/dist/hyperliquid/hyperliquid-replica-cmds-portal-source.js
+@@ -0,0 +1,52 @@
++import { cast } from "@subsquid/util-internal-validation";
++import { progressTracker } from "../core/progress-tracker.js";
++import {
++  PortalStream,
++  createTransformer,
++  mergeOutputs
++} from "../core/index.js";
++import { getBlockSchema } from "../portal-client/index.js";
++import { HyperliquidReplicaCmdsQueryBuilder } from "./hyperliquid-replica-cmds-query-builder.js";
++import * as replicaCmdsApi from "../portal-client/query/hyperliquid-replica-cmds.js";
++function hyperliquidReplicaCmdsPortalStream({
++  id,
++  portal,
++  outputs,
++  cache,
++  logger,
++  metrics,
++  profiler,
++  progress
++}) {
++  const query = new HyperliquidReplicaCmdsQueryBuilder().addFields({
++    block: { hash: true, number: true }
++  });
++  return new PortalStream({
++    id,
++    portal,
++    query,
++    cache,
++    logger,
++    metrics,
++    profiler,
++    transformers: [
++      progressTracker({
++        interval: progress?.interval,
++        onStart: progress?.onStart,
++        onProgress: progress?.onProgress
++      }),
++      createTransformer({
++        profiler: { name: "normalize data" },
++        transform: (data, ctx) => {
++          const schema = getBlockSchema(ctx.stream.query.raw);
++          return data.map((b) => cast(schema, b));
++        }
++      }),
++      mergeOutputs(outputs)
++    ]
++  });
++}
++export {
++  hyperliquidReplicaCmdsPortalStream,
++  replicaCmdsApi
++};
+diff --git a/dist/hyperliquid/hyperliquid-replica-cmds-query-builder.d.ts b/dist/hyperliquid/hyperliquid-replica-cmds-query-builder.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..74a6306c83ec8212d2d807544db78bac1c6a1313
+--- /dev/null
++++ b/dist/hyperliquid/hyperliquid-replica-cmds-query-builder.d.ts
+@@ -0,0 +1,22 @@
++import { QueryAwareTransformer, SetupQueryFn, Subset } from "../core/index.js";
++import { QueryBuilder, Range, RequestOptions } from '../core/query-builder.js';
++import * as api from '../portal-client/query/hyperliquid-replica-cmds.js';
++export type HyperliquidReplicaCmdsPortalData<F extends api.FieldSelection> = api.Block<F>[];
++type HyperliquidReplicaCmdsTransformerOut<F extends api.FieldSelection> = QueryAwareTransformer<HyperliquidReplicaCmdsPortalData<F>, HyperliquidReplicaCmdsPortalData<F>, HyperliquidReplicaCmdsQueryBuilder<F>>;
++export declare class HyperliquidReplicaCmdsQueryBuilder<F extends api.FieldSelection = {}> extends QueryBuilder<F, api.DataRequest> {
++    getType(): string;
++    addFields<T extends api.FieldSelection>(fields: Subset<T, api.FieldSelection>): HyperliquidReplicaCmdsQueryBuilder<F & T>;
++    private addRequest;
++    includeAllBlocks(range?: Range): this;
++    addActionRequest(options: RequestOptions<api.ActionRequest>): this;
++    addOrderActionRequest(options: RequestOptions<api.OrderActionRequest>): this;
++    addCancelActionRequest(options: RequestOptions<api.CancelActionRequest>): this;
++    addCancelByCloidActionRequest(options: RequestOptions<api.CancelByCloidActionRequest>): this;
++    addBatchModifyActionRequest(options: RequestOptions<api.BatchModifyActionRequest>): this;
++    mergeDataRequests(...requests: api.DataRequest[]): api.DataRequest;
++    build(opts?: {
++        setupQuery?: SetupQueryFn<HyperliquidReplicaCmdsQueryBuilder<F>>;
++    }): HyperliquidReplicaCmdsTransformerOut<F>;
++}
++export declare function hyperliquidReplicaCmdsQuery(): HyperliquidReplicaCmdsQueryBuilder<{}>;
++export {};
+diff --git a/dist/hyperliquid/hyperliquid-replica-cmds-query-builder.js b/dist/hyperliquid/hyperliquid-replica-cmds-query-builder.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a2523a658bf3c1865e5320e2ce97d64b86dbe05
+--- /dev/null
++++ b/dist/hyperliquid/hyperliquid-replica-cmds-query-builder.js
+@@ -0,0 +1,68 @@
++import { QueryAwareTransformer, parsePortalRange } from "../core/index.js";
++import { mergeDeep } from "../internal/object/merge-deep.js";
++import { QueryBuilder, concatQueryLists } from "../core/query-builder.js";
++class HyperliquidReplicaCmdsQueryBuilder extends QueryBuilder {
++  getType() {
++    return "hyperliquidReplicaCmds";
++  }
++  addFields(fields) {
++    this.fields = mergeDeep(this.fields, fields);
++    return this;
++  }
++  addRequest(type, options) {
++    this.requests.push({
++      range: parsePortalRange(options.range),
++      request: {
++        [type]: [{ ...options.request }]
++      }
++    });
++    return this;
++  }
++  includeAllBlocks(range) {
++    this.requests.push({ range: range ?? { from: 0 }, request: { includeAllBlocks: true } });
++    return this;
++  }
++  addActionRequest(options) {
++    return this.addRequest("actions", options);
++  }
++  addOrderActionRequest(options) {
++    return this.addRequest("orderActions", options);
++  }
++  addCancelActionRequest(options) {
++    return this.addRequest("cancelActions", options);
++  }
++  addCancelByCloidActionRequest(options) {
++    return this.addRequest("cancelByCloidActions", options);
++  }
++  addBatchModifyActionRequest(options) {
++    return this.addRequest("batchModifyActions", options);
++  }
++  mergeDataRequests(...requests) {
++    let res = {};
++    for (let req of requests) {
++      res.actions = concatQueryLists(res.actions, req.actions);
++      res.orderActions = concatQueryLists(res.orderActions, req.orderActions);
++      res.cancelActions = concatQueryLists(res.cancelActions, req.cancelActions);
++      res.cancelByCloidActions = concatQueryLists(res.cancelByCloidActions, req.cancelByCloidActions);
++      res.batchModifyActions = concatQueryLists(res.batchModifyActions, req.batchModifyActions);
++      if (res.includeAllBlocks || req.includeAllBlocks) {
++        res.includeAllBlocks = true;
++      }
++    }
++    return res;
++  }
++  build(opts) {
++    const setupQuery = opts?.setupQuery ?? (({ query }) => query.merge(this));
++    return new QueryAwareTransformer(setupQuery, {
++      profiler: { name: "query builder", hidden: true },
++      transform: (data) => data
++    });
++  }
++}
++function hyperliquidReplicaCmdsQuery() {
++  return new HyperliquidReplicaCmdsQueryBuilder();
++}
++export {
++  HyperliquidReplicaCmdsQueryBuilder,
++  hyperliquidReplicaCmdsQuery
++};
+diff --git a/dist/hyperliquid/index.d.ts b/dist/hyperliquid/index.d.ts
+index 292ede055fd5476469683d7862afd26b77bbb0d0..84c9d9e6d6a58b5d652d6e0b792949f0434865bc 100644
+--- a/dist/hyperliquid/index.d.ts
++++ b/dist/hyperliquid/index.d.ts
+@@ -1,2 +1,4 @@
+ export * from './hyperliquid-fills-portal-source.js';
+ export * from './hyperliquid-fills-query-builder.js';
++export * from './hyperliquid-replica-cmds-portal-source.js';
++export * from './hyperliquid-replica-cmds-query-builder.js';
+diff --git a/dist/hyperliquid/index.js b/dist/hyperliquid/index.js
+index 3757ae47c1b92d60b63551e8b1e79e91037c25a8..900ccffd416475e5f5f814c9d79c6be9ff1f314a 100644
+--- a/dist/hyperliquid/index.js
++++ b/dist/hyperliquid/index.js
+@@ -1,3 +1,5 @@
+ export * from "./hyperliquid-fills-portal-source.js";
+ export * from "./hyperliquid-fills-query-builder.js";
++export * from "./hyperliquid-replica-cmds-portal-source.js";
++export * from "./hyperliquid-replica-cmds-query-builder.js";
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/dist/portal-client/query/hyperliquid-replica-cmds.d.ts b/dist/portal-client/query/hyperliquid-replica-cmds.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb475733ac1e48c611e6b51489dfa97b2bac6e70
+--- /dev/null
++++ b/dist/portal-client/query/hyperliquid-replica-cmds.d.ts
+@@ -0,0 +1,77 @@
++import { Validator } from '@subsquid/util-internal-validation';
++import { type Hex, type PortalQuery, type Select, type Selected, type Selector, type Simplify, type Trues } from './common.js';
++export type BlockHeaderFields = {
++    number: number;
++    hash: Hex;
++    parentHash: Hex;
++    round: number;
++    parentRound: number;
++    proposer: Hex;
++    timestamp: number;
++    hardfork: {
++        version: number;
++        round: number;
++    } | null;
++};
++export type ActionStatus = 'ok' | 'err';
++export type ActionFields = {
++    actionIndex: number;
++    user: Hex;
++    /** The action as the user signed it. Raw JSON passthrough; its other keys depend on `type`. */
++    action: {
++        type: string;
++        [key: string]: unknown;
++    };
++    signature: {
++        r: Hex;
++        s: Hex;
++        v: number;
++    };
++    nonce: number | null;
++    vaultAddress: Hex | null;
++    status: ActionStatus;
++    /** Raw JSON passthrough. Usually an object, but a plain string on some errors. */
++    response: unknown;
++};
++export type BlockHeaderFieldSelection = Selector<keyof BlockHeaderFields>;
++export type BlockHeader<F extends BlockHeaderFieldSelection = Trues<BlockHeaderFieldSelection>> = Select<BlockHeaderFields, F>;
++export type ActionFieldSelection = Selector<keyof ActionFields>;
++export type Action<F extends ActionFieldSelection = Trues<ActionFieldSelection>> = Select<ActionFields, F>;
++export type FieldSelection = {
++    block?: BlockHeaderFieldSelection;
++    action?: ActionFieldSelection;
++};
++export type DataRequest = {
++    includeAllBlocks?: boolean;
++    actions?: ActionRequest[];
++    orderActions?: OrderActionRequest[];
++    cancelActions?: CancelActionRequest[];
++    cancelByCloidActions?: CancelByCloidActionRequest[];
++    batchModifyActions?: BatchModifyActionRequest[];
++};
++export type ActionRequest = {
++    actionType?: string[];
++    user?: Hex[];
++    vaultAddress?: Hex[];
++    status?: ActionStatus;
++};
++/** `containsAsset` takes asset numbers, not coin names. */
++export type OrderActionRequest = {
++    containsAsset?: number[];
++    containsCloid?: Hex[];
++    user?: Hex[];
++    vaultAddress?: Hex[];
++    status?: ActionStatus;
++};
++export type CancelActionRequest = Omit<OrderActionRequest, 'containsCloid'>;
++export type CancelByCloidActionRequest = OrderActionRequest;
++export type BatchModifyActionRequest = OrderActionRequest;
++export type Query<F extends FieldSelection = FieldSelection> = Simplify<PortalQuery & {
++    type: 'hyperliquidReplicaCmds';
++    fields: F;
++} & DataRequest>;
++export type Block<F extends FieldSelection> = Simplify<{
++    header: BlockHeader<Selected<F, 'block'>>;
++    actions: Action<Selected<F, 'action'>>[];
++}>;
++export declare function getBlockSchema<F extends FieldSelection>(fields: F): Validator<Block<F>, unknown>;
+diff --git a/dist/portal-client/query/hyperliquid-replica-cmds.js b/dist/portal-client/query/hyperliquid-replica-cmds.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f58d1b6c273edc459bced2ab117737f95b53ebf5
+--- /dev/null
++++ b/dist/portal-client/query/hyperliquid-replica-cmds.js
+@@ -0,0 +1,49 @@
++import {
++  ANY,
++  ANY_OBJECT,
++  BYTES,
++  NAT,
++  array,
++  constant,
++  nullable,
++  object,
++  oneOf,
++  withDefault
++} from "@subsquid/util-internal-validation";
++import {
++  project
++} from "./common.js";
++function getBlockSchema(fields) {
++  let header = object(project(BlockHeaderShape, fields.block));
++  let action = object(project(ActionShape, fields.action));
++  return object({
++    header,
++    actions: withDefault([], array(action))
++  });
++}
++const BlockHeaderShape = {
++  number: NAT,
++  hash: BYTES,
++  parentHash: BYTES,
++  round: NAT,
++  parentRound: NAT,
++  proposer: BYTES,
++  timestamp: NAT,
++  hardfork: nullable(ANY_OBJECT)
++};
++const ActionShape = {
++  actionIndex: NAT,
++  user: BYTES,
++  action: ANY_OBJECT,
++  signature: ANY_OBJECT,
++  nonce: nullable(NAT),
++  vaultAddress: nullable(BYTES),
++  status: oneOf({
++    ok: constant("ok"),
++    err: constant("err")
++  }),
++  response: ANY
++};
++export {
++  getBlockSchema
++};
+diff --git a/dist/portal-client/query/index.d.ts b/dist/portal-client/query/index.d.ts
+index 4e77c8cd00c30e0552530ca8f3a8a9678f776317..01a45beb14dd408404cd67ffa42c21e7e3cce4c4 100644
+--- a/dist/portal-client/query/index.d.ts
++++ b/dist/portal-client/query/index.d.ts
+@@ -2,6 +2,7 @@ import { Validator } from '@subsquid/util-internal-validation';
+ import * as bitcoin from './bitcoin.js';
+ import * as evm from './evm.js';
+ import * as hyperliquidFills from './hyperliquid-fills.js';
++import * as hyperliquidReplicaCmds from './hyperliquid-replica-cmds.js';
+ import * as solana from './solana.js';
+ import * as substrate from './substrate.js';
+ import * as tron from './tron.js';
+@@ -9,16 +10,18 @@ export type { Block as BitcoinBlock, FieldSelection as BitcoinFieldSelection } f
+ export type { PortalBlock, PortalQuery } from './common.js';
+ export type { Block as EvmBlock, FieldSelection as EvmFieldSelection } from './evm.js';
+ export type { Block as HyperliquidFillsBlock, FieldSelection as HyperliquidFillsFieldSelection, } from './hyperliquid-fills.js';
++export type { Block as HyperliquidReplicaCmdsBlock, FieldSelection as HyperliquidReplicaCmdsFieldSelection, } from './hyperliquid-replica-cmds.js';
+ export type { Block as SolanaBlock, FieldSelection as SolanaFieldSelection } from './solana.js';
+ export type { Block as SubstrateBlock, FieldSelection as SubstrateFieldSelection } from './substrate.js';
+ export type { Block as TronBlock, FieldSelection as TronFieldSelection } from './tron.js';
+ export type SolanaQuery = solana.Query;
+ export type EvmQuery = evm.Query;
+ export type HyperliquidFillsQuery = hyperliquidFills.Query;
++export type HyperliquidReplicaCmdsQuery = hyperliquidReplicaCmds.Query;
+ export type SubstrateQuery = substrate.Query;
+ export type BitcoinQuery = bitcoin.Query;
+ export type TronQuery = tron.Query;
+-export type Query = evm.Query | hyperliquidFills.Query | solana.Query | substrate.Query | bitcoin.Query | tron.Query;
+-export type GetBlock<Q extends Query> = Q extends evm.Query ? evm.Block<Q['fields']> : Q extends solana.Query ? solana.Block<Q['fields']> : Q extends substrate.Query ? substrate.Block<Q['fields']> : Q extends bitcoin.Query ? bitcoin.Block<Q['fields']> : Q extends tron.Query ? tron.Block<Q['fields']> : hyperliquidFills.Block<Q['fields']>;
++export type Query = evm.Query | hyperliquidFills.Query | hyperliquidReplicaCmds.Query | solana.Query | substrate.Query | bitcoin.Query | tron.Query;
++export type GetBlock<Q extends Query> = Q extends evm.Query ? evm.Block<Q['fields']> : Q extends solana.Query ? solana.Block<Q['fields']> : Q extends substrate.Query ? substrate.Block<Q['fields']> : Q extends bitcoin.Query ? bitcoin.Block<Q['fields']> : Q extends tron.Query ? tron.Block<Q['fields']> : Q extends hyperliquidReplicaCmds.Query ? hyperliquidReplicaCmds.Block<Q['fields']> : hyperliquidFills.Block<Q['fields']>;
+ /** FIXME split this function */
+ export declare function getBlockSchema<Block>(query: Query): Validator<Block, any>;
+diff --git a/dist/portal-client/query/index.js b/dist/portal-client/query/index.js
+index 13c2a84b81a6b34a779ef1b83450e45f9a52bf70..ed43f149b04b1d382a2c0b8e01b707b385779ab9 100644
+--- a/dist/portal-client/query/index.js
++++ b/dist/portal-client/query/index.js
+@@ -2,6 +2,7 @@ import { unexpectedCase } from "@subsquid/util-internal";
+ import * as bitcoin from "./bitcoin.js";
+ import * as evm from "./evm.js";
+ import * as hyperliquidFills from "./hyperliquid-fills.js";
++import * as hyperliquidReplicaCmds from "./hyperliquid-replica-cmds.js";
+ import * as solana from "./solana.js";
+ import * as substrate from "./substrate.js";
+ import * as tron from "./tron.js";
+@@ -19,6 +20,9 @@ function getBlockSchema(query) {
+     case "hyperliquidFills":
+       schema = hyperliquidFills.getBlockSchema(query.fields);
+       break;
++    case "hyperliquidReplicaCmds":
++      schema = hyperliquidReplicaCmds.getBlockSchema(query.fields);
++      break;
+     case "substrate":
+       schema = substrate.getBlockSchema(query.fields);
+       break;
