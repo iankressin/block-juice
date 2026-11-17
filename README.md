@@ -81,6 +81,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | | | |
 | [Lighter markets](#lighter-markets) | | | | | | | | ✓ | |
 | [Lighter candles](#lighter-candles) | | | | | | | | ✓ | |
+| [Lighter funding rates](#lighter-funding-rates) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -534,6 +535,25 @@ The `lighter` pipeline builds it from the call source `lighter-candles`, which r
 | `quote_volume` | numeric | Volume in USDC. Null on a mark candle. |
 | `last_trade_id` | bigint | The last trade id in the bucket. Null on a mark candle. |
 | `samples` | bigint | How many mark-price samples the bucket holds. Null on a trade candle. |
+
+### Lighter funding rates
+
+`analytics.lighter_funding_rates`
+
+One hourly funding rate per Lighter perp market. Only closed hours load. Covers the perp markets in `markets.json` (ETH and BTC to start), from `START_TIME`. A spot market in `markets.json` fails the run, since spot markets have no funding.
+
+The `lighter` pipeline builds it from the call source `lighter-fundings`, which reads Lighter's API in windows of 750 hours. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<market_id>:<unix seconds of the hour>`. Unique. |
+| `market_id` | integer | The market's public id in Lighter's API. Join on this, not on `symbol`. |
+| `symbol` | text | The market's name, such as `ETH`. |
+| `funding_time` | timestamptz | The hour mark the rate is paid at. |
+| `rate_pct` | numeric | The rate in percent per hour, unsigned, as Lighter sends it. A closed hour can be 0. |
+| `signed_rate_pct` | numeric | `rate_pct` for `long`, `-rate_pct` for `short`. Positive means longs pay shorts. The paying side is inferred from the funding page's rule; see `catalog/vendors/lighter/NOTES.md`. |
+| `value_usdc_per_unit` | numeric | USDC paid per one unit of base for the hour. |
+| `direction` | text | `long` for a positive rate, `short` for a negative one. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

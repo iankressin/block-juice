@@ -15,3 +15,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: fundings
+        identifier: lighter_fundings
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
