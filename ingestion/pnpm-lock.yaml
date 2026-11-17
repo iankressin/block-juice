@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@subsquid/pipes@1.0.0-beta.11':
-    hash: d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec
+    hash: b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9
     path: patches/@subsquid__pipes@1.0.0-beta.11.patch
 
 importers:
@@ -40,7 +40,7 @@ importers:
         version: 8.6.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       dotenv:
         specifier: ^18.0.9
         version: 18.0.9
@@ -77,7 +77,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -144,7 +144,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -160,7 +160,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -176,7 +176,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       viem:
         specifier: ^2.57.16
         version: 2.57.16(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
@@ -215,7 +215,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -243,7 +243,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -259,7 +259,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -275,7 +275,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -291,7 +291,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -307,7 +307,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -323,7 +323,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -335,7 +335,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -347,7 +347,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -363,7 +363,7 @@ importers:
         version: link:../../lib
       '@subsquid/pipes':
         specifier: 1.0.0-beta.11
-        version: 1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
+        version: 1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -2648,7 +2648,7 @@ snapshots:
       '@subsquid/util-internal-json': 1.2.4
       supports-color: 8.1.1
 
-  '@subsquid/pipes@1.0.0-beta.11(patch_hash=d9de9e975f74fd45ad6017f4ffc54d597412ab50eedf82d3ecc1e3b0449c9dec)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)':
+  '@subsquid/pipes@1.0.0-beta.11(patch_hash=b5ff6e56e5ed5d9751552ff92f55ea044f6e5dfc0dc4afc49e279e686513a1d9)(@opentelemetry/api@1.10.0)(@subsquid/logger@1.6.0)(better-sqlite3@12.4.5)(drizzle-orm@0.44.7(@electric-sql/pglite@0.5.13)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(better-sqlite3@12.4.5)(pg@8.23.1))(pg@8.23.1)':
     dependencies:
       '@subsquid/evm-abi': 0.3.1
       '@subsquid/evm-codec': 0.3.0

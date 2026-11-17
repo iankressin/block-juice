@@ -7,8 +7,7 @@ import {
   type StreamSource,
 } from "@ingestion/lib";
 import { toLower, validateEthAddressList } from "@ingestion/lib/evm";
-import { HyperliquidFillsQueryBuilder, hyperliquidFillsPortalStream, type api } from "@subsquid/pipes/hyperliquid";
-import type { PortalClientOptions } from "@subsquid/pipes/portal-client";
+import { hyperliquidFillsPortalStream, hyperliquidFillsQuery, type api } from "@subsquid/pipes/hyperliquid";
 import * as z from "zod";
 
 const defaultPortalUrl = "https://portal.sqd.dev/datasets/hyperliquid-fills";
@@ -111,15 +110,13 @@ export const source: StreamSource<HypercoreFillsEnv> = {
     const request = fillRequest(readJson("addresses.json"));
     const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
     const range = { from: env.START_BLOCK, to: Math.min(env.END_BLOCK ?? Infinity, await finalizedHead(portal)) };
-    const query = new HyperliquidFillsQueryBuilder()
+    const query = hyperliquidFillsQuery()
       .addFields({ block: { number: true, timestamp: true }, fill: fillFields })
       .addFillRequest({ range, request });
 
     return hyperliquidFillsPortalStream({
       id: `${this.name}_${this.table}`,
-      // Pipes 1.0.0-beta.11 types this as a URL or client options, but PortalStream takes a client
-      // as is, and evmPortalStream declares it. The client carries portalClient's retries and headers.
-      portal: portal as unknown as PortalClientOptions,
+      portal,
       logger: logger.child({ source: this.name, table: this.table }),
       outputs: query.build().pipe((blocks) => blocks.flatMap(blockRecords)),
     });

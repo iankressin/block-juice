@@ -12,7 +12,6 @@ import {
   hyperliquidReplicaCmdsQuery,
   type replicaCmdsApi,
 } from "@subsquid/pipes/hyperliquid";
-import type { PortalClientOptions } from "@subsquid/pipes/portal-client";
 import * as z from "zod";
 
 const defaultPortalUrl = "https://portal.sqd.dev/datasets/hyperliquid-replica-cmds";
@@ -88,9 +87,7 @@ export const source: StreamSource<HypercoreActionsEnv> = {
 
     return hyperliquidReplicaCmdsPortalStream({
       id: `${this.name}_${this.table}`,
-      // As in hypercore-fills: Pipes types this as a URL or client options, but PortalStream takes a
-      // client as is. The client carries portalClient's retries and headers.
-      portal: portal as unknown as PortalClientOptions,
+      portal,
       logger: logger.child({ source: this.name, table: this.table }),
       outputs: query.build().pipe((blocks) => blocks.flatMap(blockRecords)),
     });
