@@ -26,11 +26,11 @@ const DETAILS = {
 };
 
 /** Lighter's orderBookDetails on a local port. `status` answers every request. */
-async function fakeLighter(t: TestContext, status = 200) {
+async function fakeLighter(t: TestContext, status = 200, details: typeof DETAILS = DETAILS) {
   const requests: string[] = [];
   const server = createServer((req, res) => {
     requests.push(req.url!);
-    const body = status === 200 ? DETAILS : { code: status, message: "down" };
+    const body = status === 200 ? details : { code: status, message: "down" };
     res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -86,4 +86,12 @@ test("a retried read is made once, by the run's own call", async (t) => {
   const [batch] = await run(url, [{ kind: "order_book_details" }]);
   assert.equal(requests.length, 1);
   assert.equal(batch!.records.length, 3);
+});
+
+test("a successful read with no markets still clears the call's dead letter", async (t) => {
+  const { url } = await fakeLighter(t, 200, { code: 200, order_book_details: [], spot_order_book_details: [] });
+  const batches = await run(url);
+  assert.deepEqual(batches.flatMap((b) => b.records), []);
+  assert.deepEqual(batches.flatMap((b) => b.failed), []);
+  assert.deepEqual(batches.flatMap((b) => b.succeededCallIds ?? []), ["order_book_details"]);
 });
