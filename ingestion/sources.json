@@ -250,6 +250,18 @@
   },
   {
     "name": "hypercore",
+    "table": "actions",
+    "package": "hypercore-actions",
+    "coverage": {
+      "defaultPortalUrl": "https://portal.sqd.dev/datasets/hyperliquid-replica-cmds",
+      "filters": [
+        "users"
+      ],
+      "unrestricted": []
+    }
+  },
+  {
+    "name": "hypercore",
     "table": "fills",
     "package": "hypercore-fills",
     "coverage": {

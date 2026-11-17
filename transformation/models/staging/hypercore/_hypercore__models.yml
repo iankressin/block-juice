@@ -17,3 +17,18 @@ models:
         data_tests: [not_null]
       - name: tid
         data_tests: [not_null]
+
+  - name: stg_hypercore__actions
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: action_index
+        data_tests: [not_null]
+      - name: user_address
+        data_tests: [not_null]
+      - name: action_type
+        data_tests: [not_null]
+      - name: status
+        data_tests: [not_null]

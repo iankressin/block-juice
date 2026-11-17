@@ -10,3 +10,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: actions
+        identifier: hypercore_actions
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
