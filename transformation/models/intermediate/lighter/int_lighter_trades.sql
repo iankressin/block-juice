@@ -1,6 +1,9 @@
 -- One Lighter trade in real units, with its market. Each rule cites its section of
 -- catalog/vendors/lighter/NOTES.md. Scaled values multiply by 10^-n rather than divide by 10^n:
 -- Postgres rounds a quotient to about 16 significant digits.
+-- Each trade is scaled by its market's latest size_decimals and price_decimals. The test
+-- lighter_markets_keep_their_decimals fails the build if a market's decimals ever change. Trades
+-- would then need scaling by the reading in effect at trade time.
 with trades as (
     select
         *,
