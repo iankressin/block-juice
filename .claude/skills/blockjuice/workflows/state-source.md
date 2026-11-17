@@ -18,7 +18,7 @@ A state source reads values that a view function or RPC method returns at one bl
    - Reads at past blocks need an archive RPC. Solana serves current state only, so a Solana call has no block, and the record's id takes the slot from the reply.
 3. Put the addresses to read in `addresses.json`, in `chains/<chain>/` for an `evm-*` package. Copy `.env.example` to `.env`.
 4. Update the copied tests in `src/*.test.ts`. Run `pnpm test` in the package and `pnpm typecheck` in `ingestion/`.
-5. Shape the staging model: cast each field out of `data` into its own column, as `stg_ethereum__erc20_balances.sql` does. Add column tests to the folder's `_<chain>__models.yml`.
+5. Shape the staging model per [transformation/CLAUDE.md](../../../../transformation/CLAUDE.md), as `stg_ethereum__erc20_balances.sql` does, and add column tests to the folder's `_<chain>__models.yml`.
 6. Run it once with `pnpm ingest` in the package, as `CHAIN=<chain> pnpm ingest` for an `evm-*` package. Check that `raw.<chain>_<table>` has rows and that `raw._dead_letters` has none for `<chain>_<table>`.
 
 A source joins a pipeline through a mart that reads it: follow [new-pipeline.md](new-pipeline.md). Until then the orchestration tests fail, because every asset must belong to a scheduled pipeline.

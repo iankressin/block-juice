@@ -2,7 +2,7 @@
 
 A self-hosted ELT framework for chain data. TypeScript sources in `ingestion/` load raw rows into Postgres, dbt in `transformation/` builds the models, Dagster in `orchestration/` runs both, and the `bj` CLI writes answers to `answers/<slug>/`. Use the terms in `GLOSSARY.md`, never the words it lists under _Avoid_.
 
-`ingestion/`, `transformation/` and `orchestration/` each have a CLAUDE.md with that layer's rules.
+`ingestion/`, `transformation/` and `orchestration/` each have a CLAUDE.md with that layer's rules, and `.github/` has one for the factory workflows.
 
 ## Commands
 
@@ -56,6 +56,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request.
 - Put a limit on all work: batches, retries, pages, scans and timeouts. Name each limit as a constant, with its unit in the name when it has one: `CALL_BATCH_SIZE`, `SCAN_TIMEOUT_MS`.
 - Check input where it enters (env, files, API replies, CLI arguments) and fail with a message that names the file, key or value. Past that point, trust the types.
 - When a library default matters, such as a timeout or a retry count, pass it at the call site, so a new library version can't change it.
+- Watch each new test or check fail once before you trust it. Plant the defect it guards against, such as a duplicate key or a missing row, run it, see it fail, then remove the defect. A check that compares zero rows, skips because its input is missing, or reports `pass` with failures above zero proves nothing.
 - Comments say why the code is the way it is. Leave out comments that restate the code.
 - No linter or formatter runs here. Match the file you are in, and don't reformat lines you didn't change.
 - Docs, comments and PR text use plain, short words and the active voice, as the existing docs do.
@@ -72,6 +73,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request.
 - Write the subject as one imperative sentence in sentence case, with no type prefix: `Keep fact statistics current`. The body says what changed and why. Title an analysis PR `Analysis: <question>`.
 - Keep the `Co-Authored-By:` trailer on commits. Never put a Claude session link in a commit message or a pull request description: no `Claude-Session:` trailer and no `claude.ai/code/session_…` URL.
 - The repo is public. Keep hosts, keys, private URLs and client names out of code, docs, commits and PRs. They belong in `.env` files, which git ignores.
+- After each push, fix or answer every CodeRabbit and Copilot review thread. When you decline one, reply with the reason.
 
 ## Factory runs
 
