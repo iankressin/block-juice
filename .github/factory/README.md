@@ -8,6 +8,7 @@ The code behind [docs/agents/factory.md](../../docs/agents/factory.md): two work
 | `../workflows/factory-build.yml` | The build run. Starts when a ticket gets `ready-for-agent`. Opens or updates a draft PR. |
 | `scope.md`, `build.md` | The prompts. Model and turn caps are in each workflow's `env`. |
 | `factory.py` | Checks and assembles the scope comment, reads it back, renders the ticket, reads the verdict, masks secrets. Tested in `orchestration/tests/test_factory.py`. |
+| `scores.py` | Prints one row per factory run: how it ended, the model's turns and cost, the verdict and the repo checks. Tested in `orchestration/tests/test_factory_scores.py`. |
 
 ## What runs when
 
@@ -67,3 +68,17 @@ The scope run works on the eval window only. There `BASH_MAX_TIMEOUT_MS` ends a 
 2. File an Analysis ticket whose answer the repo already holds; `first-ticket.md` has the text for one. Read the scope comment and check its oracle, window and rows.
 3. Add `ready-for-agent`. Review the draft PR: the comparison table, the factory checks, the files. Read the transcript in the run's artifacts.
 4. Close the PR without merging and delete its `factory/<issue>-<slug>` branch.
+
+## Run scores
+
+`scores.py` prints one row per finished run, oldest first, so you can see whether a change to the prompts, the skill or the CLI makes runs end better. Run it from the repo root with `gh` logged in:
+
+```sh
+uv run --project orchestration python .github/factory/scores.py            # fetch new runs, print a markdown table
+uv run --project orchestration python .github/factory/scores.py --json     # the same rows as JSON lines
+uv run --project orchestration python .github/factory/scores.py --offline  # fetch nothing, score the runs already kept
+```
+
+It keeps each run in `.factory/runs/<run id>/` and downloads only runs it does not have yet. GitHub deletes a run's log after the repo's retention period, so a run nobody fetched before then stays out of the table.
+
+A build run ends `passed`, `checks_failed`, `mismatch`, `not_run`, `unscoped`, `cancelled` or `error`. A scope run ends `scoped`, `no_scope`, `model_error` or `cancelled`. The verdict and the check results come from the `publish` job's log only: the model runs in `work`, so nothing it prints counts as either.
