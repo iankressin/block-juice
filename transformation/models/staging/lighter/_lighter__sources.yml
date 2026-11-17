@@ -10,3 +10,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: candles
+        identifier: lighter_candles
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

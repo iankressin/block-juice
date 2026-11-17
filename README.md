@@ -80,6 +80,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Deployments](#deployments) | ✓ | | | | | | | | |
 | [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | | | |
 | [Lighter markets](#lighter-markets) | | | | | | | | ✓ | |
+| [Lighter candles](#lighter-candles) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -512,6 +513,27 @@ The `lighter` pipeline builds it from the call source `lighter-markets`, which r
 | `min_quote_amount` | text | The smallest order, in the quote asset. |
 | `created_at` | timestamptz | When Lighter listed the market. |
 | `read_at` | timestamptz | When the run read these settings. |
+
+### Lighter candles
+
+`analytics.lighter_candles`
+
+One Lighter candle per market, price series and bucket. `price` is `trade` for traded prices or `mark` for mark prices. Only closed candles load. Covers the markets in `markets.json` (ETH and BTC to start), from `START_TIME`.
+
+The `lighter` pipeline builds it from the call source `lighter-candles`, which reads Lighter's API in windows of 500 candles. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `market_id` | integer | The market's public id in Lighter's API. Join on this, not on `symbol`. |
+| `symbol` | text | The market's name, such as `ETH`. |
+| `price` | text | `trade` or `mark`. |
+| `resolution` | text | The candle length, such as `1h`. |
+| `open_time` | timestamptz | The start of the bucket. |
+| `open`, `high`, `low`, `close` | numeric | Prices in USDC per base unit. |
+| `base_volume` | numeric | Volume in base units. Null on a mark candle. A trade candle with no trades is 0. |
+| `quote_volume` | numeric | Volume in USDC. Null on a mark candle. |
+| `last_trade_id` | bigint | The last trade id in the bucket. Null on a mark candle. |
+| `samples` | bigint | How many mark-price samples the bucket holds. Null on a trade candle. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
