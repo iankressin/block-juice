@@ -183,7 +183,7 @@ models:
       older trades would then mis-scale: they would need scaling by the reading in effect at trade time.
     columns:
       - name: trade_id
-        description: Lighter's trade id, unique across days.
+        description: Lighter's trade id, unique in the two day files checked (catalog/vendors/lighter/NOTES.md, P8). Raw trades are keyed on it, so a repeated id would merge two trades.
         data_tests: [unique, not_null]
       - name: trade_time
         description: The block time of the trade.
