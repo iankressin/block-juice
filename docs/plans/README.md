@@ -16,4 +16,4 @@ Baseline: `main` @ `9efbc61`.
 
 **Do not implement A–H until Ian says go after the A–H plans** (00 through 05). Prefer local Mac worktrees when cloud agent credits are blocked. Quality Gate reviews before merge-ready.
 
-The Lighter drain plan is separate from A–H. Nothing in it is built until Ian says go.
+The Lighter drain plan is separate from A–H. Nothing in it is built until Ian says go. HyperCore and Lighter L2 data in that plan are out of scope: Ian is building those sources separately.

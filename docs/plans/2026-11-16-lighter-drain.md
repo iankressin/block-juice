@@ -326,3 +326,24 @@ Read-only checks. Nothing here starts a load. One decision is still open: scope 
 5. **Backfill ids.** Closed as proposals only. No run without Ian. One id per source: `lighter-drain-2026-11-16-cow-ethflow`, `lighter-drain-2026-11-16-wallet-transactions`, `lighter-drain-2026-11-16-erc20-ethereum`, `lighter-drain-2026-11-16-erc20-arbitrum`. v3 gets none, so it reuses `factory.sqlite`. `evm-internal-eth-transfers` gets none on its first run; its default cursor is `ethereum_internal_eth_transfers`.
 6. **Arbitrum traces.** Closed. Portal serves them. The docs list them, and a live finalized-stream check returned call traces with `value`, in a shape `evm-cow-ethflow` already maps. Arbitrum stays a later addition, because this trail's Arbitrum hops are ERC-20.
 7. **`buyAmount`.** Closed. `buyAmount` is the executed amount and includes surplus. `feeAmount` is 0 on all six fills, and the receiver is not in the event, so the label stays `checked against buyAmount only`. The native sentinel is `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`.
+
+## Data needed beyond Ethereum and Arbitrum (built separately)
+
+Ian is building these sources separately. They are out of scope for this plan. This list is the data an analyst needs. It is not an implementation plan.
+
+### HyperCore (Hyperliquid L1, not HyperEVM)
+
+- Per-address non-funding ledger updates (deposit, withdraw, internalTransfer, spotTransfer, send) for the 12 depositing addresses, from 2026-11-16 onward.
+- Spot and perp fills for those addresses, including the XMR1 trades on spot pair @260. Hyperliquid's token list names it XMR1, "XMR - Wagyu.xyz", a wrapped Monero token, not native XMR.
+- Withdrawals out of HyperCore.
+- Cross-check: the HyperCore deposit `hash` equals the Arbitrum transaction hash. Verified for one address only: `0x63d09d9b…968c`, Arbitrum tx `0x096e70da…3549` (block 524723328), 287,557.5548 native USDC to the Hyperliquid bridge. The other 11 addresses are not checked yet.
+- Read paths, from Ingestion's check: the public `/info` `userNonFundingLedgerUpdates` endpoint per user, with no key needed; SQD Portal `hyperliquid-fills`, available from 2025-10-02, which has fills only and no ledger; or S3 `misc_events_by_block` or our own node as the sovereign, global option.
+
+### Lighter L2 (zk rollup, not EVM; nothing here is verified yet)
+
+- The account ledger (deposits, withdrawals, transfers between accounts) for the attacker's accounts, including #714723.
+- Trades, orders, liquidations and position changes.
+- Account balance and position snapshots before, during and after the drain.
+- Withdrawal requests and batches that tie each account to the 10.39M L1 withdrawal.
+- Purpose: explain the roughly $15.5M taken and the $5.11M not traced, which may be inside Lighter or may mean the $15.5M figure is wrong.
+- Possible read paths, all unverified: Lighter's API or explorer, or rebuilding state from its L1 batches.
