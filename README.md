@@ -82,6 +82,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter markets](#lighter-markets) | | | | | | | | ✓ | |
 | [Lighter candles](#lighter-candles) | | | | | | | | ✓ | |
 | [Lighter funding rates](#lighter-funding-rates) | | | | | | | | ✓ | |
+| [Lighter exchange metrics](#lighter-exchange-metrics) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -554,6 +555,22 @@ The `lighter` pipeline builds it from the call source `lighter-fundings`, which 
 | `signed_rate_pct` | numeric | `rate_pct` for `long`, `-rate_pct` for `short`. Positive means longs pay shorts. The paying side is inferred from the funding page's rule; see `catalog/vendors/lighter/NOTES.md`. |
 | `value_usdc_per_unit` | numeric | USDC paid per one unit of base for the hour. |
 | `direction` | text | `long` for a positive rate, `short` for a negative one. |
+
+### Lighter exchange metrics
+
+`analytics.lighter_exchange_metrics`
+
+One daily point per Lighter metric, as a long table. Exchange-wide kinds cover Lighter as a whole. Ten kinds also load per market, for the symbols in `markets.json` (ETH to start). Only ended UTC days load, so today waits for the next run. Each run reads every series again.
+
+The `lighter` pipeline builds it from the call source `lighter-exchange-metrics`, which reads Lighter's API. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<kind>:<market or all>:<unix seconds of the day>`. Unique. |
+| `day` | date | The UTC day the point covers. |
+| `kind` | text | The metric: `volume`, `maker_fee`, `taker_fee`, `liquidation_fee`, `trade_count`, `liquidation_count`, `liquidation_volume`, `open_interest`, `attribution_maker_fee`, `attribution_taker_fee`, `account_count`, `active_account_count`, `inflow`, `outflow`, `transfer_fee`, `withdraw_fee`, `buyback` (from 2025-12-30) or `buyback_usdc`. |
+| `market` | text | The symbol for a per-market series. Null for an exchange-wide one, and always null for the last eight kinds. |
+| `value` | numeric | USDC for volumes, fees, flows and `open_interest`; LIT for `buyback`; a count for the rest. Only `volume`, the fee kinds and the counts are proven; see `catalog/vendors/lighter/NOTES.md`. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

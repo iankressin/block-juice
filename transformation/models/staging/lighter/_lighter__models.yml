@@ -33,3 +33,12 @@ models:
         data_tests: [not_null]
       - name: funding_time
         data_tests: [not_null]
+
+  - name: stg_lighter__exchange_metrics
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: day
+        data_tests: [not_null]
+      - name: kind
+        data_tests: [not_null]

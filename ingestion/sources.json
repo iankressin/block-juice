@@ -286,6 +286,11 @@
   },
   {
     "name": "lighter",
+    "table": "exchange_metrics",
+    "package": "lighter-exchange-metrics"
+  },
+  {
+    "name": "lighter",
     "table": "fundings",
     "package": "lighter-fundings"
   },
