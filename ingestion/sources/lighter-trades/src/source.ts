@@ -79,7 +79,8 @@ const rowId = (row: Record<string, unknown>) => String(row.id);
 // first and one at a time. The filter is part of the manifest's key, so a changed addresses.json
 // loads every day again. A day that fails waits as a dead letter and the next day still loads. The
 // manifest records a failed day too, so a retry reads the date's current file, unless the run loads
-// that date anyway. A retry whose file has gone fails again.
+// that date anyway. A retry whose file has gone fails again. Once the framework parks a dead letter
+// (five failed runs), the manifest still lists the day, so it reloads only when its ETag changes.
 export const tradesSource = (clock: Clock = systemClock): Source<LighterTradesEnv, DayCall> => ({
   name: "lighter",
   table: "trades",

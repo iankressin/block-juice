@@ -30,7 +30,8 @@ const rowId = (row: Record<string, unknown>) => `${row.symbol}:${row.hour}`;
 // to END_DATE, or to yesterday in UTC, and loads those whose ETag the manifest does not hold, oldest
 // first and one at a time. A day that fails waits as a dead letter and the next day still loads. The
 // manifest records a failed day too, so a retry reads the date's current file, unless the run loads
-// that date anyway. A retry whose file has gone fails again.
+// that date anyway. A retry whose file has gone fails again. Once the framework parks a dead letter
+// (five failed runs), the manifest still lists the day, so it reloads only when its ETag changes.
 export const openInterestSource = (clock: Clock = systemClock): Source<OpenInterestEnv, DayCall> => ({
   name: "lighter",
   table: "open_interest",

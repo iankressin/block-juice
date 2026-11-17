@@ -160,7 +160,7 @@ test("dayBatches clears the day's dead letter only with its last chunk", async (
   assert.deepEqual(batches.at(-1)!.checkpoints, [checkpoint]);
   assert.equal(batches.at(-1)!.callsCompleted, 1);
   assert.equal(batches[0]!.checkpoints, undefined);
-  assert.equal(batches[0]!.callsCompleted, undefined);
+  assert.equal(batches[0]!.callsCompleted, 0);
   assert.deepEqual(batches[0]!.records.map((r) => r.id), ["40627877458", "40627877459"]);
   assert.equal(batches[0]!.records[0]!.data.id, "40627877458");
 });
