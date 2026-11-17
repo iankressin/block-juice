@@ -2,7 +2,7 @@
 
 Decide for each input the question needs.
 
-1. **The protocol is unknown.** Its contracts, events and their meaning are not in the repo. Exploring a protocol is not built yet, so stop and tell the user.
+1. **The protocol is unknown.** Its contracts, events and their meaning are not in the repo. Write its catalog entry first, per [../workflows/explore-protocol.md](../workflows/explore-protocol.md), then decide.
 2. **No view function returns it.** Use history. No contract lists an ERC-20's holders, sums a pool's volume or records who traded.
 3. **It is a series over a range of blocks or time.** Use history. Reading state at every block costs far more than reading the events.
 4. **It is a value at a few points in time.** Use state, with every call pinned to a block number.

@@ -321,10 +321,20 @@ def test_doctor_checks_the_process_port_override(repo, services, monkeypatch, ca
     assert "http://localhost:4000/healthcheck" not in services.requested
 
 
-def test_doctor_warehouse_fails_when_connect_fails(repo, services, capsys):
+def test_doctor_warehouse_failure_names_the_settings_not_the_error(repo, services, capsys):
     with_envs(repo)
+    services.warehouse_error = (
+        'connection to server at "db.internal.example" (10.20.30.40), port 6543 failed: '
+        'FATAL:  password authentication failed for user "warehouse_admin"'
+    )
     main(["doctor"])
-    assert 'FAIL  warehouse: connection to server at "localhost" (127.0.0.1), port 5432 failed' in lines(capsys)
+    out = capsys.readouterr().out
+    assert (
+        "FAIL  warehouse: the connection failed (OperationalError); check WAREHOUSE_HOST, WAREHOUSE_PORT, "
+        "WAREHOUSE_USER, WAREHOUSE_PASSWORD, WAREHOUSE_DB in .env\n"
+    ) in out
+    for value in ("db.internal.example", "10.20.30.40", "6543", "warehouse_admin"):
+        assert value not in out
 
 
 def test_doctor_warehouse_fails_naming_the_unset_settings(repo, services, monkeypatch, capsys):

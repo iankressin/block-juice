@@ -65,4 +65,8 @@ Write `answers/<slug>/answer.md`:
 3. The data: chains, blocks or times, and when each input last loaded, from `answer.json`.
 4. Caveats: the alternatives that would change the number, and any check that failed.
 
-Copy numbers from `answer.json` and the CSVs; never retype or round them differently. Then give the user the answer in a sentence, link the folder, and offer a report ([report.md](report.md)).
+Copy numbers from `answer.json` and the CSVs; never retype or round them differently. Name the analysis behind each claim, and check what you say it covers or leaves out against its SQL.
+Use no certainty word, such as "proves", "guarantees" or "locks in", that the checks don't back. Tell readers to run only files git tracks. A step they would rerun goes in an analysis, never in a file in `answers/<slug>/`.
+Git ignores `answer.md`, so no reviewer reads it but you.
+
+Then give the user the answer in a sentence, link the folder, and offer a report ([report.md](report.md)).
