@@ -84,6 +84,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter funding rates](#lighter-funding-rates) | | | | | | | | ✓ | |
 | [Lighter exchange metrics](#lighter-exchange-metrics) | | | | | | | | ✓ | |
 | [Lighter open interest](#lighter-open-interest) | | | | | | | | ✓ | |
+| [Lighter trades](#lighter-trades) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -589,6 +590,44 @@ The `lighter` pipeline builds it from the call source `lighter-open-interest`, w
 | `open_interest` | numeric | Open interest in base units. |
 | `mark_price` | numeric | The mark price at the end of the hour. |
 | `open_interest_usd` | numeric | `open_interest` times `mark_price`, in USDC. |
+
+### Lighter trades
+
+`analytics.lighter_trades`
+
+One Lighter trade, in real units. One row per trade. Covers the accounts and markets in `ingestion/sources/lighter-trades/addresses.json` (account 313004 in ETH to start), from `START_DATE`. With both keys it takes the listed accounts' trades in the listed markets; with one, it takes all of that one. Only ended UTC days load: a day's file appears about 07:03 UTC the next day.
+
+The `lighter` pipeline builds it from the call source `lighter-trades`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. A day holds 2 to 8 million trades, so `addresses.json` must list some accounts or markets. A changed `addresses.json` loads every day again. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `trade_id` | bigint | Lighter's trade id. Unique. |
+| `trade_time` | timestamptz | The block time of the trade. |
+| `block_number` | bigint | The L2 block that holds the trade. |
+| `tx_hash` | text | The transaction that made the trade. |
+| `trade_type` | text | `trade`, `liquidation`, `deleverage` or `market-settlement`. |
+| `market_id` | integer | The market's public id in Lighter's API. Join on this. |
+| `slot_market_id` | integer | The file's own market id, a slot Lighter reuses for later markets. Never join on it. |
+| `symbol` | text | The market's name, such as `ETH`. Null for a binary option. |
+| `market_type` | text | `perp` or `spot`. Null for a binary option. |
+| `price` | numeric | USDC per base unit. Null for a binary option. |
+| `size` | numeric | Base units. Null for a binary option. |
+| `price_raw`, `size_raw` | bigint | The price and size as the file holds them, before the market's decimals. |
+| `notional_usdc` | numeric | `size` times `price`, in USDC. |
+| `is_maker_ask` | boolean | True when the maker sold. |
+| `maker_account_index` | bigint | The maker's account. |
+| `taker_account_index` | bigint | The taker's account. |
+| `taker_side` | text | `buy` or `sell`, for the taker. |
+| `ask_account_index` | bigint | The seller's account. 281474976710655 means no account. |
+| `bid_account_index` | bigint | The buyer's account. |
+| `maker_fee_ppm`, `taker_fee_ppm` | integer | Each side's fee, in parts per million of notional. |
+| `maker_fee_usdc`, `taker_fee_usdc` | numeric | Each side's fee, in USDC. |
+| `integrator_maker_fee_usdc`, `integrator_taker_fee_usdc` | numeric | Each side's integrator fee, in USDC. |
+| `ask_order_index`, `bid_order_index` | bigint | The sell and buy orders. |
+| `maker_position_before`, `taker_position_before` | numeric | Each side's position before the trade, in base units. Negative is short. |
+| `maker_entry_quote_before_usdc`, `taker_entry_quote_before_usdc` | numeric | The entry value of each side's position before the trade, in USDC. |
+| `maker_position_sign_changed`, `taker_position_sign_changed` | boolean | True when the trade changed the sign of that side's position. Opening from 0 sets it, as on trade 40627877458. |
+| `ask_account_pnl`, `bid_account_pnl` | numeric | The pnl the trade realized for the seller and the buyer, in USDC. Null when none. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

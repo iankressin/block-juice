@@ -305,6 +305,11 @@
     "package": "lighter-open-interest"
   },
   {
+    "name": "lighter",
+    "table": "trades",
+    "package": "lighter-trades"
+  },
+  {
     "name": "polygon",
     "table": "polymarket_ctf",
     "package": "polygon-polymarket-ctf",

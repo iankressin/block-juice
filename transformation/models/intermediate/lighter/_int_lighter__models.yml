@@ -29,3 +29,89 @@ unit_tests:
       rows:
         - {id: "0:1792220400", market_id: 0, symbol: ETH, funding_time: "2026-10-17 07:00:00+00", rate_pct: 0.0005, signed_rate_pct: 0.0005, value_usdc_per_unit: 0.01216590, direction: long}
         - {id: "0:1792224000", market_id: 0, symbol: ETH, funding_time: "2026-10-17 08:00:00+00", rate_pct: 0.0003, signed_rate_pct: -0.0003, value_usdc_per_unit: 0.00730000, direction: short}
+
+  # The int_lighter_trades tests use real trades: 40627877458 from catalog/vendors/lighter/NOTES.md (Units,
+  # P1, P9), and 40827970887 and 40839017087 from the API reply P9 compares with S3.
+  - name: size_and_price_scale_by_the_market_decimals
+    description: >-
+      Trade 40627877458 is ETH (slot 0), whose size and price carry 4 and 2 decimals. size 3491, price
+      181952 and usdc_amount 635194432 give 0.3491 at 1819.52 for 635.194432 USDC. The maker held
+      -2252 before it, so -0.2252 ETH, and the taker held 0.
+    model: int_lighter_trades
+    given:
+      - input: ref('stg_lighter__trades')
+        rows:
+          - {trade_id: 40627877458, slot_market_id: 0, public_market_index: 0, size_raw: 3491, price_raw: 181952, usdc_amount_raw: 635194432, maker_position_size_before_raw: -2252, taker_position_size_before_raw: 0}
+      - input: ref('int_lighter_markets')
+        rows: &lighter_markets
+          - {market_id: 0, symbol: ETH, market_type: perp, size_decimals: 4, price_decimals: 2, quote_decimals: 6}
+          - {market_id: 51, symbol: RESOLV, market_type: perp, size_decimals: 0, price_decimals: 6, quote_decimals: 6}
+          - {market_id: 4097, symbol: PRL, market_type: perp, size_decimals: 2, price_decimals: 4, quote_decimals: 6}
+    expect:
+      rows:
+        - {trade_id: 40627877458, size: 0.3491, price: 1819.52, notional_usdc: 635.194432, maker_position_before: -0.2252, taker_position_before: 0}
+
+  - name: market_id_is_the_public_index_when_set
+    description: >-
+      Lighter reuses slot 51. On 2026-11-16 it traded PRL, public id 4097. Before 2026-08-20 the file
+      has no public id, and slot 51 was RESOLV, public id 51.
+    model: int_lighter_trades
+    given:
+      - input: ref('stg_lighter__trades')
+        rows:
+          - {trade_id: 1, slot_market_id: 51, public_market_index: 4097}
+          - {trade_id: 2, slot_market_id: 51, public_market_index: null}
+      - input: ref('int_lighter_markets')
+        rows: *lighter_markets
+    expect:
+      rows:
+        - {trade_id: 1, market_id: 4097, slot_market_id: 51, symbol: PRL}
+        - {trade_id: 2, market_id: 51, slot_market_id: 51, symbol: RESOLV}
+
+  - name: the_maker_is_the_ask_when_is_maker_ask
+    description: >-
+      Trade 40627877458 has is_maker_ask true, so 757337, the ask, is the maker and 313004, the bid,
+      the taker, who buys. Trade 40827970887 has it false, so the bid is the maker and 757337, the ask,
+      the taker, who sells.
+    model: int_lighter_trades
+    given:
+      - input: ref('stg_lighter__trades')
+        rows:
+          - {trade_id: 40627877458, slot_market_id: 0, public_market_index: 0, is_maker_ask: true, ask_account_id: 757337, bid_account_id: 313004}
+          - {trade_id: 40827970887, slot_market_id: 110, public_market_index: 110, is_maker_ask: false, ask_account_id: 757337, bid_account_id: 281474976483190}
+      - input: ref('int_lighter_markets')
+        rows: *lighter_markets
+    expect:
+      rows:
+        - {trade_id: 40627877458, maker_account_index: 757337, taker_account_index: 313004, taker_side: buy, ask_account_index: 757337, bid_account_index: 313004}
+        - {trade_id: 40827970887, maker_account_index: 281474976483190, taker_account_index: 757337, taker_side: sell, ask_account_index: 757337, bid_account_index: 281474976483190}
+
+  - name: fees_are_parts_per_million_of_notional
+    description: >-
+      Trade 40627877458 pays its maker 50 parts per million of 635.194432 USDC, so 0.0317597216 USDC,
+      and its integrator 250, so 0.158798608 USDC.
+    model: int_lighter_trades
+    given:
+      - input: ref('stg_lighter__trades')
+        rows:
+          - {trade_id: 40627877458, slot_market_id: 0, public_market_index: 0, usdc_amount_raw: 635194432, maker_fee_raw: 50, integrator_maker_fee_raw: 250}
+      - input: ref('int_lighter_markets')
+        rows: *lighter_markets
+    expect:
+      rows:
+        - {trade_id: 40627877458, maker_fee_ppm: 50, maker_fee_usdc: 0.0317597216, integrator_maker_fee_usdc: 0.158798608}
+
+  - name: pnl_and_entry_quotes_are_usdc_times_10_to_the_6
+    description: >-
+      Trade 40839017087 (US100) closed 757337's short as the bid. The API sends its pnl as -0.439630
+      and its entry quote before as 1194.870377, which the file holds times 10^6 (NOTES.md, P9).
+    model: int_lighter_trades
+    given:
+      - input: ref('stg_lighter__trades')
+        rows:
+          - {trade_id: 40839017087, slot_market_id: 181, public_market_index: 181, ask_account_pnl_raw: null, bid_account_pnl_raw: -439630, maker_entry_quote_before_raw: 0, taker_entry_quote_before_raw: 1194870377}
+      - input: ref('int_lighter_markets')
+        rows: *lighter_markets
+    expect:
+      rows:
+        - {trade_id: 40839017087, ask_account_pnl: null, bid_account_pnl: -0.43963, maker_entry_quote_before_usdc: 0, taker_entry_quote_before_usdc: 1194.870377}

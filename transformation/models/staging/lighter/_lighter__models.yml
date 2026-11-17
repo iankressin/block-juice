@@ -51,3 +51,12 @@ models:
         data_tests: [not_null]
       - name: symbol
         data_tests: [not_null]
+
+  - name: stg_lighter__trades
+    columns:
+      - name: trade_id
+        data_tests: [unique, not_null]
+      - name: trade_time
+        data_tests: [not_null]
+      - name: slot_market_id
+        data_tests: [not_null]
