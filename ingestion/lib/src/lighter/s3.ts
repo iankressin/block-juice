@@ -7,7 +7,8 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { DuckDBInstance } from "@duckdb/node-api";
 import * as z from "zod";
-import { describeError } from "#src/calls.ts";
+import { describeError, logger, observedFetch, observeDelay } from "@ingestion/lib";
+import { RETRY_AFTER_CAP_MS, retryAfterMs, systemClock, type Clock } from "#src/lighter/client.ts";
 import type { Batch, Checkpoint, RawRecord } from "#src/source.ts";
 
 // Lighter publishes one Parquet file per UTC day on a public bucket: catalog/vendors/lighter/NOTES.md, "S3 files".
@@ -29,22 +30,88 @@ export type DayCall = { date: string; etag: string };
 
 export const dayCallSchema: z.ZodType<DayCall> = z.object({ date: z.string(), etag: z.string() });
 
+/** The longest one listing page may take, body included. */
+export const S3_LIST_TIMEOUT_MS = 60_000;
+/** The longest one day-file download may take, body included. */
+export const S3_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
+/** The waits before each retry of a 429, a 5xx, a network error, a timeout or a short download. */
+export const S3_RETRY_WAITS_MS = [2_000, 10_000, 60_000];
+/** More listing pages than this means the listing loops. */
+export const S3_MAX_LIST_PAGES = 1_000;
+
+/** A failure that already knows whether a retry can help, and what `Retry-After` asked. */
+class S3Error extends Error {
+  readonly retryable: boolean;
+  readonly retryAfterMs: number | undefined;
+
+  constructor(message: string, retryable: boolean, retryAfter?: number) {
+    super(message);
+    this.retryable = retryable;
+    this.retryAfterMs = retryAfter;
+  }
+}
+
+/** The error for a reply that is not a 200. A 429 and a 5xx can pass on a retry; any other 4xx cannot. */
+function httpError(what: string, response: Response, clock: Clock): S3Error {
+  const { status } = response;
+  const retryable = status === 429 || status >= 500;
+  return new S3Error(
+    `Lighter S3 ${what} answered HTTP ${status}`,
+    retryable,
+    retryable ? retryAfterMs(response.headers.get("retry-after"), clock.now()) : undefined,
+  );
+}
+
+/** Runs `attempt` again after a retryable failure, waiting as `S3_RETRY_WAITS_MS` says, then throws the last failure. */
+async function withRetries<T>(what: string, clock: Clock, attempt: () => Promise<T>): Promise<T> {
+  for (let n = 0; ; n++) {
+    try {
+      return await attempt();
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      const scheduledMs = S3_RETRY_WAITS_MS[n];
+      if ((error instanceof S3Error && !error.retryable) || scheduledMs === undefined) throw error;
+      const asked = error instanceof S3Error ? error.retryAfterMs : undefined;
+      const waitMs = asked === undefined ? scheduledMs : Math.min(asked, RETRY_AFTER_CAP_MS);
+      logger.info({ what, error: describeError(error), waitMs }, "Lighter S3 failed a request, waiting before trying again");
+      await observeDelay(() => clock.sleep(waitMs));
+    }
+  }
+}
+
 const xmlText = (s: string) =>
   s.replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 
 const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}>([^<]*)</${name}>`))?.[1];
 
-/** The day files of `dataset` from `from` to `to`, both included, oldest first. */
-export async function listDays(env: LighterS3Env, dataset: LighterDataset, from: string, to: string): Promise<DayFile[]> {
+/**
+ * The day files of `dataset` from `from` to `to`, both included, oldest first.
+ * Each page is retried on its own; a listing that loops or ends without a token it promised throws.
+ */
+export async function listDays(
+  env: LighterS3Env,
+  dataset: LighterDataset,
+  from: string,
+  to: string,
+  clock: Clock = systemClock,
+  timeoutMs = S3_LIST_TIMEOUT_MS,
+): Promise<DayFile[]> {
   const fileName = FILE_NAMES[dataset];
   const days: DayFile[] = [];
+  const usedTokens = new Set<string>();
   let token: string | undefined;
-  do {
+  for (let page = 1; ; page++) {
+    if (page > S3_MAX_LIST_PAGES) throw new Error(`Lighter S3 list of ${dataset} ran past ${S3_MAX_LIST_PAGES} pages`);
     const query = new URLSearchParams({ "list-type": "2", prefix: `${env.LIGHTER_S3_PREFIX}/${dataset}/` });
     if (token) query.set("continuation-token", token);
-    const response = await fetch(`${env.LIGHTER_S3_URL}/?${query}`);
-    if (!response.ok) throw new Error(`Lighter S3 list of ${dataset} answered HTTP ${response.status}`);
-    const xml = await response.text();
+    const xml = await withRetries(`list of ${dataset}`, clock, async () => {
+      const response = await observedFetch(`${env.LIGHTER_S3_URL}/?${query}`, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw httpError(`list of ${dataset}`, response, clock);
+      }
+      return response.text();
+    });
     for (const [, item] of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
       const key = xmlText(tag(item!, "Key") ?? "");
       const date = key.match(/date=(\d{4}-\d{2}-\d{2})\/[^/]+$/)?.[1];
@@ -52,18 +119,32 @@ export async function listDays(env: LighterS3Env, dataset: LighterDataset, from:
       const etag = xmlText(tag(item!, "ETag") ?? "").replaceAll('"', "");
       days.push({ dataset, date, key, etag, size: Number(tag(item!, "Size")) });
     }
-    token = tag(xml, "IsTruncated") === "true" ? xmlText(tag(xml, "NextContinuationToken") ?? "") || undefined : undefined;
-  } while (token);
+    if (tag(xml, "IsTruncated") !== "true") break;
+    const next = xmlText(tag(xml, "NextContinuationToken") ?? "");
+    if (!next) throw new Error(`Lighter S3 list of ${dataset} is truncated but gave no continuation token`);
+    if (usedTokens.has(next)) throw new Error(`Lighter S3 list of ${dataset} repeated a continuation token`);
+    usedTokens.add(next);
+    token = next;
+  }
   return days.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Streams the file to `path`, so a 200 MB day never sits in memory, and checks the byte count. */
-async function download(env: LighterS3Env, file: DayFile, path: string): Promise<void> {
-  const response = await fetch(`${env.LIGHTER_S3_URL}/${file.key}`);
-  if (!response.ok || !response.body) throw new Error(`Lighter S3 ${file.key} answered HTTP ${response.status}`);
-  await pipeline(Readable.fromWeb(response.body as WebReadableStream), createWriteStream(path));
-  const { size } = await stat(path);
-  if (size !== file.size) throw new Error(`Lighter S3 ${file.key} gave ${size} bytes, expected ${file.size} bytes`);
+/**
+ * Streams the file to `path`, so a 200 MB day never sits in memory, and checks the byte count.
+ * A retry writes the file again from the start. The deadline covers the whole body.
+ */
+async function download(env: LighterS3Env, file: DayFile, path: string, clock: Clock, timeoutMs: number): Promise<void> {
+  await withRetries(file.key, clock, async () => {
+    const response = await observedFetch(`${env.LIGHTER_S3_URL}/${file.key}`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => undefined);
+      throw httpError(file.key, response, clock);
+    }
+    // createWriteStream opens with "w", which empties a file that an earlier attempt left.
+    await pipeline(Readable.fromWeb(response.body as WebReadableStream), createWriteStream(path));
+    const { size } = await stat(path);
+    if (size !== file.size) throw new S3Error(`Lighter S3 ${file.key} gave ${size} bytes, expected ${file.size} bytes`, true);
+  });
 }
 
 /**
@@ -74,13 +155,13 @@ async function download(env: LighterS3Env, file: DayFile, path: string): Promise
 export async function* readDay(
   env: LighterS3Env,
   file: DayFile,
-  options: { where?: string; rowsPerChunk?: number; tmpDir?: string } = {},
+  options: { where?: string; rowsPerChunk?: number; tmpDir?: string; clock?: Clock; downloadTimeoutMs?: number } = {},
 ): AsyncGenerator<Record<string, unknown>[]> {
-  const { where, rowsPerChunk = 10_000, tmpDir = tmpdir() } = options;
+  const { where, rowsPerChunk = 10_000, tmpDir = tmpdir(), clock = systemClock, downloadTimeoutMs = S3_DOWNLOAD_TIMEOUT_MS } = options;
   const folder = await mkdtemp(join(tmpDir, "lighter-"));
   try {
     const path = join(folder, "day.parquet");
-    await download(env, file, path);
+    await download(env, file, path, clock, downloadTimeoutMs);
     const instance = await DuckDBInstance.create(":memory:");
     try {
       const connection = await instance.connect();
@@ -147,12 +228,19 @@ export async function* dayBatches(
     rowId(row: Record<string, unknown>): string;
     checkpoint: Checkpoint;
     rowsPerChunk?: number;
+    clock?: Clock;
+    downloadTimeoutMs?: number;
   },
 ): AsyncGenerator<Batch<DayCall>> {
   const id = `${file.dataset}:${file.date}`;
   const records = (rows: Record<string, unknown>[], callId: string): RawRecord[] =>
     rows.map((data) => ({ id: options.rowId(data), callId, data }));
-  const readOptions = { ...(options.where ? { where: options.where } : {}), ...(options.rowsPerChunk ? { rowsPerChunk: options.rowsPerChunk } : {}) };
+  const readOptions = {
+    ...(options.where ? { where: options.where } : {}),
+    ...(options.rowsPerChunk ? { rowsPerChunk: options.rowsPerChunk } : {}),
+    ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.downloadTimeoutMs ? { downloadTimeoutMs: options.downloadTimeoutMs } : {}),
+  };
   try {
     let ahead: Record<string, unknown>[] | undefined;
     let n = 0;
