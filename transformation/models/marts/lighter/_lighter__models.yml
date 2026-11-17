@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: lighter_markets
+    description: >-
+      One row per Lighter market, perp or spot, from the latest run that read it.
+    columns:
+      - name: market_id
+        description: The public market id the API uses. A symbol is not unique, so join on this.
+        data_tests: [unique, not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: market_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [perp, spot]
+      - name: size_decimals
+        data_tests: [not_null]
+      - name: price_decimals
+        data_tests: [not_null]
+      - name: maker_fee_pct
+        description: The maker fee in percent, as Lighter sends it.
+      - name: taker_fee_pct
+        description: The taker fee in percent, as Lighter sends it.
+      - name: read_at
+        description: When the run read these settings.

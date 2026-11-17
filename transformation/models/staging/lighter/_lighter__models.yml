@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: stg_lighter__markets
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: market_id
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: market_type
+        data_tests: [not_null]

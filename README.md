@@ -63,22 +63,23 @@ Every table below lives in the `analytics` schema of your warehouse. A source re
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
-| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Binance, Coinbase |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [Balances](#balances) | ✓ | | | | ✓ | ✓ | | |
-| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | | |
-| [DEX trades](#dex-trades) | ✓ | | | | | | | |
-| [Bridges](#bridges) | | ✓ | ✓ | | | | | |
-| [Labels](#labels) | | ✓ | ✓ | | | | | |
-| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | | |
-| [Exchange prices](#exchange-prices) | | | | | | | | ✓ |
-| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | | |
-| [Polymarket](#polymarket) | | | | ✓ | | | | |
-| [HyperCore fills](#hypercore-fills) | | | | | | | ✓ | |
-| [HyperCore actions](#hypercore-actions) | | | | | | | ✓ | |
-| [Accounts](#accounts) | ✓ | | | | | | | |
-| [Deployments](#deployments) | ✓ | | | | | | | |
-| [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | | |
+| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Lighter | Binance, Coinbase |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| [Balances](#balances) | ✓ | | | | ✓ | ✓ | | | |
+| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | | | |
+| [DEX trades](#dex-trades) | ✓ | | | | | | | | |
+| [Bridges](#bridges) | | ✓ | ✓ | | | | | | |
+| [Labels](#labels) | | ✓ | ✓ | | | | | | |
+| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | | | |
+| [Exchange prices](#exchange-prices) | | | | | | | | | ✓ |
+| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | | | |
+| [Polymarket](#polymarket) | | | | ✓ | | | | | |
+| [HyperCore fills](#hypercore-fills) | | | | | | | ✓ | | |
+| [HyperCore actions](#hypercore-actions) | | | | | | | ✓ | | |
+| [Accounts](#accounts) | ✓ | | | | | | | | |
+| [Deployments](#deployments) | ✓ | | | | | | | | |
+| [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | | | |
+| [Lighter markets](#lighter-markets) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -485,6 +486,32 @@ The `hypercore` pipeline builds it from the stream source `hypercore-actions`, w
 | `status` | text | `ok` or `err`, for the action as a whole. An `ok` action can still fail item by item. |
 | `response` | jsonb | The L1's answer, with per-item results. An object on most actions, a JSON string on some rejected ones. |
 | `nonce` | bigint | A time in milliseconds that the signer picks. |
+
+### Lighter markets
+
+`analytics.lighter_markets`
+
+One Lighter market, perp or spot, with its decimals, fees and minimums as of the latest run. One row per market. Covers every market Lighter lists, about 257 today.
+
+The `lighter` pipeline builds it from the call source `lighter-markets`, which reads Lighter's API. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `market_id` | integer | The market's public id in Lighter's API. Unique. Join on this, not on `symbol`, which two markets can share. |
+| `symbol` | text | The market's name, such as `ETH` or `ETH/USDC`. |
+| `market_type` | text | `perp` or `spot`. |
+| `base_asset_id` | integer | The base asset's id. |
+| `quote_asset_id` | integer | The quote asset's id. |
+| `status` | text | The market's state, such as `active`. |
+| `size_decimals` | integer | Decimal places in an integer size of this market. |
+| `price_decimals` | integer | Decimal places in an integer price of this market. |
+| `quote_decimals` | integer | Decimal places in a quote amount of this market. |
+| `maker_fee_pct` | numeric | The maker fee in percent, as Lighter sends it. |
+| `taker_fee_pct` | numeric | The taker fee in percent, as Lighter sends it. |
+| `min_base_amount` | text | The smallest order, in the base asset. |
+| `min_quote_amount` | text | The smallest order, in the quote asset. |
+| `created_at` | timestamptz | When Lighter listed the market. |
+| `read_at` | timestamptz | When the run read these settings. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
