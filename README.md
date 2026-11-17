@@ -59,7 +59,7 @@ To run all pipelines together, use `bj run daily` or enable `daily_schedule` in 
 
 ## What
 
-Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<chain>_<table>` it was built from, such as `raw.ethereum_uniswap_v3`, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule.
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<chain>_<table>` it was built from, such as `raw.ethereum_uniswap_v3`, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule. `lighter` runs at 07:30 UTC, after its S3 files land (about 07:03 UTC). The `daily` job runs at 06:00 UTC and includes `lighter`, so under `daily` the S3 tables lag a day.
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
@@ -573,7 +573,7 @@ The `lighter` pipeline builds it from the call source `lighter-exchange-metrics`
 | `day` | date | The UTC day the point covers. |
 | `kind` | text | The metric: `volume`, `maker_fee`, `taker_fee`, `liquidation_fee`, `trade_count`, `liquidation_count`, `liquidation_volume`, `open_interest`, `attribution_maker_fee`, `attribution_taker_fee`, `account_count`, `active_account_count`, `inflow`, `outflow`, `transfer_fee`, `withdraw_fee`, `buyback` (from 2025-12-30) or `buyback_usdc`. |
 | `market` | text | The symbol for a per-market series. Null for an exchange-wide one, and always null for the last eight kinds. |
-| `value` | numeric | USDC for volumes, fees, flows and `open_interest`; LIT for `buyback`; a count for the rest. Only `volume`, the fee kinds and the counts are proven; see `catalog/vendors/lighter/NOTES.md`. |
+| `value` | numeric | USDC for volumes, fees, flows and `open_interest`; LIT for `buyback`; a count for the rest. Only `volume`, the maker, taker and liquidation fees, `trade_count`, `liquidation_count` and ETH's `liquidation_volume` are proven; see `catalog/vendors/lighter/NOTES.md`. |
 
 ### Lighter open interest
 
@@ -581,7 +581,7 @@ The `lighter` pipeline builds it from the call source `lighter-exchange-metrics`
 
 One end-of-hour open interest reading per Lighter market, about 5,000 rows a day. Lighter names the market by symbol only, so there is no `market_id`. Covers every market, from `START_DATE`. Only ended UTC days load: a day's file appears about 07:03 UTC the next day.
 
-The `lighter` pipeline builds it from the call source `lighter-open-interest`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. It runs daily at 07:30 UTC.
+The `lighter` pipeline builds it from the call source `lighter-open-interest`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. After the framework parks a day's dead letter (five failed runs), the day reloads only when its file changes. It runs daily at 07:30 UTC.
 
 | Column | Type | Description |
 |---|---|---|
@@ -598,7 +598,7 @@ The `lighter` pipeline builds it from the call source `lighter-open-interest`, w
 
 One Lighter trade, in real units. One row per trade. Covers the accounts and markets in `ingestion/sources/lighter-trades/addresses.json` (account 313004 in ETH to start), from `START_DATE`. With both keys it takes the listed accounts' trades in the listed markets; with one, it takes all of that one. Only ended UTC days load: a day's file appears about 07:03 UTC the next day.
 
-The `lighter` pipeline builds it from the call source `lighter-trades`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. A day holds 2 to 8 million trades, so `addresses.json` must list some accounts or markets. A changed `addresses.json` loads every day again. It runs daily at 07:30 UTC.
+The `lighter` pipeline builds it from the call source `lighter-trades`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. A day holds 2 to 8 million trades, so `addresses.json` must list some accounts or markets. A changed `addresses.json` loads every day again. After the framework parks a day's dead letter (five failed runs), the day reloads only when its file changes. It runs daily at 07:30 UTC.
 
 | Column | Type | Description |
 |---|---|---|
@@ -614,7 +614,7 @@ The `lighter` pipeline builds it from the call source `lighter-trades`, which re
 | `price` | numeric | USDC per base unit. Null for a binary option. |
 | `size` | numeric | Base units. Null for a binary option. |
 | `price_raw`, `size_raw` | bigint | The price and size as the file holds them, before the market's decimals. |
-| `notional_usdc` | numeric | `size` times `price`, in USDC. |
+| `notional_usdc` | numeric | The trade value in USDC, `usdc_amount / 10^6`. Set for a binary option, whose `size` and `price` are null. |
 | `is_maker_ask` | boolean | True when the maker sold. |
 | `maker_account_index` | bigint | The maker's account. |
 | `taker_account_index` | bigint | The taker's account. |
@@ -636,7 +636,7 @@ The `lighter` pipeline builds it from the call source `lighter-trades`, which re
 
 One fill per account and trade: each Lighter trade gives its maker one row and its taker one row, with the account's position before and after. A side with no account (281474976710655, on market-settlement trades) has no row. Covers the trades in `lighter_trades`, so the same accounts, markets and days.
 
-The `lighter` pipeline builds it from `lighter_trades`' source. Two tests check it against other data. `lighter_trades_within_candle_range` fails when a trade's price lies outside its hour's `lighter_candles` range. `lighter_account_fills_positions_chain` warns when an account's `position_before` differs from its previous fill's `position_after`, since a change that is not a trade, such as an exit at delisting, also moves a position.
+The `lighter` pipeline builds it from `lighter_trades`' source. Two tests check it against other data. `lighter_trades_within_candle_range` fails when a trade's price lies outside its hour's `lighter_candles` range. `lighter_account_fills_positions_chain` warns when an account's `position_before` differs from its previous fill's `position_after`, and it warns for every account whose history is only partly loaded, such as any counterparty of a filtered load, so it warns on thousands of rows. A break for an account whose history you loaded whole is the signal to look for.
 
 | Column | Type | Description |
 |---|---|---|
