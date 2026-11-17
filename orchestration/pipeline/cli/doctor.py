@@ -202,7 +202,8 @@ def check_warehouse() -> Check:
         with closing(connect()) as connection, connection.cursor() as cursor:
             cursor.execute("select 1")
     except psycopg2.Error as error:
-        return Check(FAIL, f"warehouse: {' '.join(str(error).split())}")
+        # The driver's message can name the host, port, user and database, so the line shows only its type.
+        return Check(FAIL, f"warehouse: the connection failed ({type(error).__name__}); check {', '.join(CONNECT_ENV)} in .env")
     return Check(PASS, "warehouse answers")
 
 

@@ -94,7 +94,7 @@ def test_a_doctor_fail_exits_1_and_never_starts_dagster(repo, tools, services, e
 
     assert execs == []
     out = capsys.readouterr().out
-    assert "FAIL  warehouse: FATAL: password authentication failed" in out
+    assert "FAIL  warehouse: the connection failed (OperationalError)" in out
     assert "dagster dev did not start" in out
 
 
