@@ -24,3 +24,12 @@ models:
         data_tests: [not_null]
       - name: open_time
         data_tests: [not_null]
+
+  - name: stg_lighter__fundings
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: market_id
+        data_tests: [not_null]
+      - name: funding_time
+        data_tests: [not_null]

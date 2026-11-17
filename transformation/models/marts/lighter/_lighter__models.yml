@@ -63,3 +63,38 @@ models:
         description: The last trade id in the bucket. Null on a mark candle.
       - name: samples
         description: How many mark-price samples the bucket holds. Null on a trade candle.
+
+  - name: lighter_funding_rates
+    description: >-
+      One hourly funding rate per Lighter perp market. `funding_time` is the hour mark the rate is paid
+      at, and only closed hours load. `signed_rate_pct` is positive when longs pay shorts. Lighter
+      sends the rate unsigned with a `direction`, and that `long` names the paying side is inferred
+      from the funding page's rule, not stated by Lighter for `direction`; see
+      `catalog/vendors/lighter/NOTES.md`.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: market_id
+        description: The public market id the API uses. Join on this, not on `symbol`.
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: funding_time
+        description: The hour mark the rate is paid at.
+        data_tests: [not_null]
+      - name: rate_pct
+        description: The rate in percent per hour, unsigned, as Lighter sends it. A closed hour can be 0.
+        data_tests: [not_null]
+      - name: signed_rate_pct
+        description: >-
+          `rate_pct` for `long` and `-rate_pct` for `short`. Positive means longs pay shorts. That the
+          paying side is the `direction` side is inferred from the funding page's rule; see
+          `catalog/vendors/lighter/NOTES.md`.
+      - name: value_usdc_per_unit
+        description: USDC paid per one unit of base for the hour.
+      - name: direction
+        description: "`long` for a positive rate and `short` for a negative one."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [long, short]

@@ -14,3 +14,18 @@ unit_tests:
     expect:
       rows:
         - {market_id: 0, symbol: ETH, size_decimals: 5}
+
+  - name: funding_rate_is_signed_by_direction
+    description: >-
+      ETH at 2026-10-17 07:00 UTC paid 0.0005 percent with direction long, so its signed rate is
+      0.0005. The next hour is a short row of 0.0003, so its signed rate is -0.0003.
+    model: int_lighter_funding_rates
+    given:
+      - input: ref('stg_lighter__fundings')
+        rows:
+          - {id: "0:1792220400", market_id: 0, symbol: ETH, funding_time: "2026-10-17 07:00:00+00", rate_pct: 0.0005, value_usdc_per_unit: 0.01216590, direction: long}
+          - {id: "0:1792224000", market_id: 0, symbol: ETH, funding_time: "2026-10-17 08:00:00+00", rate_pct: 0.0003, value_usdc_per_unit: 0.00730000, direction: short}
+    expect:
+      rows:
+        - {id: "0:1792220400", market_id: 0, symbol: ETH, funding_time: "2026-10-17 07:00:00+00", rate_pct: 0.0005, signed_rate_pct: 0.0005, value_usdc_per_unit: 0.01216590, direction: long}
+        - {id: "0:1792224000", market_id: 0, symbol: ETH, funding_time: "2026-10-17 08:00:00+00", rate_pct: 0.0003, signed_rate_pct: -0.0003, value_usdc_per_unit: 0.00730000, direction: short}
