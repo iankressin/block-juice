@@ -1,4 +1,4 @@
-import { historyKey, uniqueBy, type Source } from "@ingestion/lib";
+import { describeError, historyKey, uniqueBy, type Source } from "@ingestion/lib";
 import {
   dayBatches,
   dayCallSchema,
@@ -40,7 +40,7 @@ export const openInterestSource = (clock: Clock = systemClock): Source<OpenInter
   async *extract(env, retry, context) {
     const to = env.END_DATE ?? new Date(clock.now() - DAY_MS).toISOString().slice(0, 10);
     const key = historyKey(["lighter", env.LIGHTER_S3_URL, env.LIGHTER_S3_PREFIX, DATASET]);
-    const days = await listDays(env, DATASET, env.START_DATE, to);
+    const days = await listDays(env, DATASET, env.START_DATE, to, clock);
     const manifest = dayManifest(key, await context?.getCheckpoint?.(key), days);
 
     const pending = new Set(manifest.pending.map((day) => day.date));
@@ -51,7 +51,14 @@ export const openInterestSource = (clock: Clock = systemClock): Source<OpenInter
     ].sort((a, b) => a.date.localeCompare(b.date));
 
     for (const item of work) {
-      const day = item.day ?? (await listDays(env, DATASET, item.date, item.date))[0];
+      let day: DayFile | undefined;
+      try {
+        day = item.day ?? (await listDays(env, DATASET, item.date, item.date, clock))[0];
+      } catch (error) {
+        // A failed listing of one retried date is a failed call, not a failed run.
+        yield { records: [], failed: [{ id: `${DATASET}:${item.date}`, call: item.call!, error: describeError(error) }], callsCompleted: 1 };
+        continue;
+      }
       if (!day) {
         yield {
           records: [],
@@ -60,7 +67,7 @@ export const openInterestSource = (clock: Clock = systemClock): Source<OpenInter
         };
         continue;
       }
-      yield* dayBatches(env, day, { rowId, checkpoint: manifest.loaded(day) });
+      yield* dayBatches(env, day, { rowId, checkpoint: manifest.loaded(day), clock });
     }
   },
 });
