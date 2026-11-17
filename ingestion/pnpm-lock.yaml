@@ -352,6 +352,15 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  sources/lighter-exchange-metrics:
+    dependencies:
+      '@ingestion/lib':
+        specifier: workspace:*
+        version: link:../../lib
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   sources/lighter-fundings:
     dependencies:
       '@ingestion/lib':

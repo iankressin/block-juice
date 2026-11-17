@@ -98,3 +98,50 @@ models:
           - accepted_values:
               arguments:
                 values: [long, short]
+
+  - name: lighter_exchange_metrics
+    description: >-
+      One daily Lighter exchange metric. `day` is the UTC day, and only ended days load. `market` is
+      the symbol for a per-market series and null for an exchange-wide one. `value` is in the kind's
+      unit. USDC: `volume`, `maker_fee`, `taker_fee`, `liquidation_fee`, `liquidation_volume`,
+      `attribution_maker_fee`, `attribution_taker_fee`, `inflow`, `outflow`, `transfer_fee`,
+      `withdraw_fee`, `buyback_usdc` and `open_interest`. LIT: `buyback`. A count: `trade_count`,
+      `liquidation_count`, `account_count` and `active_account_count`. Only `volume`, the three fee
+      kinds, `trade_count`, `liquidation_count` and ETH's `liquidation_volume` are proven against
+      Lighter's trade files; the other units are as the kind's name says, not proven; see
+      `catalog/vendors/lighter/NOTES.md`. Eight kinds are exchange-wide whatever the market, so
+      their `market` is null.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: day
+        description: The UTC day the point covers.
+        data_tests: [not_null]
+      - name: kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - volume
+                  - maker_fee
+                  - taker_fee
+                  - liquidation_fee
+                  - trade_count
+                  - liquidation_count
+                  - liquidation_volume
+                  - open_interest
+                  - attribution_maker_fee
+                  - attribution_taker_fee
+                  - account_count
+                  - active_account_count
+                  - inflow
+                  - outflow
+                  - transfer_fee
+                  - withdraw_fee
+                  - buyback
+                  - buyback_usdc
+      - name: market
+        description: The symbol for a per-market series. Null for an exchange-wide one.
+      - name: value
+        description: The day's value in the kind's unit, as Lighter sends it.
+        data_tests: [not_null]

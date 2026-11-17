@@ -20,3 +20,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: exchange_metrics
+        identifier: lighter_exchange_metrics
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
