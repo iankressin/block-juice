@@ -89,6 +89,7 @@ def test_every_bug_changes_one_line_and_leaves_comments_jinja_and_strings_alone(
         ("select distinct on (id) id from t\n", "pick"),
         ("select x::numeric(78), y ->> 'a1', $1 from t\n", "bound"),
         ("select a, b from t\ngroup by 1, 2\norder by 2 desc\n", "number"),
+        ("select 1 from t where not /* keep */ flag\n", "negation"),
     ],
 )
 def test_code_a_rewrite_would_break_or_blow_up_gets_no_bug(sql, operator):
@@ -98,6 +99,11 @@ def test_code_a_rewrite_would_break_or_blow_up_gets_no_bug(sql, operator):
 def test_a_where_that_is_one_whole_line_can_go_and_one_with_more_conditions_cannot():
     assert rewrites("select 1 from t\nwhere kind = 'log'\ngroup by 1\n", "condition") == [("condition", 2, "where kind = 'log'", "(line removed)")]
     assert rewrites("select 1 from t\nwhere kind = 'log'\n    and x\n", "condition") == [("condition", 3, "and x", "(line removed)")]
+
+
+def test_a_dropped_word_takes_no_comment_or_string_with_it():
+    assert [bug.sql for bug in planted_bugs.bugs("m", "select 1 from t\nwhere not flag -- why\n") if bug.operator == "negation"] == ["select 1 from t\nwhere flag -- why\n"]
+    assert [bug.sql for bug in planted_bugs.bugs("m", "select count(distinct 'x') from t\n") if bug.operator == "pick"] == ["select count('x') from t\n"]
 
 
 def test_the_limits_keep_the_same_evenly_spaced_bugs_every_run():
@@ -143,7 +149,7 @@ def test_the_table_counts_per_model_and_rates_only_the_bugs_that_changed_the_out
         "| trades | 2 | 0 | 0 | 0 | 1 | 1 |  |\n"
         "| **all** | 6 | 2 | 1 | 1 | 1 | 1 | 66% |\n"
         "\n"
-        "Missed: the output changed and every test still passed.\n"
+        "Missed: the output changed and no test that passed before failed.\n"
         "- fills:3 (bound) `a >= 1` became `a > 1`\n"
         "\n"
         "Note: 1 test(s) fail before any bug is planted, so they catch nothing: slow\n"
@@ -156,6 +162,7 @@ PROJECT = {
     "models/stg_things.sql": "{{ config(materialized='view') }}\nselect id, (data ->> 'amount')::numeric as amount, data ->> 'kind' as kind from {{ source('raw', 'things') }}\n",
     "models/tested.sql": "{{ config(materialized='table') }}\nselect id, amount * 2 as doubled\nfrom {{ ref('stg_things') }}\nwhere kind = 'keep'\n    and amount > 10\n",
     "models/untested.sql": "{{ config(materialized='table') }}\nselect id, amount + 1 as bumped\nfrom {{ ref('stg_things') }}\nwhere amount < 100\n",
+    "models/lazy.sql": "{{ config(materialized='view') }}\nselect id, 10 * amount as scaled\nfrom {{ ref('stg_things') }}\n",
     "models/unbuilt.sql": "{{ config(materialized='table') }}\nselect id, amount + 1 as bumped from {{ ref('stg_things') }}\n",
     "models/models.yml": """\
 unit_tests:
@@ -185,7 +192,7 @@ unit_tests:
 
 @pytest.fixture
 def sample_project(tmp_path, monkeypatch):
-    """A three-model dbt project and its raw rows, on the Postgres server .env names. planted_bugs.py makes and
+    """A small dbt project and its raw rows, on the Postgres server .env names. planted_bugs.py makes and
     drops its own database there."""
     server = planted_bugs.SERVER
     if not all(os.environ.get(name) for name in server):
@@ -203,7 +210,7 @@ def sample_project(tmp_path, monkeypatch):
     shutil.copy2(SCRIPT.parent / "profiles.yml", project / "profiles.yml")
     rows = tmp_path / "rows"
     rows.mkdir()
-    things = [{"id": "a", "data": {"amount": "11", "kind": "keep"}}, {"id": "b", "data": {"amount": "10", "kind": "keep"}}, {"id": "c", "data": {"amount": "50", "kind": "drop"}}]
+    things = [{"id": "a", "data": {"amount": "11", "kind": "keep"}}, {"id": "b", "data": {"amount": "10", "kind": "keep"}}, {"id": "c", "data": {"amount": "50", "kind": "drop"}}, {"id": "d", "data": {"amount": "0", "kind": "drop"}}]
     (rows / "things.jsonl").write_text("".join(json.dumps(thing) + "\n" for thing in things))
     monkeypatch.setattr(planted_bugs, "PROJECT", project)
     for name in ("WAREHOUSE_DB", "RAW_SCHEMA", "DBT_SCHEMA", "PGOPTIONS"):
@@ -224,6 +231,8 @@ def test_a_run_catches_bugs_a_test_covers_and_misses_the_ones_none_does(sample_p
         ("tested", "condition", "and amount > 10", "(line removed)"): caught,
         ("tested", "number", "select id, amount * 2 as doubled", "select id, amount * 3 as doubled"): caught,
         ("tested", "number", "and amount > 10", "and amount > 11"): caught,
+        ("lazy", "arithmetic", "select id, 10 * amount as scaled", "select id, 10 / amount as scaled"): ("build_error", []),
+        ("lazy", "number", "select id, 10 * amount as scaled", "select id, 11 * amount as scaled"): ("missed", []),
         ("untested", "arithmetic", "select id, amount + 1 as bumped", "select id, amount - 1 as bumped"): ("missed", []),
         ("untested", "bound", "where amount < 100", "where amount <= 100"): ("not_exercised", []),
         ("untested", "condition", "where amount < 100", "(line removed)"): ("not_exercised", []),

@@ -40,11 +40,11 @@ COMPARE = re.compile(r"(?<![<>=!:|\-])(>=|<=|>|<)(?![>=|])")
 EQUAL = re.compile(r"(?<![<>=!:|])(=|!=|<>)(?![>=])")
 CLAUSE = re.compile(r"\b(on|where|select|having|when|qualify)\b")
 IS_NULL = re.compile(r"\bis (not )?null\b")
-NOT = re.compile(r"\bnot\s+(?!null\b|in\b|like\b|ilike\b|exists\b|between\b|distinct\b|materialized\b)(?=[\w(])")
+NOT = re.compile(r"\bnot (?!null\b|in\b|like\b|ilike\b|exists\b|between\b|distinct\b|materialized\b)(?=[\w(])")
 JOIN = re.compile(r"\b(?:(\w+)\s+)?join\b")
 OTHER_JOINS = {"right", "full", "cross", "outer", "natural"}
 PICK = re.compile(r"\b(min|max|greatest|least)\(")
-COUNT_DISTINCT = re.compile(r"\bcount\(distinct\s+")
+COUNT_DISTINCT = re.compile(r"\bcount\((distinct )")
 SELECT_DISTINCT = re.compile(r"\bselect distinct\b(?!\s+on\b)")
 THEN_ELSE = re.compile(r"\bthen\b(.+?)\belse\b(.+?)\bend\b")
 NUMBER = re.compile(r"(?<![\w.$:])(?:\d+e)?(\d+)(?![\w.])")
@@ -134,7 +134,7 @@ def join(code: str, sql: str) -> list[Edit]:
 def pick(code: str, sql: str) -> list[Edit]:
     """Swap min with max, greatest with least and asc with desc, and drop a `distinct`."""
     edits = [(m.start(1), m.end(1), SWAPPED[m[1]]) for m in [*PICK.finditer(code), *DIRECTION.finditer(code)]]
-    edits += [(m.start(), m.end(), "count(") for m in COUNT_DISTINCT.finditer(code)]
+    edits += [(m.start(1), m.end(1), "") for m in COUNT_DISTINCT.finditer(code)]
     edits += [(m.start(), m.end(), "select") for m in SELECT_DISTINCT.finditer(code)]
     return sorted(edits)
 
@@ -208,7 +208,8 @@ def outcome(baseline: dict[str, str], run: dict[str, tuple[str, str]] | None, sa
 
 
 def rate(counts: dict[str, int]) -> str:
-    """Of the bugs that changed a model's output without breaking the build, the share a test caught."""
+    """The share of caught bugs among the caught and the missed: the ones that built and that a test or a
+    change in the rows could tell from the model as written."""
     silent = counts["caught"] + counts["missed"]
     return f"{100 * counts['caught'] // silent}%" if silent else ""
 
@@ -223,7 +224,7 @@ def table(results: list[dict], notes: list[str]) -> str:
         lines.append(f"| {name or '**all**'} | {len(rows)} | " + " | ".join(str(counts[kind]) for kind in OUTCOMES) + f" | {rate(counts)} |")
     missed = [result for result in results if result["outcome"] == "missed"]
     if missed:
-        lines += ["", "Missed: the output changed and every test still passed."]
+        lines += ["", "Missed: the output changed and no test that passed before failed."]
         lines += [f"- {r['model']}:{r['line']} ({r['operator']}) `{r['before']}` became `{r['after']}`" for r in missed]
     if notes:
         lines += ["", *(f"Note: {note}" for note in notes)]
@@ -303,6 +304,8 @@ def plant(project: Path, connection, manifest: dict, names: list[str], per_opera
     downstream, and record what the tests and the output did. Returns one result per bug, and notes on what
     the first build left out: a test that fails before any bug catches none, and a model that does not build
     gets none."""
+    import psycopg2
+
     models = {node["name"]: node for node in manifest["nodes"].values() if node["resource_type"] == "model"}
     relations = {uid: (node["schema"], node["alias"]) for uid, node in manifest["nodes"].items() if node["resource_type"] == "model" and node["config"]["materialized"] in MATERIALIZED}
     # The whole project, so every relation a later rebuild reads is there.
@@ -335,8 +338,13 @@ def plant(project: Path, connection, manifest: dict, names: list[str], per_opera
             path.write_text(bug.sql, encoding="utf-8")
             run = statuses(dbt(project, "build", "--full-refresh", "--select", f"{name}+"))
             rebuilt = {node: built[node] for node in (run or {}) if node in built and run[node][0] == "success"}
-            same = run is not None and fingerprints(connection, rebuilt) == {node: clean[node] for node in rebuilt}
-            connection.commit()
+            try:
+                same = run is not None and fingerprints(connection, rebuilt) == {node: clean[node] for node in rebuilt}
+                connection.commit()
+            except psycopg2.Error as error:
+                # A view runs its query when it is read, so a bug in one can build and then fail here.
+                connection.rollback()
+                same, run = False, {**run, models[name]["unique_id"]: ("error", " ".join(str(error).split()))}
             kind, tests = outcome(baseline, run, same)
             results.append({**{key: value for key, value in asdict(bug).items() if key != "sql"}, "outcome": kind, "caught_by": tests})
         path.write_text(authored, encoding="utf-8")

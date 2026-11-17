@@ -39,11 +39,11 @@ Each bug is one rewrite of the model's SQL, outside comments, Jinja and string l
 | Outcome | Meaning |
 |---|---|
 | `caught` | A test that passed before the bug failed with it. |
-| `missed` | The model's rows, or the rows of a model that reads it, changed, and every test still passed. Each one is listed under the table with its line. |
+| `missed` | The model's rows, or the rows of a model that reads it, changed, and no test that passed before the bug failed with it. Each one is listed under the table with its line. |
 | `not_exercised` | Nothing changed. Either the rewrite means the same, or the data has no row that takes that path. |
-| `build_error` | The rewritten SQL did not run. |
+| `build_error` | The rewritten SQL did not run, or a view built from it could not be read. |
 | `timeout` | A statement ran past 60 seconds, as a dropped join condition can. |
 
-The catch rate is `caught / (caught + missed)`: of the bugs that changed the output and still built, the share a test caught. A missed bug names a test worth writing. A model with many bugs not exercised needs a unit test, or rows that reach its branches.
+The catch rate is `caught / (caught + missed)`. A unit test can catch a bug that changes no row of the loaded data, so the caught bugs are not only the ones that changed the output. A missed bug names a test worth writing. A model with many bugs not exercised needs a unit test, or rows that reach its branches.
 
 Two notes can follow the table. A test that fails before any bug is planted catches nothing, so the reference tests need their window's rows in `--rows`. A model that does not build before any bug gets none.
