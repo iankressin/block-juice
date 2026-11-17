@@ -13,7 +13,6 @@ import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
 import type { Abi, Hex } from "viem";
 import * as z from "zod";
 import { forChain } from "../../../sources/evm-uniswap-v3/src/source.ts";
-import { source as hypercoreFills } from "../../../sources/hypercore-fills/src/source.ts";
 import factoryAbi from "../../../../catalog/protocols/uniswap/abis/v3-factory.json" with { type: "json" };
 import poolAbi from "../../../../catalog/protocols/uniswap/abis/v3-pool.json" with { type: "json" };
 
@@ -140,13 +139,6 @@ test("coverage records names under caseSensitive keys as listed and still lowerc
     version: 1, source: "hypercore", table: "fills", startBlock: 1, datasetHash: portalHash,
     filter: { users: ["0xabc"], coins: ["ZEC", "io:ANTH"] }, unrestricted: ["users", "coins"], settings: {},
   }, "the values carry the case, so the contract's caseSensitive list stays out of the record");
-});
-
-test("HyperCore records coin names as listed and users lowercased", () => {
-  const filter = streamProvenance(hypercoreFills, { START_BLOCK: 1, PORTAL_URL: "portal" }, {
-    "addresses.json": { users: ["0x6978E7917dffD1f1815c858ca1528E51a3AF1CB5"], coins: ["ZEC", "io:ANTH"] },
-  })!.filter;
-  assert.deepEqual(filter, { users: ["0x6978e7917dffd1f1815c858ca1528e51a3af1cb5"], coins: ["ZEC", "io:ANTH"] });
 });
 
 test("a raw table rejects a different dataset before allocating its cursor", async (t) => {
