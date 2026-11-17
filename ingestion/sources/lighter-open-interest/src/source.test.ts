@@ -51,6 +51,8 @@ type Fake = {
   downloads: string[];
   /** The dates whose download answers HTTP 500. */
   broken: Set<string>;
+  /** Lists after this many answer HTTP 503. */
+  listsBeforeOutage: number;
   /** The ETag the fake lists for a date. Change it to publish a new version of the file. */
   etags: Map<string, string>;
   /** Drop a date from the list. */
@@ -64,9 +66,15 @@ async function fakeS3(t: TestContext, dates: string[]): Promise<Fake> {
   const etags = new Map(dates.map((date) => [date, `etag-${date}`]));
   const downloads: string[] = [];
   const broken = new Set<string>();
+  let fake: Fake;
   const server = createServer((req, res) => {
     const url = new URL(req.url!, "http://s3");
     if (url.searchParams.get("list-type") === "2") {
+      if (fake.listsBeforeOutage-- <= 0) {
+        res.statusCode = 503;
+        res.end("down");
+        return;
+      }
       const contents = [...files]
         .map(
           ([date, body]) =>
@@ -95,7 +103,8 @@ async function fakeS3(t: TestContext, dates: string[]): Promise<Fake> {
       }),
   );
   const { port } = server.address() as AddressInfo;
-  return { url: `http://127.0.0.1:${port}`, downloads, broken, etags, remove: (date) => void files.delete(date) };
+  fake = { url: `http://127.0.0.1:${port}`, downloads, broken, listsBeforeOutage: Infinity, etags, remove: (date) => void files.delete(date) };
+  return fake;
 }
 
 const fakeClock = (iso: string): Clock => ({ now: () => Date.parse(iso), sleep: async () => {} });
@@ -225,6 +234,21 @@ test("a retried call whose file has gone fails again, naming the date", async (t
   assert.equal(failed[0]!.id, "open_interest_hourly:2026-11-15");
   assert.deepEqual(failed[0]!.call, retry[0]);
   assert.match(failed[0]!.error, /2026-11-15/);
+});
+
+test("a retried date whose listing keeps failing is a failed call, and a later date still loads", async (t) => {
+  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15", "2026-11-16"]);
+  // The first list covers the range; the retried date's own list then fails.
+  fake.listsBeforeOutage = 1;
+  const saved: Saved = { [KEY(fake.url)]: { files: { "2026-11-14": "etag-2026-11-14", "2026-11-15": "etag-2026-11-15" } } };
+  const retry: Call[] = [{ date: "2026-11-15", etag: "etag-2026-11-15" }];
+  const batches = await run(fake, { saved, retry });
+  const failed = batches.flatMap((b) => b.failed);
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0]!.id, "open_interest_hourly:2026-11-15");
+  assert.deepEqual(failed[0]!.call, retry[0]);
+  assert.match(failed[0]!.error, /HTTP 503/);
+  assert.deepEqual(datesOf(batches), ["2026-11-16"]);
 });
 
 test("without END_DATE the run stops at yesterday in UTC", async (t) => {

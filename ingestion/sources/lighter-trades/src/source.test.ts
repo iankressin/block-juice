@@ -78,6 +78,8 @@ type Fake = {
   marketReads: number;
   /** The dates whose download answers HTTP 500. */
   broken: Set<string>;
+  /** Lists after this many answer HTTP 503. */
+  listsBeforeOutage: number;
   /** Drop a date from the list. */
   remove(date: string): void;
 };
@@ -91,6 +93,7 @@ async function fakeLighter(t: TestContext, days: Record<string, Trade[]>): Promi
     downloads: [],
     marketReads: 0,
     broken: new Set(),
+    listsBeforeOutage: Infinity,
     remove: (date) => void files.delete(date),
   };
   const server = createServer((req, res) => {
@@ -102,6 +105,11 @@ async function fakeLighter(t: TestContext, days: Record<string, Trade[]>): Promi
       return;
     }
     if (url.searchParams.get("list-type") === "2") {
+      if (fake.listsBeforeOutage-- <= 0) {
+        res.statusCode = 503;
+        res.end("down");
+        return;
+      }
       const contents = [...files]
         .map(
           ([date, body]) =>
@@ -363,6 +371,21 @@ test("a retried call whose file has gone fails again, naming the date", async (t
   assert.equal(failed[0]!.id, "trades:2026-11-16");
   assert.deepEqual(failed[0]!.call, retry[0]);
   assert.match(failed[0]!.error, /no trades file for 2026-11-16/);
+});
+
+test("a retried date whose listing keeps failing is a failed call, and a later date still loads", async (t) => {
+  const fake = await fakeLighter(t, TWO_DAYS);
+  // The first list covers the range; the retried date's own list then fails.
+  fake.listsBeforeOutage = 1;
+  const saved: Saved = { [KEY(fake.url, [ACCOUNT])]: { files: { "2026-11-15": "etag-2026-11-15" } } };
+  const retry: Call[] = [{ date: "2026-11-15", etag: "etag-2026-11-15" }];
+  const batches = await run(await sourceWith(t, { accounts: [ACCOUNT] }), fake, { saved, retry });
+  const failed = batches.flatMap((b) => b.failed);
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0]!.id, "trades:2026-11-15");
+  assert.deepEqual(failed[0]!.call, retry[0]);
+  assert.match(failed[0]!.error, /HTTP 503/);
+  assert.deepEqual(recordsOf(batches).map((r) => r.id), ["40627877460"]);
 });
 
 test("without END_DATE the run stops at yesterday in UTC", async (t) => {
