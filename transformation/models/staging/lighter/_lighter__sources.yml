@@ -1,0 +1,37 @@
+version: 2
+
+# Source name + table name must match the ingestion Source's `name` + `table`.
+sources:
+  - name: lighter
+    schema: "{{ env_var('RAW_SCHEMA', 'raw') }}"
+    tables:
+      - name: markets
+        identifier: lighter_markets
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: candles
+        identifier: lighter_candles
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: fundings
+        identifier: lighter_fundings
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: exchange_metrics
+        identifier: lighter_exchange_metrics
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: open_interest
+        identifier: lighter_open_interest
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: trades
+        identifier: lighter_trades
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

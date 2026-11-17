@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: stg_lighter__markets
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: market_id
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: market_type
+        data_tests: [not_null]
+
+  - name: stg_lighter__candles
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: market_id
+        data_tests: [not_null]
+      - name: price
+        data_tests: [not_null]
+      - name: open_time
+        data_tests: [not_null]
+
+  - name: stg_lighter__fundings
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: market_id
+        data_tests: [not_null]
+      - name: funding_time
+        data_tests: [not_null]
+
+  - name: stg_lighter__exchange_metrics
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: day
+        data_tests: [not_null]
+      - name: kind
+        data_tests: [not_null]
+
+  - name: stg_lighter__open_interest
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: hour
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+
+  - name: stg_lighter__trades
+    columns:
+      - name: trade_id
+        data_tests: [unique, not_null]
+      - name: trade_time
+        data_tests: [not_null]
+      - name: slot_market_id
+        data_tests: [not_null]

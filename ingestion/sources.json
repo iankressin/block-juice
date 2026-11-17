@@ -280,6 +280,36 @@
     }
   },
   {
+    "name": "lighter",
+    "table": "candles",
+    "package": "lighter-candles"
+  },
+  {
+    "name": "lighter",
+    "table": "exchange_metrics",
+    "package": "lighter-exchange-metrics"
+  },
+  {
+    "name": "lighter",
+    "table": "fundings",
+    "package": "lighter-fundings"
+  },
+  {
+    "name": "lighter",
+    "table": "markets",
+    "package": "lighter-markets"
+  },
+  {
+    "name": "lighter",
+    "table": "open_interest",
+    "package": "lighter-open-interest"
+  },
+  {
+    "name": "lighter",
+    "table": "trades",
+    "package": "lighter-trades"
+  },
+  {
     "name": "polygon",
     "table": "polymarket_ctf",
     "package": "polygon-polymarket-ctf",

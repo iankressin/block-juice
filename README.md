@@ -59,26 +59,33 @@ To run all pipelines together, use `bj run daily` or enable `daily_schedule` in 
 
 ## What
 
-Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<chain>_<table>` it was built from, such as `raw.ethereum_uniswap_v3`, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule.
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<chain>_<table>` it was built from, such as `raw.ethereum_uniswap_v3`, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule. `lighter` runs at 07:30 UTC, after its S3 files land (about 07:03 UTC). The `daily` job runs at 06:00 UTC and includes `lighter`, so under `daily` the S3 tables lag a day.
 
 The grid shows which chains each table covers. Each section after it says what a row is, where it comes from, and lists the columns with their types.
 
-| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Binance, Coinbase |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [Balances](#balances) | ✓ | | | | ✓ | ✓ | | |
-| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | | |
-| [DEX trades](#dex-trades) | ✓ | | | | | | | |
-| [Bridges](#bridges) | | ✓ | ✓ | | | | | |
-| [Labels](#labels) | | ✓ | ✓ | | | | | |
-| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | | |
-| [Exchange prices](#exchange-prices) | | | | | | | | ✓ |
-| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | | |
-| [Polymarket](#polymarket) | | | | ✓ | | | | |
-| [HyperCore fills](#hypercore-fills) | | | | | | | ✓ | |
-| [HyperCore actions](#hypercore-actions) | | | | | | | ✓ | |
-| [Accounts](#accounts) | ✓ | | | | | | | |
-| [Deployments](#deployments) | ✓ | | | | | | | |
-| [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | | |
+| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Lighter | Binance, Coinbase |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| [Balances](#balances) | ✓ | | | | ✓ | ✓ | | | |
+| [Transfers](#transfers) | ✓ | ✓ | ✓ | | | | | | |
+| [DEX trades](#dex-trades) | ✓ | | | | | | | | |
+| [Bridges](#bridges) | | ✓ | ✓ | | | | | | |
+| [Labels](#labels) | | ✓ | ✓ | | | | | | |
+| [Tokens](#tokens) | ✓ | ✓ | ✓ | | | | | | |
+| [Exchange prices](#exchange-prices) | | | | | | | | | ✓ |
+| [Oracle prices](#oracle-prices) | ✓ | ✓ | ✓ | | | | | | |
+| [Polymarket](#polymarket) | | | | ✓ | | | | | |
+| [HyperCore fills](#hypercore-fills) | | | | | | | ✓ | | |
+| [HyperCore actions](#hypercore-actions) | | | | | | | ✓ | | |
+| [Accounts](#accounts) | ✓ | | | | | | | | |
+| [Deployments](#deployments) | ✓ | | | | | | | | |
+| [CoW ETH Flow](#cow-eth-flow) | ✓ | | | | | | | | |
+| [Lighter markets](#lighter-markets) | | | | | | | | ✓ | |
+| [Lighter candles](#lighter-candles) | | | | | | | | ✓ | |
+| [Lighter funding rates](#lighter-funding-rates) | | | | | | | | ✓ | |
+| [Lighter exchange metrics](#lighter-exchange-metrics) | | | | | | | | ✓ | |
+| [Lighter open interest](#lighter-open-interest) | | | | | | | | ✓ | |
+| [Lighter trades](#lighter-trades) | | | | | | | | ✓ | |
+| [Lighter account fills](#lighter-account-fills) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -485,6 +492,172 @@ The `hypercore` pipeline builds it from the stream source `hypercore-actions`, w
 | `status` | text | `ok` or `err`, for the action as a whole. An `ok` action can still fail item by item. |
 | `response` | jsonb | The L1's answer, with per-item results. An object on most actions, a JSON string on some rejected ones. |
 | `nonce` | bigint | A time in milliseconds that the signer picks. |
+
+### Lighter markets
+
+`analytics.lighter_markets`
+
+One Lighter market, perp or spot, with its decimals, fees and minimums as of the latest run. One row per market. Covers every market Lighter lists, about 257 today.
+
+The `lighter` pipeline builds it from the call source `lighter-markets`, which reads Lighter's API. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `market_id` | integer | The market's public id in Lighter's API. Unique. Join on this, not on `symbol`, which two markets can share. |
+| `symbol` | text | The market's name, such as `ETH` or `ETH/USDC`. |
+| `market_type` | text | `perp` or `spot`. |
+| `base_asset_id` | integer | The base asset's id. |
+| `quote_asset_id` | integer | The quote asset's id. |
+| `status` | text | The market's state, such as `active`. |
+| `size_decimals` | integer | Decimal places in an integer size of this market. |
+| `price_decimals` | integer | Decimal places in an integer price of this market. |
+| `quote_decimals` | integer | Decimal places in a quote amount of this market. |
+| `maker_fee_pct` | numeric | The maker fee in percent, as Lighter sends it. |
+| `taker_fee_pct` | numeric | The taker fee in percent, as Lighter sends it. |
+| `min_base_amount` | text | The smallest order, in the base asset. |
+| `min_quote_amount` | text | The smallest order, in the quote asset. |
+| `created_at` | timestamptz | When Lighter listed the market. |
+| `read_at` | timestamptz | When the run read these settings. |
+
+### Lighter candles
+
+`analytics.lighter_candles`
+
+One Lighter candle per market, price series and bucket. `price` is `trade` for traded prices or `mark` for mark prices. Only closed candles load. Covers the markets in `markets.json` (ETH and BTC to start), from `START_TIME`.
+
+The `lighter` pipeline builds it from the call source `lighter-candles`, which reads Lighter's API in windows of 500 candles. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `market_id` | integer | The market's public id in Lighter's API. Join on this, not on `symbol`. |
+| `symbol` | text | The market's name, such as `ETH`. |
+| `price` | text | `trade` or `mark`. |
+| `resolution` | text | The candle length, such as `1h`. |
+| `open_time` | timestamptz | The start of the bucket. |
+| `open`, `high`, `low`, `close` | numeric | Prices in USDC per base unit. |
+| `base_volume` | numeric | Volume in base units. Null on a mark candle. A trade candle with no trades is 0. |
+| `quote_volume` | numeric | Volume in USDC. Null on a mark candle. |
+| `last_trade_id` | bigint | The last trade id in the bucket. Null on a mark candle. |
+| `samples` | bigint | How many mark-price samples the bucket holds. Null on a trade candle. |
+
+### Lighter funding rates
+
+`analytics.lighter_funding_rates`
+
+One hourly funding rate per Lighter perp market. An entry loads once its hour mark has passed. Covers the perp markets in `markets.json` (ETH and BTC to start), from `START_TIME`. A spot market in `markets.json` fails the run, since spot markets have no funding.
+
+The `lighter` pipeline builds it from the call source `lighter-fundings`, which reads Lighter's API in windows of 750 hours. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<market_id>:<unix seconds of the hour>`. Unique. |
+| `market_id` | integer | The market's public id in Lighter's API. Join on this, not on `symbol`. |
+| `symbol` | text | The market's name, such as `ETH`. |
+| `funding_time` | timestamptz | The hour mark the rate is paid at. |
+| `rate_pct` | numeric | The rate in percent per hour, unsigned, as Lighter sends it. A rate can be 0. |
+| `signed_rate_pct` | numeric | `rate_pct` for `long`, `-rate_pct` for `short`. Positive means longs pay shorts. The paying side is inferred from the funding page's rule; see `catalog/vendors/lighter/NOTES.md`. |
+| `value_usdc_per_unit` | numeric | USDC paid per one unit of base for the hour. |
+| `direction` | text | `long` for a positive rate, `short` for a negative one. |
+
+### Lighter exchange metrics
+
+`analytics.lighter_exchange_metrics`
+
+One daily point per Lighter metric, as a long table. Exchange-wide kinds cover Lighter as a whole. Ten kinds also load per market, for the symbols in `markets.json` (ETH to start). Only ended UTC days load, so today waits for the next run. Each run reads every series again.
+
+The `lighter` pipeline builds it from the call source `lighter-exchange-metrics`, which reads Lighter's API. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<kind>:<market or all>:<unix seconds of the day>`. Unique. |
+| `day` | date | The UTC day the point covers. |
+| `kind` | text | The metric: `volume`, `maker_fee`, `taker_fee`, `liquidation_fee`, `trade_count`, `liquidation_count`, `liquidation_volume`, `open_interest`, `attribution_maker_fee`, `attribution_taker_fee`, `account_count`, `active_account_count`, `inflow`, `outflow`, `transfer_fee`, `withdraw_fee`, `buyback` (from 2025-12-30) or `buyback_usdc`. |
+| `market` | text | The symbol for a per-market series. Null for an exchange-wide one, and always null for the last eight kinds. |
+| `value` | numeric | USDC for volumes, fees, flows and `open_interest`; LIT for `buyback`; a count for the rest. Only `volume`, the maker, taker and liquidation fees, `trade_count`, `liquidation_count` and ETH's `liquidation_volume` are proven; see `catalog/vendors/lighter/NOTES.md`. |
+
+### Lighter open interest
+
+`analytics.lighter_open_interest`
+
+One end-of-hour open interest reading per Lighter market, about 5,000 rows a day. Lighter names the market by symbol only, so there is no `market_id`. Covers every market, from `START_DATE`. Only ended UTC days load: a day's file appears about 07:03 UTC the next day.
+
+The `lighter` pipeline builds it from the call source `lighter-open-interest`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. After the framework parks a day's dead letter (five failed runs), the day reloads only when its file changes. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<symbol>:<hour>`. Unique. |
+| `hour` | timestamptz | The start of the hour the reading closes. |
+| `symbol` | text | The market's symbol. |
+| `open_interest` | numeric | Open interest in base units. |
+| `mark_price` | numeric | The mark price at the end of the hour. |
+| `open_interest_usd` | numeric | `open_interest` times `mark_price`, in USDC. |
+
+### Lighter trades
+
+`analytics.lighter_trades`
+
+One Lighter trade, in real units. One row per trade. Covers the accounts and markets in `ingestion/sources/lighter-trades/addresses.json` (account 313004 in ETH to start), from `START_DATE`. With both keys it takes the listed accounts' trades in the listed markets; with one, it takes all of that one. Only ended UTC days load: a day's file appears about 07:03 UTC the next day.
+
+The `lighter` pipeline builds it from the call source `lighter-trades`, which reads Lighter's public S3 files, one day at a time, and skips a day it has loaded. A day holds 2 to 8 million trades, so `addresses.json` must list some accounts or markets. A changed `addresses.json` loads every day again. After the framework parks a day's dead letter (five failed runs), the day reloads only when its file changes. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `trade_id` | bigint | Lighter's trade id. Unique. |
+| `trade_time` | timestamptz | The block time of the trade. |
+| `block_number` | bigint | The L2 block that holds the trade. |
+| `tx_hash` | text | The transaction that made the trade. |
+| `trade_type` | text | `trade`, `liquidation`, `deleverage` or `market-settlement`. |
+| `market_id` | integer | The market's public id in Lighter's API. Join on this. |
+| `slot_market_id` | integer | The file's own market id, a slot Lighter reuses for later markets. Never join on it. |
+| `symbol` | text | The market's name, such as `ETH`. Null for a binary option. |
+| `market_type` | text | `perp` or `spot`. Null for a binary option. |
+| `price` | numeric | USDC per base unit. Null for a binary option. |
+| `size` | numeric | Base units. Null for a binary option. |
+| `price_raw`, `size_raw` | bigint | The price and size as the file holds them, before the market's decimals. |
+| `notional_usdc` | numeric | The trade value in USDC, `usdc_amount / 10^6`. Set for a binary option, whose `size` and `price` are null. |
+| `is_maker_ask` | boolean | True when the maker sold. |
+| `maker_account_index` | bigint | The maker's account. |
+| `taker_account_index` | bigint | The taker's account. |
+| `taker_side` | text | `buy` or `sell`, for the taker. |
+| `ask_account_index` | bigint | The seller's account. 281474976710655 means no account. |
+| `bid_account_index` | bigint | The buyer's account. |
+| `maker_fee_ppm`, `taker_fee_ppm` | integer | Each side's fee, in parts per million of notional. |
+| `maker_fee_usdc`, `taker_fee_usdc` | numeric | Each side's fee, in USDC. |
+| `integrator_maker_fee_usdc`, `integrator_taker_fee_usdc` | numeric | Each side's integrator fee, in USDC. |
+| `ask_order_index`, `bid_order_index` | bigint | The sell and buy orders. |
+| `maker_position_before`, `taker_position_before` | numeric | Each side's position before the trade, in base units. Negative is short. |
+| `maker_entry_quote_before_usdc`, `taker_entry_quote_before_usdc` | numeric | The entry value of each side's position before the trade, in USDC. |
+| `maker_position_sign_changed`, `taker_position_sign_changed` | boolean | True when the trade changed the sign of that side's position. Opening from 0 sets it, as on trade 40627877458. |
+| `ask_account_pnl`, `bid_account_pnl` | numeric | The pnl the trade realized for the seller and the buyer, in USDC. Null when none. |
+
+### Lighter account fills
+
+`analytics.lighter_account_fills`
+
+One fill per account and trade: each Lighter trade gives its maker one row and its taker one row, with the account's position before and after. A side with no account (281474976710655, on market-settlement trades) has no row. Covers the trades in `lighter_trades`, so the same markets and days, with both accounts of each loaded trade, counterparties included.
+
+The `lighter` pipeline builds it from `lighter_trades`' source. Two tests check it against other data. `lighter_trades_within_candle_range` fails when a trade's price lies outside its hour's `lighter_candles` range. `lighter_account_fills_positions_chain` warns when an account's `position_before` differs from its previous fill's `position_after`, and it warns for every account whose history is only partly loaded, such as any counterparty of a filtered load, so it warns on thousands of rows. A break for an account whose history you loaded whole is the signal to look for.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<trade_id>:<role>`. Unique. |
+| `trade_id` | bigint | Lighter's trade id. |
+| `trade_time` | timestamptz | The block time of the trade. |
+| `market_id` | integer | The market's public id in Lighter's API. Join on this. |
+| `symbol` | text | The market's name. Null for a binary option. |
+| `account_index` | bigint | The account that made this side of the trade. |
+| `role` | text | `maker` or `taker`. |
+| `side` | text | `sell` for the ask account, `buy` for the bid account. |
+| `signed_size` | numeric | Base units, positive for a buy and negative for a sell. Null for a binary option. |
+| `price` | numeric | USDC per base unit. Null for a binary option. |
+| `notional_usdc` | numeric | The trade's value in USDC. |
+| `fee_ppm` | integer | The fee of this row's role, in parts per million of notional. |
+| `fee_usdc` | numeric | The fee of this row's role, in USDC. |
+| `position_before` | numeric | The account's position before the trade, in base units. Negative is short. |
+| `position_after` | numeric | `position_before` plus `signed_size`. |
+| `entry_quote_before_usdc` | numeric | The entry value of the account's position before the trade, in USDC. |
+| `position_sign_changed` | boolean | True when the trade changed the sign of the account's position. |
+| `realized_pnl` | numeric | The pnl the trade realized for this account, in USDC. Null when none. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
