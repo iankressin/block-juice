@@ -6,7 +6,7 @@ Three answers that later tasks branch on:
 
 - **Trade ids are unique across day files.** 4,484,699 rows over 2026-11-15 and 2026-11-16 hold 4,484,699 distinct ids (P8).
 - **`ask_account_pnl` and `bid_account_pnl` are USDC × 10^6.** On all 52 trades where the API sent a pnl, the API's value × 10^6 equals the S3 integer (P9). Scale pnl by 10^6.
-- **`direction` names the side that pays.** On 33 markets paid at 13:00 UTC and 40 paid at 14:00, the WebSocket's signed `funding_rate` equals `rate`, with a minus sign where `direction` is `short` (P10), and the funding page says a positive rate means longs pay shorts. No doc page says this of `direction` itself.
+- **`direction` follows the sign of the rate; that it names the paying side is inferred.** (a) Proven: `direction` is `long` exactly when the WebSocket's signed `funding_rate` is positive, on all 40 markets paid at 14:00 UTC (P10). (b) Documented: the funding page says a positive funding rate means longs pay shorts. (c) Inferred from (a) and (b): `direction` names the side that pays. No doc page ties the funding page's rule to the WebSocket field, or says what `direction` means.
 
 ## Hosts and limits
 
@@ -38,7 +38,7 @@ Three answers that later tasks branch on:
 - **Trade fees** are parts per million of notional. Σ `usdc_amount × maker_fee` / 10^12 over 2026-11-16 is 69,773.74 USDC, and `exchangeMetrics` `maker_fee` for that day is 69,773.74. The taker sum is 71,115.85 on rows other than liquidations, equal to `taker_fee`, and 10,689.95 on liquidations, equal to `liquidation_fee` (P6). The maker values seen, 40, 39, 38, 36, 34, 32, 30 and 28, are the eight Premium tiers on the account-types page (0.0040% to 0.0028%); 50 is Plus (0.005%) and 0 Standard. Taker values include the eight Premium tiers (280 to 196), Plus 50, Standard 0, and 100 (1 bp), which the tier tables do not list. Most liquidations pay 10000 (1%), the `liquidation_fee` of `1.0000` percent in `orderBookDetails`.
 - **PnL.** `ask_account_pnl` and `bid_account_pnl` are realized PnL in USDC × 10^6, null when none. S3 holds both sides. The API holds only the queried account's side, as a decimal string with 6 places (P9).
 - **Positions.** `*_position_size_before` is signed and scaled like `size`; `*_entry_quote_before` like `usdc_amount`. Both equal the API's decimal strings on the queried account's side (P9). `*_initial_margin_fraction_before` is in 1/10^4: 500 is 5%.
-- **Funding.** `rate` is percent per hour, unsigned, with 4 decimals. `value` is USDC per one unit of base: ETH at 2026-10-17 07:00 UTC has `value` 0.01216590 and `rate` 0.0005, and 0.01216590 / (0.0005 / 100) = 2433.18, inside that hour's mark candle (open 2432.00, close 2433.88, low 2429.44, high 2436.92) (P5). `direction` gives the sign: `long` for a positive rate, when longs pay shorts, and `short` for a negative one, when shorts pay longs (P10).
+- **Funding.** `rate` is percent per hour, unsigned, with 4 decimals. `value` is USDC per one unit of base: ETH at 2026-10-17 07:00 UTC has `value` 0.01216590 and `rate` 0.0005, and 0.01216590 / (0.0005 / 100) = 2433.18, inside that hour's mark candle (open 2432.00, close 2433.88, low 2429.44, high 2436.92) (P5). `direction` gives the sign: `long` for a positive rate and `short` for a negative one (P10). That `long` means longs pay shorts is inferred from the funding page's rule, not stated for `direction`.
 - **Times.** Trade `timestamp` and candle `t` are Unix ms, `transaction_time` Unix µs, funding and metric timestamps Unix s, `orderBookDetails` `created_at` Unix ms as a string.
 
 ## Paging traps
@@ -100,7 +100,7 @@ Space API calls 1.1 s apart to stay under 60 a minute.
 | P8 | Trade ids are unique across 2026-11-15 and 2026-11-16 | `true,4484699` |
 | P9 | API fields against S3 for account 757337's 104 trades on 2026-11-16 | `104,104,104,104,104,21,21,31,31`: size, price, usd_amount and own fee equal on all 104; pnl × 10^6 equal on all 21 ask and 31 bid |
 | P9a | The brief's walk for account 313004 | at 13:25 UTC: 30 pages, 2,991 trades, oldest 40938037620 at 09:03:15; at 14:04: 30 pages, 2,991 trades, oldest 40945769300 at 09:46:01; `from=` the oldest returns `[200,0,null]` |
-| P10 | `direction` is the sign of the rate | 13:00 UTC: 33 markets, 21 negative, 33 agree; 14:00 UTC: 40 markets, 30 negative, 40 agree |
+| P10 | `direction` is `long` exactly when the WebSocket's signed `funding_rate` is positive | `14:00 UTC: 40 markets, 30 negative; 40 where funding_rate = rate, signed - for short` |
 | P11 | Limits, from the rate-limits page | Standard `60 requests per rolling minute`; weights `exchangeMetrics` 120, `trades` 200, other 300, `recentTrades` 600; Explorer 45 a minute, burst 45; `HTTP 429`, or `HTTP 405`; firewall 60 s |
 | P12 | Error bodies and retired paths | 20001, 22400, 21619 and 20001 with a reason, each HTTP 400; `blocks`, `txs`, `accountTxs`, `currentHeight`, `status`: 403 with `Server: CloudFront` |
 | P13 | `orderBookDetails` contents | `[245,12,[["active",221],["inactive",36]],[6]]` |
@@ -230,7 +230,7 @@ print(time.strftime("%H:%M", time.gmtime(h)), "UTC:", len(pick), "markets,",
 PY
 ```
 
-Neither the `fundings` page nor the WebSocket's market-stats section says what `direction` means. The proof rests on two links: the live sign check above, and the funding page's rule that "when the funding rate is positive, users with long positions pay a funding fee to users with short positions".
+Neither the `fundings` page nor the WebSocket's market-stats section says what `direction` means. The script proves only (a): `direction` is `long` exactly when the WebSocket's signed `funding_rate` is positive. (b) The funding page says "when the funding rate is positive, users with long positions pay a funding fee to users with short positions", but nothing ties that rule to the WebSocket field. (c) That `direction` names the paying side is inferred from (a) and (b).
 
 **P11.** The page has a tab per exchange; the `awk` keeps the Lighter tab.
 
