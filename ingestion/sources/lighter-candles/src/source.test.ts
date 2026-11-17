@@ -288,7 +288,7 @@ test("committed history resumes, and a routine run reads only the recent windows
   const requests: { path: string; market_id: number; start: number; end: number }[] = [];
   const url = await fakeLighter(t, { requests });
   const source = await sourceWith(t, { markets: ["ETH"] });
-  const key = (await import("@ingestion/lib")).historyKey(["lighter", url, "ETH", "trade", "1h", START]);
+  const key = (await import("@ingestion/lib")).historyKey(["lighter", url, 0, "ETH", "trade", "1h", START]);
   const saved = (next: number) => ({
     getCheckpoint: async (k: string) => (k === key ? { origin: 0, next, refreshedAt: NOW } : undefined),
   });

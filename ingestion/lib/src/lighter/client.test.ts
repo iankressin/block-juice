@@ -7,18 +7,24 @@ import { createLighterClient, lighterEnv, type Clock } from "#src/lighter/client
 /** `status` 0 drops the connection instead of answering. */
 type Reply = { status: number; body: unknown };
 
-const market = (market_id: number, symbol: string, market_type: string) => ({
+const market = (market_id: number, symbol: string, market_type: string, status = "active") => ({
   market_id,
   symbol,
   market_type,
   size_decimals: 4,
   price_decimals: 2,
-  status: "active",
+  status,
 });
 
 const DETAILS = {
   code: 200,
-  order_book_details: [market(0, "ETH", "perp"), market(1, "BTC", "perp")],
+  order_book_details: [market(0, "ETH", "perp"), market(1, "BTC", "perp"),
+    market(8286, "ASELS", "perp", "inactive"),
+    market(10635, "ASELS", "perp"),
+    market(7001, "GONE", "perp", "inactive"),
+    market(7002, "GONE", "perp", "inactive"),
+    market(7003, "RESOLV", "perp", "inactive"),
+  ],
   spot_order_book_details: [market(2048, "ETH/USDC", "spot")],
 };
 
@@ -141,6 +147,21 @@ test("resolveMarkets finds perp and spot symbols and fails on an unknown one, na
     [0, 2048],
   );
   await assert.rejects(client.resolveMarkets(["DOGE2"]), /DOGE2/);
+});
+
+test("resolveMarkets takes the active market when a symbol names several", async (t) => {
+  const { client } = await setup(t);
+  assert.deepEqual((await client.resolveMarkets(["ASELS"])).map((m) => m.market_id), [10635]);
+});
+
+test("resolveMarkets takes the only market a symbol names, even when inactive", async (t) => {
+  const { client } = await setup(t);
+  assert.deepEqual((await client.resolveMarkets(["RESOLV"])).map((m) => m.market_id), [7003]);
+});
+
+test("resolveMarkets fails on a symbol with no single active market, naming every id", async (t) => {
+  const { client } = await setup(t);
+  await assert.rejects(client.resolveMarkets(["GONE"]), /GONE.*7001.*7002/);
 });
 
 test("lighterEnv defaults the mainnet URL and 15 a minute, and refuses more than 60", () => {

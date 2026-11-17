@@ -121,7 +121,7 @@ export const fundingsSource = (clock: Clock = systemClock): Source<LighterFundin
     const now = clock.now();
     const plans = new Map<number, ReturnType<typeof historyPlan>>();
     for (const market of markets) {
-      const key = historyKey(["lighter", "fundings", env.LIGHTER_API_URL, market.symbol, env.START_TIME]);
+      const key = historyKey(["lighter", "fundings", env.LIGHTER_API_URL, market.market_id, market.symbol, env.START_TIME]);
       const saved = historyState(await context?.getCheckpoint?.(key));
       const origin = saved?.origin ?? hourStart(env.START_TIME);
       plans.set(market.market_id, historyPlan(key, origin, WINDOW_MS, now, saved, env));
