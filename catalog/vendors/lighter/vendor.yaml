@@ -1,0 +1,447 @@
+name: lighter
+scope: >-
+  Lighter Core mainnet's public read API and its public S3 dataset: markets, trade and mark-price
+  candles, hourly funding, daily exchange metrics, and the daily trade and open-interest Parquet files
+  that the six lighter-* sources load. Covers the hosts, their limits, units, market identity, and the
+  endpoints a source or a proof calls, and lists every GET path in the docs with the plan that owns it.
+  Leaves out endpoints that need a token, the WebSocket API, sendTx and sendTxBatch, and Lighter on
+  Robinhood Chain.
+docs:
+  - https://docs.lighter.xyz/developers/integration-guides/historical-data.md
+  - https://docs.lighter.xyz/developers/getting-started/environments.md
+  - https://docs.lighter.xyz/developers/integration-guides/account-data.md
+  - https://docs.lighter.xyz/api/orders/trades.md
+  - https://docs.lighter.xyz/api/account/pnl.md
+  - https://docs.lighter.xyz/api/transactions/withdraw_history.md
+  - https://docs.lighter.xyz/api/explorer-api/account/get-account-by-address.md
+  - https://docs.lighter.xyz/api/explorer-api/account/get-account-by-address-1.md
+  - https://docs.lighter.xyz/api/explorer-api/batches/get-batch-by-id.md
+  - https://docs.lighter.xyz/developers/integration-guides/deposits-transfers-and-withdrawals.md
+  - https://docs.lighter.xyz/developers/reference/rate-limits.md
+  - https://docs.lighter.xyz/developers/reference/account-types.md
+  - https://docs.lighter.xyz/trading/funding.md
+sources:
+  - ingestion/sources/lighter-markets
+  - ingestion/sources/lighter-candles
+  - ingestion/sources/lighter-fundings
+  - ingestion/sources/lighter-exchange-metrics
+  - ingestion/sources/lighter-open-interest
+  - ingestion/sources/lighter-trades
+api:
+  exchange:
+    base_url: https://mainnet.zklighter.elliot.ai
+    prefix: /api/v1/
+    auth: none for the endpoints below
+    role: >-
+      Lighter's REST API: markets, candles, funding, metrics, trades and transactions. Lighter is a ZK
+      rollup on Ethereum with no RPC; this API, the Explorer and S3 are the ways to read it.
+    source: The environments page, and the servers entry of the OpenAPI spec on each endpoint's page.
+    caching: >-
+      CloudFront serves it. The orderBookDetails reply on 2026-11-17 carried X-Cache: Hit from cloudfront
+      and Age: 1, so a reply can come from a cache.
+  explorer:
+    base_url: https://explorer.elliot.ai/api
+    auth: none
+    role: >-
+      Blocks, batches, logs by hash, and an account's logs, assets and positions. Plan 2 reads it; plan 1
+      calls none of it.
+    source: The environments page and the Explorer API pages.
+  s3:
+    base_url: https://aws-public-blockchain.s3.amazonaws.com/v1.1/lighter/core/mainnet
+    bucket: s3://aws-public-blockchain (region us-east-2, from the x-amz-bucket-region header)
+    auth: >-
+      none. Anonymous HTTPS GET and ListObjectsV2 (?list-type=2&prefix=…) work, and the AWS CLI takes
+      --no-sign-request. DuckDB reads s3:// globs with SET s3_region='us-east-2' and no keys.
+    role: Daily Parquet files of every trade and of hourly open interest, from 2025-01-17.
+    source: The historical-data page.
+  times: >-
+    Trade timestamp, candle t and Tx executed_at are Unix ms (block time). transaction_time is Unix µs.
+    Funding and exchangeMetrics timestamps are Unix s, except kind tps, which is ms. orderBookDetails
+    created_at is Unix ms sent as a string. Request start_timestamp and end_timestamp take ms (the docs
+    say s also works). The timestamps page lists every field.
+limits:
+  exchange:
+    standard: 60 requests per rolling minute, per IP and per L1 address
+    weighted_tiers: >-
+      Premium, Advanced and Plus accounts get 24,000 weight a minute, Builder accounts 240,000. A
+      standard caller is not weighted, but an endpoint whose weight is over 400 gets fewer than 60 calls
+      (24,000 / weight).
+    weights: >-
+      exchangeMetrics 120, trades 200, recentTrades 600, other read endpoints 300. Every endpoint the
+      plan-1 sources call (orderBookDetails, candles, markPriceCandles, fundings, exchangeMetrics)
+      weighs 400 or less, so each allows 60 calls a minute.
+    header: none. No reply on 2026-11-17 carried a count of requests used.
+    source: The rate-limits page.
+  explorer:
+    limit: 45 weight per rolling minute, burst 45, for every caller
+    weights: accounts/{param}/logs 4, blocks/{blockNumber} 5, search 3, accounts/{param}/positions 2, others 1
+    source: The rate-limits page.
+  s3: none stated; anonymous reads
+  on_exceed: >-
+    HTTP 429 or HTTP 405. A firewall block lasts 60 s. An API-server block lasts the endpoint's weight /
+    (total weight / 60) seconds. None was provoked here. Each lighter source paces itself at
+    LIGHTER_REQUESTS_PER_MINUTE (15 by default) and retries 429, 405, 5xx and network errors after
+    2 s, 10 s and 60 s.
+endpoints:
+  order_book_details:
+    use: source
+    method: GET
+    path: /api/v1/orderBookDetails
+    params:
+      market_id: optional public market id. Default 255, which returns every market.
+      filter: optional, all (default), spot or perp.
+    reply: '{"code":200,"order_book_details":[perp markets],"spot_order_book_details":[spot markets]}'
+    count: >-
+      257 markets at 13:29 UTC on 2026-11-17: 245 perp and 12 spot, 221 active and 36 inactive. ANT
+      (10902) was created at 12:58 UTC that day; before it there were 256. Binary-option markets are not
+      in it.
+    fields:
+      market_id: {type: integer, note: "The public market id. Perps 0–233 and 4095–10902, spot 2048–2058 and 4510. S3 calls it public_market_index."}
+      symbol: {type: string, example: ETH, note: "Spot symbols carry the quote: ETH/USDC. Not unique: ASELS is 8286 and 10635."}
+      market_type: {values: [perp, spot]}
+      status: {values: [active, inactive], note: "The schema also lists in-settlement, waiting-for-settlement and settled."}
+      size_decimals: {type: integer, note: "S3 size / 10^size_decimals is base units."}
+      price_decimals: {type: integer, note: "S3 price / 10^price_decimals is USDC per base unit."}
+      supported_quote_decimals: {type: integer, note: "6 on every market. S3 usdc_amount / 10^6 is USDC."}
+      maker_fee: {type: decimal string, unit: percent, note: "0.0000 on every market: the standard-account fee. Accounts pay by tier (NOTES.md)."}
+      taker_fee: {type: decimal string, unit: percent, note: 0.0000 on every market}
+      liquidation_fee: {type: decimal string, unit: percent, note: "1.0000 or 0.0000"}
+      default_initial_margin_fraction: {type: integer, unit: 1/10^4, example: "500 (5 %) on ETH"}
+      min_initial_margin_fraction: {type: integer, unit: 1/10^4}
+      maintenance_margin_fraction: {type: integer, unit: 1/10^4}
+      closeout_margin_fraction: {type: integer, unit: 1/10^4}
+      funding_premium_multiplier: {type: integer, unit: 1/100, note: "100 on 141 perps, 50 on 99, 1 on 5. The funding page gives 1, 1/2 and 1/100."}
+      base_interest_rate: {type: decimal string, unit: percent}
+      funding_clamp_small: {type: decimal string, unit: percent}
+      funding_clamp_big: {type: decimal string, unit: percent}
+      created_at: {type: string, unit: Unix ms, example: "1737098461100 (ETH)"}
+    source: The orderBookDetails page, and the reply on 2026-11-17.
+  candles:
+    use: source
+    method: GET
+    path: /api/v1/candles
+    params:
+      market_id: required, public market id.
+      resolution: required, one of 1m, 5m, 15m, 30m, 1h, 4h, 12h, 1d.
+      start_timestamp: required, Unix ms, inclusive.
+      end_timestamp: required, Unix ms.
+      count_back: required by the spec; a hint used only when start_timestamp is 0. Send 0.
+      set_timestamp_to_end: optional, default false. Leave it false so t is the bucket start.
+    max_rows: >-
+      500. A longer range returns the newest 500 and drops the oldest without an error. On 2026-11-17 a
+      600-minute 1m range returned 500 candles, the first 100.8 minutes after the start.
+    open_bucket: The reply ends with the bucket still open. At 13:36:11 UTC the last 1m candle was 13:36.
+    reply: '{"code":200,"r":"1m","c":[{"t":…,"o":…,"h":…,"l":…,"c":…,"v":…,"V":…,"i":…}]}'
+    fields:
+      t: {type: integer, unit: Unix ms, note: the bucket start}
+      o: {type: number, unit: USDC per base unit}
+      h: {type: number}
+      l: {type: number}
+      c: {type: number}
+      v: {type: number, unit: base units}
+      V: {type: number, unit: USDC}
+      i: {type: integer, note: the last trade id in the bucket}
+      O: {note: "Unadjusted open; H, L and C likewise. Sent on some markets only (TUR30, RESOLV). The spec says only when they differ from o, h, l and c, but RESOLV's were equal."}
+    id: market_id, resolution and t.
+    source: The candles page, and replies on 2026-11-17 (NOTES.md, P7).
+  mark_price_candles:
+    use: source
+    method: GET
+    path: /api/v1/markPriceCandles
+    params: Same as candles, with connect_opens (default false) in place of set_timestamp_to_end and merge_mark_price.
+    max_rows: 500, newest kept, as for candles. The open bucket is included.
+    reply: '{"code":200,"r":"1h","c":[{"t":…,"o":…,"h":…,"l":…,"c":…,"sc":…}]}'
+    fields:
+      t: {type: integer, unit: Unix ms, note: the bucket start}
+      o: {type: number, unit: USDC per base unit, note: mark price}
+      h: {type: number}
+      l: {type: number}
+      c: {type: number}
+      sc: {type: integer, note: how many mark-price samples the bucket holds}
+    id: market_id, resolution and t.
+    source: The markPriceCandles page, and replies on 2026-11-17.
+  fundings:
+    use: source
+    method: GET
+    path: /api/v1/fundings
+    params:
+      market_id: required, public market id. An id with no funding (9999 was tried) gets HTTP 400 code 21619.
+      resolution: required, 1h or 1d.
+      start_timestamp: required, Unix ms.
+      end_timestamp: required, Unix ms, after start_timestamp (else HTTP 400 code 22400).
+      count_back: required by the spec; send 0.
+    max_rows: >-
+      750. A longer range returns the newest 750 and drops the oldest without an error. On 2026-11-17 an
+      800-hour range returned 750 entries, the first 50.4 hours after the start.
+    reply: '{"code":200,"resolution":"1h","fundings":[{"timestamp":…,"value":"…","rate":"…","direction":"long"}]}'
+    fields:
+      timestamp: {type: integer, unit: Unix s, note: "The hour mark the payment is made at. The 13:00 entry is the payment the WebSocket reports at funding_timestamp 13:00."}
+      value: {type: decimal string, unit: USDC per one base unit, note: "rate / 100 × the price (P5)."}
+      rate: {type: decimal string, unit: percent per hour, note: "Unsigned, 4 decimals. 0.0000 also occurs on closed hours."}
+      direction: {values: [long, short], note: "The side that pays: long means a positive rate, so longs pay shorts (P10)."}
+    id: market_id, resolution and timestamp.
+    source: The fundings and funding pages, and replies on 2026-11-17 (NOTES.md, P5, P7, P10).
+  exchange_metrics:
+    use: source
+    method: GET
+    path: /api/v1/exchangeMetrics
+    params:
+      period: required. all for the daily kinds; h, d or w for tps (all gets HTTP 400).
+      kind: required, one of 19 (NOTES.md lists them).
+      filter: optional, byMarket.
+      value: with filter=byMarket, the market symbol, case-sensitive. ETH works; eth or an unknown symbol returns 669 points of 0 with code 200.
+    reply: '{"code":200,"metrics":[{"timestamp":…,"data":…}]}'
+    fields:
+      timestamp: {type: integer, unit: Unix s, note: "00:00 UTC of the day. tps: Unix ms, 5-minute steps."}
+      data: {type: number, note: "USDC for volume, the four fee kinds and liquidation_volume, and a count for trade_count and liquidation_count: each equals its S3 sum for 2026-11-16 (NOTES.md). The other kinds' units are unproven."}
+    points: >-
+      669 per daily kind on 2026-11-17, from 2025-01-17 to 2026-11-16; buyback and buyback_usdc 322, from
+      2025-12-30. No kind had a point for 2026-11-17 at 13:30 UTC.
+    id: kind, the market symbol or none, and timestamp.
+    source: The exchangeMetrics page, and replies on 2026-11-17 (NOTES.md, Exchange metrics).
+  trades:
+    use: proof
+    method: GET
+    path: /api/v1/trades
+    params:
+      sort_by: required, block_height, timestamp or trade_id. Order is always descending.
+      limit: required, 1 to 100. 101 gets HTTP 400 code 20001.
+      account_index: optional. The page says master and sub accounts need auth, but without it the API returned the trades of accounts 313004 and 757337 on 2026-11-17.
+      market_id: optional public market id.
+      cursor: optional, the previous reply's next_cursor (base64 of {"index":<last trade_id>}).
+      from: optional, exclusive start in the sort_by field. from=<trade_id> pages like cursor.
+    role: >-
+      Proves the S3 trade fields. Plan 1 loads trades from S3 instead: this endpoint pages 100 at a time
+      under the 60-a-minute limit and does not reach far back for a busy account (NOTES.md, Paging traps).
+    fields:
+      trade_id: {type: integer, note: S3 id}
+      size: {type: decimal string, unit: base units, note: S3 size with the decimal point placed}
+      price: {type: decimal string, unit: USDC per base unit}
+      usd_amount: {type: decimal string, unit: USDC, note: S3 usdc_amount / 10^6}
+      maker_fee: {type: integer, unit: parts per million, note: "Sent only when the queried account is the maker."}
+      taker_fee: {type: integer, unit: parts per million, note: "Sent only when the queried account is the taker."}
+      ask_account_pnl: {type: decimal string, unit: USDC, note: "S3 ask_account_pnl / 10^6. Sent only for the queried account's side."}
+      bid_account_pnl: {type: decimal string, unit: USDC, note: "S3 bid_account_pnl / 10^6. Sent only for the queried account's side."}
+      block_height: {type: integer, note: S3 l2_block_height}
+      timestamp: {type: integer, unit: Unix ms}
+    note: The Trade schema says fields with zero or empty values may be left out.
+    source: The trades page, and replies on 2026-11-17 (NOTES.md, P1 and P9).
+  tx:
+    use: proof
+    method: GET
+    path: /api/v1/tx
+    params:
+      by: required, hash or sequence_index.
+      value: required, the hash or index.
+    role: One L2 transaction. Its block_height ties a trade's tx_hash to a block (NOTES.md, For plan 2).
+    fields:
+      hash: {type: string}
+      type: {type: integer, example: "14 (L2CreateOrder)"}
+      account_index: {type: integer}
+      block_height: {type: integer}
+      executed_at: {type: integer, unit: Unix ms}
+      transaction_time: {type: integer, unit: Unix µs}
+    source: The tx page, and a reply on 2026-11-17.
+datasets:
+  trades:
+    path: trades/date=YYYY-MM-DD/trades.parquet
+    days: >-
+      One file per UTC day from 2025-01-17, 669 files to 2026-11-16 with none missing. A day's file
+      appears at about 07:03 UTC the next day (2026-11-16's at 07:02:54). Each holds that day's trades
+      by timestamp.
+    format: >-
+      Parquet, ZSTD, row groups of up to 1,000,000 rows in id order. In each row group of 2026-11-16 the
+      footer stats span market_id 0 to 2056 or more and both account ids 93 or less to 2^48 − 1, so no
+      row group can be skipped by account or market.
+    size: 2,195,712 rows and 211,750,965 bytes on 2026-11-16; 8,363,206 rows on 2025-12-01.
+    columns: >-
+      43 in the file. DuckDB adds a 44th, date, from the date= folder when it reads the S3 path.
+    fields:
+      id: {type: BIGINT, note: "The trade id, unique across days (P8)."}
+      created_at: {type: VARCHAR, example: "2026-11-16 00:36:33.323525+00"}
+      updated_at: {type: VARCHAR}
+      ask_account_id: {type: BIGINT, note: "281474976710655 (2^48 − 1) is no account, on market-settlement rows."}
+      bid_account_id: {type: BIGINT}
+      size: {type: BIGINT, unit: base units × 10^size_decimals}
+      price: {type: BIGINT, unit: USDC per base unit × 10^price_decimals}
+      usdc_amount: {type: BIGINT, unit: USDC × 10^6}
+      ask_id: {type: BIGINT, note: order index}
+      bid_id: {type: BIGINT, note: order index}
+      l2_block_height: {type: BIGINT, note: "The API's block_height."}
+      timestamp: {type: BIGINT, unit: Unix ms, note: block time}
+      tx_hash: {type: VARCHAR}
+      market_id: {type: SMALLINT, note: "An internal slot that Lighter reuses. Not the API's market_id (NOTES.md, Market identity)."}
+      trade_type: {type: VARCHAR, values: [trade, liquidation, deleverage, market-settlement]}
+      is_maker_ask: {type: BOOLEAN}
+      fee_account_id: {type: BIGINT}
+      maker_fee: {type: INTEGER, unit: parts per million of notional}
+      taker_fee: {type: INTEGER, unit: parts per million of notional}
+      taker_position_size_before: {type: BIGINT, unit: like size, note: signed}
+      taker_entry_quote_before: {type: BIGINT, unit: like usdc_amount}
+      taker_initial_margin_fraction_before: {type: INTEGER, unit: 1/10^4}
+      taker_position_sign_changed: {type: BOOLEAN}
+      maker_position_size_before: {type: BIGINT, unit: like size, note: signed}
+      maker_entry_quote_before: {type: BIGINT, unit: like usdc_amount}
+      maker_initial_margin_fraction_before: {type: INTEGER, unit: 1/10^4}
+      maker_position_sign_changed: {type: BOOLEAN}
+      ask_client_id: {type: BIGINT}
+      bid_client_id: {type: BIGINT}
+      transaction_time: {type: BIGINT, unit: Unix µs}
+      ask_account_pnl: {type: BIGINT, unit: USDC × 10^6, note: "Realized PnL of the ask account; null when none (P9)."}
+      bid_account_pnl: {type: BIGINT, unit: USDC × 10^6, note: "Realized PnL of the bid account (P9)."}
+      integrator_taker_fee: {type: INTEGER, unit: parts per million}
+      integrator_taker_fee_collector_index: {type: BIGINT}
+      integrator_maker_fee: {type: INTEGER, unit: parts per million}
+      integrator_maker_fee_collector_index: {type: BIGINT}
+      taker_allocated_margin_usdc_before: {type: BIGINT}
+      taker_allocated_margin_usdc_after: {type: BIGINT}
+      maker_allocated_margin_usdc_before: {type: BIGINT}
+      maker_allocated_margin_usdc_after: {type: BIGINT}
+      ask_order_version: {type: BIGINT}
+      bid_order_version: {type: BIGINT}
+      public_market_index: {type: BIGINT, note: "The API's market_id. Null in every file before 2026-08-20 (P4)."}
+    source: The historical-data page, the files' footers, and queries on 2026-11-17 (NOTES.md).
+  open_interest_hourly:
+    path: open_interest_hourly/date=YYYY-MM-DD/oi.parquet
+    days: One file per UTC day, as for trades. 2026-11-16's appeared at 07:02:54 UTC on 2026-11-17.
+    size: 5,006 rows, 209 symbols and 118,471 bytes on 2026-11-16.
+    columns: 5 in the file; DuckDB adds date from the S3 path.
+    fields:
+      hour: {type: TIMESTAMP WITH TIME ZONE, note: "The start of the hour; the row is the end-of-hour snapshot."}
+      symbol: {type: VARCHAR, example: BTC, note: "The market symbol, not an id."}
+      open_interest: {type: DOUBLE, unit: base units}
+      mark_price: {type: DOUBLE, unit: USDC per base unit}
+      open_interest_usd: {type: DOUBLE, unit: USDC, note: open_interest × mark_price}
+    source: The historical-data page, and the 2026-11-16 file.
+errors:
+  "400 invalid param":
+    body: '{"code":20001,"message":"invalid param "}'
+    meaning: >-
+      A parameter is out of range, such as resolution=2m, limit=101 or an unknown exchangeMetrics kind.
+      Some add a reason: '{"code":20001,"message":"invalid param : invalid period for the requested
+      metric kind"}' (exchangeMetrics kind=tps with period=all).
+  "400 invalid timestamps":
+    body: '{"code":22400,"message":"invalid timestamps: end_timestamp must be greater than start_timestamp"}'
+    meaning: The range is empty or reversed.
+  "400 invalid market type":
+    body: '{"code":21619,"message":"invalid market type"}'
+    meaning: fundings got a market_id with no funding (9999, which has candles).
+  "403 CloudFront":
+    meaning: >-
+      Retired paths: /api/v1/blocks, /txs, /accountTxs, /currentHeight and /api/v1/status all answered
+      HTTP 403 with Server: CloudFront.
+  "429 or 405":
+    meaning: Over the rate limit. Wait and send again (limits.on_exceed).
+  success:
+    meaning: >-
+      A success is HTTP 200 with "code":200 in the body. A misspelled byMarket symbol is a success too,
+      with every point 0.
+inventory:
+  source: >-
+    Every GET path in the OpenAPI blocks of the API Reference pages that https://docs.lighter.xyz/llms.txt
+    listed on 2026-11-17: 92 GET paths, 76 on the exchange host, 13 on the Explorer and 3 on Lighter on
+    Robinhood Chain's host. Paths on the Explorer are relative to https://explorer.elliot.ai/api.
+  plan_1:
+    note: Market data, this plan.
+    endpoints:
+      - {path: /api/v1/orderBookDetails, host: exchange, plan: 1, use: source}
+      - {path: /api/v1/candles, host: exchange, plan: 1, use: source}
+      - {path: /api/v1/markPriceCandles, host: exchange, plan: 1, use: source}
+      - {path: /api/v1/fundings, host: exchange, plan: 1, use: source}
+      - {path: /api/v1/exchangeMetrics, host: exchange, plan: 1, use: source}
+      - {path: /api/v1/trades, host: exchange, plan: 1, use: proof}
+  plan_2:
+    note: The public account ledger and L1 settlement.
+    endpoints:
+      - {path: "/accounts/{param}/logs", host: explorer, plan: 2}
+      - {path: "/accounts/{param}/positions", host: explorer, plan: 2}
+      - {path: "/accounts/{param}/assets", host: explorer, plan: 2}
+      - {path: "/logs/{hash}", host: explorer, plan: 2}
+      - {path: /batches, host: explorer, plan: 2}
+      - {path: "/batches/{batchId}", host: explorer, plan: 2}
+      - {path: /blocks, host: explorer, plan: 2}
+      - {path: "/blocks/{blockId}", host: explorer, plan: 2}
+      - {path: /stats/tx, host: explorer, plan: 2}
+      - {path: /api/v1/account, host: exchange, plan: 2}
+      - {path: /api/v1/accountsByL1Address, host: exchange, plan: 2}
+      - {path: /api/v1/pnl, host: exchange, plan: 2}
+      - {path: /api/v1/tx, host: exchange, plan: 2, note: plan 1 calls it once, as proof}
+      - {path: /api/v1/assetDetails, host: exchange, plan: 2}
+      - {path: /api/v1/systemConfig, host: exchange, plan: 2}
+  plan_3:
+    note: Endpoints that need an ro token.
+    endpoints:
+      - {path: /api/v1/withdraw/history, host: exchange, plan: 3}
+      - {path: /api/v1/deposit/history, host: exchange, plan: 3}
+      - {path: /api/v1/transfer/history, host: exchange, plan: 3}
+      - {path: /api/v1/positionFunding, host: exchange, plan: 3}
+      - {path: /api/v1/liquidations, host: exchange, plan: 3}
+      - {path: /api/v1/accountInactiveOrders, host: exchange, plan: 3}
+      - {path: /api/v1/accountOrderFills, host: exchange, plan: 3}
+  out:
+    note: Left out. App and signing endpoints first, then the rest.
+    endpoints:
+      - {path: /api/v1/guild, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/list, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/leaderboard, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/byReferralCode, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/membership, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/duel, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/duel/list, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/duel/metrics, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/myDuel, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/guild/myDuels, host: exchange, plan: out, why: guilds}
+      - {path: /api/v1/referral/get, host: exchange, plan: out, why: referrals}
+      - {path: /api/v1/referral/stats, host: exchange, plan: out, why: referrals}
+      - {path: /api/v1/referral/userReferrals, host: exchange, plan: out, why: referrals}
+      - {path: /api/v1/referral/points, host: robinhood, plan: out, why: "referrals; Robinhood Chain only"}
+      - {path: /api/v1/leaderboard, host: robinhood, plan: out, why: "points; Robinhood Chain only"}
+      - {path: /api/v1/livePoints/total, host: robinhood, plan: out, why: "points; Robinhood Chain only"}
+      - {path: /api/v1/rfq/get, host: exchange, plan: out, why: RFQ}
+      - {path: /api/v1/rfq/list, host: exchange, plan: out, why: RFQ}
+      - {path: /api/v1/leaseOptions, host: exchange, plan: out, why: fee-credit leases}
+      - {path: /api/v1/leases, host: exchange, plan: out, why: fee-credit leases}
+      - {path: /api/v1/announcement, host: exchange, plan: out, why: announcements}
+      - {path: /api/v1/apikeys, host: exchange, plan: out, why: API keys}
+      - {path: /api/v1/getMakerOnlyApiKeys, host: exchange, plan: out, why: API keys}
+      - {path: /api/v1/tokens, host: exchange, plan: out, why: "API keys: the account's read-only tokens"}
+      - {path: /api/v1/nextNonce, host: exchange, plan: out, why: nonces}
+      - {path: /, host: exchange, plan: out, why: health check}
+      - {path: /info, host: exchange, plan: out, why: server info}
+      - {path: /api/v1/layer1BasicInfo, host: exchange, plan: out, why: "L1 contract addresses and RPC info; the environments page lists the contracts"}
+      - {path: /api/v1/txFromL1TxHash, host: exchange, plan: out, why: "maps one L1 tx to its L2 tx; tx (plan 2) reads L2 txs"}
+      - {path: /api/v1/accountLimits, host: exchange, plan: out, why: "the caller's tier and limits; needs a token"}
+      - {path: /api/v1/accountMetadata, host: exchange, plan: out, why: "names an account gives itself; needs a token"}
+      - {path: /api/v1/l1Metadata, host: exchange, plan: out, why: "settings of the caller's L1 address; needs a token"}
+      - {path: /api/v1/pnlLeaderboard, host: exchange, plan: out, why: "app leaderboard; pnl (plan 2) gives each account's series"}
+      - {path: /api/v1/publicPoolsMetadata, host: exchange, plan: out, why: "pool list and share stats now; no history"}
+      - {path: /api/v1/events, host: exchange, plan: out, why: "binary-option events; no plan models binary options"}
+      - {path: /api/v1/upDownCandles, host: exchange, plan: out, why: "binary-option candles; no plan models binary options"}
+      - {path: /api/v1/portfolio/boPnl, host: exchange, plan: out, why: "binary-option PnL; needs a token"}
+      - {path: /api/v1/feeTiers, host: exchange, plan: out, why: "fee schedule; the account-types page lists the perp tiers"}
+      - {path: /api/v1/deposit/latest, host: exchange, plan: out, why: "one address's latest bridge deposit; status only"}
+      - {path: /api/v1/deposit/networks, host: exchange, plan: out, why: bridge settings}
+      - {path: /api/v1/fastbridge/info, host: exchange, plan: out, why: bridge settings}
+      - {path: /api/v1/fastwithdraw/info, host: exchange, plan: out, why: "bridge settings for one account; needs a token"}
+      - {path: /api/v1/accountActiveOrders, host: exchange, plan: out, why: "open orders now; accountInactiveOrders (plan 3) keeps them once closed"}
+      - {path: /api/v1/accountOrders, host: exchange, plan: out, why: "orders by client id, recent only; needs a token"}
+      - {path: /api/v1/export, host: exchange, plan: out, why: "CSV of one account's trades or funding; needs a token"}
+      - {path: /api/v1/export/historicalTrades, host: exchange, plan: out, why: "legacy paid route to the S3 trade files"}
+      - {path: /api/v1/aggregatedTrades, host: exchange, plan: out, why: "fills grouped by order; S3 trades hold each fill"}
+      - {path: /api/v1/recentTrades, host: exchange, plan: out, why: "a market's newest trades, weight 600; S3 holds them all"}
+      - {path: /api/v1/orderBooks, host: exchange, plan: out, why: "a subset of orderBookDetails"}
+      - {path: /api/v1/orderBookOrders, host: exchange, plan: out, why: "the live order book; no history"}
+      - {path: /api/v1/marketPriceCharts, host: exchange, plan: out, why: "last 24 h of hourly prices for the app; candles cover it"}
+      - {path: /api/v1/funding-rates, host: exchange, plan: out, why: "current rates on four venues; no history"}
+      - {path: /api/v1/exchangeStats, host: exchange, plan: out, why: "today's totals so far; exchangeMetrics keeps each day"}
+      - {path: /api/v1/executeStats, host: exchange, plan: out, why: "slippage compared across exchanges; a report, not a ledger"}
+      - {path: /api/v1/partnerStats, host: exchange, plan: out, why: "one integrator's attribution stats"}
+      - {path: /api/v1/priceOracleInfo, host: exchange, plan: out, why: "oracle settings now; no history"}
+      - {path: /api/v1/syntheticSpotInfo, host: exchange, plan: out, why: "RWA pricing inputs now; no history"}
+      - {path: /api/v1/tokenlist, host: exchange, plan: out, why: "token list for the app; assetDetails (plan 2) covers assets"}
+      - {path: /api/v1/transferFeeInfo, host: exchange, plan: out, why: "fee quote for one transfer, weight 500"}
+      - {path: /api/v1/withdrawalDelay, host: exchange, plan: out, why: "one setting, in seconds"}
+      - {path: "/markets/{symbol}/logs", host: explorer, plan: out, why: "a market's latest logs; S3 trades hold every trade"}
+      - {path: /markets, host: explorer, plan: out, why: "market list; orderBookDetails holds more"}
+      - {path: /search, host: explorer, plan: out, why: "the site's search box"}
+      - {path: /total, host: explorer, plan: out, why: "running totals now; no history"}
