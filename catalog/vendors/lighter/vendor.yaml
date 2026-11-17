@@ -178,7 +178,7 @@ endpoints:
       timestamp: {type: integer, unit: Unix s, note: "The hour mark the payment is made at. The 13:00 entry is the payment the WebSocket reports at funding_timestamp 13:00."}
       value: {type: decimal string, unit: USDC per one base unit, note: "rate / 100 × the price (P5)."}
       rate: {type: decimal string, unit: percent per hour, note: "Unsigned, 4 decimals. 0.0000 also occurs on closed hours."}
-      direction: {values: [long, short], note: "The side that pays: long means a positive rate, so longs pay shorts (P10)."}
+      direction: {values: [long, short], note: "Proven: long exactly when the WebSocket's signed funding_rate is positive (P10). Documented: a positive funding rate means longs pay shorts. Inferred from both: direction names the side that pays."}
     id: market_id, resolution and timestamp.
     source: The fundings and funding pages, and replies on 2026-11-17 (NOTES.md, P5, P7, P10).
   exchange_metrics:
