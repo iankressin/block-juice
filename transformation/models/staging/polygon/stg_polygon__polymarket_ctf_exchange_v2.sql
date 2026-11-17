@@ -2,6 +2,7 @@
 -- event is the catalog's key, ctf_exchange_v2.OrderFilled. Field meanings are in
 -- catalog/protocols/polymarket/NOTES.md. Amounts are in base units (6 decimals); side is 0 for a buy and
 -- 1 for a sell, for the maker. A fill whose taker is the exchange itself is the taker order's own fill.
+-- The fills' transactions are records of their own: stg_polygon__polymarket_ctf_exchange_v2_txs.
 with logs as (
     select
         id,
@@ -14,6 +15,7 @@ with logs as (
         data -> 'args' as args,
         _loaded_at
     from {{ source('polygon', 'polymarket_ctf_exchange_v2') }}
+    where data ->> 'kind' = 'log'
 )
 
 select
