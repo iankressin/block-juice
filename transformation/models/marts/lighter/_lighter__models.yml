@@ -25,3 +25,41 @@ models:
         description: The taker fee in percent, as Lighter sends it.
       - name: read_at
         description: When the run read these settings.
+
+  - name: lighter_candles
+    description: >-
+      One Lighter candle per market, price series and bucket. Only closed candles load.
+    columns:
+      - name: market_id
+        description: The public market id the API uses. Join on this, not on `symbol`.
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: price
+        description: The series, `trade` for traded prices or `mark` for mark prices.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [trade, mark]
+      - name: resolution
+        data_tests: [not_null]
+      - name: open_time
+        description: The start of the bucket.
+        data_tests: [not_null]
+      - name: open
+        data_tests: [not_null]
+      - name: high
+        data_tests: [not_null]
+      - name: low
+        data_tests: [not_null]
+      - name: close
+        data_tests: [not_null]
+      - name: base_volume
+        description: Volume in base units. Null on a mark candle.
+      - name: quote_volume
+        description: Volume in USDC. Null on a mark candle.
+      - name: last_trade_id
+        description: The last trade id in the bucket. Null on a mark candle.
+      - name: samples
+        description: How many mark-price samples the bucket holds. Null on a trade candle.
