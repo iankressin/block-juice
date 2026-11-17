@@ -157,7 +157,8 @@ export async function* dayBatches(
     let ahead: Record<string, unknown>[] | undefined;
     let n = 0;
     for await (const rows of readDay(env, file, readOptions)) {
-      if (ahead) yield { records: records(ahead, `${id}#${n++}`), failed: [] };
+      // 0, so the run does not count each chunk id as a call: only the last batch completes the day.
+      if (ahead) yield { records: records(ahead, `${id}#${n++}`), failed: [], callsCompleted: 0 };
       ahead = rows;
     }
     yield {

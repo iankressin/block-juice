@@ -96,9 +96,10 @@ export const exchangeMetricsSource = (clock: Clock = systemClock): Source<Lighte
     ];
 
     for (const call of uniqueBy([...own, ...retry], callId)) {
-      const batch: Batch<MetricCall> = { records: [], failed: [] };
+      const batch: Batch<MetricCall> = { records: [], failed: [], succeededCallIds: [] };
       try {
         batch.records = await fetchSeries(lighter, call, clock);
+        batch.succeededCallIds!.push(callId(call));
       } catch (error) {
         batch.failed.push({ id: callId(call), call, error: describeError(error) });
       }

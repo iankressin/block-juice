@@ -152,6 +152,20 @@ test("a failed kind waits as a dead letter, and the others load", async (t) => {
   assert.equal(batches.flatMap((b) => b.records).length, 17 * 9);
 });
 
+test("every call that succeeds is named, so a retried call with no points clears its dead letter", async (t) => {
+  const url = await fakeLighter(t, {
+    reply: (q) => (q.get("kind") === "inflow" ? { status: 200, body: { code: 200, metrics: [] } } : undefined),
+  });
+  const source = await sourceWith(t, { markets: [] });
+
+  const batches = await run(source, url, [{ kind: "inflow", market: null }]);
+
+  const succeeded = batches.flatMap((b) => b.succeededCallIds ?? []);
+  assert.equal(succeeded.length, 18);
+  assert.ok(succeeded.includes("inflow:all"));
+  assert.equal(batches.flatMap((b) => b.failed).length, 0);
+});
+
 test("a retried call is made again, and a call the run makes anyway is made once", async (t) => {
   const requests: URLSearchParams[] = [];
   const url = await fakeLighter(t, { requests });
