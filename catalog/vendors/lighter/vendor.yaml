@@ -81,7 +81,10 @@ limits:
     HTTP 429 or HTTP 405. A firewall block lasts 60 s. An API-server block lasts the endpoint's weight /
     (total weight / 60) seconds. None was provoked here. Each lighter source paces itself at
     LIGHTER_REQUESTS_PER_MINUTE (15 by default) and retries 429, 405, 5xx and network errors after
-    2 s, 10 s and 60 s.
+    2 s, 10 s and 60 s. A Retry-After header on a failed reply, in seconds or as an HTTP date,
+    replaces that wait, capped at 2 minutes. The S3 reads retry the same way, on 429, 5xx, network
+    errors, timeouts and a download of the wrong size, and give up on any other 4xx. A listing page
+    has 60 s and a day-file download 30 minutes, each counted to the end of the body.
 endpoints:
   order_book_details:
     use: source
@@ -257,7 +260,7 @@ datasets:
     columns: >-
       43 in the file. DuckDB adds a 44th, date, from the date= folder when it reads the S3 path.
     fields:
-      id: {type: BIGINT, note: "The trade id, unique across days (P8)."}
+      id: {type: BIGINT, note: "The trade id. Unique across the two day files P8 checked; uniqueness across all files is not proven."}
       created_at: {type: VARCHAR, example: "2026-11-16 00:36:33.323525+00"}
       updated_at: {type: VARCHAR}
       ask_account_id: {type: BIGINT, note: "281474976710655 (2^48 − 1) is no account, on market-settlement rows."}

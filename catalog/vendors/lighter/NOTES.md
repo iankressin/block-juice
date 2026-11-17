@@ -54,6 +54,7 @@ Three answers that later tasks branch on:
 
 - `trades/date=YYYY-MM-DD/trades.parquet` and `open_interest_hourly/date=YYYY-MM-DD/oi.parquet`, one file per UTC day from 2025-01-17. 669 trade files to 2026-11-16, none missing. 2026-11-16's two files appeared at 07:02:54 UTC on 2026-11-17; the trade files of 2026-11-10 to 2026-11-15 landed between 07:03:24 and 07:04:02 UTC the next day.
 - Trades: Parquet with ZSTD, row groups of up to 1,000,000 rows in id order. Each file holds its day's trades by `timestamp` in UTC. 2,195,712 rows and 211,750,965 bytes on 2026-11-16, 8,363,206 rows on 2025-12-01.
+- The reads retry on a 429, a 5xx, a network error, a timeout and a download of the wrong size, after 2 s, 10 s and 60 s, or after a `Retry-After` wait capped at 2 minutes. Any other 4xx fails at once. A listing page has a 60 s deadline and a day-file download 30 minutes, each counted to the end of the body.
 - The file has 43 columns. DuckDB adds a 44th, `date`, from the `date=` folder when it reads the S3 path. `vendor.yaml` lists each column's unit.
 - No row group can be skipped by account or market: in all three row groups of 2026-11-16 the footer stats span `market_id` 0 to 2056 or more and both account ids from 93 or less to 2^48 − 1. A filtered read still reads every row group.
 - Trade types on 2026-11-16: `trade` 2,192,564, `market-settlement` 1,874, `liquidation` 1,272, `deleverage` 2.
