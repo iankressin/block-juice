@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import type { Batch } from "#src/source.ts";
-import { dayBatches, dayManifest, listDays, readDay, type DayCall, type DayFile, type LighterS3Env } from "#src/lighter/s3.ts";
+import type { Clock } from "#src/lighter/client.ts";
+import { dayBatches, dayManifest, listDays, readDay, S3_RETRY_WAITS_MS, type DayCall, type DayFile, type LighterS3Env } from "#src/lighter/s3.ts";
 
 const PREFIX = "v1.1/lighter/core/mainnet";
 
@@ -37,17 +38,60 @@ async function writeTrades(path: string) {
   }
 }
 
-type Fake = { env: LighterS3Env; file: Buffer };
+type Fake = { env: LighterS3Env; file: Buffer; requests: string[] };
+
+/** A clock that a sleep moves forward at once. `sleeps` gets each wait. */
+function fakeClock(): Clock & { sleeps: number[] } {
+  let now = 1_000_000;
+  const sleeps: number[] = [];
+  return {
+    sleeps,
+    now: () => now,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      now += ms;
+    },
+  };
+}
+
+type FakeOptions = {
+  file?: Buffer;
+  fileStatus?: number;
+  truncate?: number;
+  /** One status per list request, then 200. */
+  listStatuses?: { status: number; headers?: Record<string, string> }[];
+  /** One status per file request, then the file. `stall` sends headers and no body. */
+  fileStatuses?: (number | "stall")[];
+  /** `repeat` always hands back the same token; `no-token` is truncated with none. */
+  listMode?: "repeat" | "no-token";
+};
 
 /**
  * Fake S3. The list answers two pages. The file route serves `file`, or `fileStatus` when set;
  * `truncate` cuts the body short.
  */
-async function fakeS3(t: TestContext, opts: { file?: Buffer; fileStatus?: number; truncate?: number } = {}): Promise<Fake> {
+async function fakeS3(t: TestContext, opts: FakeOptions = {}): Promise<Fake> {
   const file = opts.file ?? Buffer.alloc(0);
+  const requests: string[] = [];
+  const listStatuses = [...(opts.listStatuses ?? [])];
+  const fileStatuses = [...(opts.fileStatuses ?? [])];
   const server = createServer((req, res) => {
+    requests.push(req.url!);
     const url = new URL(req.url!, "http://s3");
     if (url.searchParams.get("list-type") === "2") {
+      const scripted = listStatuses.shift();
+      if (scripted) {
+        res.writeHead(scripted.status, scripted.headers).end("busy");
+        return;
+      }
+      if (opts.listMode === "repeat") {
+        res.end(`<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>same</NextContinuationToken></ListBucketResult>`);
+        return;
+      }
+      if (opts.listMode === "no-token") {
+        res.end(`<ListBucketResult><IsTruncated>true</IsTruncated></ListBucketResult>`);
+        return;
+      }
       const token = url.searchParams.get("continuation-token");
       const entry = (d: string, etag: string) =>
         `<Contents><Key>${PREFIX}/trades/date=${d}/trades.parquet</Key><ETag>${etag}</ETag><Size>${file.length}</Size></Contents>`;
@@ -59,6 +103,17 @@ async function fakeS3(t: TestContext, opts: { file?: Buffer; fileStatus?: number
               `<Contents><Key>${PREFIX}/trades/</Key><ETag>&quot;x&quot;</ETag><Size>0</Size></Contents>` +
               `${entry("2026-11-14", "&quot;e14&quot;")}${entry("2026-11-15", '"e15"')}</ListBucketResult>`,
       );
+      return;
+    }
+    const next = fileStatuses.shift();
+    if (next === "stall") {
+      res.writeHead(200, { "content-length": String(file.length || 4096) });
+      res.write("x");
+      return;
+    }
+    if (next !== undefined) {
+      res.statusCode = next;
+      res.end("boom");
       return;
     }
     if (opts.fileStatus) {
@@ -77,7 +132,7 @@ async function fakeS3(t: TestContext, opts: { file?: Buffer; fileStatus?: number
       }),
   );
   const { port } = server.address() as AddressInfo;
-  return { env: { LIGHTER_S3_URL: `http://127.0.0.1:${port}`, LIGHTER_S3_PREFIX: PREFIX }, file };
+  return { env: { LIGHTER_S3_URL: `http://127.0.0.1:${port}`, LIGHTER_S3_PREFIX: PREFIX }, file, requests };
 }
 
 async function withParquet(t: TestContext) {
@@ -103,6 +158,67 @@ test("listDays follows continuation tokens and keeps the dates in range", async 
   assert.equal(days[0]!.key, `${PREFIX}/trades/date=2026-11-15/trades.parquet`);
 });
 
+test("a listing that answers 503 then 200 succeeds after the first wait", async (t) => {
+  const { env, requests } = await fakeS3(t, { file: Buffer.from("x"), listStatuses: [{ status: 503 }] });
+  const clock = fakeClock();
+  const days = await listDays(env, "trades", "2026-11-15", "2026-11-16", clock);
+  assert.equal(days.length, 2);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(clock.sleeps, [S3_RETRY_WAITS_MS[0]]);
+});
+
+test("a Retry-After on a retried listing replaces the wait", async (t) => {
+  const { env } = await fakeS3(t, { listStatuses: [{ status: 429, headers: { "retry-after": "7" } }] });
+  const clock = fakeClock();
+  await listDays(env, "trades", "2026-11-15", "2026-11-16", clock);
+  assert.deepEqual(clock.sleeps, [7000]);
+});
+
+test("a listing that keeps failing throws after every wait", async (t) => {
+  const down = { status: 500 };
+  const { env, requests } = await fakeS3(t, { listStatuses: [down, down, down, down] });
+  const clock = fakeClock();
+  await assert.rejects(listDays(env, "trades", "2026-11-15", "2026-11-16", clock), /HTTP 500/);
+  assert.equal(requests.length, 4);
+  assert.deepEqual(clock.sleeps, S3_RETRY_WAITS_MS);
+});
+
+test("a listing that hands back a used continuation token throws, naming the dataset", async (t) => {
+  const { env } = await fakeS3(t, { listMode: "repeat" });
+  await assert.rejects(listDays(env, "trades", "2026-11-15", "2026-11-16", fakeClock()), /list of trades repeated a continuation token/);
+});
+
+test("a truncated page with no continuation token throws", async (t) => {
+  const { env } = await fakeS3(t, { listMode: "no-token" });
+  await assert.rejects(listDays(env, "open_interest_hourly", "2026-11-15", "2026-11-16", fakeClock()), /open_interest_hourly is truncated/);
+});
+
+test("a download that answers 500 then 200 loads the whole file", async (t) => {
+  const { file } = await withParquet(t);
+  const { env, requests } = await fakeS3(t, { file, fileStatuses: [500] });
+  const clock = fakeClock();
+  const chunks = await collect(readDay(env, dayOf(file), { clock }));
+  assert.equal(chunks.flat().length, 4);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(clock.sleeps, [S3_RETRY_WAITS_MS[0]]);
+});
+
+test("a body that stalls after its headers fails at the deadline", async (t) => {
+  const stalled = await fakeS3(t, { file: Buffer.alloc(4096), fileStatuses: ["stall", "stall", "stall", "stall"] });
+  const started = Date.now();
+  await assert.rejects(collect(readDay(stalled.env, dayOf(Buffer.alloc(4096)), { clock: fakeClock(), downloadTimeoutMs: 150 })));
+  assert.equal(stalled.requests.length, 4);
+  assert.ok(Date.now() - started < 10_000);
+});
+
+test("a 404 on a download fails without a retry", async (t) => {
+  const { env, requests } = await fakeS3(t, { fileStatuses: [404] });
+  const clock = fakeClock();
+  await assert.rejects(collect(readDay(env, dayOf(Buffer.alloc(4096)), { clock })), /HTTP 404/);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(clock.sleeps, []);
+});
+
 test("yields a day in chunks of rowsPerChunk rows, ids as strings, times in UTC", async (t) => {
   const { file } = await withParquet(t);
   const { env } = await fakeS3(t, { file });
@@ -118,9 +234,9 @@ test("a failed or short download fails, naming the key, and leaves no temporary 
   const tmpDir = await mkdtemp(join(tmpdir(), "lighter-tmp-"));
   t.after(() => rm(tmpDir, { recursive: true, force: true }));
   const failing = await fakeS3(t, { fileStatus: 500 });
-  await assert.rejects(collect(readDay(failing.env, dayOf(Buffer.alloc(4096)), { tmpDir })), /date=2026-11-16.*HTTP 500/);
+  await assert.rejects(collect(readDay(failing.env, dayOf(Buffer.alloc(4096)), { tmpDir, clock: fakeClock() })), /date=2026-11-16.*HTTP 500/);
   const short = await fakeS3(t, { file: Buffer.alloc(4096), truncate: 100 });
-  await assert.rejects(collect(readDay(short.env, dayOf(Buffer.alloc(4096)), { tmpDir })), /expected 4096 bytes/);
+  await assert.rejects(collect(readDay(short.env, dayOf(Buffer.alloc(4096)), { tmpDir, clock: fakeClock() })), /expected 4096 bytes/);
   assert.deepEqual(await readdir(tmpDir), []);
 });
 
@@ -181,7 +297,7 @@ test("dayBatches turns a failed day into a dead letter with no checkpoint", asyn
   const { env } = await fakeS3(t, { fileStatus: 500 });
   const day = dayOf(Buffer.alloc(4096));
   const batches: Batch<DayCall>[] = await collect(
-    dayBatches(env, day, { rowId: (r) => String(r.id), checkpoint: { key: "k", value: 1 } }),
+    dayBatches(env, day, { rowId: (r) => String(r.id), checkpoint: { key: "k", value: 1 }, clock: fakeClock() }),
   );
   assert.equal(batches.length, 1);
   const b = batches[0]!;
