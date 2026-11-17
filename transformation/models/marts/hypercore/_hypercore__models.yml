@@ -34,3 +34,32 @@ models:
         description: True on the crossed fill of a trade, the taker.
       - name: tid
         data_tests: [not_null]
+
+  - name: hypercore_actions
+    description: >-
+      One row per HyperCore action: one signed order, cancel, modify, transfer or other L1 action by a user
+      the hypercore-actions source follows.
+    columns:
+      - name: id
+        description: The action's key from the raw table, <block>:<actionIndex>.
+        data_tests: [unique, not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: action_index
+        data_tests: [not_null]
+      - name: user_address
+        data_tests: [not_null]
+      - name: vault_address
+        description: The vault the user acted for. Null when the user acted for itself.
+      - name: action_type
+        description: The action's type, such as order, cancelByCloid or batchModify.
+        data_tests: [not_null]
+      - name: status
+        description: ok or err. An ok action can still hold per-item errors in response.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ok, err]
+      - name: response
+        description: The L1's answer. A JSON object for most actions, a JSON string for some rejected ones.
