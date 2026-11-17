@@ -169,50 +169,57 @@ test("a record holds the entry as Lighter sent it, under its call", async (t) =>
   });
 });
 
-test("the hour still accruing waits for the next run", async (t) => {
-  // Hour 1199 opened 30 minutes ago. The fake sends its entry anyway, as "0.00000000".
-  const entry = (i: number) => (i === 1199 ? funding(i, { rate: "0.00000000" }) : funding(i));
-  const url = await fakeLighter(t, { entry });
-  const source = await sourceWith(t, { markets: ["ETH"] }, fakeClock(1199 * HOUR + HOUR / 2));
+test("an entry stamped after the request time waits for the next run", async (t) => {
+  // At 1000:30 the hour 1000 payment is out. Lighter has no later entry yet; the fake sends them anyway.
+  const url = await fakeLighter(t);
+  const source = await sourceWith(t, { markets: ["ETH"] }, fakeClock(1000 * HOUR + HOUR / 2));
 
-  const records = (await run(source, envAt(url))).flatMap((batch) => batch.records);
+  const ids = (await run(source, envAt(url))).flatMap((batch) => batch.records).map((r) => r.id);
 
-  const ids = records.map((r) => r.id);
-  assert.equal(ids.length, 1199);
-  assert.ok(!ids.includes(`0:${1199 * 3600}`));
-  assert.ok(ids.includes(`0:${1198 * 3600}`));
+  assert.equal(ids.length, 1001);
+  assert.ok(ids.includes(`0:${1000 * 3600}`));
+  assert.ok(!ids.includes(`0:${1001 * 3600}`));
 });
 
-test("an open hour waits whatever its rate, and a closed hour with a zero rate loads", async (t) => {
-  // The open hour carries a real rate; hour 600 closed long ago and paid zero, as ETH's 12:00 did.
-  const entry = (i: number) => (i === 1199 ? funding(i, { rate: "0.0007" }) : i === 600 ? funding(i, { rate: "0.0000" }) : funding(i));
+test("an entry stamped exactly at the request time loads", async (t) => {
+  const url = await fakeLighter(t);
+  const source = await sourceWith(t, { markets: ["ETH"] }, fakeClock(1000 * HOUR));
+
+  const ids = (await run(source, envAt(url))).flatMap((batch) => batch.records).map((r) => r.id);
+
+  assert.ok(ids.includes(`0:${1000 * 3600}`));
+  assert.ok(!ids.includes(`0:${1001 * 3600}`));
+});
+
+test("a zero rate loads, whatever the hour", async (t) => {
+  const entry = (i: number) => (i === 600 ? funding(i, { rate: "0.0000" }) : funding(i));
   const url = await fakeLighter(t, { entry });
   const source = await sourceWith(t, { markets: ["ETH"] }, fakeClock(1199 * HOUR + HOUR / 2));
 
   const records = (await run(source, envAt(url))).flatMap((batch) => batch.records);
 
-  const ids = records.map((r) => r.id);
-  assert.ok(!ids.includes(`0:${1199 * 3600}`));
   const zero = records.find((r) => r.id === `0:${600 * 3600}`);
   assert.equal((zero!.data.funding as { rate: string }).rate, "0.0000");
+  assert.ok(records.some((r) => r.id === `0:${1199 * 3600}`));
 });
 
-test("an hour that closes while the reply is on its way waits too", async (t) => {
+test("an hour mark that passes while the reply is on its way waits for the next run", async (t) => {
   let now = 1199 * HOUR + HOUR / 2;
   const clock: Clock = { now: () => now, sleep: async (ms) => void (now += ms) };
   const url = await fakeLighter(t, {
     reply: (query) => {
-      // The last window goes out with hour 1199 open, and the clock passes its close as Lighter answers.
-      if (Number(query.get("start_timestamp")) === 750 * HOUR) now = 1200 * HOUR + 60_000;
-      return undefined;
+      // The last window goes out before hour 1200, and the clock passes its mark as Lighter answers with its entry.
+      if (Number(query.get("start_timestamp")) !== 750 * HOUR) return undefined;
+      now = 1200 * HOUR + 60_000;
+      return { status: 200, body: { code: 200, fundings: [funding(1199), funding(1200)] } };
     },
   });
   const source = await sourceWith(t, { markets: ["ETH"] }, clock);
 
   const records = (await run(source, envAt(url))).flatMap((batch) => batch.records);
 
-  assert.ok(!records.some((r) => r.id === `0:${1199 * 3600}`));
-  assert.equal(records.length, 1199);
+  assert.ok(records.some((r) => r.id === `0:${1199 * 3600}`));
+  assert.ok(!records.some((r) => r.id === `0:${1200 * 3600}`));
 });
 
 test("an entry Lighter sends from outside its window is dropped", async (t) => {
@@ -309,7 +316,7 @@ test("committed history resumes, and a routine run reads only the recent windows
     getCheckpoint: async (k: string) => (k === key ? { origin: 0, next, refreshedAt: NOW } : undefined),
   });
 
-  // Windows 0 and 1 committed: the run resumes at window 1, the last one attempted, which may have held an open hour.
+  // Windows 0 and 1 committed: the run resumes at window 1, the last one attempted, which may have held entries not yet paid.
   const batches = await run(source, envAt(url), [], saved(2 * WINDOW));
   assert.deepEqual(requests.map((r) => r.start), [WINDOW]);
   const checkpoints = batches.flatMap((batch) => batch.checkpoints ?? []).filter((c) => c.key === key);

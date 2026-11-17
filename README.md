@@ -544,7 +544,7 @@ The `lighter` pipeline builds it from the call source `lighter-candles`, which r
 
 `analytics.lighter_funding_rates`
 
-One hourly funding rate per Lighter perp market. Only closed hours load. Covers the perp markets in `markets.json` (ETH and BTC to start), from `START_TIME`. A spot market in `markets.json` fails the run, since spot markets have no funding.
+One hourly funding rate per Lighter perp market. An entry loads once its hour mark has passed. Covers the perp markets in `markets.json` (ETH and BTC to start), from `START_TIME`. A spot market in `markets.json` fails the run, since spot markets have no funding.
 
 The `lighter` pipeline builds it from the call source `lighter-fundings`, which reads Lighter's API in windows of 750 hours. It runs daily at 07:30 UTC.
 
@@ -554,7 +554,7 @@ The `lighter` pipeline builds it from the call source `lighter-fundings`, which 
 | `market_id` | integer | The market's public id in Lighter's API. Join on this, not on `symbol`. |
 | `symbol` | text | The market's name, such as `ETH`. |
 | `funding_time` | timestamptz | The hour mark the rate is paid at. |
-| `rate_pct` | numeric | The rate in percent per hour, unsigned, as Lighter sends it. A closed hour can be 0. |
+| `rate_pct` | numeric | The rate in percent per hour, unsigned, as Lighter sends it. A rate can be 0. |
 | `signed_rate_pct` | numeric | `rate_pct` for `long`, `-rate_pct` for `short`. Positive means longs pay shorts. The paying side is inferred from the funding page's rule; see `catalog/vendors/lighter/NOTES.md`. |
 | `value_usdc_per_unit` | numeric | USDC paid per one unit of base for the hour. |
 | `direction` | text | `long` for a positive rate, `short` for a negative one. |
