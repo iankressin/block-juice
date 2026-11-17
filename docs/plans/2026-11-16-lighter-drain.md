@@ -334,16 +334,16 @@ Ian is building these sources separately. They are out of scope for this plan. T
 ### HyperCore (Hyperliquid L1, not HyperEVM)
 
 - Per-address non-funding ledger updates (deposit, withdraw, internalTransfer, spotTransfer, send) for the 12 depositing addresses, from 2026-11-16 onward.
-- Spot and perp fills for those addresses, including the XMR1 trades on spot pair @260. Hyperliquid's token list names it XMR1, "XMR - Wagyu.xyz", a wrapped Monero token, not native XMR.
+- Spot and perp fills for those addresses, including the XMR1 trades on spot pair @260. Hyperliquid's token list names it XMR1, "XMR - Wagyu.xyz", a wrapped Monero token, not native XMR. Those XMR1 trades were observed via Hyperliquid's public `/info` API for one address (`0x63d09d9b…968c`) on 2026-11-16. The other 11 addresses aren't checked.
 - Withdrawals out of HyperCore.
 - Cross-check: the HyperCore deposit `hash` equals the Arbitrum transaction hash. Verified for one address only: `0x63d09d9b…968c`, Arbitrum tx `0x096e70da…3549` (block 524723328), 287,557.5548 native USDC to the Hyperliquid bridge. The other 11 addresses are not checked yet.
-- Read paths, from Ingestion's check: the public `/info` `userNonFundingLedgerUpdates` endpoint per user, with no key needed; SQD Portal `hyperliquid-fills`, available from 2025-10-02, which has fills only and no ledger; or S3 `misc_events_by_block` or our own node as the sovereign, global option.
+- Read paths. The public `/info` endpoint was actually called for `0x63d09d9b…968c`: ledger (`userNonFundingLedgerUpdates`, no key needed) and fill history. SQD Portal `hyperliquid-fills` (available from 2025-10-02, fills only and no ledger) and S3 `misc_events_by_block` or our own node (the sovereign, global option) are listed as reported options, not exercised in this check.
 
 ### Lighter L2 (zk rollup, not EVM; nothing here is verified yet)
 
-- The account ledger (deposits, withdrawals, transfers between accounts) for the attacker's accounts, including #714723.
+- The account ledger (deposits, withdrawals, transfers between accounts) for the Lighter accounts linked to the drain (e.g. #714723).
 - Trades, orders, liquidations and position changes.
 - Account balance and position snapshots before, during and after the drain.
-- Withdrawal requests and batches that tie each account to the 10.39M L1 withdrawal.
-- Purpose: explain the roughly $15.5M taken and the $5.11M not traced, which may be inside Lighter or may mean the $15.5M figure is wrong.
+- Withdrawal requests and batches that tie each account to the 10,393,056.79 USDC L1 withdrawal (tx `0x5b6f27de…58c9`).
+- Purpose: explain the roughly $15.5M taken, as reported by 0xTria (rounded), and the $5.11M not traced, which may be inside Lighter or may mean the $15.5M figure is wrong.
 - Possible read paths, all unverified: Lighter's API or explorer, or rebuilding state from its L1 batches.
