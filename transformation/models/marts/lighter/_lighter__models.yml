@@ -168,3 +168,69 @@ models:
         description: The mark price at the end of the hour, in USDC.
       - name: open_interest_usd
         description: "`open_interest` times `mark_price`, in USDC."
+
+  - name: lighter_trades
+    description: >-
+      One Lighter trade of the accounts and markets that the lighter-trades source's `addresses.json`
+      lists, from Lighter's daily S3 files. A day's file appears about 07:03 UTC the next day, so only
+      ended days load. Values are in real units, from `catalog/vendors/lighter/NOTES.md`. A binary
+      option has no row in `lighter_markets`, so its `symbol`, `price`, `size` and positions are null.
+    columns:
+      - name: trade_id
+        description: Lighter's trade id, unique across days.
+        data_tests: [unique, not_null]
+      - name: trade_time
+        description: The block time of the trade.
+        data_tests: [not_null]
+      - name: block_number
+        description: The L2 block that holds the trade, the API's `block_height`.
+      - name: trade_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [trade, liquidation, deleverage, market-settlement]
+      - name: market_id
+        description: >-
+          The public market id the API uses: the file's `public_market_index`, or its slot before
+          2026-08-20, when the file has no public id. Join on this, never on `slot_market_id`.
+        data_tests: [not_null]
+      - name: slot_market_id
+        description: The file's `market_id`, a slot that Lighter reuses for later markets.
+      - name: price
+        description: USDC per base unit.
+      - name: size
+        description: Base units.
+      - name: price_raw
+        description: The price as the file holds it, times 10^`price_decimals`.
+        data_tests: [not_null]
+      - name: size_raw
+        description: The size as the file holds it, times 10^`size_decimals`.
+        data_tests: [not_null]
+      - name: notional_usdc
+        description: "`size` times `price`, in USDC."
+      - name: maker_account_index
+        description: The ask account when `is_maker_ask`, else the bid account.
+      - name: taker_account_index
+        description: The other account. 281474976710655 (2^48 − 1) means no account.
+      - name: taker_side
+        description: "`buy` when the taker is the bid account, `sell` when it is the ask."
+      - name: maker_fee_ppm
+        description: The maker fee in parts per million of notional.
+      - name: taker_fee_ppm
+        description: The taker fee in parts per million of notional.
+      - name: ask_order_index
+        description: The ask order's index.
+      - name: bid_order_index
+        description: The bid order's index.
+      - name: maker_position_before
+        description: The maker's position in base units before the trade, negative when short.
+      - name: taker_position_before
+        description: The taker's position in base units before the trade, negative when short.
+      - name: maker_entry_quote_before_usdc
+        description: The entry value of the maker's position before the trade, in USDC.
+      - name: taker_entry_quote_before_usdc
+        description: The entry value of the taker's position before the trade, in USDC.
+      - name: ask_account_pnl
+        description: The ask account's realized pnl from the trade, in USDC. Null when none.
+      - name: bid_account_pnl
+        description: The bid account's realized pnl from the trade, in USDC. Null when none.

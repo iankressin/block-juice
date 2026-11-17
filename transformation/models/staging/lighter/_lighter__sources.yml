@@ -30,3 +30,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: trades
+        identifier: lighter_trades
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
