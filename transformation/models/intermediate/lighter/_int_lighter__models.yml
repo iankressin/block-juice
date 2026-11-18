@@ -582,28 +582,37 @@ unit_tests:
         - {id: "fill:40969901633:maker", account_index: 702389, kind: fill, asset: USDC, route: perps, amount: 0.018977978808, market_id: 0, position_after: -251.8407, trade_id: 40969901633, hash: "4d6b56c60f3586c8905a7e87b9b7538fbd83bdd2e995456e0319b23496fc0a796b6236144799c967", block_number: 391242821, batch_number: 270079, batch_status: executed, execute_tx_hash: "0x3a4b973c2c9475260c0d1c3d404532a076a9cf21f830834f3200e21febccb042", executed_at: "2026-11-17 12:43:23+00"}
         - {id: "fill:40627886190:maker", account_index: 756068, kind: fill, asset: USDC, route: perps, amount: -0.0465548634, market_id: 0, position_after: 0.0853, trade_id: 40627886190, hash: null, block_number: 389272148, batch_number: 268847, batch_status: nothing_to_execute, execute_tx_hash: null, executed_at: null}
 
-  # No exit entry has been loaded, so this one is made up in the shape of the Explorer's API docs
-  # (exit_position_pubdata: account_index, market_index, settlement_price), with batches 270062 and 270063.
+  # The exit test uses the LLP's entries, their blocks and their batches as the Explorer sent them on
+  # 2026-11-18 (catalog/vendors/lighter/NOTES.md, Account logs, L28 and L29).
   - name: an_exit_zeroes_the_position
     description: >-
-      An ExitPosition entry of 313004 on ETH (market_index 0) gives an exit_position row with position_after
-      0 and a null amount, since the entry carries a settlement price but no amount. Its block 391216831 sits
-      in batch 270063 (391216830 to 391218429).
+      The LLP (281474976710654) left market 155 (MAGS) by an ExitPosition entry on 2026-06-10 and market 157
+      (EDGE) by an ExitPositionWithFunding entry on 2026-10-28. Each gives an exit_position row in its
+      market, with position_after 0 and a null amount, since the entry carries a settlement price but no
+      amount. Block 259564659 sits in batch 187775, executed, and block 367828981 in batch 255445,
+      nothing_to_execute.
     model: int_lighter_account_ledger
     given:
       - input: ref('stg_lighter__account_logs')
         format: sql
         rows: |
-          select 313004::bigint as account_index,
-              'e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0'::text as hash,
+          select 281474976710654::bigint as account_index,
+              '000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000'::text as hash,
               'InternalExitPosition'::text as tx_type, 'ExitPosition'::text as pubdata_type,
-              '2026-11-17 11:46:13.3+00'::timestamptz as log_time, 'executed'::text as status,
-              '{"account_index": "313004", "market_index": 0, "settlement_price": "3000.00"}'::jsonb as pubdata
+              '2026-06-10 14:58:00.642+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"account_index": "281474976710654", "market_index": 155, "settlement_price": "65.085"}'::jsonb as pubdata
+          union all
+          select 281474976710654,
+              '00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000',
+              'InternalExitPosition', 'ExitPositionWithFunding', '2026-10-28 14:54:17.639+00', 'nothing_to_execute',
+              '{"account_index": "281474976710654", "market_index": 157, "settlement_price": "0.33160", "funding_rate_prefix_sum": 6406364482}'
       - input: ref('stg_lighter__account_log_details')
         format: sql
         rows: |
-          select 'e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0'::text as hash,
-              391216831::bigint as block_number
+          select '000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000'::text as hash,
+              259564659::bigint as block_number
+          union all
+          select '00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000', 367828981
       - input: ref('lighter_account_movements')
         format: sql
         rows: *no_ledger_movements
@@ -625,14 +634,15 @@ unit_tests:
           where false
       - input: ref('lighter_batches')
         rows:
-          - {batch_number: 270062, first_block: 391215230, last_block: 391216829, status: executed}
-          - {batch_number: 270063, first_block: 391216830, last_block: 391218429, status: nothing_to_execute}
+          - {batch_number: 187775, first_block: 259564112, last_block: 259565711, status: executed, execute_tx_hash: "0x8e3770fc21ad39fd36d94e44f19f3e3e2e5cdd0b88b7fa751bddaff665a83844", executed_at: "2026-06-10 16:13:35+00"}
+          - {batch_number: 255445, first_block: 367828613, last_block: 367830212, status: nothing_to_execute}
       - input: ref('int_lighter_funding_payments')
         format: sql
         rows: *no_funding
     expect:
       rows:
-        - {id: "exit:e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0:313004", account_index: 313004, kind: exit_position, amount: null, market_id: 0, position_after: 0, block_number: 391216831, batch_number: 270063}
+        - {id: "exit:000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000:281474976710654", account_index: 281474976710654, kind: exit_position, amount: null, market_id: 155, position_after: 0, block_number: 259564659, batch_number: 187775, batch_status: executed, execute_tx_hash: "0x8e3770fc21ad39fd36d94e44f19f3e3e2e5cdd0b88b7fa751bddaff665a83844"}
+        - {id: "exit:00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000:281474976710654", account_index: 281474976710654, kind: exit_position, amount: null, market_id: 157, position_after: 0, block_number: 367828981, batch_number: 255445, batch_status: nothing_to_execute, execute_tx_hash: null}
 
   - name: cumulative_amount_runs_per_account_asset_and_route
     description: >-

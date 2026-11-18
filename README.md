@@ -806,7 +806,7 @@ The `lighter` pipeline builds it from [`lighter_account_movements`](#lighter-acc
 - `deposit`, `withdrawal`, `transfer_out`, `transfer_in`, `transfer_fee`, `route_move`, `pool_mint`, `pool_burn`, `stake`, `unstake`, `unlock`, `margin_move`: a leg of `lighter_account_movements`, with its `signed_amount` as `amount`.
 - `fill`: a perp fill, USDC on perps. `amount` is the fill's realized pnl less its fee and its role's integrator fee.
 - `funding`: an hour mark at which the account held a perp position, USDC on perps. Lighter books funding on every open position at each hour mark, with no log entry. `amount` is -position × `value_usdc_per_unit` when the rate's `direction` is `long` and +position × value when it is `short`: the side that `direction` names pays. `value_usdc_per_unit` has 8 decimals, so an hour can miss Lighter's own amount by up to `|position| × 0.5 × 10^-8` USDC.
-- `exit_position`: an `ExitPosition` or `ExitPositionWithFunding` entry, which closes the account's position in `market_id`.
+- `exit_position`: an `ExitPosition` or `ExitPositionWithFunding` entry, which closes the account's position in `market_id`, as when Lighter delists a market.
 
 `amount` is null for `stake`, `unstake`, `unlock` and `margin_move`, whose sign is unproven, and for `exit_position`, whose entry carries a settlement price but no amount. `cumulative_amount` skips those rows. Spot fills stay out until the asset a spot fill's fee is paid in is proven.
 

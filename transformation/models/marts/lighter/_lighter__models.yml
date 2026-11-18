@@ -509,8 +509,7 @@ models:
       - name: market_id
         description: The market of a fill, funding hour or exit. Null for money moves.
         data_tests:
-          # An exit's market comes from a pubdata field named only in the Explorer's API docs; a wrong name
-          # would leave it null.
+          # An exit's market comes from a pubdata field by name (L28, L29); a renamed field would leave it null.
           - not_null:
               config:
                 where: "kind in ('fill', 'funding', 'exit_position')"

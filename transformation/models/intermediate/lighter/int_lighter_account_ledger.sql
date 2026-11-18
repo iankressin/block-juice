@@ -7,9 +7,8 @@
 --   pnl less the fee and the integrator fee of the fill's role. Pnl and fees are USDC (plan 1's P9).
 --   Funding (int_lighter_funding_payments): kind funding, USDC on perps, one row per hour mark.
 --   Position exits (ExitPosition and ExitPositionWithFunding entries): kind exit_position, position_after
---   0 and a null amount, since the entry carries a settlement price but no amount. The market comes from
---   pubdata's market_index, a name from the Explorer's API docs: no exit entry has been loaded yet, so the
---   mart's not_null test on market_id catches a wrong name.
+--   0 and a null amount, since the entry carries a settlement price but no amount. The market is pubdata's
+--   market_index, as in the LLP's real entries of both types (L28, L29).
 -- Liquidations and deleverages need nothing more: plan 1's S3 trades hold them as fills, with trade_type
 -- liquidation and deleverage. Left out: spot fills, until the asset a spot fill's fee is paid in is proven
 -- (Decision 9); binary options, which have no lighter_markets row; and InternalLiquidateSpot and
