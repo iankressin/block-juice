@@ -309,8 +309,8 @@ endpoints:
       blocks: {note: "[{block_number, updated_at, total_transactions}], a contiguous range in order; consecutive batches meet (L12)."}
       status_changes: {note: "[{hash, updated_at, batch_status}], oldest first. committed, then verified and executed, or nothing_to_execute with the verify hash. Empty on every batch read from 28910 to 29653; 29654 to 29668 have no committed entry (L11)."}
     final: >-
-      A batch is final once a status change is executed or nothing_to_execute. Every deposit and
-      withdrawal checked sat in an executed batch, and transfers in either (L20). Batches 28910 to 29653
+      A batch is final once a status change is executed or nothing_to_execute. Every withdrawal
+      checked sat in an executed batch; deposits and transfers sat in either (L20). Batches 28910 to 29653
       never reach either.
     source: The Get Batch by Id page, and replies on 2026-11-17 and 2026-11-18 (NOTES.md, Batches and L1 settlement).
   explorer_account_logs:
