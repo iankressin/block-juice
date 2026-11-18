@@ -523,6 +523,45 @@ unit_tests:
         - {account_index: 693073, market_id: 0, funding_time: "2026-11-17 13:00:00+00", position: -1.2821, value_usdc_per_unit: 0.01641159, direction: long, amount: 0.021041299539}
         - {account_index: 313004, market_id: 0, funding_time: "2026-11-17 16:00:00+00", position: 0.7863, value_usdc_per_unit: 0.00535704, direction: short, amount: 0.004212240552}
 
+  # A break in the fill chain: lighter_account_fills holds only the trades lighter-trades loads, so an account
+  # it does not load in full has gaps. 313004's fill at 12:16:48 is real; the rest are made up around it.
+  - name: a_break_in_the_fill_chain_drops_the_hours_it_hides
+    description: >-
+      313004's fill at 12:16:48 leaves it long 0.7863, but its next fill, at 15:30, starts from 1.5, so trades
+      between them are not loaded and its position at 13:00 and 14:00 is unknown: those hours have no row.
+      At 16:00 it holds that fill's 1.2 and receives 0.006428448 (value 0.00535704, short). 693073's chain
+      holds, short 1.2821 from 12:16 to 15:30, so it receives at 13:00 (0.021041299539) and 14:00
+      (value 0.01280559, long: 0.016418046939), and pays 0.00535704 on its short 1 at 16:00.
+    model: int_lighter_funding_payments
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+          - {account_index: 693073}
+      - input: ref('lighter_account_fills')
+        rows:
+          - {id: "40969901633:taker", trade_id: 40969901633, trade_time: "2026-11-17 12:16:48.698+00", market_id: 0, account_index: 313004, position_before: 0.7974, position_after: 0.7863}
+          - {id: "4:taker", trade_id: 4, trade_time: "2026-11-17 15:30:00+00", market_id: 0, account_index: 313004, position_before: 1.5, position_after: 1.2}
+          - {id: "5:maker", trade_id: 5, trade_time: "2026-11-17 12:16:53+00", market_id: 0, account_index: 693073, position_before: 0, position_after: -1.2821}
+          - {id: "6:maker", trade_id: 6, trade_time: "2026-11-17 15:30:00+00", market_id: 0, account_index: 693073, position_before: -1.2821, position_after: -1}
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        rows:
+          - {trade_id: 6, trade_time: "2026-11-17 15:30:00+00"}
+      - input: ref('lighter_funding_rates')
+        rows:
+          - {id: "0:1794920400", market_id: 0, symbol: ETH, funding_time: "2026-11-17 13:00:00+00", value_usdc_per_unit: 0.01641159, direction: long}
+          - {id: "0:1794924000", market_id: 0, symbol: ETH, funding_time: "2026-11-17 14:00:00+00", value_usdc_per_unit: 0.01280559, direction: long}
+          - {id: "0:1794931200", market_id: 0, symbol: ETH, funding_time: "2026-11-17 16:00:00+00", value_usdc_per_unit: 0.00535704, direction: short}
+    expect:
+      rows:
+        - {account_index: 313004, funding_time: "2026-11-17 16:00:00+00", position: 1.2, amount: 0.006428448}
+        - {account_index: 693073, funding_time: "2026-11-17 13:00:00+00", position: -1.2821, amount: 0.021041299539}
+        - {account_index: 693073, funding_time: "2026-11-17 14:00:00+00", position: -1.2821, amount: 0.016418046939}
+        - {account_index: 693073, funding_time: "2026-11-17 16:00:00+00", position: -1, amount: -0.00535704}
+
   # The int_lighter_account_ledger tests give every input; the empty ones share the fixtures named here. The
   # fill test uses trades 40969901633 and 40627886190 and batches 270078 to 270079 and 268847 as loaded on
   # 2026-11-18.

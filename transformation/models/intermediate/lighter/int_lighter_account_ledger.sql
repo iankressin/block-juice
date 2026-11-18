@@ -5,7 +5,8 @@
 --   unstake, unlock and margin moves keep a null amount: their sign is unproven (L24 to L27).
 --   Perp fills (lighter_account_fills, market_type perp): kind fill, USDC on perps, amount the realized
 --   pnl less the fee and the integrator fee of the fill's role. Pnl and fees are USDC (plan 1's P9).
---   Funding (int_lighter_funding_payments): kind funding, USDC on perps, one row per hour mark.
+--   Funding (int_lighter_funding_payments): kind funding, USDC on perps, one row per hour mark, except marks
+--   hidden by a gap in the loaded fills (see that model).
 --   Position exits (ExitPosition and ExitPositionWithFunding entries): kind exit_position, position_after
 --   0 and a null amount, since the entry carries a settlement price but no amount. The market is pubdata's
 --   market_index, as in the LLP's real entries of both types (L28, L29).
