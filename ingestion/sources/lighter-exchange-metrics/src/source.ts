@@ -64,7 +64,7 @@ async function fetchSeries(lighter: LighterClient, call: MetricCall, clock: Cloc
   const cutoff = clock.now();
   const query: Record<string, string> = { period: "all", kind: call.kind };
   if (call.market !== null) Object.assign(query, { filter: "byMarket", value: call.market });
-  const reply = metricsReply.parse(await lighter.get("/api/v1/exchangeMetrics", query));
+  const reply = await lighter.get("/api/v1/exchangeMetrics", query, metricsReply);
   return reply.metrics
     .filter((point) => point.timestamp * 1000 + DAY_MS <= cutoff)
     .map((point) => ({

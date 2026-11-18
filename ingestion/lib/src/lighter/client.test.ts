@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
+import * as z from "zod";
 import { retryAfterMs, type Clock } from "#src/clock.ts";
 import { createLighterClient, lighterEnv } from "#src/lighter/client.ts";
 import { RETRY_AFTER_CAP_MS } from "#src/lighter/retry.ts";
+
+const anyReply = z.looseObject({});
 
 /** `status` 0 drops the connection instead of answering. */
 type Reply = { status: number; body: unknown; headers?: Record<string, string> };
@@ -81,7 +84,7 @@ async function setup(t: TestContext, replies: Reply[] = [], { perMinute = 15, de
 
 test("spaces requests by 60000 / LIGHTER_REQUESTS_PER_MINUTE ms", async (t) => {
   const { client, clock } = await setup(t);
-  for (let i = 0; i < 3; i++) await client.get("/api/v1/x");
+  for (let i = 0; i < 3; i++) await client.get("/api/v1/x", {}, anyReply);
   assert.deepEqual(clock.sleeps, [4000, 4000]);
 });
 
@@ -90,7 +93,7 @@ test("a 429 waits and is sent again", async (t) => {
     { status: 429, body: { code: 429, message: "slow down" } },
     { status: 200, body: { code: 200, x: 1 } },
   ]);
-  assert.deepEqual(await client.get("/api/v1/x"), { code: 200, x: 1 });
+  assert.deepEqual(await client.get("/api/v1/x", {}, anyReply), { code: 200, x: 1 });
   assert.equal(requests.length, 2);
   // 4000 ms spacing less the 2000 ms retry wait leaves 2000 ms more.
   assert.deepEqual(clock.sleeps, [2000, 2000]);
@@ -100,7 +103,7 @@ test("retries wait 2 s, 10 s, then 60 s, and the fourth failure is thrown", asyn
   const down = { status: 429, body: { code: 429, message: "slow down" } };
   // 60 a minute spaces requests by 1000 ms, so every sleep here is a retry wait.
   const { client, clock, requests } = await setup(t, [down, down, down, down], { perMinute: 60 });
-  await assert.rejects(client.get("/api/v1/x"), /HTTP 429/);
+  await assert.rejects(client.get("/api/v1/x", {}, anyReply), /HTTP 429/);
   assert.equal(requests.length, 4);
   assert.deepEqual(clock.sleeps, [2000, 10_000, 60_000]);
 });
@@ -116,7 +119,7 @@ test("a 405, a 5xx and a dropped connection are each sent again", async (t) => {
     ],
     { perMinute: 60 },
   );
-  assert.deepEqual(await client.get("/api/v1/x"), { code: 200, x: 2 });
+  assert.deepEqual(await client.get("/api/v1/x", {}, anyReply), { code: 200, x: 2 });
   assert.equal(requests.length, 4);
   assert.deepEqual(clock.sleeps, [2000, 10_000, 60_000]);
 });
@@ -127,33 +130,33 @@ const ok: Reply = { status: 200, body: { code: 200 } };
 test("Retry-After in seconds replaces the first retry wait", async (t) => {
   // 60 a minute spaces requests by 1000 ms, so the only sleep is the retry wait.
   const { client, clock } = await setup(t, [slow({ "retry-after": "5" }), ok], { perMinute: 60 });
-  await client.get("/api/v1/x");
+  await client.get("/api/v1/x", {}, anyReply);
   assert.deepEqual(clock.sleeps, [5000]);
 });
 
 test("Retry-After as an HTTP date waits until that date", async (t) => {
   const date = new Date(1_000_000 + 7000).toUTCString();
   const { client, clock } = await setup(t, [slow({ "retry-after": date }), ok], { perMinute: 60 });
-  await client.get("/api/v1/x");
+  await client.get("/api/v1/x", {}, anyReply);
   assert.deepEqual(clock.sleeps, [7000]);
 });
 
 test("a Retry-After above the cap waits the cap", async (t) => {
   const { client, clock } = await setup(t, [slow({ "retry-after": "86400" }), ok], { perMinute: 60 });
-  await client.get("/api/v1/x");
+  await client.get("/api/v1/x", {}, anyReply);
   assert.deepEqual(clock.sleeps, [RETRY_AFTER_CAP_MS]);
 });
 
 test("an invalid Retry-After falls back to the retry wait", async (t) => {
   const { client, clock } = await setup(t, [slow({ "retry-after": "soon" }), ok], { perMinute: 60 });
-  await client.get("/api/v1/x");
+  await client.get("/api/v1/x", {}, anyReply);
   assert.deepEqual(clock.sleeps, [2000]);
 });
 
 test("Retry-After does not add attempts", async (t) => {
   const down = slow({ "retry-after": "1" });
   const { client, requests } = await setup(t, [down, down, down, down, down], { perMinute: 60 });
-  await assert.rejects(client.get("/api/v1/x"), /HTTP 429/);
+  await assert.rejects(client.get("/api/v1/x", {}, anyReply), /HTTP 429/);
   assert.equal(requests.length, 4);
 });
 
@@ -171,7 +174,7 @@ test("retryAfterMs reads seconds, decimals and HTTP dates, and refuses the rest"
 
 test("concurrent gets run one at a time, spaced as in a row", async (t) => {
   const { client, clock, requests, state } = await setup(t, [], { delayMs: 20 });
-  await Promise.all([client.get("/api/v1/x"), client.get("/api/v1/x"), client.get("/api/v1/x")]);
+  await Promise.all([client.get("/api/v1/x", {}, anyReply), client.get("/api/v1/x", {}, anyReply), client.get("/api/v1/x", {}, anyReply)]);
   assert.equal(requests.length, 3);
   assert.equal(state.maxInFlight, 1);
   assert.deepEqual(clock.sleeps, [4000, 4000]);
@@ -181,20 +184,34 @@ test("a 400 fails at once, quoting Lighter's message", async (t) => {
   const { client, requests } = await setup(t, [
     { status: 400, body: { code: 20001, message: "invalid param : auth required" } },
   ]);
-  await assert.rejects(client.get("/api/v1/x"), /HTTP 400 .*20001.*invalid param : auth required/);
+  await assert.rejects(client.get("/api/v1/x", {}, anyReply), /HTTP 400 .*20001.*invalid param : auth required/);
   assert.equal(requests.length, 1);
 });
 
 test("a 200 whose body is not JSON fails without a retry", async (t) => {
   const { client, clock, requests } = await setup(t, [{ status: 200, body: undefined }]);
-  await assert.rejects(client.get("/api/v1/x"), /Lighter \/api\/v1\/x/);
+  await assert.rejects(client.get("/api/v1/x", {}, anyReply), /Lighter \/api\/v1\/x/);
   assert.equal(requests.length, 1);
   assert.deepEqual(clock.sleeps, []);
 });
 
 test("a reply whose code is not 200 fails", async (t) => {
   const { client } = await setup(t, [{ status: 200, body: { code: 21500, message: "x" } }]);
-  await assert.rejects(client.get("/api/v1/x"), /code 21500/);
+  await assert.rejects(client.get("/api/v1/x", {}, anyReply), /code 21500/);
+});
+
+test("a reply in the wrong shape fails once, naming the path", async (t) => {
+  const { client, clock, requests } = await setup(t, [{ status: 200, body: { code: 200, x: "text" } }]);
+  await assert.rejects(client.get("/api/v1/x", {}, z.object({ x: z.number() })), /Lighter sent \/api\/v1\/x in an unexpected shape/);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(clock.sleeps, []);
+});
+
+test("a 200 whose body is null fails without a retry", async (t) => {
+  const { client, clock, requests } = await setup(t, [{ status: 200, body: null }]);
+  await assert.rejects(client.get("/api/v1/x", {}, anyReply), /not a JSON object/);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(clock.sleeps, []);
 });
 
 test("resolveMarkets finds perp and spot symbols and fails on an unknown one, naming it", async (t) => {

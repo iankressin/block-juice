@@ -80,14 +80,16 @@ const fundingReply = z.object({ fundings: z.array(z.looseObject({ timestamp: z.n
  */
 async function fetchWindow(lighter: LighterClient, call: FundingCall, clock: Clock): Promise<RawRecord[]> {
   const cutoff = clock.now();
-  const reply = fundingReply.parse(
-    await lighter.get("/api/v1/fundings", {
+  const reply = await lighter.get(
+    "/api/v1/fundings",
+    {
       market_id: call.market_id,
       resolution: "1h",
       start_timestamp: call.start_time,
       end_timestamp: call.end_time,
       count_back: 0,
-    }),
+    },
+    fundingReply,
   );
   return reply.fundings
     .filter(({ timestamp }) => {

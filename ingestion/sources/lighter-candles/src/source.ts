@@ -103,14 +103,16 @@ const candleReply = z.object({ c: z.array(z.looseObject({ t: z.number() })) });
 async function fetchWindow(lighter: LighterClient, call: CandleCall, clock: Clock): Promise<RawRecord[]> {
   const span = RESOLUTION_MS[call.resolution];
   const cutoff = clock.now();
-  const reply = candleReply.parse(
-    await lighter.get(PATHS[call.price], {
+  const reply = await lighter.get(
+    PATHS[call.price],
+    {
       market_id: call.market_id,
       resolution: call.resolution,
       start_timestamp: call.start_time,
       end_timestamp: call.end_time,
       count_back: 0,
-    }),
+    },
+    candleReply,
   );
   return reply.c
     .filter(({ t }) => t >= call.start_time && t <= call.end_time && t + span <= cutoff)

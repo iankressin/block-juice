@@ -12,10 +12,11 @@ export const lighterEnv = z.object({
 
 export type LighterEnv = z.infer<typeof lighterEnv>;
 
-// A request that gets 429, 405 or a 5xx waits and tries again (see retry.ts), and so does one that loses its connection or times out.
 const TIMEOUT_MS = 60_000;
 
+// Lighter's error replies and its 200 replies both carry `code` and `message`.
 const errorBody = z.object({ code: z.number().optional(), message: z.string().optional() });
+const envelope = z.looseObject({ code: z.unknown().optional(), message: z.unknown().optional() });
 
 function parseJson(text: string): unknown {
   try {
@@ -56,8 +57,8 @@ const detailsReply = z.object({
 });
 
 export type LighterClient = {
-  /** One GET. Resolves with the body once Lighter's `code` is 200. */
-  get(path: string, query?: Record<string, string | number | boolean>): Promise<Record<string, unknown>>;
+  /** One GET. Resolves with the body, checked against `schema`, once Lighter's `code` is 200. */
+  get<T extends z.ZodType>(path: string, query: Record<string, string | number | boolean>, schema: T): Promise<z.output<T>>;
   /** Every market, perps then spots. */
   markets(): Promise<LighterMarket[]>;
   /** The market for each symbol, once each and in first-seen order. Throws on an unknown symbol. */
@@ -70,7 +71,9 @@ export function createLighterClient(env: LighterEnv, clock: Clock = systemClock)
   let lastStartAt = -Infinity;
   let queue: Promise<unknown> = Promise.resolve();
 
-  function send(request: URL): Promise<Record<string, unknown>> {
+  // A request that gets 429, 405 or a 5xx waits and tries again (see retry.ts), and so does one that
+  // loses its connection or times out.
+  function send(request: URL): Promise<unknown> {
     return withRetries(request.pathname, clock, async () => {
       // Each attempt waits its turn, so a retry counts against the rate too.
       const waitMs = lastStartAt + spacingMs - clock.now();
@@ -78,32 +81,47 @@ export function createLighterClient(env: LighterEnv, clock: Clock = systemClock)
       lastStartAt = clock.now();
       const response = await observedFetch(request, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!response.ok) throw await lighterError(response, clock.now());
-      const body = (await response.json()) as Record<string, unknown>;
-      if (body.code !== 200) {
-        throw new LighterError(`Lighter answered code ${String(body.code)}: ${String(body.message ?? "")}`, false, {
+      const body: unknown = await response.json();
+      const checked = envelope.safeParse(body);
+      if (!checked.success) {
+        throw new LighterError(`Lighter answered ${request.pathname} with a body that is not a JSON object`, false, {
           status: response.status,
-          code: typeof body.code === "number" ? body.code : undefined,
+        });
+      }
+      const { code, message } = checked.data;
+      if (code !== 200) {
+        throw new LighterError(`Lighter answered code ${String(code)}: ${String(message ?? "")}`, false, {
+          status: response.status,
+          code: typeof code === "number" ? code : undefined,
         });
       }
       return body;
     });
   }
 
-  function get(path: string, query: Record<string, string | number | boolean> = {}) {
+  function get<T extends z.ZodType>(
+    path: string,
+    query: Record<string, string | number | boolean>,
+    schema: T,
+  ): Promise<z.output<T>> {
     const request = new URL(path, env.LIGHTER_API_URL);
     for (const [key, value] of Object.entries(query)) request.searchParams.set(key, String(value));
-    // One request at a time: each call joins the queue behind the last.
-    const result = queue.then(() => send(request));
+    // One request at a time: each call joins the queue behind the last. The shape check runs after
+    // the retries, so a reply in the wrong shape is not asked for again.
+    const result = queue.then(async () => {
+      const parsed = schema.safeParse(await send(request));
+      if (!parsed.success) {
+        throw new Error(`Lighter sent ${path} in an unexpected shape:\n${z.prettifyError(parsed.error)}`);
+      }
+      return parsed.data;
+    });
     queue = result.catch(() => undefined);
     return result;
   }
 
   async function markets() {
-    const parsed = detailsReply.safeParse(await get("/api/v1/orderBookDetails"));
-    if (!parsed.success) {
-      throw new Error(`Lighter sent orderBookDetails in an unexpected shape:\n${z.prettifyError(parsed.error)}`);
-    }
-    return [...parsed.data.order_book_details, ...parsed.data.spot_order_book_details];
+    const reply = await get("/api/v1/orderBookDetails", {}, detailsReply);
+    return [...reply.order_book_details, ...reply.spot_order_book_details];
   }
 
   return {
