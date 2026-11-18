@@ -1,6 +1,6 @@
 # Lighter: notes
 
-These notes cover the hosts, endpoints and S3 files in `vendor.yaml`. Every limit, field and value below comes from the Lighter docs that `vendor.yaml` lists, or from replies of `mainnet.zklighter.elliot.ai`, `explorer.elliot.ai` and the public S3 bucket on 2026-11-17 and, for plan 2, 2026-11-18. Two proof tables at the end give the command that rebuilds each fact: plan 1's rows P1 to P16, and plan 2's rows L11 to L21.
+These notes cover the hosts, endpoints and S3 files in `vendor.yaml`. Every limit, field and value below comes from the Lighter docs that `vendor.yaml` lists, or from replies of `mainnet.zklighter.elliot.ai`, `explorer.elliot.ai` and the public S3 bucket on 2026-11-17 and, for plan 2, 2026-11-18. Two proof tables at the end give the command that rebuilds each fact: plan 1's rows P1 to P16, and plan 2's rows L11 to L29.
 
 Three answers that later tasks branch on:
 
@@ -72,7 +72,7 @@ Three answers that later tasks branch on:
 
 ## For plan 2
 
-Plan 2 reads the Explorer and six exchange endpoints that plan 1 does not: `account`, `accountsByL1Address`, `pnl`, `assetDetails`, `systemConfig` and `publicPoolsMetadata`. The facts below come from replies on 2026-11-17 and 2026-11-18. The plan 2 proof table at the end rebuilds them as rows L11 to L27; plan 1's P16 rebuilds the first look at `tx`, `logs/{hash}` and batch ranges.
+Plan 2 reads the Explorer and six exchange endpoints that plan 1 does not: `account`, `accountsByL1Address`, `pnl`, `assetDetails`, `systemConfig` and `publicPoolsMetadata`. The facts below come from replies on 2026-11-17 and 2026-11-18. The plan 2 proof table at the end rebuilds them as rows L11 to L29; plan 1's P16 rebuilds the first look at `tx`, `logs/{hash}` and batch ranges.
 
 Four answers that later tasks branch on:
 
@@ -109,6 +109,7 @@ Four answers that later tasks branch on:
 - **Units.** Values are decimal strings with the asset's decimals (`"104503.000000"` USDC, `"42328.20000000"` LIT), assets are symbols (`"asset_index":"USDC"`) and routes are `PERPS` or `SPOT`. One exception: `deleverage_pubdata_with_funding.quote` is an integer string (`"100958557736"`) next to a decimal `size` (`"0.90000"`).
 - V1 and V2 shapes coexist: `l1_deposit_pubdata {l1_address, usdc_amount, account_index}`; `l1_deposit_pubdata_v2 {account_index, l1_address, asset_index, route_type, accepted_amount}`; `withdraw_pubdata {from_account_index, usdc_amount}`; `withdraw_pubdata_v2 {from_account_index, asset_index, route_type, amount}`; `l2_transfer_pubdata {from_account_index, to_account_index, usdc_amount}`; `l2_transfer_pubdata_v2 {from_account_index, to_account_index, fee_account_index, asset_index, from_route_type, to_route_type, amount, usdc_fee}`. A transfer with `from = to` moves funds between one account's routes: account 1000 moved 104508.6 USDC from SPOT to PERPS at 2025-12-30 08:07:07.
 - Pool, staking and margin shapes, each from one real entry (L22 to L27): `l2_mint_shares_pubdata {account_index, public_pool_index, share_amount, usdc_amount}`; `burned_shares_pubdata {account_index, public_pool_index, shares_to_burn, operator_fee_share_amount, shares_to_burn_usdc}`; `l2_stake_assets_pubdata {account_index, staking_pool_index, share_amount, lit_amount}`; `unstake_assets_pubdata` with the same keys; `executed_pending_unlock_pubdata {account_index, asset_symbol, amount}`; `l2_update_margin_pubdata {account_index, market_index, usdc_amount, direction}`. Pool and market indexes are JSON numbers, not strings. 693073 unstaked 10228.37989914 LIT on 2026-10-01 and an unlock of that amount followed on 2026-10-04, with a made-up hash and `tx_type` `InternalPendingUnlock`. What `direction` means on a margin update, and which way stake, unstake and unlock move a balance, are unproven.
+- Position exit shapes, each from one real entry of the LLP, 281474976710654 (L28, L29): `exit_position_pubdata {account_index, market_index, settlement_price}`; `exit_position_pubdata_with_funding` adds `funding_rate_prefix_sum`. `account_index` is a string, `market_index` and the prefix JSON numbers. Both types come with `tx_type` `InternalExitPosition` and a made-up hash. The LLP's log holds 3 `ExitPosition` and 22 `ExitPositionWithFunding` entries, one per market. The two read close its positions in markets since delisted: 155 (MAGS) on 2026-06-10 and 157 (EDGE) on 2026-10-28 are `inactive` in `orderBookDetails` today. An exit carries a settlement price but no size or amount.
 - **Hashes.** Each fill gets its own hash. An order of 313004 that filled twice against maker 702389 at 12:19:09.815 on 2026-11-17 shows as an `L2CreateOrder` entry (size 0.0071) and an `InternalClaimOrder` entry (0.3895) with a made-up hash, `000000234fdcd5fa000001a1e9726177…`. L1 withdrawals get the same kind: `00000000001782c02e00000130…` (L16). No two distinct entries share a hash in L19.
 - **The walk.** New entries push old ones onto the next page, so a walk by `offset` reads some entries twice: 6 in L19's 52 pages. 313004's ledger types from 2026-11-14 04:26 to 2026-11-18 12:57 are 5,115 `TradeWithFunding` and 1 `WithdrawV2`, about 1,170 a day, or 12 pages. Its plain `Trade` entries, over 100K a week, are what the filter skips.
 - `GET /logs/{hash}` returns the entry plus `block_number` and `batch_number`, null until batched. It answers for any entry since 2025-08-25 (L16). The deposit `00000000001e5aa83d…` of account 693073 sits in block 389893328 and batch 269235 (389892030 to 389893629), executed at 18:08:47 on 2026-11-16 by `0x0fc6217e…`. For trade 40627877458's hash it gives block 389272097 and batch 268847 (P16).
@@ -388,8 +389,10 @@ Space Explorer calls by weight: 6 s after an account-log page, 2 s after any oth
 | L25 | An `UnstakeAssets` entry of 693073 | `["UnstakeAssets","2026-10-01T15:56:02.532Z",346424647,242066,{"unstake_assets_pubdata":{"account_index":"693073","staking_pool_index":281474976624800,"share_amount":"975743814","lit_amount":"10228.37989914"}}]` |
 | L26 | An `ExecutedPendingUnlock` entry of 693073 | `["ExecutedPendingUnlock","2026-10-04T15:56:02.608Z",348316241,243248,{"executed_pending_unlock_pubdata":{"account_index":"693073","asset_symbol":"LIT","amount":"10228.37989914"}}]` |
 | L27 | An `L2UpdateMargin` entry of 693073 | `["L2UpdateMargin","2026-09-09T14:39:54.465Z",329163051,231276,{"l2_update_margin_pubdata":{"account_index":"693073","market_index":93,"usdc_amount":"2.710264","direction":1}}]` |
+| L28 | An `ExitPosition` entry of the LLP, and the exits in its log | walks: `[3,[155,133,4096]]`, `[22,[157,57,75,124,89,80,51,213,154,150,170,173,169,152,135,125,81,70,148,143,142,140]]`; `["ExitPosition","InternalExitPosition","2026-06-10T14:58:00.642Z",259564659,187775,{"exit_position_pubdata":{"account_index":"281474976710654","market_index":155,"settlement_price":"65.085"}}]`; `[187775,259564112,259565711,"executed"]` |
+| L29 | An `ExitPositionWithFunding` entry of the LLP, and both markets delisted | `["ExitPositionWithFunding","InternalExitPosition","2026-10-28T14:54:17.639Z",367828981,255445,{"exit_position_pubdata_with_funding":{"account_index":"281474976710654","market_index":157,"settlement_price":"0.33160","funding_rate_prefix_sum":6406364482}}]`; `[255445,367828613,367830212,"nothing_to_execute"]`; `[[155,"MAGS","inactive"],[157,"EDGE","inactive"]]` |
 
-L18, L19, L20 and L21 read live data, so a rerun prints other numbers of the same shape: L18's edge may move, L19's second and third numbers stay equal, L20's last two numbers stay equal on each line, and L21's two numbers stay within the rounding of `value` and its prefix counts stay equal. L14's count grows by one a day.
+L18, L19, L20 and L21 read live data, so a rerun prints other numbers of the same shape: L18's edge may move, L19's second and third numbers stay equal, L20's last two numbers stay equal on each line, and L21's two numbers stay within the rounding of `value` and its prefix counts stay equal. L14's count grows by one a day. L28's walks grow as Lighter delists markets the LLP holds.
 
 **L11.** Batch 28910, then the edges of the batches with no status (29653 and below) and with no commit (29654 to 29668).
 
@@ -533,4 +536,20 @@ for h in ac1f7b9de3492e2bc9eac8adeefbce56c44cb7fb326afe02a26da977ec97d15e132c401
   ae2ea19e23847b4063cc330bc56533ac113894bb8868d54dc537809d778c8649f1380d574631f03d; do
   sleep 2; curl -s "$EXP/logs/$h" | jq -c '[.pubdata_type, .time, .block_number, .batch_number, .pubdata]'
 done
+```
+
+**L28 and L29.** The LLP's log walked one exit type at a time, printing how many entries it holds and each one's market; then one entry of each type with its tx type, time, block, batch and pubdata; the range and last status of each one's batch; and the two markets' status today. Accounts 1000, 150000 and the other pools were not needed: the LLP was the first account tried.
+
+```sh
+for t in ExitPosition ExitPositionWithFunding; do
+  sleep 6; curl -s "$EXP/accounts/281474976710654/logs?pub_data_type=$t&limit=100" | jq -c '[length, [.[] | .pubdata[].market_index]]'
+done
+for h in 000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000 \
+  00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000; do
+  sleep 2; curl -s "$EXP/logs/$h" | jq -c '[.pubdata_type, .tx_type, .time, .block_number, .batch_number, .pubdata]'
+done
+for b in 187775 255445; do
+  sleep 2; curl -s "$EXP/batches/$b" | jq -c '[.batch_number, ([.blocks[].block_number] | min), ([.blocks[].block_number] | max), .status_changes[-1].batch_status]'
+done
+sleep 1.1; curl -s "$API/orderBookDetails" | jq -c '[(.order_book_details + .spot_order_book_details)[] | select(.market_id == 155 or .market_id == 157) | [.market_id, .symbol, .status]]'
 ```
