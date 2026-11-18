@@ -305,3 +305,53 @@ models:
         description: True when the trade changed the sign of the account's position.
       - name: realized_pnl
         description: The pnl the trade realized for this account, in USDC. Null when none.
+
+  - name: lighter_batches
+    description: >-
+      One Lighter L1 batch: the block range it holds, its tx count, its status, and the hash and time of
+      its commit, verify and execute on Ethereum. Join an L2 block to its batch on `block_number between
+      first_block and last_block`; the test `lighter_batches_are_contiguous` fails when a range has a gap
+      or two loaded neighbours do not meet. A batch is final once a status change is `executed` or
+      `nothing_to_execute`; until then each run reads it again. Batches before 29654 carry no L1 status,
+      so they stay `pending`; see `catalog/vendors/lighter/NOTES.md`.
+    columns:
+      - name: batch_number
+        data_tests: [unique, not_null]
+      - name: first_block
+        description: The lowest L2 block the batch holds.
+      - name: last_block
+        description: The highest L2 block the batch holds.
+      - name: block_count
+        description: How many blocks the batch lists. Equals `last_block - first_block + 1`.
+      - name: tx_count
+        description: The sum of the blocks' `total_transactions`.
+      - name: first_block_time
+        description: The first block's time, to the microsecond.
+      - name: last_block_time
+        description: The last block's time, to the microsecond.
+      - name: status
+        description: >-
+          The latest status change's, or `pending` with none. `committed` → `verified` → `executed`, or
+          `committed` → `nothing_to_execute` for a verified batch with no L1 work left.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [pending, committed, verified, executed, nothing_to_execute]
+      - name: is_final
+        description: True once a status change is `executed` or `nothing_to_execute`. A final batch changes no more.
+      - name: commit_tx_hash
+        description: The Ethereum tx that committed the batch. Null until then, and on batches 29654 to 29668.
+      - name: committed_at
+        description: When the status change carrying `commit_tx_hash` happened.
+      - name: verify_tx_hash
+        description: The Ethereum tx that verified the batch. A `nothing_to_execute` change carries it too.
+      - name: verified_at
+        description: When the status change carrying `verify_tx_hash` happened.
+      - name: execute_tx_hash
+        description: The Ethereum tx that executed the batch. Null on a `nothing_to_execute` batch. One tx can execute several batches.
+      - name: executed_at
+        description: When the status change carrying `execute_tx_hash` happened.
+      - name: final_at
+        description: When the first `executed` or `nothing_to_execute` change happened.
+      - name: updated_at
+        description: When the Explorer last updated the batch.

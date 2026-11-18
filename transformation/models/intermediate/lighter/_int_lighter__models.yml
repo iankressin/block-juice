@@ -171,3 +171,80 @@ unit_tests:
     expect:
       rows:
         - {id: "7:maker", account_index: 313004, role: maker, side: buy, signed_size: 1, position_before: 2, position_after: 3}
+
+  # The int_lighter_batches tests use batches read from the Explorer on 2026-11-18 (catalog/vendors/lighter/NOTES.md,
+  # Batches and L1 settlement, L11 and L12). Each lists only the blocks the test needs, as the Explorer sent them.
+  - name: l1_times_come_from_status_changes
+    description: >-
+      Batch 270062 was committed at 11:54:23, verified at 12:08:59 and executed at 12:08:59 on 2026-11-17,
+      so it is executed and final. Its last two changes share a second; executed comes later in the list.
+      Batch 270064 was committed at 11:56:59 and went to nothing_to_execute at 12:14:35 with its verify
+      hash, so it was verified then, has no execute time, and is final.
+    model: int_lighter_batches
+    given:
+      - input: ref('stg_lighter__batches')
+        format: sql
+        rows: |
+          select 270062::bigint as batch_number, '2026-11-17 12:10:37.866067+00'::timestamptz as updated_at,
+              '0x50f0e5aa336f09405d3e264af44cbb4138f53b89b7beb7b23ecf1e6103f84316'::text as commit_tx_hash,
+              '0x9b84cad69e96774aee9ebfe6a47ddc2a98c505e439c7513ea2fb67ce371ff596'::text as verify_tx_hash,
+              '0x3da459769fb33f0b08709dafc6eae310f27ad43e16570bb7e6ddacc2014ba4da'::text as execute_tx_hash,
+              '[{"block_number": 391215230, "updated_at": "2026-11-17T11:45:05.194692Z", "total_transactions": 500}]'::jsonb as blocks,
+              '[{"hash": "0x50f0e5aa336f09405d3e264af44cbb4138f53b89b7beb7b23ecf1e6103f84316", "updated_at": "2026-11-17T11:54:23Z", "batch_status": "committed"},
+                {"hash": "0x9b84cad69e96774aee9ebfe6a47ddc2a98c505e439c7513ea2fb67ce371ff596", "updated_at": "2026-11-17T12:08:59Z", "batch_status": "verified"},
+                {"hash": "0x3da459769fb33f0b08709dafc6eae310f27ad43e16570bb7e6ddacc2014ba4da", "updated_at": "2026-11-17T12:08:59Z", "batch_status": "executed"}]'::jsonb as status_changes
+          union all
+          select 270064, '2026-11-17 12:16:14.557425+00',
+              '0x06461478d7061e4b3fde59e26cbe32a5626587fcc0b2ec2654fc98f8880a6b9a',
+              '0xc09974b4a796e325d06987f2d05ce614452ff2e276d68dfaa1246acb89ce91a6',
+              null,
+              '[{"block_number": 391218430, "updated_at": "2026-11-17T11:47:40.899007Z", "total_transactions": 500}]',
+              '[{"hash": "0x06461478d7061e4b3fde59e26cbe32a5626587fcc0b2ec2654fc98f8880a6b9a", "updated_at": "2026-11-17T11:56:59Z", "batch_status": "committed"},
+                {"hash": "0xc09974b4a796e325d06987f2d05ce614452ff2e276d68dfaa1246acb89ce91a6", "updated_at": "2026-11-17T12:14:35Z", "batch_status": "nothing_to_execute"}]'
+    expect:
+      rows:
+        - {batch_number: 270062, status: executed, is_final: true, committed_at: "2026-11-17 11:54:23+00", verified_at: "2026-11-17 12:08:59+00", executed_at: "2026-11-17 12:08:59+00", final_at: "2026-11-17 12:08:59+00"}
+        - {batch_number: 270064, status: nothing_to_execute, is_final: true, committed_at: "2026-11-17 11:56:59+00", verified_at: "2026-11-17 12:14:35+00", executed_at: null, final_at: "2026-11-17 12:14:35+00"}
+
+  - name: a_new_batch_is_pending
+    description: >-
+      Batch 270105, read at 13:14 on 2026-11-17 before its commit, had batch_details {} and no status
+      changes, so it is pending and not final. Batch 28910, the first the Explorer holds, has batch_details
+      null and no status changes: it is pending too, and never settles.
+    model: int_lighter_batches
+    given:
+      - input: ref('stg_lighter__batches')
+        format: sql
+        rows: |
+          -- updated_at is made up: the 13:14 reply's was not kept.
+          select 270105::bigint as batch_number, '2026-11-17 13:14:00+00'::timestamptz as updated_at,
+              null::text as commit_tx_hash, null::text as verify_tx_hash, null::text as execute_tx_hash,
+              '[{"block_number": 391284030, "updated_at": "2026-11-17T13:06:33.150264Z", "total_transactions": 500}]'::jsonb as blocks,
+              '[]'::jsonb as status_changes
+          union all
+          select 28910, '2025-08-25 16:20:38.646202+00', null, null, null,
+              '[{"block_number": 41849406, "updated_at": "2025-08-25T15:28:03.691073Z", "total_transactions": 498}]',
+              '[]'
+    expect:
+      rows:
+        - {batch_number: 270105, status: pending, is_final: false, commit_tx_hash: null, committed_at: null, verified_at: null, executed_at: null, final_at: null}
+        - {batch_number: 28910, status: pending, is_final: false, commit_tx_hash: null, committed_at: null, verified_at: null, executed_at: null, final_at: null}
+
+  - name: block_range_and_counts_come_from_the_block_list
+    description: >-
+      The first three blocks of batch 270063, 391216830 (500 txs), 391216831 (477) and 391216832 (500), give
+      a range of 391216830 to 391216832, 3 blocks and 1477 txs. The first block's time keeps its microseconds.
+    model: int_lighter_batches
+    given:
+      - input: ref('stg_lighter__batches')
+        format: sql
+        rows: |
+          select 270063::bigint as batch_number, '2026-11-17 12:11:01.993887+00'::timestamptz as updated_at,
+              null::text as commit_tx_hash, null::text as verify_tx_hash, null::text as execute_tx_hash,
+              '[{"block_number": 391216830, "updated_at": "2026-11-17T11:46:13.256136Z", "total_transactions": 500},
+                {"block_number": 391216831, "updated_at": "2026-11-17T11:46:13.300811Z", "total_transactions": 477},
+                {"block_number": 391216832, "updated_at": "2026-11-17T11:46:13.340002Z", "total_transactions": 500}]'::jsonb as blocks,
+              '[]'::jsonb as status_changes
+    expect:
+      rows:
+        - {batch_number: 270063, first_block: 391216830, last_block: 391216832, block_count: 3, tx_count: 1477, first_block_time: "2026-11-17 11:46:13.256136+00", last_block_time: "2026-11-17 11:46:13.340002+00"}

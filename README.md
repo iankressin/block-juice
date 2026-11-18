@@ -86,6 +86,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter open interest](#lighter-open-interest) | | | | | | | | ✓ | |
 | [Lighter trades](#lighter-trades) | | | | | | | | ✓ | |
 | [Lighter account fills](#lighter-account-fills) | | | | | | | | ✓ | |
+| [Lighter batches](#lighter-batches) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -658,6 +659,29 @@ The `lighter` pipeline builds it from `lighter_trades`' source. Two tests check 
 | `entry_quote_before_usdc` | numeric | The entry value of the account's position before the trade, in USDC. |
 | `position_sign_changed` | boolean | True when the trade changed the sign of the account's position. |
 | `realized_pnl` | numeric | The pnl the trade realized for this account, in USDC. Null when none. |
+
+### Lighter batches
+
+`analytics.lighter_batches`
+
+One Lighter L1 batch: the L2 block range it holds, its tx count, its status, and the hash and time of its commit, verify and execute on Ethereum. One row per batch. Join an L2 block to its batch on `block_number between first_block and last_block`. Covers every batch from the one that holds `START_TIME` (2026-11-16 to start) to the newest. The Explorer's history starts on 2025-08-25, and about 830 batches close a day.
+
+The `lighter` pipeline builds it from the call source `lighter-batches`, which reads Lighter's Explorer one batch at a time and keeps each reply whole. Each run reads again from the first batch not yet final, so a batch's L1 hashes fill in as it settles, which can take hours. A batch is final once it is `executed` or `nothing_to_execute`. `START_TIME` may not come before 2025-08-28: batches before 29654 carry no L1 status and never settle. `lighter_batches_are_contiguous` fails when a batch's block count differs from its range, or when two loaded neighbours do not meet. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `batch_number` | bigint | The batch's number. Unique. |
+| `first_block`, `last_block` | bigint | The lowest and highest L2 block the batch holds. |
+| `block_count` | bigint | How many blocks the batch holds, `last_block - first_block + 1`. |
+| `tx_count` | bigint | The txs in its blocks. |
+| `first_block_time`, `last_block_time` | timestamptz | The first and last block's time, to the microsecond. |
+| `status` | text | `pending`, `committed`, `verified`, `executed` or `nothing_to_execute`: the latest status change's, or `pending` with none. |
+| `is_final` | boolean | True once the batch is `executed` or `nothing_to_execute`, a verified batch with no L1 work left. |
+| `commit_tx_hash`, `committed_at` | text, timestamptz | The Ethereum tx that committed the batch, and when. Null until then. |
+| `verify_tx_hash`, `verified_at` | text, timestamptz | The Ethereum tx that verified it, and when. A `nothing_to_execute` batch has these too. |
+| `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed it, and when. Null on a `nothing_to_execute` batch. One tx can execute several batches. |
+| `final_at` | timestamptz | When the batch became final. |
+| `updated_at` | timestamptz | When the Explorer last updated the batch. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

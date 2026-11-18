@@ -60,3 +60,12 @@ models:
         data_tests: [not_null]
       - name: slot_market_id
         data_tests: [not_null]
+
+  - name: stg_lighter__batches
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: batch_number
+        data_tests: [unique, not_null]
+      - name: blocks
+        data_tests: [not_null]

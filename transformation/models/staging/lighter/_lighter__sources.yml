@@ -35,3 +35,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: batches
+        identifier: lighter_batches
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
