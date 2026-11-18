@@ -50,3 +50,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: pnl
+        identifier: lighter_pnl
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

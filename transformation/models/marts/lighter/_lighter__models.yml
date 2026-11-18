@@ -489,3 +489,41 @@ models:
         data_tests: [unique, not_null]
       - name: read_at
         data_tests: [not_null]
+
+  - name: lighter_account_value_history
+    description: >-
+      One row per account, resolution and point time, from the pnl endpoint. Every column but `volume` is a
+      running total since the account began, up to `point_time`. Lighter sends the values as JSON numbers,
+      so they keep up to 15 significant digits. `perps_value` is the account's perps value then.
+    columns:
+      - name: id
+        description: "`<account_index>:<resolution>:<point time in s>`."
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: resolution
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['1d', '1h']
+      - name: point_time
+        data_tests: [not_null]
+      - name: perps_value
+        description: "`inflow - outflow + trade_pnl`: the account's `collateral` plus unrealized pnl."
+
+unit_tests:
+  # Account 1000, idle since 2025-12-30 (catalog/vendors/lighter/NOTES.md, Account value, L14): its point reads
+  # 156508.908444 - 153478.114476 - 3030.185271 = 0.608697, its collateral and total_asset_value.
+  - name: perps_value_is_inflow_less_outflow_plus_trade_pnl
+    description: >-
+      Account 1000's point has inflow 156508.908444, outflow 153478.114476 and trade_pnl -3030.185271, so
+      its perps value is 0.608697.
+    model: lighter_account_value_history
+    given:
+      - input: ref('stg_lighter__pnl')
+        rows:
+          - {id: "1000:1d:1794268800", account_index: 1000, resolution: 1d, point_time: "2026-11-10 00:00:00+00", inflow: 156508.908444, outflow: 153478.114476, trade_pnl: -3030.185271}
+    expect:
+      rows:
+        - {id: "1000:1d:1794268800", account_index: 1000, resolution: 1d, point_time: "2026-11-10 00:00:00+00", inflow: 156508.908444, outflow: 153478.114476, trade_pnl: -3030.185271, perps_value: 0.608697}

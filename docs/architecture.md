@@ -36,6 +36,8 @@ The eighth source, `lighter-account-logs`, walks the Explorer log of each accoun
 
 The ninth source, `lighter-accounts`, reads `account` for each account in its `addresses.json`, and for each sub-account of an L1 address listed there, once a run. It keeps `accounts[0]` whole in a record keyed `<account>:<read_at>`, `read_at` being the time `extract` starts, so each run adds a reading and a retried read is the run's own. `stg_lighter__accounts` casts the account fields and keeps `positions`, `assets`, `shares` and `pending_unlocks` as jsonb. Two intermediate models explode positions and assets, and `int_lighter_account_position_snapshots` signs each position by its `sign`, since Lighter sends it unsigned. Three marts carry the readings: `lighter_account_snapshots`, `lighter_account_position_snapshots` and `lighter_account_asset_snapshots`.
 
+The `lighter-pnl` source reads `pnl` for each account in its `addresses.json`, as two calls: the whole `1d` series from `START_TIME` and the last 7 days of `1h`, since Lighter refuses a longer hourly range with 22403. A point is a record keyed `<account>:<resolution>:<timestamp>`, kept as sent. Lighter ends each series with a point at the request time, off the resolution's boundary, and the source drops it so a later run writes it when it closes. Lighter sends the values as JSON numbers, so `stg_lighter__pnl` casts each to `numeric` and they keep up to 15 significant digits. `lighter_account_value_history` adds `perps_value`, and the warn test `lighter_account_flows_match_pnl` sets each day's change in the flow fields against `lighter_account_movements`, for the days inside the window the account-log checkpoint in `raw._checkpoints` holds.
+
 ## Repo layout
 
 ```
@@ -142,6 +144,7 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd ingestion/sources/lighter-batches && pnpm ingest)
 (cd ingestion/sources/lighter-account-logs && pnpm ingest)
 (cd ingestion/sources/lighter-accounts && pnpm ingest)
+(cd ingestion/sources/lighter-pnl && pnpm ingest)
 (cd ingestion/sources/binance-candles && pnpm ingest)
 (cd ingestion/sources/coinbase-candles && pnpm ingest)
 (cd ingestion/sources/evm-chainlink-price-feeds && CHAIN=ethereum pnpm ingest)
