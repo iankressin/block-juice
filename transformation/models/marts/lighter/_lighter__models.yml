@@ -448,3 +448,44 @@ models:
         description: When the batch was executed.
       - name: final_at
         description: When the batch became final.
+
+  - name: lighter_account_snapshots
+    description: >-
+      One row per Lighter account per run that read it, from the account endpoint. `collateral` leaves
+      out unrealized pnl; `total_asset_value` includes it.
+    columns:
+      - name: id
+        description: "`<account_index>:<read_at in ms>`."
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: read_at
+        description: When the run read the account.
+        data_tests: [not_null]
+      - name: collateral
+        data_tests: [not_null]
+      - name: transaction_time
+        description: Lighter's time for the reading, to the microsecond.
+
+  - name: lighter_account_position_snapshots
+    description: >-
+      One row per position of an account in a reading. A closed position stays listed with `position` 0.
+    columns:
+      - name: id
+        description: "`<account_index>:<market_id>:<read_at in ms>`."
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: position
+        description: Signed size in base units, negative when short.
+      - name: total_funding_paid_out
+        description: Lighter leaves it out on some positions, so it can be null.
+
+  - name: lighter_account_asset_snapshots
+    description: One row per asset balance of an account in a reading, in the asset's own units.
+    columns:
+      - name: id
+        description: "`<account_index>:<asset_id>:<read_at in ms>`."
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
