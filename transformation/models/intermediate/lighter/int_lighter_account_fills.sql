@@ -4,45 +4,38 @@
 -- A binary option has no decimals, so its size and positions are null.
 with sides as (
     select
-        trade_id,
-        trade_time,
-        market_id,
-        symbol,
-        price,
-        size,
-        notional_usdc,
-        'maker' as role,
-        maker_account_index as account_index,
+        t.trade_id,
+        t.trade_time,
+        t.market_id,
+        t.symbol,
+        t.price,
+        t.size,
+        t.notional_usdc,
+        s.role,
+        s.account_index,
         -- P9: the ask account sells and the bid account buys; the maker is the ask when is_maker_ask.
-        case when is_maker_ask then 'sell' else 'buy' end as side,
-        maker_fee_ppm as fee_ppm,
-        maker_fee_usdc as fee_usdc,
-        maker_position_before as position_before,
-        maker_entry_quote_before_usdc as entry_quote_before_usdc,
-        maker_position_sign_changed as position_sign_changed,
-        case when is_maker_ask then ask_account_pnl else bid_account_pnl end as realized_pnl
-    from {{ ref('int_lighter_trades') }}
-
-    union all
-
-    select
-        trade_id,
-        trade_time,
-        market_id,
-        symbol,
-        price,
-        size,
-        notional_usdc,
-        'taker' as role,
-        taker_account_index as account_index,
-        case when is_maker_ask then 'buy' else 'sell' end as side,
-        taker_fee_ppm as fee_ppm,
-        taker_fee_usdc as fee_usdc,
-        taker_position_before as position_before,
-        taker_entry_quote_before_usdc as entry_quote_before_usdc,
-        taker_position_sign_changed as position_sign_changed,
-        case when is_maker_ask then bid_account_pnl else ask_account_pnl end as realized_pnl
-    from {{ ref('int_lighter_trades') }}
+        case when s.is_ask then 'sell' else 'buy' end as side,
+        s.fee_ppm,
+        s.fee_usdc,
+        s.position_before,
+        s.entry_quote_before_usdc,
+        s.position_sign_changed,
+        case when s.is_ask then t.ask_account_pnl else t.bid_account_pnl end as realized_pnl
+    from {{ ref('int_lighter_trades') }} as t
+    cross join lateral (
+        values
+            (
+                'maker', t.is_maker_ask, t.maker_account_index, t.maker_fee_ppm, t.maker_fee_usdc,
+                t.maker_position_before, t.maker_entry_quote_before_usdc, t.maker_position_sign_changed
+            ),
+            (
+                'taker', t.is_maker_ask is not true, t.taker_account_index, t.taker_fee_ppm, t.taker_fee_usdc,
+                t.taker_position_before, t.taker_entry_quote_before_usdc, t.taker_position_sign_changed
+            )
+    ) as s (
+        role, is_ask, account_index, fee_ppm, fee_usdc,
+        position_before, entry_quote_before_usdc, position_sign_changed
+    )
 ),
 
 signed as (
