@@ -286,6 +286,11 @@
   },
   {
     "name": "lighter",
+    "table": "accounts",
+    "package": "lighter-accounts"
+  },
+  {
+    "name": "lighter",
     "table": "batches",
     "package": "lighter-batches"
   },

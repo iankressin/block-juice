@@ -45,3 +45,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: accounts
+        identifier: lighter_accounts
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

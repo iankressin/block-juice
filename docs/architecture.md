@@ -34,6 +34,8 @@ The seventh source, `lighter-batches`, is the first to read Lighter's Explorer, 
 
 The eighth source, `lighter-account-logs`, walks the Explorer log of each account in its `addresses.json`, and of each sub-account of an L1 address listed there, which `accountsByL1Address` resolves. It asks for every entry type but plain trades, which `lighter-trades` loads from S3, in one comma-separated `pub_data_type`, since a repeated parameter keeps only the first type. A walk reads pages newest first by offset and stops at a short page or one that holds an entry older than its `since`: `START_TIME` on the first run, then the newest entry the last run saw less `HISTORY_OVERLAP_DAYS`, which a checkpoint per account keeps. New entries push old ones onto the next page, so the source writes each entry once, keyed `log:<account>:<hash>`, and a transfer between two listed accounts sits under each. A page that repeats the one before fails the walk, and a failed walk keeps its pages and waits as a dead letter. For each deposit, withdrawal, transfer, pool, staking or margin entry, it reads `logs/{hash}` once a run for the entry's L2 block, keyed `detail:<hash>`. `int_lighter_account_movements` turns each entry into a leg per account it moves, signs it, and joins the batch whose block range holds the block, and the `lighter_account_movements` mart carries it.
 
+The ninth source, `lighter-accounts`, reads `account` for each account in its `addresses.json`, and for each sub-account of an L1 address listed there, once a run. It keeps `accounts[0]` whole in a record keyed `<account>:<read_at>`, `read_at` being the time `extract` starts, so each run adds a reading and a retried read is the run's own. `stg_lighter__accounts` casts the account fields and keeps `positions`, `assets`, `shares` and `pending_unlocks` as jsonb. Two intermediate models explode positions and assets, and `int_lighter_account_position_snapshots` signs each position by its `sign`, since Lighter sends it unsigned. Three marts carry the readings: `lighter_account_snapshots`, `lighter_account_position_snapshots` and `lighter_account_asset_snapshots`.
+
 ## Repo layout
 
 ```
@@ -139,6 +141,7 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd ingestion/sources/lighter-trades && pnpm ingest)
 (cd ingestion/sources/lighter-batches && pnpm ingest)
 (cd ingestion/sources/lighter-account-logs && pnpm ingest)
+(cd ingestion/sources/lighter-accounts && pnpm ingest)
 (cd ingestion/sources/binance-candles && pnpm ingest)
 (cd ingestion/sources/coinbase-candles && pnpm ingest)
 (cd ingestion/sources/evm-chainlink-price-feeds && CHAIN=ethereum pnpm ingest)

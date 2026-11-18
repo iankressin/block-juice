@@ -88,6 +88,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter account fills](#lighter-account-fills) | | | | | | | | ✓ | |
 | [Lighter batches](#lighter-batches) | | | | | | | | ✓ | |
 | [Lighter account movements](#lighter-account-movements) | | | | | | | | ✓ | |
+| [Lighter account snapshots](#lighter-account-snapshots) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -715,6 +716,49 @@ The `lighter` pipeline builds it from the call source `lighter-account-logs`, wh
 | `verify_tx_hash`, `verified_at` | text, timestamptz | The Ethereum tx that verified the batch, and when. |
 | `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed the batch, and when. Null on a `nothing_to_execute` batch. |
 | `final_at` | timestamptz | When the batch became final. |
+
+### Lighter account snapshots
+
+`analytics.lighter_account_snapshots`, `analytics.lighter_account_position_snapshots` and `analytics.lighter_account_asset_snapshots`
+
+Lighter's own reading of each listed account: its collateral and value, each position and each asset balance, one reading per run. Covers the accounts in `ingestion/sources/lighter-accounts/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there. Readings start with the first run, since Lighter keeps no history of them.
+
+The `lighter` pipeline builds them from the call source `lighter-accounts`, which reads each account once a run and keeps the reply whole. It runs daily at 07:30 UTC. A reading is a check for a ledger rebuilt from the logs, not a history.
+
+`lighter_account_snapshots` has one row per account and reading:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<read_at in ms>`. Unique. |
+| `account_index` | bigint | The account. |
+| `read_at` | timestamptz | When the run read it. |
+| `l1_address` | text | The Ethereum address of the account, lowercased. |
+| `account_type`, `status` | integer | As Lighter sends them. |
+| `collateral` | numeric | USDC collateral. It leaves out unrealized pnl. |
+| `available_balance` | numeric | USDC free to use. |
+| `total_asset_value` | numeric | Collateral plus unrealized pnl. |
+| `cross_asset_value`, `cross_initial_margin_requirement`, `cross_maintenance_margin_requirement` | numeric | The cross-margin value and its margin requirements. |
+| `transaction_time` | timestamptz | Lighter's time for the reading, to the microsecond. |
+
+`lighter_account_position_snapshots` has one row per account, market and reading. A closed position stays listed with `position` 0.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<market_id>:<read_at in ms>`. Unique. |
+| `account_index`, `read_at`, `market_id`, `symbol` | | As above. Join the market on `market_id`. |
+| `position` | numeric | The size in base units, negative when short. Lighter sends it unsigned with a `sign`. |
+| `avg_entry_price`, `position_value`, `unrealized_pnl`, `realized_pnl`, `liquidation_price` | numeric | As Lighter sends them. |
+| `total_funding_paid_out` | numeric | Lighter leaves it out on some positions, so it can be null. |
+| `margin_mode`, `allocated_margin`, `initial_margin_fraction` | | As Lighter sends them. |
+
+`lighter_account_asset_snapshots` has one row per account, asset and reading:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<asset_id>:<read_at in ms>`. Unique. |
+| `account_index`, `read_at`, `asset_id`, `symbol` | | As above. |
+| `balance`, `locked_balance`, `margin_balance` | numeric | In the asset's own units. |
+| `margin_mode` | text | As Lighter sends it. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

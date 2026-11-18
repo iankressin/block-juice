@@ -449,3 +449,37 @@ unit_tests:
         - {id: "8ad8810ed23a49803127910a715083aca2008e5dc5f4f0d4ec25bd82bc39c177c845fe451c52c171:693073:self", kind: unstake, asset: LIT, route: null, amount: "10228.37989914", signed_amount: null, counterparty_account_index: 281474976624800}
         - {id: "0000001e8e683bff000001a107a120b0000000000000000000000000000000000000000000000000:693073:self", kind: unlock, asset: LIT, route: null, amount: "10228.37989914", signed_amount: null, counterparty_account_index: null}
         - {id: "ae2ea19e23847b4063cc330bc56533ac113894bb8868d54dc537809d778c8649f1380d574631f03d:693073:self", kind: margin_move, asset: USDC, route: null, amount: "2.710264", signed_amount: null, counterparty_account_index: null}
+
+  # The snapshot tests use 313004's account reply of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Snapshots).
+  - name: position_is_signed_by_sign
+    description: >-
+      Lighter sends position unsigned. 313004's ETH has sign -1 and position 1.2821, so -1.2821. Its BTC
+      has sign 1 and position 0.00000, a closed position still listed, so 0.
+    model: int_lighter_account_position_snapshots
+    given:
+      - input: ref('stg_lighter__accounts')
+        format: sql
+        rows: |
+          select 313004::bigint as account_index, '2026-11-17 12:16:53+00'::timestamptz as read_at,
+              '[{"market_id": 0, "symbol": "ETH", "sign": -1, "position": "1.2821", "avg_entry_price": "2300.00", "unrealized_pnl": "-0.424714"},
+                {"market_id": 1, "symbol": "BTC", "sign": 1, "position": "0.00000", "avg_entry_price": "0.00", "total_funding_paid_out": "0.000000", "unrealized_pnl": "0.000000"}]'::jsonb as positions
+    expect:
+      rows:
+        - {id: "313004:0:1794917813000", account_index: 313004, market_id: 0, symbol: ETH, position: "-1.2821", unrealized_pnl: "-0.424714", total_funding_paid_out: null}
+        - {id: "313004:1:1794917813000", account_index: 313004, market_id: 1, symbol: BTC, position: "0.00000", unrealized_pnl: "0.000000", total_funding_paid_out: "0.000000"}
+
+  - name: assets_explode_one_row_each
+    description: >-
+      313004's LIT and USDC balances give two rows. The USDC margin_balance keeps all 12 decimals.
+    model: int_lighter_account_asset_snapshots
+    given:
+      - input: ref('stg_lighter__accounts')
+        format: sql
+        rows: |
+          select 313004::bigint as account_index, '2026-11-17 12:16:53+00'::timestamptz as read_at,
+              '[{"symbol": "LIT", "asset_id": 2, "balance": "0.00000000", "locked_balance": "0.00000000", "margin_mode": "disabled", "margin_balance": "0.00000000"},
+                {"symbol": "USDC", "asset_id": 3, "balance": "97972.003001669667", "locked_balance": "0.000000", "margin_mode": "enabled", "margin_balance": "97972.003001669667"}]'::jsonb as assets
+    expect:
+      rows:
+        - {id: "313004:2:1794917813000", asset_id: 2, symbol: LIT, balance: "0.00000000", margin_balance: "0.00000000"}
+        - {id: "313004:3:1794917813000", asset_id: 3, symbol: USDC, balance: "97972.003001669667", margin_balance: "97972.003001669667"}

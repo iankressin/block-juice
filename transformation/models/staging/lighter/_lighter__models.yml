@@ -89,3 +89,30 @@ models:
         data_tests: [unique, not_null]
       - name: hash
         data_tests: [unique, not_null]
+
+  - name: stg_lighter__accounts
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: read_at
+        data_tests: [not_null]
+
+unit_tests:
+  # 313004's reading of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Snapshots).
+  - name: transaction_time_is_microseconds
+    description: >-
+      Lighter sends transaction_time in microseconds. 1794917810524549 is 2026-11-17 12:16:50.524549
+      UTC, so no digit of the microseconds is lost.
+    model: stg_lighter__accounts
+    given:
+      - input: source('lighter', 'accounts')
+        format: sql
+        rows: |
+          select '313004:1794917813000'::text as id,
+              '{"read_at": 1794917813000, "account": {"index": 313004, "collateral": "97972.003001", "total_asset_value": "97971.578287", "transaction_time": 1794917810524549, "positions": [], "assets": []}}'::jsonb as data,
+              null::timestamptz as _loaded_at
+    expect:
+      rows:
+        - {id: "313004:1794917813000", account_index: 313004, read_at: "2026-11-17 12:16:53+00", collateral: 97972.003001, total_asset_value: 97971.578287, transaction_time: "2026-11-17 12:16:50.524549+00"}
