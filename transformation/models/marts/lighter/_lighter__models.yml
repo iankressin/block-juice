@@ -449,6 +449,90 @@ models:
       - name: final_at
         description: When the batch became final.
 
+  - name: lighter_account_ledger
+    description: >-
+      One change to the holdings of an account the lighter-account-logs source lists: a leg of a money move,
+      a perp fill, an hour of funding or a position exit. `amount` is signed in the asset's units. It is null
+      where the change has no proven amount: stake, unstake, unlock and margin moves, whose sign is unproven,
+      and position exits, whose entry carries no amount. A fill's amount is its realized pnl less its fee and
+      its role's integrator fee; funding is -position × `value_usdc_per_unit` when the rate's `direction` is
+      `long` and +position × value when `short` (catalog/vendors/lighter/NOTES.md, L21). Spot fills stay out.
+      Logs start at the account-log source's START_TIME, and the Explorer holds none before 2025-08-25;
+      fills start at the first S3 day lighter-trades loads, and funding at each account's first loaded fill.
+      `lighter_positions_match_snapshots` and `lighter_ledger_matches_collateral` warn when it disagrees
+      with Lighter's own readings, and `lighter_funding_prefix_steps_match_rates` when the rates it prices
+      funding with disagree with the logs' prefix sums.
+    columns:
+      - name: id
+        description: >-
+          `move:<movement id>`, `fill:<fill id>`, `funding:<account_index>:<market_id>:<funding_time in s>` or
+          `exit:<hash>:<account_index>`.
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: event_time
+        description: The log entry's time, the trade's time or the funding hour mark.
+        data_tests: [not_null]
+      - name: kind
+        description: A movement's kind, or `fill`, `funding` or `exit_position`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - deposit
+                  - withdrawal
+                  - transfer_out
+                  - transfer_in
+                  - transfer_fee
+                  - route_move
+                  - pool_mint
+                  - pool_burn
+                  - stake
+                  - unstake
+                  - unlock
+                  - margin_move
+                  - fill
+                  - funding
+                  - exit_position
+      - name: asset
+        description: The asset's symbol. `USDC` for fills, funding and exits.
+      - name: route
+        description: "`perps` or `spot`. `perps` for fills, funding and exits; null for stake, unstake, unlock and margin moves."
+      - name: amount
+        description: Signed, in the asset's units. Null for stake, unstake, unlock, margin moves and exits.
+      - name: cumulative_amount
+        description: >-
+          The sum of `amount` over the account's rows of the same asset and route, in `event_time` and `id`
+          order, from the start of what is loaded. Not a balance unless the history reaches back to the
+          account's first move.
+      - name: market_id
+        description: The market of a fill, funding hour or exit. Null for money moves.
+        data_tests:
+          # An exit's market comes from a pubdata field named only in the Explorer's API docs; a wrong name
+          # would leave it null.
+          - not_null:
+              config:
+                where: "kind in ('fill', 'funding', 'exit_position')"
+      - name: position_after
+        description: >-
+          The account's position in `market_id` after the row, negative when short: a fill's, 0 after an exit,
+          and for funding the position that paid.
+      - name: trade_id
+        description: The trade of a fill.
+      - name: hash
+        description: The log entry's hash, or a fill's trade tx hash. Null for funding.
+      - name: block_number
+        description: The L2 block of a move, fill or exit. Null for funding.
+      - name: batch_number
+        description: The loaded batch whose block range holds `block_number`.
+      - name: batch_status
+        description: The batch's status, as in `lighter_batches`.
+      - name: execute_tx_hash
+        description: The Ethereum tx that executed the batch. Null on a `nothing_to_execute` batch.
+      - name: executed_at
+        description: When the batch was executed.
+
   - name: lighter_account_snapshots
     description: >-
       One row per Lighter account per run that read it, from the account endpoint. `collateral` leaves
