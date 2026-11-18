@@ -281,6 +281,11 @@
   },
   {
     "name": "lighter",
+    "table": "batches",
+    "package": "lighter-batches"
+  },
+  {
+    "name": "lighter",
     "table": "candles",
     "package": "lighter-candles"
   },
