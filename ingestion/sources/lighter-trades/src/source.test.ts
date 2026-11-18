@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +8,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { historyKey, type Batch, type Checkpoint } from "@ingestion/lib";
 import type { Clock } from "@ingestion/lib";
+import { fakeBucket, parquetFile, type FakeBucket } from "@ingestion/lib/lighter/s3-fixture";
 import { tradesEnv } from "#src/source.ts";
 
 type Source = Awaited<ReturnType<typeof sourceWith>>;
@@ -16,12 +16,6 @@ type Call = Parameters<Source["extract"]>[1][number];
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
 const PREFIX = "v1.1/lighter/core/mainnet";
-
-// The source package does not depend on DuckDB: take it from the lib, which does.
-type Duck = { run(sql: string): Promise<unknown>; closeSync(): void };
-const { DuckDBInstance } = createRequire(import.meta.resolve("@ingestion/lib"))("@duckdb/node-api") as {
-  DuckDBInstance: { create(path: string): Promise<{ connect(): Promise<Duck>; closeSync(): void }> };
-};
 
 /** A trade row, cut to the columns these tests read. `slot` is S3's market_id, `market` its public_market_index. */
 type Trade = { id: number; ask: number; bid: number; slot: number; market: number | null };
@@ -33,33 +27,23 @@ const trade = (id: number, ask: number, bid: number, slot = 0, market: number | 
  * trade 40627877458: 0.3491 ETH at 1819.52, sold by its maker (catalog/vendors/lighter/NOTES.md, Units).
  */
 async function dayFile(t: TestContext, date: string, trades: Trade[]): Promise<Buffer> {
-  const dir = await mkdtemp(join(tmpdir(), "lighter-trades-test-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const path = join(dir, "trades.parquet");
   const rows = trades.map(
     (r) =>
       `(${r.id}, '${date} 00:36:33.323525+00', ${r.ask}, ${r.bid}, 3491, 181952, 635194432, 1794789393275, ` +
       `${r.slot}, 'trade', true, 50, 0, -2252, null, ${r.market ?? "null"})`,
   );
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
-  try {
-    await connection.run(`COPY (
-      select id::bigint as id, created_at::varchar as created_at, ask_account_id::bigint as ask_account_id,
-        bid_account_id::bigint as bid_account_id, size::bigint as size, price::bigint as price,
-        usdc_amount::bigint as usdc_amount, "timestamp"::bigint as "timestamp", market_id::smallint as market_id,
-        trade_type::varchar as trade_type, is_maker_ask::boolean as is_maker_ask, maker_fee::integer as maker_fee,
-        taker_fee::integer as taker_fee, maker_position_size_before::bigint as maker_position_size_before,
-        ask_account_pnl::bigint as ask_account_pnl, public_market_index::bigint as public_market_index
-      from (values ${rows.join(", ")}) t(id, created_at, ask_account_id, bid_account_id, size, price, usdc_amount,
-        "timestamp", market_id, trade_type, is_maker_ask, maker_fee, taker_fee, maker_position_size_before,
-        ask_account_pnl, public_market_index)
-    ) TO '${path}' (FORMAT parquet, COMPRESSION zstd)`);
-  } finally {
-    connection.closeSync();
-    instance.closeSync();
-  }
-  return readFile(path);
+  return parquetFile(
+    t,
+    `select id::bigint as id, created_at::varchar as created_at, ask_account_id::bigint as ask_account_id,
+      bid_account_id::bigint as bid_account_id, size::bigint as size, price::bigint as price,
+      usdc_amount::bigint as usdc_amount, "timestamp"::bigint as "timestamp", market_id::smallint as market_id,
+      trade_type::varchar as trade_type, is_maker_ask::boolean as is_maker_ask, maker_fee::integer as maker_fee,
+      taker_fee::integer as taker_fee, maker_position_size_before::bigint as maker_position_size_before,
+      ask_account_pnl::bigint as ask_account_pnl, public_market_index::bigint as public_market_index
+    from (values ${rows.join(", ")}) t(id, created_at, ask_account_id, bid_account_id, size, price, usdc_amount,
+      "timestamp", market_id, trade_type, is_maker_ask, maker_fee, taker_fee, maker_position_size_before,
+      ask_account_pnl, public_market_index)`,
+  );
 }
 
 // ETH is public 0. In S3, slot 51 held RESOLV (public 51) before 2026-08-20 and PRL (public 4097) on
@@ -70,64 +54,27 @@ const MARKETS = [
   { market_id: 4097, symbol: "PRL", market_type: "perp", size_decimals: 2, price_decimals: 4 },
 ];
 
-type Fake = {
+type Fake = FakeBucket & {
   url: string;
-  /** The dates whose file the fake served, one entry for each download. */
-  downloads: string[];
+  apiUrl: string;
   /** How many times the source read orderBookDetails. */
   marketReads: number;
-  /** The dates whose download answers HTTP 500. */
-  broken: Set<string>;
-  /** Lists after this many answer HTTP 503. */
-  listsBeforeOutage: number;
-  /** Drop a date from the list. */
-  remove(date: string): void;
 };
 
-/** Lighter's orderBookDetails and its S3 bucket on one host: the list of trade files, and the files. */
+/** Lighter's S3 bucket of trade files, and its orderBookDetails on a server of its own. */
 async function fakeLighter(t: TestContext, days: Record<string, Trade[]>): Promise<Fake> {
-  const files = new Map<string, Buffer>();
-  for (const [date, trades] of Object.entries(days)) files.set(date, await dayFile(t, date, trades));
-  const fake: Fake = {
-    url: "",
-    downloads: [],
-    marketReads: 0,
-    broken: new Set(),
-    listsBeforeOutage: Infinity,
-    remove: (date) => void files.delete(date),
-  };
+  const files: Record<string, Buffer> = {};
+  for (const [date, trades] of Object.entries(days)) files[date] = await dayFile(t, date, trades);
+  const bucket = await fakeBucket(t, "trades", files);
+  const fake: Fake = Object.assign(bucket, { url: bucket.env.LIGHTER_S3_URL, apiUrl: "", marketReads: 0 });
   const server = createServer((req, res) => {
-    const url = new URL(req.url!, "http://lighter");
-    if (url.pathname === "/api/v1/orderBookDetails") {
-      fake.marketReads++;
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ code: 200, order_book_details: MARKETS, spot_order_book_details: [] }));
+    if (new URL(req.url!, "http://lighter").pathname !== "/api/v1/orderBookDetails") {
+      res.writeHead(404).end();
       return;
     }
-    if (url.searchParams.get("list-type") === "2") {
-      if (fake.listsBeforeOutage-- <= 0) {
-        res.statusCode = 503;
-        res.end("down");
-        return;
-      }
-      const contents = [...files]
-        .map(
-          ([date, body]) =>
-            `<Contents><Key>${PREFIX}/trades/date=${date}/trades.parquet</Key><ETag>&quot;etag-${date}&quot;</ETag><Size>${body.length}</Size></Contents>`,
-        )
-        .join("");
-      res.setHeader("content-type", "application/xml");
-      res.end(`<ListBucketResult><IsTruncated>false</IsTruncated>${contents}</ListBucketResult>`);
-      return;
-    }
-    const date = url.pathname.match(/date=(\d{4}-\d{2}-\d{2})\//)?.[1] ?? "";
-    fake.downloads.push(date);
-    if (fake.broken.has(date)) {
-      res.statusCode = 500;
-      res.end("boom");
-      return;
-    }
-    res.end(files.get(date));
+    fake.marketReads++;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ code: 200, order_book_details: MARKETS, spot_order_book_details: [] }));
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   t.after(
@@ -137,7 +84,7 @@ async function fakeLighter(t: TestContext, days: Record<string, Trade[]>): Promi
         server.close(() => r());
       }),
   );
-  fake.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  fake.apiUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return fake;
 }
 
@@ -168,7 +115,7 @@ async function run(
   } = {},
 ) {
   const env = tradesEnv.parse({
-    LIGHTER_API_URL: fake.url,
+    LIGHTER_API_URL: fake.apiUrl,
     LIGHTER_REQUESTS_PER_MINUTE: "60",
     LIGHTER_S3_URL: fake.url,
     LIGHTER_S3_PREFIX: PREFIX,
@@ -227,7 +174,7 @@ test("an empty or malformed list fails the run, naming the key", async (t) => {
 
 test("malformed addresses.json fails the run, not the import", async (t) => {
   const source = await sourceWith(t, '{ "accounts": , }');
-  await assert.rejects(run(source, { url: "http://127.0.0.1:1" } as Fake), /addresses\.json/);
+  await assert.rejects(run(source, { url: "http://127.0.0.1:1", apiUrl: "http://127.0.0.1:1" } as Fake), /addresses\.json/);
 });
 
 test("loads the listed accounts' trades from each day file, keyed by trade id", async (t) => {
@@ -362,7 +309,7 @@ test("a retried call whose file has gone fails again, naming the date", async (t
   const fake = await fakeLighter(t, TWO_DAYS);
   const source = await sourceWith(t, { accounts: [ACCOUNT] });
   const first = await run(source, fake);
-  fake.remove("2026-11-16");
+  fake.files.delete("2026-11-16");
   const retry: Call[] = [{ date: "2026-11-16", etag: "etag-2026-11-16" }];
   const second = await run(source, fake, { saved: asSaved(checkpointOf(first)), retry });
   assert.deepEqual(recordsOf(second), []);

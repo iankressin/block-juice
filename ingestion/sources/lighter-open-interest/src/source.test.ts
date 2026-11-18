@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { createServer } from "node:http";
-import { createRequire } from "node:module";
-import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { historyKey, type Batch, type Checkpoint } from "@ingestion/lib";
 import type { Clock } from "@ingestion/lib";
+import { fakeBucket, parquetFile, type FakeBucket } from "@ingestion/lib/lighter/s3-fixture";
 import { openInterestEnv, openInterestSource } from "#src/source.ts";
 
 type Source = ReturnType<typeof openInterestSource>;
@@ -15,96 +10,26 @@ type Call = Parameters<Source["extract"]>[1][number];
 
 const PREFIX = "v1.1/lighter/core/mainnet";
 
-// The source package does not depend on DuckDB: take it from the lib, which does.
-type Duck = { run(sql: string): Promise<unknown>; closeSync(): void };
-const { DuckDBInstance } = createRequire(import.meta.resolve("@ingestion/lib"))("@duckdb/node-api") as {
-  DuckDBInstance: { create(path: string): Promise<{ connect(): Promise<Duck>; closeSync(): void }> };
-};
-
 /** A Parquet file of one day's open interest: ETH and BTC at hours 22 and 23. */
-async function dayFile(t: TestContext, date: string): Promise<Buffer> {
-  const dir = await mkdtemp(join(tmpdir(), "lighter-oi-test-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const path = join(dir, "oi.parquet");
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
-  try {
-    await connection.run("SET TimeZone = 'UTC'");
-    await connection.run(`COPY (
-      select * from (values
-        (TIMESTAMPTZ '${date} 22:00:00+00', 'ETH', 100.5, 3000.25, 301525.125),
-        (TIMESTAMPTZ '${date} 22:00:00+00', 'BTC', 10.0, 90000.0, 900000.0),
-        (TIMESTAMPTZ '${date} 23:00:00+00', 'ETH', 101.5, 3001.0, 304601.5),
-        (TIMESTAMPTZ '${date} 23:00:00+00', 'BTC', 11.0, 90100.0, 991100.0)
-      ) t(hour, symbol, open_interest, mark_price, open_interest_usd)
-    ) TO '${path}' (FORMAT parquet, COMPRESSION zstd)`);
-  } finally {
-    connection.closeSync();
-    instance.closeSync();
-  }
-  return readFile(path);
-}
+const dayFile = (t: TestContext, date: string) =>
+  parquetFile(
+    t,
+    `select * from (values
+      (TIMESTAMPTZ '${date} 22:00:00+00', 'ETH', 100.5, 3000.25, 301525.125),
+      (TIMESTAMPTZ '${date} 22:00:00+00', 'BTC', 10.0, 90000.0, 900000.0),
+      (TIMESTAMPTZ '${date} 23:00:00+00', 'ETH', 101.5, 3001.0, 304601.5),
+      (TIMESTAMPTZ '${date} 23:00:00+00', 'BTC', 11.0, 90100.0, 991100.0)
+    ) t(hour, symbol, open_interest, mark_price, open_interest_usd)`,
+  );
 
-type Fake = {
-  url: string;
-  /** The dates whose file the fake served, one entry for each download. */
-  downloads: string[];
-  /** The dates whose download answers HTTP 500. */
-  broken: Set<string>;
-  /** Lists after this many answer HTTP 503. */
-  listsBeforeOutage: number;
-  /** The ETag the fake lists for a date. Change it to publish a new version of the file. */
-  etags: Map<string, string>;
-  /** Drop a date from the list. */
-  remove(date: string): void;
-};
+type Fake = FakeBucket & { url: string };
 
 /** Fake S3: a list of the day files, and the files. */
 async function fakeS3(t: TestContext, dates: string[]): Promise<Fake> {
-  const files = new Map<string, Buffer>();
-  for (const date of dates) files.set(date, await dayFile(t, date));
-  const etags = new Map(dates.map((date) => [date, `etag-${date}`]));
-  const downloads: string[] = [];
-  const broken = new Set<string>();
-  let fake: Fake;
-  const server = createServer((req, res) => {
-    const url = new URL(req.url!, "http://s3");
-    if (url.searchParams.get("list-type") === "2") {
-      if (fake.listsBeforeOutage-- <= 0) {
-        res.statusCode = 503;
-        res.end("down");
-        return;
-      }
-      const contents = [...files]
-        .map(
-          ([date, body]) =>
-            `<Contents><Key>${PREFIX}/open_interest_hourly/date=${date}/oi.parquet</Key><ETag>&quot;${etags.get(date)}&quot;</ETag><Size>${body.length}</Size></Contents>`,
-        )
-        .join("");
-      res.setHeader("content-type", "application/xml");
-      res.end(`<ListBucketResult><IsTruncated>false</IsTruncated>${contents}</ListBucketResult>`);
-      return;
-    }
-    const date = url.pathname.match(/date=(\d{4}-\d{2}-\d{2})\//)?.[1] ?? "";
-    downloads.push(date);
-    if (broken.has(date)) {
-      res.statusCode = 500;
-      res.end("boom");
-      return;
-    }
-    res.end(files.get(date));
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  t.after(
-    () =>
-      new Promise<void>((r) => {
-        server.closeAllConnections();
-        server.close(() => r());
-      }),
-  );
-  const { port } = server.address() as AddressInfo;
-  fake = { url: `http://127.0.0.1:${port}`, downloads, broken, listsBeforeOutage: Infinity, etags, remove: (date) => void files.delete(date) };
-  return fake;
+  const files: Record<string, Buffer> = {};
+  for (const date of dates) files[date] = await dayFile(t, date);
+  const bucket = await fakeBucket(t, "open_interest_hourly", files);
+  return Object.assign(bucket, { url: bucket.env.LIGHTER_S3_URL });
 }
 
 const fakeClock = (iso: string): Clock => ({ now: () => Date.parse(iso), sleep: async () => {} });
@@ -225,7 +150,7 @@ test("a retried call for a pending date is made once", async (t) => {
 test("a retried call whose file has gone fails again, naming the date", async (t) => {
   const fake = await fakeS3(t, ["2026-11-14", "2026-11-15"]);
   const first = await run(fake, { end: "2026-11-15" });
-  fake.remove("2026-11-15");
+  fake.files.delete("2026-11-15");
   const retry: Call[] = [{ date: "2026-11-15", etag: "etag-2026-11-15" }];
   const second = await run(fake, { end: "2026-11-15", saved: asSaved(checkpointOf(first)), retry });
   assert.equal(second.flatMap((b) => b.records).length, 0);

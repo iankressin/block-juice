@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { DuckDBInstance } from "@duckdb/node-api";
 import type { Batch } from "#src/source.ts";
 import type { Clock } from "#src/clock.ts";
 import { RETRY_WAITS_MS } from "#src/lighter/retry.ts";
-import { dayBatches, dayManifest, listDays, readDay, type DayCall, type DayFile, type LighterS3Env } from "#src/lighter/s3.ts";
+import { dayBatches, dayManifest, listDays, readDay, type DayCall, type DayFile } from "#src/lighter/s3.ts";
+import { fakeBucket, parquetFile } from "#src/lighter/s3.fixture.ts";
 
 const PREFIX = "v1.1/lighter/core/mainnet";
 
@@ -20,26 +18,16 @@ async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
 }
 
 /** A Parquet file of four trades like trade 40627877458; three involve account 313004. */
-async function writeTrades(path: string) {
-  const instance = await DuckDBInstance.create(":memory:");
-  const connection = await instance.connect();
-  try {
-    await connection.run("SET TimeZone = 'UTC'");
-    await connection.run(`COPY (
-      select * from (values
-        (40627877458::bigint, 0, 757337::bigint, 313004::bigint, 3491::bigint, 181952::bigint, 635194432::bigint, TIMESTAMPTZ '2026-11-16 00:00:01+00'),
-        (40627877459::bigint, 0, 757337::bigint, 313004::bigint, 10::bigint, 181953::bigint, 1819530::bigint, TIMESTAMPTZ '2026-11-16 00:00:02+00'),
-        (40627877460::bigint, 1, 5::bigint, 313004::bigint, 1::bigint, 2::bigint, 2::bigint, TIMESTAMPTZ '2026-11-16 00:00:03+00'),
-        (40627877461::bigint, 1, 5::bigint, 6::bigint, 1::bigint, 2::bigint, 2::bigint, TIMESTAMPTZ '2026-11-16 00:00:04+00')
-      ) t(id, market_id, ask_account_id, bid_account_id, size, price, usdc_amount, created_at)
-    ) TO '${path}' (FORMAT parquet, COMPRESSION zstd)`);
-  } finally {
-    connection.closeSync();
-    instance.closeSync();
-  }
-}
-
-type Fake = { env: LighterS3Env; file: Buffer; requests: string[] };
+const tradesFile = (t: TestContext) =>
+  parquetFile(
+    t,
+    `select * from (values
+      (40627877458::bigint, 0, 757337::bigint, 313004::bigint, 3491::bigint, 181952::bigint, 635194432::bigint, TIMESTAMPTZ '2026-11-16 00:00:01+00'),
+      (40627877459::bigint, 0, 757337::bigint, 313004::bigint, 10::bigint, 181953::bigint, 1819530::bigint, TIMESTAMPTZ '2026-11-16 00:00:02+00'),
+      (40627877460::bigint, 1, 5::bigint, 313004::bigint, 1::bigint, 2::bigint, 2::bigint, TIMESTAMPTZ '2026-11-16 00:00:03+00'),
+      (40627877461::bigint, 1, 5::bigint, 6::bigint, 1::bigint, 2::bigint, 2::bigint, TIMESTAMPTZ '2026-11-16 00:00:04+00')
+    ) t(id, market_id, ask_account_id, bid_account_id, size, price, usdc_amount, created_at)`,
+  );
 
 /** A clock that a sleep moves forward at once. `sleeps` gets each wait. */
 function fakeClock(): Clock & { sleeps: number[] } {
@@ -55,94 +43,20 @@ function fakeClock(): Clock & { sleeps: number[] } {
   };
 }
 
-type FakeOptions = {
-  file?: Buffer;
-  fileStatus?: number;
-  truncate?: number;
-  /** One status per list request, then 200. */
-  listStatuses?: { status: number; headers?: Record<string, string> }[];
-  /** One status per file request, then the file. `stall` sends headers and no body. */
-  fileStatuses?: (number | "stall")[];
-  /** `repeat` always hands back the same token; `no-token` is truncated with none. */
-  listMode?: "repeat" | "no-token";
-};
-
-/**
- * Fake S3. The list answers two pages. The file route serves `file`, or `fileStatus` when set;
- * `truncate` cuts the body short.
- */
-async function fakeS3(t: TestContext, opts: FakeOptions = {}): Promise<Fake> {
-  const file = opts.file ?? Buffer.alloc(0);
-  const requests: string[] = [];
-  const listStatuses = [...(opts.listStatuses ?? [])];
-  const fileStatuses = [...(opts.fileStatuses ?? [])];
-  const server = createServer((req, res) => {
-    requests.push(req.url!);
-    const url = new URL(req.url!, "http://s3");
-    if (url.searchParams.get("list-type") === "2") {
-      const scripted = listStatuses.shift();
-      if (scripted) {
-        res.writeHead(scripted.status, scripted.headers).end("busy");
-        return;
-      }
-      if (opts.listMode === "repeat") {
-        res.end(`<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>same</NextContinuationToken></ListBucketResult>`);
-        return;
-      }
-      if (opts.listMode === "no-token") {
-        res.end(`<ListBucketResult><IsTruncated>true</IsTruncated></ListBucketResult>`);
-        return;
-      }
-      const token = url.searchParams.get("continuation-token");
-      const entry = (d: string, etag: string) =>
-        `<Contents><Key>${PREFIX}/trades/date=${d}/trades.parquet</Key><ETag>${etag}</ETag><Size>${file.length}</Size></Contents>`;
-      res.setHeader("content-type", "application/xml");
-      res.end(
-        token
-          ? `<ListBucketResult><IsTruncated>false</IsTruncated>${entry("2026-11-16", "&quot;e16&quot;")}</ListBucketResult>`
-          : `<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>tok</NextContinuationToken>` +
-              `<Contents><Key>${PREFIX}/trades/</Key><ETag>&quot;x&quot;</ETag><Size>0</Size></Contents>` +
-              `${entry("2026-11-14", "&quot;e14&quot;")}${entry("2026-11-15", '"e15"')}</ListBucketResult>`,
-      );
-      return;
-    }
-    const next = fileStatuses.shift();
-    if (next === "stall") {
-      res.writeHead(200, { "content-length": String(file.length || 4096) });
-      res.write("x");
-      return;
-    }
-    if (next !== undefined) {
-      res.statusCode = next;
-      res.end("boom");
-      return;
-    }
-    if (opts.fileStatus) {
-      res.statusCode = opts.fileStatus;
-      res.end("boom");
-      return;
-    }
-    res.end(opts.truncate === undefined ? file : file.subarray(0, opts.truncate));
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  t.after(
-    () =>
-      new Promise<void>((r) => {
-        server.closeAllConnections();
-        server.close(() => r());
-      }),
-  );
-  const { port } = server.address() as AddressInfo;
-  return { env: { LIGHTER_S3_URL: `http://127.0.0.1:${port}`, LIGHTER_S3_PREFIX: PREFIX }, file, requests };
+/** The trade files of 2026-11-14 to 2026-11-16, ETags e14 to e16, listed over two pages. */
+async function listing(t: TestContext) {
+  const x = Buffer.from("x");
+  const bucket = await fakeBucket(t, "trades", { "2026-11-14": x, "2026-11-15": x, "2026-11-16": x });
+  bucket.etags.set("2026-11-14", "e14").set("2026-11-15", "e15").set("2026-11-16", "e16");
+  bucket.pageSize = 2;
+  return bucket;
 }
 
-async function withParquet(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), "lighter-test-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const path = join(dir, "trades.parquet");
-  await writeTrades(path);
-  return { dir, file: await readFile(path) };
-}
+/** A listing page that is truncated and names `token` as the next one, or no token when unset. */
+const truncatedPage = (token?: string) => ({
+  status: 200,
+  body: `<ListBucketResult><IsTruncated>true</IsTruncated>${token ? `<NextContinuationToken>${token}</NextContinuationToken>` : ""}</ListBucketResult>`,
+});
 
 const dayOf = (file: Buffer, date = "2026-11-16"): DayFile => ({
   dataset: "trades",
@@ -153,14 +67,15 @@ const dayOf = (file: Buffer, date = "2026-11-16"): DayFile => ({
 });
 
 test("listDays follows continuation tokens and keeps the dates in range", async (t) => {
-  const { env } = await fakeS3(t, { file: Buffer.from("x") });
+  const { env } = await listing(t);
   const days = await listDays(env, "trades", "2026-11-15", "2026-11-16");
   assert.deepEqual(days.map((d) => [d.date, d.etag]), [["2026-11-15", "e15"], ["2026-11-16", "e16"]]);
   assert.equal(days[0]!.key, `${PREFIX}/trades/date=2026-11-15/trades.parquet`);
 });
 
 test("a listing that answers 503 then 200 succeeds after the first wait", async (t) => {
-  const { env, requests } = await fakeS3(t, { file: Buffer.from("x"), listStatuses: [{ status: 503 }] });
+  const { env, requests, listReplies } = await listing(t);
+  listReplies.push({ status: 503 });
   const clock = fakeClock();
   const days = await listDays(env, "trades", "2026-11-15", "2026-11-16", clock);
   assert.equal(days.length, 2);
@@ -169,7 +84,8 @@ test("a listing that answers 503 then 200 succeeds after the first wait", async 
 });
 
 test("a Retry-After on a retried listing replaces the wait", async (t) => {
-  const { env } = await fakeS3(t, { listStatuses: [{ status: 429, headers: { "retry-after": "7" } }] });
+  const { env, listReplies } = await listing(t);
+  listReplies.push({ status: 429, headers: { "retry-after": "7" } });
   const clock = fakeClock();
   await listDays(env, "trades", "2026-11-15", "2026-11-16", clock);
   assert.deepEqual(clock.sleeps, [7000]);
@@ -177,7 +93,8 @@ test("a Retry-After on a retried listing replaces the wait", async (t) => {
 
 test("a listing that keeps failing throws after every wait", async (t) => {
   const down = { status: 500 };
-  const { env, requests } = await fakeS3(t, { listStatuses: [down, down, down, down] });
+  const { env, requests, listReplies } = await listing(t);
+  listReplies.push(down, down, down, down);
   const clock = fakeClock();
   await assert.rejects(listDays(env, "trades", "2026-11-15", "2026-11-16", clock), /HTTP 500/);
   assert.equal(requests.length, 4);
@@ -185,18 +102,21 @@ test("a listing that keeps failing throws after every wait", async (t) => {
 });
 
 test("a listing that hands back a used continuation token throws, naming the dataset", async (t) => {
-  const { env } = await fakeS3(t, { listMode: "repeat" });
+  const { env, listReplies } = await fakeBucket(t, "trades", {});
+  listReplies.push(truncatedPage("same"), truncatedPage("same"));
   await assert.rejects(listDays(env, "trades", "2026-11-15", "2026-11-16", fakeClock()), /list of trades repeated a continuation token/);
 });
 
 test("a truncated page with no continuation token throws", async (t) => {
-  const { env } = await fakeS3(t, { listMode: "no-token" });
+  const { env, listReplies } = await fakeBucket(t, "open_interest_hourly", {});
+  listReplies.push(truncatedPage());
   await assert.rejects(listDays(env, "open_interest_hourly", "2026-11-15", "2026-11-16", fakeClock()), /open_interest_hourly is truncated/);
 });
 
 test("a download that answers 500 then 200 loads the whole file", async (t) => {
-  const { file } = await withParquet(t);
-  const { env, requests } = await fakeS3(t, { file, fileStatuses: [500] });
+  const file = await tradesFile(t);
+  const { env, requests, downloadReplies } = await fakeBucket(t, "trades", { "2026-11-16": file });
+  downloadReplies.push({ status: 500 });
   const clock = fakeClock();
   const chunks = await collect(readDay(env, dayOf(file), { clock }));
   assert.equal(chunks.flat().length, 4);
@@ -205,7 +125,8 @@ test("a download that answers 500 then 200 loads the whole file", async (t) => {
 });
 
 test("a body that stalls after its headers fails at the deadline", async (t) => {
-  const stalled = await fakeS3(t, { file: Buffer.alloc(4096), fileStatuses: ["stall", "stall", "stall", "stall"] });
+  const stalled = await fakeBucket(t, "trades", { "2026-11-16": Buffer.alloc(4096) });
+  stalled.downloadReplies.push("stall", "stall", "stall", "stall");
   const started = Date.now();
   await assert.rejects(
     collect(readDay(stalled.env, dayOf(Buffer.alloc(4096)), { clock: fakeClock(), downloadTimeoutMs: 150 })),
@@ -221,7 +142,8 @@ test("a body that stalls after its headers fails at the deadline", async (t) => 
 });
 
 test("a 404 on a download fails without a retry", async (t) => {
-  const { env, requests } = await fakeS3(t, { fileStatuses: [404] });
+  // The bucket holds no file for the day, so it answers 404.
+  const { env, requests } = await fakeBucket(t, "trades", {});
   const clock = fakeClock();
   await assert.rejects(collect(readDay(env, dayOf(Buffer.alloc(4096)), { clock })), /HTTP 404/);
   assert.equal(requests.length, 1);
@@ -229,8 +151,8 @@ test("a 404 on a download fails without a retry", async (t) => {
 });
 
 test("yields a day in chunks of rowsPerChunk rows, ids as strings, times in UTC", async (t) => {
-  const { file } = await withParquet(t);
-  const { env } = await fakeS3(t, { file });
+  const file = await tradesFile(t);
+  const { env } = await fakeBucket(t, "trades", { "2026-11-16": file });
   const chunks = await collect(
     readDay(env, dayOf(file), { where: "ask_account_id in (313004) or bid_account_id in (313004)", rowsPerChunk: 2 }),
   );
@@ -242,16 +164,18 @@ test("yields a day in chunks of rowsPerChunk rows, ids as strings, times in UTC"
 test("a failed or short download fails, naming the key, and leaves no temporary file", async (t) => {
   const tmpDir = await mkdtemp(join(tmpdir(), "lighter-tmp-"));
   t.after(() => rm(tmpDir, { recursive: true, force: true }));
-  const failing = await fakeS3(t, { fileStatus: 500 });
+  const failing = await fakeBucket(t, "trades", {});
+  failing.broken.add("2026-11-16");
   await assert.rejects(collect(readDay(failing.env, dayOf(Buffer.alloc(4096)), { tmpDir, clock: fakeClock() })), /date=2026-11-16.*HTTP 500/);
-  const short = await fakeS3(t, { file: Buffer.alloc(4096), truncate: 100 });
+  const short = await fakeBucket(t, "trades", { "2026-11-16": Buffer.alloc(4096) });
+  short.downloadReplies.push("short", "short", "short", "short");
   await assert.rejects(collect(readDay(short.env, dayOf(Buffer.alloc(4096)), { tmpDir, clock: fakeClock() })), /expected 4096 bytes/);
   assert.deepEqual(await readdir(tmpDir), []);
 });
 
 test("readDay removes its temporary folder after a successful read", async (t) => {
-  const { file } = await withParquet(t);
-  const { env } = await fakeS3(t, { file });
+  const file = await tradesFile(t);
+  const { env } = await fakeBucket(t, "trades", { "2026-11-16": file });
   const tmpDir = await mkdtemp(join(tmpdir(), "lighter-tmp-"));
   t.after(() => rm(tmpDir, { recursive: true, force: true }));
   await collect(readDay(env, dayOf(file), { tmpDir }));
@@ -274,8 +198,8 @@ test("dayManifest treats a saved value of the wrong shape as empty", () => {
 });
 
 test("dayBatches clears the day's dead letter only with its last chunk", async (t) => {
-  const { file } = await withParquet(t);
-  const { env } = await fakeS3(t, { file });
+  const file = await tradesFile(t);
+  const { env } = await fakeBucket(t, "trades", { "2026-11-16": file });
   const checkpoint = { key: "k", value: { files: { "2026-11-16": "e16" } } };
   const batches = await collect(dayBatches(env, dayOf(file), { where: "id < 40627877461", rowId: (r) => String(r.id), checkpoint, rowsPerChunk: 2 }));
   assert.deepEqual(
@@ -291,8 +215,8 @@ test("dayBatches clears the day's dead letter only with its last chunk", async (
 });
 
 test("dayBatches yields one empty last batch for a day with no matching rows", async (t) => {
-  const { file } = await withParquet(t);
-  const { env } = await fakeS3(t, { file });
+  const file = await tradesFile(t);
+  const { env } = await fakeBucket(t, "trades", { "2026-11-16": file });
   const checkpoint = { key: "k", value: 1 };
   const batches = await collect(dayBatches(env, dayOf(file), { where: "id = 0", rowId: (r) => String(r.id), checkpoint }));
   assert.equal(batches.length, 1);
@@ -303,7 +227,8 @@ test("dayBatches yields one empty last batch for a day with no matching rows", a
 });
 
 test("dayBatches turns a failed day into a dead letter with no checkpoint", async (t) => {
-  const { env } = await fakeS3(t, { fileStatus: 500 });
+  const { env, broken } = await fakeBucket(t, "trades", {});
+  broken.add("2026-11-16");
   const day = dayOf(Buffer.alloc(4096));
   const batches: Batch<DayCall>[] = await collect(
     dayBatches(env, day, { rowId: (r) => String(r.id), checkpoint: { key: "k", value: 1 }, clock: fakeClock() }),
