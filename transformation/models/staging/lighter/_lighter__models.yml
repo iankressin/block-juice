@@ -69,3 +69,23 @@ models:
         data_tests: [unique, not_null]
       - name: blocks
         data_tests: [not_null]
+
+  - name: stg_lighter__account_logs
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: hash
+        data_tests: [not_null]
+      - name: log_time
+        data_tests: [not_null]
+      - name: pubdata_type
+        data_tests: [not_null]
+
+  - name: stg_lighter__account_log_details
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: hash
+        data_tests: [unique, not_null]

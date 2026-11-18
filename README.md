@@ -87,6 +87,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter trades](#lighter-trades) | | | | | | | | ✓ | |
 | [Lighter account fills](#lighter-account-fills) | | | | | | | | ✓ | |
 | [Lighter batches](#lighter-batches) | | | | | | | | ✓ | |
+| [Lighter account movements](#lighter-account-movements) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -682,6 +683,38 @@ The `lighter` pipeline builds it from the call source `lighter-batches`, which r
 | `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed it, and when. Null on a `nothing_to_execute` batch. One tx can execute several batches. |
 | `final_at` | timestamptz | When the batch became final. |
 | `updated_at` | timestamptz | When the Explorer last updated the batch. |
+
+### Lighter account movements
+
+`analytics.lighter_account_movements`
+
+One leg of a money move in a listed Lighter account's log: a deposit, a withdrawal, a transfer or its fee, a move between the account's perps and spot routes, a pool mint or burn, a stake, unstake or unlock, or a margin move. One row per entry, account and leg, with the L1 batch whose block range holds the entry's block and that batch's Ethereum hashes and times. Covers the accounts in `ingestion/sources/lighter-account-logs/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there, from `START_TIME` (2026-11-16 to start). A transfer between two listed accounts gives the sender's legs under the sender and the receiver's under the receiver.
+
+The `lighter` pipeline builds it from the call source `lighter-account-logs`, which walks each account's log on Lighter's Explorer, newest first, back to a day before the newest entry the last run saw. It skips plain trades, which [`lighter_trades`](#lighter-trades) holds, and reads `logs/{hash}` for each money move to find its L2 block. A money move has settled on Ethereum once its batch is `executed`, or `nothing_to_execute`: verified, with no L1 work left. `is_final` says so. The withdrawals checked so far sat in `executed` batches; deposits and transfers sat in either. A transfer to the fast-withdraw pool, likely account 675395, is the user's side of a fast withdrawal, so it shows as `transfer_out`, not `withdrawal`. `lighter_movements_match_detail_batch` warns when a row's batch differs from the one the Explorer names, or when a loaded batch should hold a row's block but none does. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<hash>:<account_index>:<leg>`. Unique. |
+| `hash` | text | The entry's hash, the same in each account's log that holds it. |
+| `log_time` | timestamptz | The entry's time, to the microsecond. Never join it to a batch by time. |
+| `account_index` | bigint | The account whose log holds the entry, and whose leg this row is. |
+| `leg` | text | `from`, `to` or `fee` for a transfer or route move, `self` for the rest. |
+| `kind` | text | `deposit`, `withdrawal`, `transfer_out`, `transfer_in`, `transfer_fee`, `route_move`, `pool_mint`, `pool_burn`, `stake`, `unstake`, `unlock` or `margin_move`. |
+| `asset` | text | The asset's symbol, such as `USDC` or `LIT`. |
+| `route` | text | `perps` or `spot`. Null for stake, unstake, unlock and margin moves. |
+| `amount` | numeric | The amount as Lighter sent it, in the asset's units. Unsigned. |
+| `signed_amount` | numeric | `amount`, negative when it leaves the account or route. Null for stake, unstake, unlock and margin moves, whose sign is unproven. |
+| `counterparty_account_index` | bigint | The other account of a transfer, the fee account of a fee, or the pool of a mint, burn, stake or unstake. |
+| `l1_address` | text | The Ethereum address a deposit came from, lowercased. |
+| `pubdata_type`, `tx_type` | text | The entry's type, such as `L2TransferV2`, and its tx's, such as `L2Transfer`. |
+| `block_number` | bigint | The L2 block that holds the entry. Null until `logs/{hash}` answers. |
+| `batch_number` | bigint | The loaded batch whose block range holds `block_number`. Null until that batch loads. |
+| `detail_batch_number` | bigint | The batch `logs/{hash}` named, null when read before the batch formed. Use `batch_number`. |
+| `batch_status`, `is_final` | text, boolean | The batch's status, and whether it is final, as in [`lighter_batches`](#lighter-batches). `is_final` is false with no batch. |
+| `commit_tx_hash`, `committed_at` | text, timestamptz | The Ethereum tx that committed the batch, and when. |
+| `verify_tx_hash`, `verified_at` | text, timestamptz | The Ethereum tx that verified the batch, and when. |
+| `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed the batch, and when. Null on a `nothing_to_execute` batch. |
+| `final_at` | timestamptz | When the batch became final. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
