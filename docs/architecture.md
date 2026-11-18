@@ -32,6 +32,8 @@ The `lighter` pipeline loads Lighter, a ZK rollup whose data comes from a REST A
 
 The seventh source, `lighter-batches`, is the first to read Lighter's Explorer, which allows 45 request weight a minute per IP. Its client in `@ingestion/lib/lighter` starts each request after the previous one's share of `LIGHTER_EXPLORER_WEIGHT_PER_MINUTE` and retries as the exchange client does. An L1 batch is a contiguous range of L2 blocks, with the Ethereum txs that committed, verified and executed it. The Explorer's history starts on 2025-08-25, with batch 28910, and about 830 batches close a day. The first run finds the batch that holds `START_TIME` by bisection, about 18 reads, then reads each batch up to the head, the highest number in `/batches`. A checkpoint keeps the first batch not yet final, so each run reads committed batches again until they are `executed` or `nothing_to_execute`. A batch that fails, a 404 inside the range included, waits as a dead letter and does not hold the checkpoint back. `START_TIME` may not come before 2025-08-28: batches before 29654 carry no L1 status and never settle. It writes `raw.lighter_batches`, keyed `batch:<n>`, each reply whole. `int_lighter_batches` turns a reply into a block range, a tx count, a status and the time of each L1 step, and the `lighter_batches` mart carries it. Later models join an L2 block to its batch on that range.
 
+The eighth source, `lighter-account-logs`, walks the Explorer log of each account in its `addresses.json`, and of each sub-account of an L1 address listed there, which `accountsByL1Address` resolves. It asks for every entry type but plain trades, which `lighter-trades` loads from S3, in one comma-separated `pub_data_type`, since a repeated parameter keeps only the first type. A walk reads pages newest first by offset and stops at a short page or one that holds an entry older than its `since`: `START_TIME` on the first run, then the newest entry the last run saw less `HISTORY_OVERLAP_DAYS`, which a checkpoint per account keeps. New entries push old ones onto the next page, so the source writes each entry once, keyed `log:<account>:<hash>`, and a transfer between two listed accounts sits under each. A page that repeats the one before fails the walk, and a failed walk keeps its pages and waits as a dead letter. For each deposit, withdrawal, transfer, pool, staking or margin entry, it reads `logs/{hash}` once a run for the entry's L2 block, keyed `detail:<hash>`. `int_lighter_account_movements` turns each entry into a leg per account it moves, signs it, and joins the batch whose block range holds the block, and the `lighter_account_movements` mart carries it.
+
 ## Repo layout
 
 ```
@@ -136,6 +138,7 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd ingestion/sources/lighter-open-interest && pnpm ingest)
 (cd ingestion/sources/lighter-trades && pnpm ingest)
 (cd ingestion/sources/lighter-batches && pnpm ingest)
+(cd ingestion/sources/lighter-account-logs && pnpm ingest)
 (cd ingestion/sources/binance-candles && pnpm ingest)
 (cd ingestion/sources/coinbase-candles && pnpm ingest)
 (cd ingestion/sources/evm-chainlink-price-feeds && CHAIN=ethereum pnpm ingest)

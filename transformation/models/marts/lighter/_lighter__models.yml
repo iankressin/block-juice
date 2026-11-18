@@ -355,3 +355,95 @@ models:
         description: When the first `executed` or `nothing_to_execute` change happened.
       - name: updated_at
         description: When the Explorer last updated the batch.
+
+  - name: lighter_account_movements
+    description: >-
+      One leg of a deposit, withdrawal, transfer, route move, pool, staking or margin move in the log of an
+      account the lighter-account-logs source lists, with the L1 batch whose block range holds the entry's
+      block and that batch's Ethereum hashes and times. An entry gives a leg for each account it moves,
+      and a row only for the legs of the account whose log holds it. A move has settled on Ethereum once
+      its batch is `executed` or `nothing_to_execute`; deposits and transfers sit in either. A transfer
+      to the fast-withdraw pool, likely account 675395, is the user's side of a fast withdrawal. The test
+      `lighter_movements_match_detail_batch` warns when the batch differs from the one the Explorer names,
+      or when a loaded batch should hold a row's block and none does; see `catalog/vendors/lighter/NOTES.md`.
+    columns:
+      - name: id
+        description: "`<hash>:<account_index>:<leg>`."
+        data_tests: [unique, not_null]
+      - name: hash
+        description: The entry's hash, the same in each account's log that holds it.
+        data_tests: [not_null]
+      - name: log_time
+        description: The entry's time, to the microsecond. Never join it to a batch by time.
+        data_tests: [not_null]
+      - name: account_index
+        description: The account whose log holds the entry, and whose leg this row is.
+        data_tests: [not_null]
+      - name: leg
+        description: "`from`, `to` or `fee` for a transfer or route move, `self` for the rest."
+      - name: kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - deposit
+                  - withdrawal
+                  - transfer_out
+                  - transfer_in
+                  - transfer_fee
+                  - route_move
+                  - pool_mint
+                  - pool_burn
+                  - stake
+                  - unstake
+                  - unlock
+                  - margin_move
+      - name: asset
+        description: The asset's symbol, such as `USDC` or `LIT`.
+      - name: route
+        description: "`perps` or `spot`. Null for stake, unstake, unlock and margin moves."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [perps, spot]
+      - name: amount
+        description: The amount as Lighter sent it, in the asset's units with its decimals. Unsigned.
+      - name: signed_amount
+        description: >-
+          `amount`, negative when it leaves the account or route. Null for stake, unstake, unlock and
+          margin moves, whose sign is unproven.
+      - name: counterparty_account_index
+        description: >-
+          The other account of a transfer, the fee account of a transfer fee, or the pool of a mint, burn,
+          stake or unstake. Null for a deposit, a withdrawal and a route move.
+      - name: l1_address
+        description: The Ethereum address a deposit came from, lowercased. Null on other kinds.
+      - name: pubdata_type
+        description: The entry's type, such as `L1DepositV2` or `L2TransferV2`.
+      - name: tx_type
+        description: The tx's type, such as `L1Withdraw` or `L2Transfer`.
+      - name: block_number
+        description: The L2 block that holds the entry, from `logs/{hash}`. Null until that lookup succeeds.
+      - name: batch_number
+        description: The loaded batch whose block range holds `block_number`. Null until that batch loads.
+      - name: detail_batch_number
+        description: The batch `logs/{hash}` named, null when read before the batch formed. Use `batch_number`.
+      - name: batch_status
+        description: The batch's status, as in `lighter_batches`.
+      - name: is_final
+        description: True once the batch is `executed` or `nothing_to_execute`. False with no batch.
+      - name: commit_tx_hash
+        description: The Ethereum tx that committed the batch.
+      - name: committed_at
+        description: When the batch was committed.
+      - name: verify_tx_hash
+        description: The Ethereum tx that verified the batch.
+      - name: verified_at
+        description: When the batch was verified.
+      - name: execute_tx_hash
+        description: The Ethereum tx that executed the batch. Null on a `nothing_to_execute` batch.
+      - name: executed_at
+        description: When the batch was executed.
+      - name: final_at
+        description: When the batch became final.

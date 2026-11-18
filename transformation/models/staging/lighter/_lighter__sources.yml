@@ -40,3 +40,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: account_logs
+        identifier: lighter_account_logs
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

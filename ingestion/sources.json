@@ -281,6 +281,11 @@
   },
   {
     "name": "lighter",
+    "table": "account_logs",
+    "package": "lighter-account-logs"
+  },
+  {
+    "name": "lighter",
     "table": "batches",
     "package": "lighter-batches"
   },
