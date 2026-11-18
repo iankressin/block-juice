@@ -9,4 +9,4 @@ export { logger, type Logger } from "#src/logger.ts";
 export { observedFetch, observeDelay } from "#src/transport-metrics.ts";
 export { runSource } from "#src/run/index.ts";
 export { batches, callBatches, retryPages } from "#src/batches.ts";
-export { DAY_MS, historyKey, historyState, historyPlan, type HistorySettings } from "#src/history.ts";
+export { DAY_MS, historyEnv, historyKey, historyState, historyPlan, type HistorySettings } from "#src/history.ts";

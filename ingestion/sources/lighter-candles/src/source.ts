@@ -1,6 +1,7 @@
 import {
   callBatches,
   describeError,
+  historyEnv,
   historyKey,
   historyPlan,
   historyState,
@@ -38,21 +39,9 @@ const resolution = z.enum(Object.keys(RESOLUTION_MS) as [Resolution, ...Resoluti
 // oldest with no error, so a window never spans more.
 const WINDOW_CANDLES = 500;
 
-const startTime = z
-  .union([z.iso.date(), z.iso.datetime({ offset: true })], {
-    error: (issue) =>
-      issue.input === undefined
-        ? "Required"
-        : "Expected an ISO date or datetime, such as 2026-10-01 or 2026-10-01T00:00:00Z",
-  })
-  .transform((value) => Date.parse(value));
-
 const candlesEnv = lighterEnv.extend({
   CANDLE_RESOLUTION: resolution.default("1h"),
-  START_TIME: startTime,
-  HISTORY_OVERLAP_DAYS: z.coerce.number().int().nonnegative().optional(),
-  HISTORY_REFRESH_DAYS: z.coerce.number().int().positive().optional(),
-  HISTORY_FULL_REFRESH: z.enum(["0", "1"]).optional(),
+  ...historyEnv.shape,
 });
 
 export type LighterCandlesEnv = z.infer<typeof candlesEnv>;
@@ -154,7 +143,7 @@ export const candlesSource = (clock: Clock = systemClock): Source<LighterCandles
     function* fresh(): Generator<CandleCall> {
       for (const market of markets) {
         for (const price of prices) {
-          for (let start = plans.get(planKey(market.market_id, price))!.from; start <= now; start += span) {
+          for (const start of plans.get(planKey(market.market_id, price))!.windows()) {
             yield {
               market_id: market.market_id,
               symbol: market.symbol,
@@ -167,24 +156,22 @@ export const candlesSource = (clock: Clock = systemClock): Source<LighterCandles
         }
       }
     }
-    const isFresh = (call: CandleCall) => {
-      const plan = plans.get(planKey(call.market_id, call.price));
-      return !!plan && call.resolution === res && call.start_time >= plan.from && call.start_time <= now
-        && (call.start_time - plan.from) % span === 0 && call.end_time === call.start_time + span - 1;
-    };
+    const isFresh = (call: CandleCall) =>
+      call.resolution === res && !!plans.get(planKey(call.market_id, call.price))?.covers(call.start_time, call.end_time);
 
-    for await (const [call] of callBatches(fresh(), retry, callId, isFresh, context, 1, true)) {
-      const batch: Batch<CandleCall> = { records: [], failed: [], succeededCallIds: [] };
-      try {
-        batch.records = await fetchWindow(lighter, call!, clock);
-        batch.succeededCallIds!.push(callId(call!));
-      } catch (error) {
-        batch.failed.push({ id: callId(call!), call: call!, error: describeError(error) });
+    for await (const part of callBatches(fresh(), retry, callId, isFresh, context, 1, true)) {
+      for (const call of part) {
+        const batch: Batch<CandleCall> = { records: [], failed: [], succeededCallIds: [] };
+        try {
+          batch.records = await fetchWindow(lighter, call, clock);
+          batch.succeededCallIds!.push(callId(call));
+        } catch (error) {
+          batch.failed.push({ id: callId(call), call, error: describeError(error) });
+        }
+        const plan = plans.get(planKey(call.market_id, call.price));
+        if (context?.getCheckpoint && plan && isFresh(call)) batch.checkpoints = [plan.checkpoint(call.end_time + 1)];
+        yield batch;
       }
-      if (context?.getCheckpoint && isFresh(call!)) {
-        batch.checkpoints = [plans.get(planKey(call!.market_id, call!.price))!.checkpoint(call!.end_time + 1)];
-      }
-      yield batch;
     }
   },
 });

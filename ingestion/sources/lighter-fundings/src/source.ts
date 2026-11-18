@@ -1,6 +1,7 @@
 import {
   callBatches,
   describeError,
+  historyEnv,
   historyKey,
   historyPlan,
   historyState,
@@ -26,20 +27,8 @@ const HOUR_MS = 3_600_000;
 const WINDOW_HOURS = 750;
 const WINDOW_MS = WINDOW_HOURS * HOUR_MS;
 
-const startTime = z
-  .union([z.iso.date(), z.iso.datetime({ offset: true })], {
-    error: (issue) =>
-      issue.input === undefined
-        ? "Required"
-        : "Expected an ISO date or datetime, such as 2026-10-01 or 2026-10-01T00:00:00Z",
-  })
-  .transform((value) => Date.parse(value));
-
 const fundingsEnv = lighterEnv.extend({
-  START_TIME: startTime,
-  HISTORY_OVERLAP_DAYS: z.coerce.number().int().nonnegative().optional(),
-  HISTORY_REFRESH_DAYS: z.coerce.number().int().positive().optional(),
-  HISTORY_FULL_REFRESH: z.enum(["0", "1"]).optional(),
+  ...historyEnv.shape,
 });
 
 export type LighterFundingsEnv = z.infer<typeof fundingsEnv>;
@@ -131,29 +120,26 @@ export const fundingsSource = (clock: Clock = systemClock): Source<LighterFundin
     }
     function* fresh(): Generator<FundingCall> {
       for (const market of markets) {
-        for (let start = plans.get(market.market_id)!.from; start <= now; start += WINDOW_MS) {
+        for (const start of plans.get(market.market_id)!.windows()) {
           yield { market_id: market.market_id, symbol: market.symbol, start_time: start, end_time: start + WINDOW_MS - 1 };
         }
       }
     }
-    const isFresh = (call: FundingCall) => {
-      const plan = plans.get(call.market_id);
-      return !!plan && call.start_time >= plan.from && call.start_time <= now
-        && (call.start_time - plan.from) % WINDOW_MS === 0 && call.end_time === call.start_time + WINDOW_MS - 1;
-    };
+    const isFresh = (call: FundingCall) => !!plans.get(call.market_id)?.covers(call.start_time, call.end_time);
 
-    for await (const [call] of callBatches(fresh(), retry, callId, isFresh, context, 1, true)) {
-      const batch: Batch<FundingCall> = { records: [], failed: [], succeededCallIds: [] };
-      try {
-        batch.records = await fetchWindow(lighter, call!, clock);
-        batch.succeededCallIds!.push(callId(call!));
-      } catch (error) {
-        batch.failed.push({ id: callId(call!), call: call!, error: describeError(error) });
+    for await (const part of callBatches(fresh(), retry, callId, isFresh, context, 1, true)) {
+      for (const call of part) {
+        const batch: Batch<FundingCall> = { records: [], failed: [], succeededCallIds: [] };
+        try {
+          batch.records = await fetchWindow(lighter, call, clock);
+          batch.succeededCallIds!.push(callId(call));
+        } catch (error) {
+          batch.failed.push({ id: callId(call), call, error: describeError(error) });
+        }
+        const plan = plans.get(call.market_id);
+        if (context?.getCheckpoint && plan && isFresh(call)) batch.checkpoints = [plan.checkpoint(call.end_time + 1)];
+        yield batch;
       }
-      if (context?.getCheckpoint && isFresh(call!)) {
-        batch.checkpoints = [plans.get(call!.market_id)!.checkpoint(call!.end_time + 1)];
-      }
-      yield batch;
     }
   },
 });
