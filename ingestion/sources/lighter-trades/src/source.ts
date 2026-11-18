@@ -1,15 +1,14 @@
 import { describeError, historyKey, readJson, uniqueBy, systemClock, type Source, type Clock } from "@ingestion/lib";
+import { createLighterClient, lighterEnv } from "@ingestion/lib/lighter";
 import {
-  createLighterClient,
   dayBatches,
   dayCallSchema,
   dayManifest,
-  lighterEnv,
   lighterS3Env,
   listDays,
   type DayCall,
   type DayFile,
-} from "@ingestion/lib/lighter";
+} from "@ingestion/lib/lighter/s3";
 import * as z from "zod";
 
 const DATASET = "trades";

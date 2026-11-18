@@ -7,6 +7,7 @@
     "./evm": "./src/evm/index.ts",
     "./solana": "./src/solana/index.ts",
     "./lighter": "./src/lighter/index.ts",
+    "./lighter/s3": "./src/lighter/s3.ts",
     "./bitcoin": "./src/bitcoin/index.ts"
   },
   "imports": {

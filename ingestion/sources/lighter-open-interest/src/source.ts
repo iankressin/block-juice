@@ -7,7 +7,7 @@ import {
   listDays,
   type DayCall,
   type DayFile,
-} from "@ingestion/lib/lighter";
+} from "@ingestion/lib/lighter/s3";
 import * as z from "zod";
 
 const DATASET = "open_interest_hourly";
