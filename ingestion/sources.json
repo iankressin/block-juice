@@ -291,6 +291,11 @@
   },
   {
     "name": "lighter",
+    "table": "assets",
+    "package": "lighter-assets"
+  },
+  {
+    "name": "lighter",
     "table": "batches",
     "package": "lighter-batches"
   },
@@ -323,6 +328,16 @@
     "name": "lighter",
     "table": "pnl",
     "package": "lighter-pnl"
+  },
+  {
+    "name": "lighter",
+    "table": "public_pools",
+    "package": "lighter-public-pools"
+  },
+  {
+    "name": "lighter",
+    "table": "system_config",
+    "package": "lighter-system-config"
   },
   {
     "name": "lighter",

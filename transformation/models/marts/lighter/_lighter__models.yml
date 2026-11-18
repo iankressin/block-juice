@@ -527,6 +527,80 @@ models:
         description: User operations in the hour.
         data_tests: [not_null]
 
+  - name: lighter_assets
+    description: >-
+      One row per Lighter asset, from the latest run that read it. `decimals` is how many decimal places
+      an integer balance of the asset carries. Amounts and ratios are numeric, cast from Lighter's decimal
+      strings.
+    columns:
+      - name: asset_id
+        description: The id Lighter uses for the asset. USDC is 3, ETH 1 and LIT 2.
+        data_tests: [unique, not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: decimals
+        description: Decimal places of the asset on Lighter.
+        data_tests: [not_null]
+      - name: l1_decimals
+        description: Decimal places of the asset's token on Ethereum.
+      - name: l1_address
+        description: The asset's token contract on Ethereum.
+      - name: margin_mode
+        description: Whether the asset counts as margin, `enabled` or `disabled`.
+      - name: min_transfer_amount
+      - name: min_withdrawal_amount
+      - name: loan_to_value
+      - name: liquidation_threshold
+      - name: global_supply_cap
+      - name: user_supply_cap
+      - name: index_price
+        description: The asset's price in USDC when the run read it.
+      - name: read_at
+        description: When the run read these settings.
+
+  - name: lighter_system_accounts
+    description: >-
+      Lighter's five system accounts, one row per role, from the latest `systemConfig` reading.
+    columns:
+      - name: role
+        description: What the account does.
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [liquidity_pool, staking_pool, funding_fee_rebate, market_maker_incentive, fee_collector]
+      - name: account_index
+        data_tests: [not_null]
+      - name: read_at
+        description: When the run read the config.
+
+  - name: lighter_public_pools
+    description: >-
+      One reading of one public pool. Each run adds a reading for every pool, so a pool has a row per run.
+    columns:
+      - name: id
+        description: The reading's key, `<account_index>:<read_at in ms>`.
+        data_tests: [unique, not_null]
+      - name: account_index
+        description: The pool's account. The LLP is 281474976710654.
+        data_tests: [not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: name
+      - name: account_type
+        description: 3 for the LLP, 2 for other pools.
+      - name: master_account_index
+      - name: operator_fee
+      - name: annual_percentage_yield
+      - name: total_asset_value
+        description: In USDC.
+      - name: total_spot_value
+      - name: total_perps_value
+      - name: total_shares
+      - name: status
+      - name: created_at
+
 unit_tests:
   # Account 1000, idle since 2025-12-30 (catalog/vendors/lighter/NOTES.md, Account value, L14): its point reads
   # 156508.908444 - 153478.114476 - 3030.185271 = 0.608697, its collateral and total_asset_value.
@@ -542,3 +616,21 @@ unit_tests:
     expect:
       rows:
         - {id: "1000:1d:1794268800", account_index: 1000, resolution: 1d, point_time: "2026-11-10 00:00:00+00", inflow: 156508.908444, outflow: 153478.114476, trade_pnl: -3030.185271, perps_value: 0.608697}
+  # The reply of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Reference endpoints).
+  - name: system_roles_unpivot_the_config
+    description: >-
+      One systemConfig reading gives one row for each of the five roles, with the liquidity pool at
+      281474976710654. Only the latest reading counts.
+    model: lighter_system_accounts
+    given:
+      - input: ref('stg_lighter__system_config')
+        rows:
+          - {id: "1794831600000", read_at: "2026-11-16 12:00:00+00", liquidity_pool_index: 1, staking_pool_index: 2, funding_fee_rebate_account_index: 3, market_maker_incentive_account_index: 4, fee_collector_account_index: 5}
+          - {id: "1794918000000", read_at: "2026-11-17 12:00:00+00", liquidity_pool_index: 281474976710654, staking_pool_index: 281474976624800, funding_fee_rebate_account_index: 713888, market_maker_incentive_account_index: 723106, fee_collector_account_index: 281474976496476}
+    expect:
+      rows:
+        - {role: liquidity_pool, account_index: 281474976710654, read_at: "2026-11-17 12:00:00+00"}
+        - {role: staking_pool, account_index: 281474976624800, read_at: "2026-11-17 12:00:00+00"}
+        - {role: funding_fee_rebate, account_index: 713888, read_at: "2026-11-17 12:00:00+00"}
+        - {role: market_maker_incentive, account_index: 723106, read_at: "2026-11-17 12:00:00+00"}
+        - {role: fee_collector, account_index: 281474976496476, read_at: "2026-11-17 12:00:00+00"}

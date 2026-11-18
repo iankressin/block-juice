@@ -121,6 +121,33 @@ models:
       - name: uops_count
         data_tests: [not_null]
 
+  - name: stg_lighter__assets
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: asset_id
+        data_tests: [not_null]
+      - name: read_at
+        data_tests: [not_null]
+
+  - name: stg_lighter__system_config
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: liquidity_pool_index
+        data_tests: [not_null]
+
+  - name: stg_lighter__public_pools
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: read_at
+        data_tests: [not_null]
+
 unit_tests:
   # 313004's reading of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Snapshots).
   - name: transaction_time_is_microseconds
