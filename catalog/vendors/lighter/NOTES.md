@@ -1,6 +1,6 @@
-# Lighter market data: notes
+# Lighter: notes
 
-These notes cover the hosts, endpoints and S3 files in `vendor.yaml`. Every limit, field and value below comes from the Lighter docs that `vendor.yaml` lists, or from replies of `mainnet.zklighter.elliot.ai`, `explorer.elliot.ai` and the public S3 bucket on 2026-11-17. The proof table at the end gives the command that rebuilds each fact.
+These notes cover the hosts, endpoints and S3 files in `vendor.yaml`. Every limit, field and value below comes from the Lighter docs that `vendor.yaml` lists, or from replies of `mainnet.zklighter.elliot.ai`, `explorer.elliot.ai` and the public S3 bucket on 2026-11-17 and, for plan 2, 2026-11-18. Two proof tables at the end give the command that rebuilds each fact: plan 1's rows P1 to P16, and plan 2's rows L11 to L21.
 
 Three answers that later tasks branch on:
 
@@ -72,10 +72,65 @@ Three answers that later tasks branch on:
 
 ## For plan 2
 
-- `GET /api/v1/tx?by=hash&value=<tx_hash>` returns `block_height`. For trade 40627877458's hash (`5b112217…95d2`) it was 389272097, equal to the API trade's `block_height` and S3's `l2_block_height`, with `type` 14.
-- Explorer `GET /logs/{hash}` returns `block_number` and, once batched, `batch_number`: 389272097 and 268847 for the same hash, with `tx_type` `L2CreateOrder` and the trade's pubdata.
-- Explorer account-log entries (`GET /accounts/{param}/logs?limit=&offset=`) carry `hash`, `pubdata`, `pubdata_type`, `status`, `time` and `tx_type`, and no block number. They page newest first by `offset`.
-- A batch is a contiguous block range. Batch 268847 holds blocks 389271230 to 389272829, 1,600 blocks, among them 389272097; batch 99999 ends at 125735108 and batch 100000 starts at 125735109. Batch sizes vary: batches 99999, 100000, 200000 and 250000 hold 1,600 blocks and batch 50000 holds 305; `GET /batches` gave `batch_size` 1600 for the 20 most recent. The Explorer finds no batch 1, 2 or 10000.
+Plan 2 reads the Explorer and six exchange endpoints that plan 1 does not: `account`, `accountsByL1Address`, `pnl`, `assetDetails`, `systemConfig` and `publicPoolsMetadata`. The facts below come from replies on 2026-11-17 and 2026-11-18. The plan 2 proof table at the end rebuilds them as rows L11 to L21; plan 1's P16 rebuilds the first look at `tx`, `logs/{hash}` and batch ranges.
+
+Four answers that later tasks branch on:
+
+- **No two log entries share a hash.** A walk of 313004's ledger types from 2026-11-18 12:57 UTC back to 2026-11-14 read 5,116 entries: 5,110 distinct entries with 5,110 distinct hashes. The 6 extra were exact copies, each the last entry of one page and the first of the next, pushed down by new entries during the walk (L19). A key of account and hash keeps each entry once.
+- **Deposits and withdrawals settle in `executed` batches.** The 5 deposits and 1 withdrawal of 313004 and 693073 since 2026-11-16 all sit in `executed` batches whose ranges hold their blocks. 11 of their 27 transfers sit in `nothing_to_execute` batches (L20).
+- **The side that `direction` names pays.** Across 13:00 UTC on 2026-11-18, nine pool accounts with no log entry in between changed `collateral` by −signed position × `value` on each position whose market's `direction` was `long`, and by +signed position × `value` where it was `short`, signed position being long-positive. On all 131 positions with a non-zero amount, `total_funding_paid_out` moved by that amount within the rounding of `value`'s 8 decimals, and on none by the opposite sign. Seven of them did the same across 14:00 (L21).
+- **`tx` forgets old txs.** On 2026-11-18 it found 313004's txs from 2026-08-20 04:00:01 UTC on, and none from 03:59:58 or before (L18). The edge had not moved between 13:07 and 14:02, so it is not an hourly rolling window; whether it is fixed or moves daily is unproven. Plan 2 does not use it: `logs/{hash}` reaches back to 2025-08-25.
+
+### Explorer
+
+- `https://explorer.elliot.ai/api/` allows 45 weight a minute per IP, burst 45. Account logs weigh 4, `blocks/{n}` 5, `search` 3, account positions 2, every other path 1. Plan 2's client starts each request at least w × 60000 / `LIGHTER_EXPLORER_WEIGHT_PER_MINUTE` ms after the previous one, w being the previous request's weight. The three Explorer sources take shares of 25, 15 and 5.
+- It holds batches from 28910 on. Batch 28910's first block, 41849406, is at 2025-08-25 15:28:03.691073 UTC; 28909 answers 404 (L11), as do 1, 2 and 10000. Account 1000's oldest ledger entry is from 2025-08-28, though its `pnl` series starts on 2025-03-13: the Explorer has nothing older.
+- Errors come as `{"error":"…"}`: HTTP 400 `invalid pubDataType=Nope`, `invalid aggregation_period: day` and `aggregation_period parameter is required`; HTTP 404 `batch=28909 not found with block=0` and `log deadbeef not found`. An unknown account's logs are `[]` with HTTP 200.
+- **The comma-only filter.** `pub_data_type` takes several types only as one comma-separated value. For account 1000, `pub_data_type=L1Deposit&pub_data_type=WithdrawV2` returned 9 entries, all `L1Deposit`; `pub_data_type=L1Deposit,WithdrawV2` returned those 9 and the `WithdrawV2` (L13). A repeated parameter drops every type after the first, with no error. All 39 types but `Empty` and `Trade` in one value work; an unknown type answers 400.
+- `stats/tx?aggregation_period=1h` returns `{"data":{"chart":{"types":["timestamp","count","uopsCount"],"data":[[1759363200,3571651,3571651],…]}}}`. At 13:11 UTC on 2026-11-18 it held 9,902 hourly points from 2025-10-02 00:00 to 2026-11-18 13:00, 3,600 s apart with no gap, in 289,879 bytes. The last point is the hour still open. `1h` is the only period.
+- `blocks/{n}` gives a block's batch, status, tx count, a few of its logs (2 of block 392559906's 500 txs) and 210 market prices. A batch reply already lists each block's time and tx count, so plan 2 calls neither block path. Explorer `accounts/{p}/positions` and `/assets` give positions by market (`market_index, pnl, side, size, entry_price`) and balances by asset id; `account` gives the same with more fields, under the exchange API's own limit.
+
+### Batches and L1 settlement
+
+- `GET /batches` returns 20 recent batches ordered by `updated_at`, not by number, each `batch_number, updated_at, batch_size, batch_status, batch_details`. A batch not yet committed comes with `batch_status` null and `batch_details` `{}`. It ignores `limit`: `?limit=5` gave 20. The highest `batch_number` is the head: 270939 at 13:11 UTC on 2026-11-18.
+- `GET /batches/{n}` returns `batch_number, updated_at, batch_details {commit_tx_hash, verify_tx_hash, execute_tx_hash}, blocks [{block_number, updated_at, total_transactions}], status_changes [{hash, updated_at, batch_status}]`: 152,617 bytes for the 1,600 blocks of 270062.
+- A batch is a contiguous block range, and consecutive batches meet: 270062 holds 391215230 to 391216829, 270063 391216830 to 391218429, and 270064 391218430 to 391220029 (L12). Batch 268847 holds 389271230 to 389272829, and batch 100000 starts at 125735109, the block after 99999 ends (P16). Sizes vary: 338 blocks in 28910, 305 in 50000, 427 in 109274, and 1,600 in 99999, 100000, 200000, 250000 and every batch read from November 2026. About 830 batches a day close now.
+- Status goes `committed` → `verified` → `executed` (270062 on 2026-11-17: 11:54:23, 12:08:59, 12:08:59), or `committed` → `nothing_to_execute`, which carries the verify hash and no execute hash (270063: 11:55:35, 12:09:23; 270064: 11:56:59, 12:14:35). Every deposit and withdrawal checked sits in an `executed` batch, and transfers sit in either (L16, L20). So `nothing_to_execute` marks a verified batch with no L1 work left: it is final, like `executed`.
+- **Batches 28910 to 29653 have no status.** Their `batch_details` is null and `status_changes` empty, on every batch read in that span (28910, 29537, 29615, 29634, 29644, 29649, 29651, 29652, 29653). Batches 29654 to 29668 have status changes but no `committed` one: 29654 only `nothing_to_execute`, 29655 `verified` then `executed`. From 29669 on, each batch read starts with `committed` (L11). A rule that waits for `executed` or `nothing_to_execute` never closes a batch below 29654.
+- One execute tx can close several batches: 270092 and 270093 share `0x3446be37…`, both executed at 13:08:35 on 2026-11-17 (L12).
+- L1 commits can lag by hours. Batch 270063's blocks (11:46 to 11:47) were committed at 11:55. Batch 269235, which holds a deposit made at 2026-11-16 11:09:41, was committed at 18:03:35 and executed at 18:08:47; every batch in L20 holding an entry from 10:34 to 11:37 that day was executed between 18:02 and 18:14.
+- **The settlement link.** `logs/{hash}` gives an entry's `block_number` and `batch_number`; the batch whose range holds that block gives the L1 hashes and times. Account 1000's `L1Withdraw` at 2025-12-30 08:38:14.781 sits in block 137652420 and batch 109274 (137652412 to 137652838), which was committed at 10:50:11, verified at 11:31:11 and executed at 11:33:23 by `0x23a3d85c…` (L16). In all 33 entries of L20, the batch that `logs/{hash}` names holds the entry's block.
+
+### Account logs
+
+- `GET /accounts/{index}/logs?pub_data_type=…&limit=…&offset=…` pages newest first by `offset`, `limit` up to at least 100. Entries carry `tx_type, hash, time, pubdata {<kind>_pubdata: {…}}, pubdata_type, status` and no block number (P16). `status` is the entry's batch status, null until batched: on all 33 entries of L20 it equals the batch's last status change.
+- `time` is UTC with 0 to 6 decimals on the seconds, trailing zeros cut: `2026-11-17T10:40:31.59Z`, `2026-11-17T11:03:09Z`, `2025-12-13T14:11:49.813562Z`. Parse it as a time; text order fails within a second.
+- Plan 2 asks for `LEDGER_TYPES`: the docs' 41 `PubDataType` values less `Empty` and `Trade`, 39 in one comma-separated value. Entries of `DETAIL_TYPES` also get a `logs/{hash}` call: `L1Deposit`, `L1DepositV2`, `Withdraw`, `WithdrawV2`, `L2Transfer`, `L2TransferV2`, `L2UpdateMargin`, `L2MintShares`, `BurnedShares`, `L2StakeAssets`, `UnstakeAssets`, `ExecutedPendingUnlock`, `ExitPosition` and `ExitPositionWithFunding`.
+- **Units.** Values are decimal strings with the asset's decimals (`"104503.000000"` USDC, `"42328.20000000"` LIT), assets are symbols (`"asset_index":"USDC"`) and routes are `PERPS` or `SPOT`. One exception: `deleverage_pubdata_with_funding.quote` is an integer string (`"100958557736"`) next to a decimal `size` (`"0.90000"`).
+- V1 and V2 shapes coexist: `l1_deposit_pubdata {l1_address, usdc_amount, account_index}`; `l1_deposit_pubdata_v2 {account_index, l1_address, asset_index, route_type, accepted_amount}`; `withdraw_pubdata {from_account_index, usdc_amount}`; `withdraw_pubdata_v2 {from_account_index, asset_index, route_type, amount}`; `l2_transfer_pubdata {from_account_index, to_account_index, usdc_amount}`; `l2_transfer_pubdata_v2 {from_account_index, to_account_index, fee_account_index, asset_index, from_route_type, to_route_type, amount, usdc_fee}`. A transfer with `from = to` moves funds between one account's routes: account 1000 moved 104508.6 USDC from SPOT to PERPS at 2025-12-30 08:07:07.
+- **Hashes.** Each fill gets its own hash. An order of 313004 that filled twice against maker 702389 at 12:19:09.815 on 2026-11-17 shows as an `L2CreateOrder` entry (size 0.0071) and an `InternalClaimOrder` entry (0.3895) with a made-up hash, `000000234fdcd5fa000001a1e9726177…`. L1 withdrawals get the same kind: `00000000001782c02e00000130…` (L16). No two distinct entries share a hash in L19.
+- **The walk.** New entries push old ones onto the next page, so a walk by `offset` reads some entries twice: 6 in L19's 52 pages. 313004's ledger types from 2026-11-14 04:26 to 2026-11-18 12:57 are 5,115 `TradeWithFunding` and 1 `WithdrawV2`, about 1,170 a day, or 12 pages. Its plain `Trade` entries, over 100K a week, are what the filter skips.
+- `GET /logs/{hash}` returns the entry plus `block_number` and `batch_number`, null until batched. It answers for any entry since 2025-08-25 (L16). The deposit `00000000001e5aa83d…` of account 693073 sits in block 389893328 and batch 269235 (389892030 to 389893629), executed at 18:08:47 on 2026-11-16 by `0x0fc6217e…`. For trade 40627877458's hash it gives block 389272097 and batch 268847 (P16).
+- `GET /api/v1/tx?by=hash` also gives a block, as `block_height`, but only for txs from 2026-08-20 04:00 on (L18). For trade 40627877458's hash it gave 389272097, equal to the API trade's `block_height` and S3's `l2_block_height`, with `type` 14 (P16).
+- **Fast withdrawals.** Transfers to account 675395 carry fees: 1900.9 USDC from 20000 with `usdc_fee` 3.000000, and 5 USDC from 1000 just before its 104503 withdrawal. 675395 received 95 `L2TransferV2` in 13 hours on 2026-11-17, most with fee 1.000000, and made 5 withdrawals. The docs describe a fast withdrawal as a transfer to the fast-withdraw pool, so 675395 is likely that pool; only plan 3's `fastwithdraw/info` names it.
+
+### Account value
+
+- `GET /api/v1/pnl?by=index&value=…&resolution=…&start_timestamp=…&end_timestamp=…&count_back=0`, times in seconds, returns `pnl` points of `timestamp, trade_pnl, trade_spot_pnl, inflow, outflow, spot_inflow, spot_outflow, pool_pnl, pool_inflow, pool_outflow, staking_pnl, staking_inflow, staking_outflow, pool_total_shares, volume`. Values are JSON numbers with up to 6 decimals, not strings. Every field but `volume` is a running total since the account began.
+- `1d` gives one point per UTC midnight from the account's first day, whatever the start, then one at the request time. Asked from 2025-01-01 at 12:56 on 2026-11-18, account 1000 had 617 points from 2025-03-13, the last at 12:56:27 (L14). The point at midnight D holds the totals up to D.
+- **The `1h` cap.** `1h` answers ranges up to just under 10 days: 7 days gave 169 points, 8 days 193 and 9 days 217, and 10 days answered 400 `{"code":22403,"message":"time range exceeds maximum allowed range for the specified resolution"}` (L17). At 12:57:49, 863,993 s answered and 863,994 s did not. The docs say `1h` covers the last 10 days.
+- **Perps value.** `inflow − outflow + trade_pnl` is the account's perps value. Account 1000, idle since 2025-12-30: 156508.908444 − 153478.114476 − 3030.185271 = 0.608697, its `collateral` and `total_asset_value` (L14). Account 313004 at 12:16:53 on 2026-11-17: 20006.337415 − 4.867955 + 77970.108827 = 97971.578287, its `total_asset_value` read the same minute.
+- **Flows.** Day-to-day changes of `inflow` and `outflow` are the account's USDC money moves, each fee included (L15). Account 20000 on 2025-12-30, that is point 2025-12-31 less point 2025-12-30: `outflow` +1903.9, its transfer of 1900.9 plus the 3.000000 `usdc_fee`; `inflow` +1772.799436, its SPOT → PERPS move of 1758.29 plus a pool burn of 14.509436; `spot_outflow` +1758.29; `pool_outflow` +14.509436. Account 1000 that day: `inflow` +104508.6 (SPOT → PERPS), `spot_outflow` +104508.6, and `outflow` +104508 (a withdrawal of 104503 and a transfer of 5). On 2025-10-11 a burn of 7399.753218 raised its `inflow` and `pool_outflow` by that amount, and a v1 transfer of 7399.75 raised `outflow`. A mint counts as `outflow` and `pool_inflow` (161.998465 in the point of 2025-03-14). Account 20000's transfer of 652.4 LIT moved none of these fields.
+- **Snapshots.** `GET /api/v1/account?by=index&value=…` returns `accounts[0]` with `index, l1_address, account_type, status, collateral, available_balance, total_asset_value, cross_asset_value, cross_initial_margin_requirement, cross_maintenance_margin_requirement, transaction_time` (µs), `positions [{market_id, symbol, sign, position, avg_entry_price, position_value, unrealized_pnl, realized_pnl, total_funding_paid_out?, liquidation_price, margin_mode, allocated_margin, initial_margin_fraction, …}]`, `assets [{symbol, asset_id, balance, locked_balance, margin_mode, margin_balance, multiplier}]`, `shares` and `pending_unlocks`. Closed positions stay listed with `position` 0. `collateral` leaves out unrealized pnl: 313004 had collateral 97972.003001, unrealized −0.424714 and total value 97971.578287. `position` is unsigned and `sign` is 1 or −1. An unknown index answers 400 `{"code":29404,"message":"not found"}`.
+- Funding lands in `collateral` at each hour mark on every open position, with no log entry (L21). The change in a position's `total_funding_paid_out` is the funding it received, negative when it paid, whatever the name says. The field is missing on some positions and was 0 on one just opened.
+- `GET /api/v1/accountsByL1Address?l1_address=…` returns `{code, l1_address, sub_accounts}`, every account of the address: `0x948bD698…d589` has one, 1000. An unknown address answers 400 `{"code":21100,"message":"account not found"}`.
+
+### Funding prefix sums
+
+- `trade_pubdata_with_funding` carries the market's `funding_rate_prefix_sum`, as do the exit and deleverage kinds with funding. At each hour mark it steps by +10^8 × that hour's `fundings` `value` when `direction` is `long`, and by −10^8 × `value` when `short`. All 5,193 ETH `TradeWithFunding` entries of 313004 from 2026-11-13 20:56 to 2026-11-18 12:57 carry the first entry's prefix plus the steps of the 112 hour marks between, 15 of them `short` (L21). At 13:00:01 on 2026-11-17 it went from 36577479997 to 36579121156: 1,641,159 = 10^8 × 0.01641159, that hour's `long` value. An hour with `value` 0 does not move it.
+- All 5,193 of those entries were 313004's as taker, so the type does not say which side's funding settled.
+- The prefix sum is the market's running total; it is not when funding is booked. `account` books funding at the hour mark on positions that do not trade (L21). The funding a position pays for an hour is its position times `value`, signed as above.
+- `value` has 8 decimals, so position × `value` can miss the booked amount by up to |position| × 0.5 × 10^-8. At 13:00 on 2026-11-18, the 355200 1000PEPE long of pool 281474976489166 paid 0.016005, against 0.017760 from `value` 0.00000005. Pool 281474976688087, with 54 positions, paid 9.744738 against 9.545582 from `value`. A tolerance of 0.000002 per row holds only where |position| × 0.5 × 10^-8 stays under it.
 
 ## Proof table
 
@@ -299,3 +354,155 @@ curl -s "$EXP/accounts/757337/logs?limit=3&offset=0" | jq -c '[.[] | [.time, (ke
 curl -s "$EXP/batches/268847" | jq -c '[(.blocks | length), .blocks[0].block_number, .blocks[-1].block_number, ((.blocks | map(.block_number)) == [range(.blocks[0].block_number; .blocks[0].block_number + (.blocks | length))])]'
 for b in 50000 99999 100000; do sleep 2; curl -s "$EXP/batches/$b" | jq -c --arg b "$b" '[$b, (.blocks | length), .blocks[0].block_number, .blocks[-1].block_number]'; done
 ```
+
+## Plan 2 proof table
+
+Every command ran on 2026-11-18 and printed the value in the table. L<n> is plan 2's P<n>; plan 1's rows above keep their P ids. Run them in an empty folder with `curl`, `jq` and the `duckdb` CLI; L19 writes `l19.jsonl`, which L20 and L21 read. Set:
+
+```sh
+API=https://mainnet.zklighter.elliot.ai/api/v1
+EXP=https://explorer.elliot.ai/api
+S3=https://aws-public-blockchain.s3.amazonaws.com/v1.1/lighter/core/mainnet
+LEDGER_TYPES=$(curl -s https://docs.lighter.xyz/api/explorer-api/account/get-account-by-address.md | grep -o '{"openapi.*' | jq -r '[.components.schemas["response.PubDataType"].enum[] | select(. != "Empty" and . != "Trade")] | join(",")')
+```
+
+Space Explorer calls by weight: 6 s after an account-log page, 2 s after any other read. Space API calls 1.1 s apart.
+
+| # | Fact | Value |
+|---|---|---|
+| L11 | First batch; batches with no status or no commit | `[28910,41849406,"2025-08-25T15:28:03.691073Z",338,null,0]`; `{"error":"batch=28909 not found with block=0"} 404`; `[29653,false,[]]`, `[29654,true,["nothing_to_execute"]]`, `[29655,true,["verified","executed"]]`, `[29668,true,["nothing_to_execute"]]`, `[29669,true,["committed","nothing_to_execute"]]` |
+| L12 | Ranges meet, sizes, statuses, a shared execute tx | `[270062,391215230,391216829,1600,true,"0x3da45976",[["committed","11:54:23"],["verified","12:08:59"],["executed","12:08:59"]]]`; `[270063,391216830,391218429,1600,true,"",[["committed","11:55:35"],["nothing_to_execute","12:09:23"]]]`; `[270064,391218430,391220029,1600,true,"",[["committed","11:56:59"],["nothing_to_execute","12:14:35"]]]`; `[109274,137652412,137652838,427,true,"0x23a3d85c",…]`; 270092 and 270093 both `"0x3446be37"`, `executed` at `13:08:35` |
+| L13 | The comma filter on account 1000 | repeated: `[9,[["L1Deposit",9]]]`; comma: `[10,[["L1Deposit",9],["WithdrawV2",1]]]`; all 39 ledger types: `100`; `{"error":"invalid pubDataType=Nope"} 400` |
+| L14 | The perps-value identity on account 1000 | `[617,"2025-03-13T00:00:00Z",0.608697]`; `["0.608697","0.608697"]` |
+| L15 | The flow mapping on accounts 20000 and 1000 | 20000, 2025-12-31: `{"inflow":1772.799436,"outflow":1903.9,"spot_outflow":1758.29,"pool_inflow":0,"pool_outflow":14.509436}`; its log that day: `["16:37:20","L2TransferV2","1900.900000","3.000000"]`, `["16:37:11","L2TransferV2","1758.290000","0.000000"]`, `["16:37:05","BurnedShares","14.509436",null]`, `["05:14:18","L2TransferV2","652.40000000","0.000000"]`. 1000: 2025-12-31 `{"inflow":104508.6,"outflow":104508,"spot_outflow":104508.6,"pool_inflow":0,"pool_outflow":0}`; 2025-10-12 `{"inflow":7399.753218,"outflow":7399.75,"spot_outflow":0,"pool_inflow":0,"pool_outflow":7399.753218}`; 2025-03-14 `{"inflow":0,"outflow":161.998465,"spot_outflow":0,"pool_inflow":161.998465,"pool_outflow":0}` |
+| L16 | The settlement link | `["L1Withdraw","2025-12-30T08:38:14.781Z",137652420,109274,"executed"]`; `[427,137652412,137652838,true,"0x23a3d85c",[["committed","2025-12-30T10:50:11Z"],["verified","2025-12-30T11:31:11Z"],["executed","2025-12-30T11:33:23Z"]]]`; `{"error":"log deadbeef not found"} 404` |
+| L17 | The `1h` cap | `["7",200,169]`, `["8",200,193]`, `["9",200,217]`, `["10",22403,0]` |
+| L18 | How far back `tx` finds 313004's txs | `2026-11-10T00:24:04Z [200,380945584]`, `2026-08-21T00:14:01Z [200,315784308]`, `2026-08-20T04:00:01Z [200,315095553]`, `2026-08-20T03:59:00Z [21500,null]`, `2026-06-01T00:19:46Z [21500,null]`, `2026-01-10T00:21:21Z [21500,null]` |
+| L19 | No two entries of 313004's log share a hash | entries since 2026-11-14, distinct entries, distinct hashes, types. From 12:58: `52 pages`, `[5116,5110,5110,[["TradeWithFunding",5115],["WithdrawV2",1]]]`; from 13:30: `52 pages`, `[5159,5152,5152,[["TradeWithFunding",5158],["WithdrawV2",1]]]` |
+| L20 | Where 313004's and 693073's money moves since 2026-11-16 settled | `[["L1DepositV2","executed",5,5],["L2TransferV2","executed",16,16],["L2TransferV2","nothing_to_execute",11,11],["WithdrawV2","executed",1,1]]` |
+| L21 | The funding sign, and the prefix sum's steps | 13:00 on 2026-11-18, collateral change against the rule: `-14.612018, -14.612018` (624925, 1 position), `-15.637451, -15.637334` (622846, 9), `-0.007692, -0.007692` (489165), `-0.016005, -0.01776` (489166, 1000PEPE), `-0.027107, -0.027106` (552443), `-0.001463, -0.001462` (466894), `-0.683576, -0.683584` (498676, 2); no log entry between the readings. 14:00, the command as written: `["14:00",281474976624925,1,-14.578594,-14.578594]`, `[…622846,9,-16.273925,-16.273907]`, `[…489165,1,-0.007667,-0.007666]`, `[…489166,1,-0.015993,-0.01776]`, `[…552443,1,-0.027017,-0.027018]`, `[…466894,1,-0.001457,-0.001458]`, `[…498676,2,-0.702439,-0.702448]`, each newest log entry older than 13:59. Prefix, over the 12:58 walk: `[5193,5193,112,15]`; over the 13:30 walk: `[5192,5192,111,15]` |
+
+L18, L19, L20 and L21 read live data, so a rerun prints other numbers of the same shape: L18's edge may move, L19's second and third numbers stay equal, L20's last two numbers stay equal on each line, and L21's two numbers stay within the rounding of `value` and its prefix counts stay equal. L14's count grows by one a day.
+
+**L11.** Batch 28910, then the edges of the batches with no status (29653 and below) and with no commit (29654 to 29668).
+
+```sh
+curl -s "$EXP/batches/28910" | jq -c '[.batch_number, .blocks[0].block_number, .blocks[0].updated_at, (.blocks | length), .batch_details, (.status_changes | length)]'
+sleep 2; curl -s -w ' %{http_code}\n' "$EXP/batches/28909"
+for b in 29653 29654 29655 29668 29669; do sleep 2; curl -s "$EXP/batches/$b" | jq -c '[.batch_number, (.batch_details != null), [.status_changes[].batch_status]]'; done
+```
+
+**L12.** Each line prints the batch, its first and last block, the block count, whether the blocks run without a gap, the execute hash, and the status changes.
+
+```sh
+for b in 270062 270063 270064 109274 270092 270093; do sleep 2; curl -s "$EXP/batches/$b" | jq -c '[.batch_number, .blocks[0].block_number, .blocks[-1].block_number, (.blocks | length), (.blocks | map(.block_number) | . == [range(.[0]; .[0] + length)]), (.batch_details.execute_tx_hash // "" | .[0:10]), [.status_changes[] | [.batch_status, .updated_at[11:19]]]]'; done
+```
+
+**L13.**
+
+```sh
+curl -s "$EXP/accounts/1000/logs?pub_data_type=L1Deposit&pub_data_type=WithdrawV2&limit=100" | jq -c '[length, ([.[].pubdata_type] | group_by(.) | map([.[0], length]))]'
+sleep 6; curl -s "$EXP/accounts/1000/logs?pub_data_type=L1Deposit,WithdrawV2&limit=100" | jq -c '[length, ([.[].pubdata_type] | group_by(.) | map([.[0], length]))]'
+sleep 6; curl -s "$EXP/accounts/1000/logs?pub_data_type=$LEDGER_TYPES&limit=100" | jq 'length'
+sleep 6; curl -s -w ' %{http_code}\n' "$EXP/accounts/1000/logs?pub_data_type=Nope"
+```
+
+**L14.** The first line prints the point count, the first point, and `inflow − outflow + trade_pnl` of the last point.
+
+```sh
+curl -s "$API/pnl?by=index&value=1000&resolution=1d&start_timestamp=1735689600&end_timestamp=$(date -u +%s)&count_back=0" | jq -c '[(.pnl | length), (.pnl[0].timestamp | todate), (.pnl[-1] | (.inflow - .outflow + .trade_pnl) * 1e6 | round / 1e6)]'
+sleep 1.1; curl -s "$API/account?by=index&value=1000" | jq -c '.accounts[0] | [.collateral, .total_asset_value]'
+```
+
+**L15.** `DIFF` prints a point less the point a day before. The last line lists account 20000's money moves on 2025-12-30.
+
+```sh
+DIFF='def d(f): (.[1][f] - .[0][f]) * 1e6 | round / 1e6; [.pnl[] | select(.timestamp == ($day | fromdate) - 86400 or .timestamp == ($day | fromdate))] | {inflow: d("inflow"), outflow: d("outflow"), spot_outflow: d("spot_outflow"), pool_inflow: d("pool_inflow"), pool_outflow: d("pool_outflow")}'
+curl -s "$API/pnl?by=index&value=20000&resolution=1d&start_timestamp=1767052800&end_timestamp=1767225600&count_back=0" | jq -c --arg day 2025-12-31T00:00:00Z "$DIFF"
+sleep 1.1; curl -s "$API/pnl?by=index&value=1000&resolution=1d&start_timestamp=1735689600&end_timestamp=1767225600&count_back=0" > pnl-1000.json
+for day in 2025-12-31 2025-10-12 2025-03-14; do jq -c --arg day "${day}T00:00:00Z" "$DIFF" pnl-1000.json; done
+curl -s "$EXP/accounts/20000/logs?pub_data_type=L2TransferV2,BurnedShares,L2MintShares&limit=100" | jq -c '.[] | select(.time | startswith("2025-12-30")) | [.time[11:19], .pubdata_type, (.pubdata[] | .amount // .shares_to_burn_usdc), (.pubdata[] | .usdc_fee // null)]'
+```
+
+**L16.** Account 1000's withdrawal, its batch, and a hash with no log.
+
+```sh
+curl -s "$EXP/logs/00000000001782c02e00000130000000000000000000000000000000000000000000000000000000" | jq -c '[.tx_type, .time, .block_number, .batch_number, .status]'
+sleep 2; curl -s "$EXP/batches/109274" | jq -c '[(.blocks | length), .blocks[0].block_number, .blocks[-1].block_number, (.blocks[0].block_number <= 137652420 and 137652420 <= .blocks[-1].block_number), .batch_details.execute_tx_hash[0:10], [.status_changes[] | [.batch_status, .updated_at]]]'
+sleep 2; curl -s -w ' %{http_code}\n' "$EXP/logs/deadbeef"
+```
+
+**L17.** 7, 8, 9 and 10 days of `1h` up to now.
+
+```sh
+NOW=$(date -u +%s); for d in 7 8 9 10; do sleep 1.1; curl -s "$API/pnl?by=index&value=1000&resolution=1h&start_timestamp=$((NOW - d * 86400))&end_timestamp=$NOW&count_back=0" | jq -c --arg d "$d" '[$d, .code, (.pnl // [] | length)]'; done
+```
+
+**L18.** `probe` finds the first trade 313004 sent as taker at or after a time, in that day's S3 file, and asks `tx` for it. The edge was found by bisecting days from 2026-01-10 to 2026-11-10, then minutes on 2026-08-20.
+
+```sh
+probe() {
+  T=$(( $(date -u -j -f %Y-%m-%dT%H:%M:%S "$1" +%s) * 1000 ))
+  R=$(duckdb -noheader -list -c "select tx_hash || ' ' || timestamp from '$S3/trades/date=${1%T*}/trades.parquet' where ((ask_account_id = 313004 and not is_maker_ask) or (bid_account_id = 313004 and is_maker_ask)) and timestamp >= $T order by timestamp limit 1")
+  sleep 1.1; echo "$(date -u -r $(( ${R#* } / 1000 )) +%FT%TZ) $(curl -s "$API/tx?by=hash&value=${R% *}" | jq -c '[.code, .block_height]')"
+}
+for t in 2026-11-10T00:00:00 2026-08-21T00:00:00 2026-08-20T04:00:00 2026-08-20T03:59:00 2026-06-01T00:00:00 2026-01-10T00:00:00; do probe "$t"; done
+```
+
+**L19.** The walk reads pages until one ends before 2026-11-14, as `lighter-account-logs` does. The last line prints entries since 2026-11-14, distinct entries, distinct hashes, and the types.
+
+```sh
+O=0; : > l19.jsonl
+while :; do
+  P=$(curl -s "$EXP/accounts/313004/logs?pub_data_type=$LEDGER_TYPES&limit=100&offset=$O")
+  echo "$P" | jq -c '.[]' >> l19.jsonl
+  [ "$(echo "$P" | jq length)" -lt 100 ] || [[ "$(echo "$P" | jq -r '.[-1].time')" < 2026-11-14 ]] && break
+  O=$((O + 100)); sleep 6
+done
+echo "$((O / 100 + 1)) pages"
+jq -s -c 'map(select(.time >= "2026-11-14")) | [length, (map(tojson) | unique | length), (map(.hash) | unique | length), (group_by(.pubdata_type) | map([.[0].pubdata_type, length]))]' l19.jsonl
+```
+
+**L20.** 693073's entries since 2026-11-16 fit in one page; 313004's come from L19. For each money move, `logs/{hash}` and its batch: each line counts the entries of a type in batches of a status, and how many of them sit in their batch's range with the log's `status` equal to the batch's.
+
+```sh
+curl -s "$EXP/accounts/693073/logs?pub_data_type=$LEDGER_TYPES&limit=100" | jq -c '.[]' > l20.jsonl
+cat l19.jsonl l20.jsonl | jq -s -c 'map(select(.time >= "2026-11-16" and (.pubdata_type | IN("L1Deposit", "L1DepositV2", "Withdraw", "WithdrawV2", "L2Transfer", "L2TransferV2", "L2UpdateMargin", "L2MintShares", "BurnedShares", "L2StakeAssets", "UnstakeAssets", "ExecutedPendingUnlock", "ExitPosition", "ExitPositionWithFunding")))) | unique_by(.hash) | .[].hash' -r > l20-hashes.txt
+while read -r h; do
+  sleep 2; L=$(curl -s "$EXP/logs/$h")
+  sleep 2; curl -s "$EXP/batches/$(echo "$L" | jq .batch_number)" | jq -c --argjson l "$L" '[$l.pubdata_type, .status_changes[-1].batch_status, (.blocks[0].block_number <= $l.block_number and $l.block_number <= .blocks[-1].block_number and $l.status == .status_changes[-1].batch_status)]'
+done < l20-hashes.txt | jq -s -c 'group_by(.[0], .[1]) | map([.[0][0], .[0][1], length, (map(select(.[2])) | length)])'
+```
+
+**L21.** The first part reads seven pool accounts 40 s before the next hour mark and 30 s after it, then that hour's `fundings` entry for each market they hold. Each account prints the hour, its index, its open positions, its `collateral` change, and the rule: the sum over positions of −signed position × `value` when `direction` is `long`, +signed position × `value` when `short`. Then its newest log entry, which must be older than the readings. The second part checks every prefix sum in L19's walk against the first one plus 10^8 × `value` per hour mark between, + for `long` and − for `short`; it prints distinct entries, entries that match, hour marks between the first and last, and `short` hour marks.
+
+```sh
+ACCOUNTS="281474976624925 281474976622846 281474976489165 281474976489166 281474976552443 281474976466894 281474976498676"
+H=$(( ($(date -u +%s) / 3600 + 1) * 3600 ))
+while [ "$(date -u +%s)" -lt $((H - 40)) ]; do sleep 1; done
+for a in $ACCOUNTS; do curl -s "$API/account?by=index&value=$a" > "before-$a.json"; sleep 1.1; done
+while [ "$(date -u +%s)" -lt $((H + 30)) ]; do sleep 1; done
+for a in $ACCOUNTS; do curl -s "$API/account?by=index&value=$a" > "after-$a.json"; sleep 1.1; done
+jq -r '.accounts[0].positions[] | select((.position | tonumber) != 0) | .market_id' before-*.json | sort -un > markets.txt
+while read -r m; do sleep 1.1; curl -s "$API/fundings?market_id=$m&resolution=1h&start_timestamp=$(( (H - 3600) * 1000 ))&end_timestamp=$(( (H + 3600) * 1000 ))&count_back=0" | jq -c --argjson h "$H" --argjson m "$m" '.fundings[] | select(.timestamp == $h) | {market_id: $m, value, direction}'; done < markets.txt > fundings.jsonl
+for a in $ACCOUNTS; do
+  jq -n -c --slurpfile b "before-$a.json" --slurpfile a "after-$a.json" --slurpfile f fundings.jsonl --arg h "$(date -u -r "$H" +%H:%M)" '
+    ($f | INDEX(.market_id | tostring)) as $fx
+    | $b[0].accounts[0] as $x
+    | [$x.positions[] | select((.position | tonumber) != 0) | (.sign * (.position | tonumber)) as $s | $fx[.market_id | tostring] | (if .direction == "long" then -$s else $s end) * (.value | tonumber)] as $amounts
+    | [$h, $x.index, ($amounts | length),
+       ((($a[0].accounts[0].collateral | tonumber) - ($x.collateral | tonumber)) * 1e6 | round / 1e6),
+       (($amounts | add) * 1e6 | round / 1e6)]'
+  sleep 6; curl -s "$EXP/accounts/$a/logs?limit=1" | jq -c '.[0] | [.time, .tx_type]'
+done
+
+curl -s "$API/fundings?market_id=0&resolution=1h&start_timestamp=1794528000000&end_timestamp=$(( $(date -u +%s) * 1000 ))&count_back=0" > eth-fundings.json
+jq -n -c --slurpfile f eth-fundings.json '
+  ($f[0].fundings | map({h: .timestamp, step: (((.value | tonumber) * 1e8 | round) * (if .direction == "long" then 1 else -1 end))})) as $steps
+  | [inputs | select(.pubdata_type == "TradeWithFunding" and .pubdata.trade_pubdata_with_funding.market_index == 0) | {hash, s: (.time | sub("\\.[0-9]+"; "") | fromdate), p: .pubdata.trade_pubdata_with_funding.funding_rate_prefix_sum}]
+  | unique_by(.hash) | sort_by(.s) | .[0] as $first | .[-1] as $last
+  | [$steps[] | select(.h > $first.s and .h <= $last.s)] as $between
+  | [length, (map(. as $x | select($x.p == $first.p + ([$between[] | select(.h <= $x.s) | .step] | add // 0))) | length), ($between | length), ($between | map(select(.step < 0)) | length)]' l19.jsonl
+```
+
+The script compares only `collateral`; check too that no position changes between the readings. At 13:00 two more pools with 54 and 63 positions matched within the rounding of `value`, and in all nine accounts each of the 131 positions with a non-zero term moved its `total_funding_paid_out` by that term, none by the opposite sign. On the 1000PEPE long, `value` 0.00000005 × 355200 = 0.01776 against the 0.016005 booked: the 8 decimals of `value` cannot price it closer.

@@ -1,11 +1,12 @@
 name: lighter
 scope: >-
-  Lighter Core mainnet's public read API and its public S3 dataset: markets, trade and mark-price
-  candles, hourly funding, daily exchange metrics, and the daily trade and open-interest Parquet files
-  that the six lighter-* sources load. Covers the hosts, their limits, units, market identity, and the
-  endpoints a source or a proof calls, and lists every GET path in the docs with the plan that owns it.
-  Leaves out endpoints that need a token, the WebSocket API, sendTx and sendTxBatch, and Lighter on
-  Robinhood Chain.
+  Lighter Core mainnet's public read API, its Explorer and its public S3 dataset. Plan 1: markets, trade
+  and mark-price candles, hourly funding, daily exchange metrics, and the daily trade and open-interest
+  Parquet files that six lighter-* sources load. Plan 2: L1 batches, account logs, hourly tx counts,
+  account snapshots, the account value series, assets, system config and public pools that eight more
+  load. Covers the hosts, their limits, units, market identity, and the endpoints a source or a proof
+  calls, and lists every GET path in the docs with the plan that owns it. Leaves out endpoints that need
+  a token, the WebSocket API, sendTx and sendTxBatch, and Lighter on Robinhood Chain.
 docs:
   - https://docs.lighter.xyz/developers/integration-guides/historical-data.md
   - https://docs.lighter.xyz/developers/getting-started/environments.md
@@ -15,7 +16,16 @@ docs:
   - https://docs.lighter.xyz/api/transactions/withdraw_history.md
   - https://docs.lighter.xyz/api/explorer-api/account/get-account-by-address.md
   - https://docs.lighter.xyz/api/explorer-api/account/get-account-by-address-1.md
+  - https://docs.lighter.xyz/api/explorer-api/account/get-account-assets.md
+  - https://docs.lighter.xyz/api/explorer-api/batches/get-recent-batches.md
   - https://docs.lighter.xyz/api/explorer-api/batches/get-batch-by-id.md
+  - https://docs.lighter.xyz/api/explorer-api/logs/get-log-by-hash.md
+  - https://docs.lighter.xyz/api/explorer-api/stats/get-tx-stats.md
+  - https://docs.lighter.xyz/api/account/account.md
+  - https://docs.lighter.xyz/api/account/accountsbyl1address.md
+  - https://docs.lighter.xyz/api/account/publicpoolsmetadata.md
+  - https://docs.lighter.xyz/api/info/assetdetails.md
+  - https://docs.lighter.xyz/api/system/systemconfig.md
   - https://docs.lighter.xyz/developers/integration-guides/deposits-transfers-and-withdrawals.md
   - https://docs.lighter.xyz/developers/reference/rate-limits.md
   - https://docs.lighter.xyz/developers/reference/account-types.md
@@ -27,6 +37,14 @@ sources:
   - ingestion/sources/lighter-exchange-metrics
   - ingestion/sources/lighter-open-interest
   - ingestion/sources/lighter-trades
+  - ingestion/sources/lighter-batches
+  - ingestion/sources/lighter-account-logs
+  - ingestion/sources/lighter-accounts
+  - ingestion/sources/lighter-pnl
+  - ingestion/sources/lighter-tx-stats
+  - ingestion/sources/lighter-assets
+  - ingestion/sources/lighter-system-config
+  - ingestion/sources/lighter-public-pools
 api:
   exchange:
     base_url: https://mainnet.zklighter.elliot.ai
@@ -43,8 +61,12 @@ api:
     base_url: https://explorer.elliot.ai/api
     auth: none
     role: >-
-      Blocks, batches, logs by hash, and an account's logs, assets and positions. Plan 2 reads it; plan 1
-      calls none of it.
+      Blocks, batches, logs by hash, and an account's logs, assets and positions. lighter-batches,
+      lighter-account-logs and lighter-tx-stats (plan 2) read it; plan 1 calls none of it.
+    holds: >-
+      Batches from 28910, whose first block, 41849406, is at 2025-08-25 15:28:03 UTC; 28909 and earlier
+      answer 404 (L11). Account 1000's oldest log entry is from 2025-08-28, though its pnl series starts
+      on 2025-03-13 (NOTES.md, Explorer).
     source: The environments page and the Explorer API pages.
   s3:
     base_url: https://aws-public-blockchain.s3.amazonaws.com/v1.1/lighter/core/mainnet
@@ -75,6 +97,11 @@ limits:
   explorer:
     limit: 45 weight per rolling minute, burst 45, for every caller
     weights: accounts/{param}/logs 4, blocks/{blockNumber} 5, search 3, accounts/{param}/positions 2, others 1
+    pacing: >-
+      Plan 2's Explorer client starts a request at least w × 60000 / LIGHTER_EXPLORER_WEIGHT_PER_MINUTE ms
+      after the previous one started, w being the previous request's weight. lighter-batches takes 25,
+      lighter-account-logs 15 and lighter-tx-stats 5, so all three at once use 45. It retries 429, 405,
+      5xx and network errors after 2 s, 10 s and 60 s.
     source: The rate-limits page.
   s3: none stated; anonymous reads
   on_exceed: >-
@@ -236,7 +263,10 @@ endpoints:
     params:
       by: required, hash or sequence_index.
       value: required, the hash or index.
-    role: One L2 transaction. Its block_height ties a trade's tx_hash to a block (NOTES.md, For plan 2).
+    role: >-
+      One L2 transaction. Its block_height ties a trade's tx_hash to a block (P16). It forgets old txs:
+      on 2026-11-18 it found 313004's txs from 2026-08-20 04:00:01 on and none from 03:59:58 or before
+      (L18). Plan 2 reads blocks from logs/{hash} instead, which answers for any tx since 2025-08-25.
     fields:
       hash: {type: string}
       type: {type: integer, example: "14 (L2CreateOrder)"}
@@ -244,7 +274,243 @@ endpoints:
       block_height: {type: integer}
       executed_at: {type: integer, unit: Unix ms}
       transaction_time: {type: integer, unit: Unix µs}
-    source: The tx page, and a reply on 2026-11-17.
+    source: The tx page, and replies on 2026-11-17 and 2026-11-18 (NOTES.md, Account logs).
+  explorer_batches:
+    use: source
+    host: explorer
+    method: GET
+    path: /batches
+    params: none. limit is ignored; ?limit=5 returns 20.
+    role: lighter-batches reads the head, the highest batch_number.
+    reply: '[{"batch_number":…,"updated_at":"…","batch_size":1600,"batch_status":"…","batch_details":{…}}]'
+    count: 20 recent batches, ordered by updated_at, not by number. 270918 to 270939 at 13:11 UTC on 2026-11-18.
+    fields:
+      batch_number: {type: integer}
+      updated_at: {type: string, unit: RFC 3339 UTC}
+      batch_size: {type: integer, note: blocks in the batch}
+      batch_status: {values: [null, committed, verified, executed, nothing_to_execute], note: "null on a batch not yet committed"}
+      batch_details: {note: "The three L1 hashes, as in explorer_batch; {} on a batch not yet committed."}
+    source: The Get Recent Batches page, and replies on 2026-11-17 and 2026-11-18.
+  explorer_batch:
+    use: source
+    host: explorer
+    method: GET
+    path: "/batches/{batchId}"
+    params:
+      batchId: required, the batch number. 28909 and below answer 404 {"error":"batch=28909 not found with block=0"}.
+    role: >-
+      One L1 batch: its block range, each block's time and tx count, and its commit, verify and execute
+      hashes and times. lighter-batches keeps the reply as sent.
+    size: 152,617 bytes for the 1,600 blocks of batch 270062.
+    fields:
+      batch_number: {type: integer}
+      updated_at: {type: string, unit: RFC 3339 UTC}
+      batch_details: {note: "{commit_tx_hash, verify_tx_hash, execute_tx_hash}, each an Ethereum tx hash or null. null on every batch read from 28910 to 29653."}
+      blocks: {note: "[{block_number, updated_at, total_transactions}], a contiguous range in order; consecutive batches meet (L12)."}
+      status_changes: {note: "[{hash, updated_at, batch_status}], oldest first. committed, then verified and executed, or nothing_to_execute with the verify hash. Empty on every batch read from 28910 to 29653; 29654 to 29668 have no committed entry (L11)."}
+    final: >-
+      A batch is final once a status change is executed or nothing_to_execute. Every deposit and
+      withdrawal checked sat in an executed batch, and transfers in either (L20). Batches 28910 to 29653
+      never reach either.
+    source: The Get Batch by Id page, and replies on 2026-11-17 and 2026-11-18 (NOTES.md, Batches and L1 settlement).
+  explorer_account_logs:
+    use: source
+    host: explorer
+    method: GET
+    path: "/accounts/{param}/logs"
+    weight: 4
+    params:
+      param: required, an account index. The docs allow an L1 address too; plan 2 sends only indexes.
+      pub_data_type: >-
+        optional, one or more PubDataType values, comma-separated in one parameter. A repeated parameter
+        keeps only the first type, with no error (L13). An unknown type answers 400
+        {"error":"invalid pubDataType=Nope"}. lighter-account-logs sends LEDGER_TYPES, the docs' 41 values
+        less Empty and Trade.
+      limit: optional, default 100. 100 works.
+      offset: optional, default 0.
+    reply: '[{"tx_type":"…","hash":"…","time":"…","pubdata":{"<kind>_pubdata":{…}},"pubdata_type":"…","status":"…"}]'
+    order: >-
+      Newest first. New entries push old ones onto the next page, so a walk by offset reads some entries
+      twice (L19). An unknown account answers [] with HTTP 200.
+    fields:
+      tx_type: {type: string, example: "L2CreateOrder, InternalClaimOrder, L1Withdraw, L2Transfer"}
+      hash: {type: string, note: "Each fill has its own; no two distinct entries shared one over four days of 313004 (L19). Internal and L1 entries carry made-up hashes such as 00000000001782c02e00000130…."}
+      time: {type: string, unit: RFC 3339 UTC, note: "0 to 6 decimals on the seconds, trailing zeros cut. Parse it; do not sort it as text."}
+      pubdata: {note: "One member, named for the kind: l1_deposit_pubdata_v2, withdraw_pubdata_v2, l2_transfer_pubdata_v2, trade_pubdata_with_funding and so on. Amounts are decimal strings, assets symbols, routes PERPS or SPOT (NOTES.md, Account logs)."}
+      pubdata_type: {type: string, note: one of the docs' PubDataType values}
+      status: {values: [null, committed, verified, executed, nothing_to_execute], note: "The entry's batch status; null until batched."}
+    source: The Get Account by Address page (logs), and replies on 2026-11-17 and 2026-11-18.
+  explorer_log:
+    use: source
+    host: explorer
+    method: GET
+    path: "/logs/{hash}"
+    params:
+      hash: required. An unknown hash answers 404 {"error":"log deadbeef not found"}.
+    role: >-
+      One log entry with its block and batch. lighter-account-logs calls it for each DETAIL_TYPES entry:
+      the only read that ties an account-log entry to a block.
+    fields:
+      block_number: {type: integer}
+      batch_number: {type: integer, note: null until batched}
+      tx_type: {type: string}
+      hash: {type: string}
+      time: {type: string}
+      pubdata_type: {type: string}
+      pubdata: {note: as in explorer_account_logs}
+      status: {note: as in explorer_account_logs}
+    reach: Answers for any entry since 2025-08-25; account 1000's L1Withdraw of 2025-12-30 gave block 137652420 and batch 109274 (L16).
+    source: The Get Log by Hash page, and replies on 2026-11-17 and 2026-11-18.
+  explorer_tx_stats:
+    use: source
+    host: explorer
+    method: GET
+    path: /stats/tx
+    params:
+      aggregation_period: >-
+        required, 1h, the only value. day answers 400 {"error":"invalid aggregation_period: day"}; no value
+        answers 400 {"error":"aggregation_period parameter is required"}.
+    reply: '{"data":{"chart":{"types":["timestamp","count","uopsCount"],"data":[[1759363200,3571651,3571651],…]}}}'
+    points: >-
+      One per hour from 2025-10-02 00:00 UTC, 3,600 s apart with no gap: 9,902 at 13:11 UTC on
+      2026-11-18, the last for 13:00, the hour still open. 289,879 bytes.
+    fields:
+      timestamp: {type: integer, unit: Unix s, note: the hour start}
+      count: {type: integer, note: txs that hour}
+      uopsCount: {type: integer, note: "equal to count on all 9,902 points read"}
+    source: The Get Tx Stats page, and replies on 2026-11-17 and 2026-11-18.
+  explorer_account_positions:
+    use: proof
+    host: explorer
+    method: GET
+    path: "/accounts/{param}/positions"
+    weight: 2
+    reply: '{"positions":{"0":{"market_index":0,"pnl":"2.191435","side":"long","size":"2.4934","entry_price":"1798.571106"}}}'
+    role: The same positions as account, with fewer fields. Plan 2 reads account instead.
+    source: The Get Account by Address page (positions), and a reply on 2026-11-18.
+  explorer_account_assets:
+    use: proof
+    host: explorer
+    method: GET
+    path: "/accounts/{param}/assets"
+    reply: '{"assets":{"3":{"symbol":"USDC","asset_id":3,"balance":"0.000000","locked_balance":"0.000000"}}}'
+    role: The same balances as account, with fewer fields. Plan 2 reads account instead.
+    source: The Get Account Assets page, and a reply on 2026-11-18.
+  account:
+    use: source
+    method: GET
+    path: /api/v1/account
+    params:
+      by: required, index or l1_address. lighter-accounts sends index.
+      value: required. An unknown index answers 400 {"code":29404,"message":"not found"}.
+      active_only: optional, default false.
+    role: One account's snapshot. lighter-accounts adds a reading per run, keyed by index and read_at.
+    reply: '{"code":200,"total":1,"accounts":[{…}]}'
+    fields:
+      collateral: {type: decimal string, unit: USDC, note: "Perps value less unrealized pnl. Funding lands in it at each hour mark, with no log entry (L21)."}
+      total_asset_value: {type: decimal string, unit: USDC, note: "collateral plus unrealized pnl; equals pnl's inflow − outflow + trade_pnl (L14)."}
+      available_balance: {type: decimal string, unit: USDC}
+      transaction_time: {type: integer, unit: Unix µs}
+      positions: {note: "[{market_id, symbol, sign, position, avg_entry_price, position_value, unrealized_pnl, realized_pnl, total_funding_paid_out?, liquidation_price, margin_mode, allocated_margin, initial_margin_fraction, …}]. Closed positions stay listed with position 0 unless active_only=true."}
+      positions.sign: {values: [1, -1], note: "position is unsigned; sign × position is long-positive."}
+      positions.total_funding_paid_out: {type: decimal string, unit: USDC, note: "Its change at an hour mark is the funding the position received, negative when it paid (L21). Missing on some positions."}
+      assets: {note: "[{symbol, asset_id, balance, locked_balance, margin_mode, margin_balance, multiplier}]"}
+    source: The account page, and replies on 2026-11-17 and 2026-11-18 (NOTES.md, Account value).
+  accounts_by_l1_address:
+    use: source
+    method: GET
+    path: /api/v1/accountsByL1Address
+    params:
+      l1_address: required. An unknown address answers 400 {"code":21100,"message":"account not found"}.
+    role: Resolves each L1 address a source lists to its account indexes.
+    reply: '{"code":200,"l1_address":"0x948bD698358dE1c73de0526CA4F592d26986d589","sub_accounts":[{"index":1000,…}]}'
+    source: The accountsByL1Address page, and replies on 2026-11-17 and 2026-11-18.
+  pnl:
+    use: source
+    method: GET
+    path: /api/v1/pnl
+    params:
+      by: required, index.
+      value: required, the account index.
+      resolution: required, 1h or 1d.
+      start_timestamp: required. The docs give Unix ms and accept s; the replies here were asked in s.
+      end_timestamp: required, in the same unit.
+      count_back: required by the spec; send 0.
+      ignore_transfers: optional, default false.
+    max_range: >-
+      1d: every day from the account's first, whatever the start. 1h: just under 10 days; 9 days gave 217
+      points and 10 days 400 {"code":22403,"message":"time range exceeds maximum allowed range for the
+      specified resolution"} (L17).
+    open_point: The reply ends with a point at the request time, not on the resolution's boundary.
+    reply: '{"code":200,"resolution":"1d","pnl":[{"timestamp":…,"trade_pnl":…,"inflow":…,…}]}'
+    fields:
+      timestamp: {type: integer, unit: Unix s, note: "00:00 UTC for 1d, the hour for 1h; the point at D holds the totals up to D."}
+      trade_pnl: {type: number, unit: USDC, note: "A JSON number, not a string, like every field here. A running total since the account began, like every field but volume."}
+      trade_spot_pnl: {type: number, unit: USDC}
+      inflow: {type: number, unit: USDC, note: "USDC into the perps route, fees included (L15)."}
+      outflow: {type: number, unit: USDC, note: "USDC out of the perps route, fees included (L15)."}
+      spot_inflow: {type: number, unit: USDC}
+      spot_outflow: {type: number, unit: USDC}
+      pool_pnl: {type: number, unit: USDC}
+      pool_inflow: {type: number, unit: USDC, note: a mint}
+      pool_outflow: {type: number, unit: USDC, note: a burn}
+      staking_pnl: {type: number}
+      staking_inflow: {type: number}
+      staking_outflow: {type: number}
+      pool_total_shares: {type: number}
+      volume: {type: number, note: "Per point, not a running total. Unit unproven."}
+    id: account, resolution and timestamp.
+    source: The pnl page, and replies on 2026-11-17 and 2026-11-18 (NOTES.md, Account value).
+  asset_details:
+    use: source
+    method: GET
+    path: /api/v1/assetDetails
+    params:
+      asset_id: optional; none returns every asset.
+    reply: '{"code":200,"asset_details":[{"asset_id":3,"symbol":"USDC","decimals":6,…}]}'
+    count: 13 assets on 2026-11-18, among them USDC (id 3, decimals 6), ETH (1, 8) and LIT (2, 8).
+    fields: >-
+      asset_id, symbol, decimals, l1_address, l1_decimals, margin_mode, global_supply_cap,
+      user_supply_cap, total_supplied, index_price, price_decimals, loan_to_value, liquidation_threshold,
+      liquidation_factor, liquidation_fee, min_transfer_amount, min_withdrawal_amount, multiplier.
+    source: The assetDetails page, and replies on 2026-11-17 and 2026-11-18.
+  system_config:
+    use: source
+    method: GET
+    path: /api/v1/systemConfig
+    params: none.
+    reply: '{"code":200,"liquidity_pool_index":281474976710654,"staking_pool_index":281474976624800,…}'
+    fields:
+      liquidity_pool_index: {type: integer, example: 281474976710654, note: the LLP}
+      staking_pool_index: {type: integer, example: 281474976624800}
+      funding_fee_rebate_account_index: {type: integer, example: 713888}
+      market_maker_incentive_account_index: {type: integer, example: 723106}
+      fee_collector_account_index: {type: integer, example: 281474976496476}
+      liquidity_pool_cooldown_period: {type: integer, example: 300000, note: unit unproven}
+      staking_pool_lockup_period: {type: integer, example: 259200000, note: unit unproven}
+      max_integrator_spot_taker_fee: {type: integer, example: 10000}
+      max_integrator_spot_maker_fee: {type: integer, example: 10000}
+      max_integrator_perps_taker_fee: {type: integer, example: 1000}
+      max_integrator_perps_maker_fee: {type: integer, example: 1000}
+    role: Names the system accounts; lighter_system_accounts keys them by role.
+    source: The systemConfig page, and replies on 2026-11-17 and 2026-11-18.
+  public_pools_metadata:
+    use: source
+    method: GET
+    path: /api/v1/publicPoolsMetadata
+    params:
+      filter: optional, all, user, protocol, account_index or stake. lighter-public-pools sends all.
+      index: >-
+        required, an exclusive cursor: the reply lists pools below it, highest first. 281474976710655
+        starts at the LLP, 281474976710654; index=281474976710654 starts at 281474976710653. For the next
+        page, send the last account_index returned. 0 returns none.
+      limit: required, 1 to 100.
+    count: 348 pools with filter=all on 2026-11-18, in pages of 100, 100, 100 and 48.
+    fields: >-
+      account_index, account_type (3 for the LLP, 2 for the others), master_account_index, name,
+      l1_address, created_at (Unix s), status, operator_fee, annual_percentage_yield, sharpe_ratio,
+      total_asset_value, total_spot_value, total_perps_value, total_shares, assets.
+    source: The publicPoolsMetadata page, and replies on 2026-11-17 and 2026-11-18.
 datasets:
   trades:
     path: trades/date=YYYY-MM-DD/trades.parquet
@@ -329,6 +595,30 @@ errors:
   "400 invalid market type":
     body: '{"code":21619,"message":"invalid market type"}'
     meaning: fundings got a market_id with no funding (9999, which has candles).
+  "400 not found":
+    body: '{"code":29404,"message":"not found"}'
+    meaning: account got an index with no account (999999999999).
+  "400 account not found":
+    body: '{"code":21100,"message":"account not found"}'
+    meaning: accountsByL1Address got an address with no account (0x1111111111111111111111111111111111111111).
+  "400 transaction not found":
+    body: '{"code":21500,"message":"transaction not found"}'
+    meaning: >-
+      tx got a hash it no longer holds, such as any tx before 2026-08-20 04:00 UTC on 2026-11-18 (L18).
+      txFromL1TxHash answers the same for a batch's commit hash: it takes the Ethereum hash of a deposit.
+  "400 range too long":
+    body: '{"code":22403,"message":"time range exceeds maximum allowed range for the specified resolution"}'
+    meaning: pnl got a 1h range of 10 days or more (L17).
+  "Explorer 400":
+    body: '{"error":"invalid pubDataType=Nope"}'
+    meaning: >-
+      A bad parameter, quoted in error. Also '{"error":"invalid aggregation_period: day"}' and
+      '{"error":"aggregation_period parameter is required"}' from stats/tx.
+  "Explorer 404":
+    body: '{"error":"batch=28909 not found with block=0"}'
+    meaning: >-
+      No such batch, or '{"error":"log deadbeef not found"}' for a hash with no log. An account with no
+      log answers [] with HTTP 200, not an error.
   "403 CloudFront":
     meaning: >-
       Retired paths: /api/v1/blocks, /txs, /accountTxs, /currentHeight and /api/v1/status all answered
@@ -356,21 +646,20 @@ inventory:
   plan_2:
     note: The public account ledger and L1 settlement.
     endpoints:
-      - {path: "/accounts/{param}/logs", host: explorer, plan: 2}
-      - {path: "/accounts/{param}/positions", host: explorer, plan: 2}
-      - {path: "/accounts/{param}/assets", host: explorer, plan: 2}
-      - {path: "/logs/{hash}", host: explorer, plan: 2}
-      - {path: /batches, host: explorer, plan: 2}
-      - {path: "/batches/{batchId}", host: explorer, plan: 2}
-      - {path: /blocks, host: explorer, plan: 2}
-      - {path: "/blocks/{blockId}", host: explorer, plan: 2}
-      - {path: /stats/tx, host: explorer, plan: 2}
-      - {path: /api/v1/account, host: exchange, plan: 2}
-      - {path: /api/v1/accountsByL1Address, host: exchange, plan: 2}
-      - {path: /api/v1/pnl, host: exchange, plan: 2}
-      - {path: /api/v1/tx, host: exchange, plan: 2, note: plan 1 calls it once, as proof}
-      - {path: /api/v1/assetDetails, host: exchange, plan: 2}
-      - {path: /api/v1/systemConfig, host: exchange, plan: 2}
+      - {path: /batches, host: explorer, plan: 2, use: source}
+      - {path: "/batches/{batchId}", host: explorer, plan: 2, use: source}
+      - {path: "/accounts/{param}/logs", host: explorer, plan: 2, use: source}
+      - {path: "/logs/{hash}", host: explorer, plan: 2, use: source}
+      - {path: /stats/tx, host: explorer, plan: 2, use: source}
+      - {path: "/accounts/{param}/positions", host: explorer, plan: 2, use: proof, note: "account returns the same with more fields, under the exchange API's own limit"}
+      - {path: "/accounts/{param}/assets", host: explorer, plan: 2, use: proof, note: "account returns the same with more fields, under the exchange API's own limit"}
+      - {path: /api/v1/account, host: exchange, plan: 2, use: source}
+      - {path: /api/v1/accountsByL1Address, host: exchange, plan: 2, use: source}
+      - {path: /api/v1/pnl, host: exchange, plan: 2, use: source}
+      - {path: /api/v1/assetDetails, host: exchange, plan: 2, use: source}
+      - {path: /api/v1/systemConfig, host: exchange, plan: 2, use: source}
+      - {path: /api/v1/publicPoolsMetadata, host: exchange, plan: 2, use: source}
+      - {path: /api/v1/tx, host: exchange, plan: 2, use: proof, note: "it forgets old txs; logs/{hash} gives block and batch for any tx since 2025-08-25. Plan 1 calls it once, as proof."}
   plan_3:
     note: Endpoints that need an ro token.
     endpoints:
@@ -412,12 +701,11 @@ inventory:
       - {path: /, host: exchange, plan: out, why: health check}
       - {path: /info, host: exchange, plan: out, why: server info}
       - {path: /api/v1/layer1BasicInfo, host: exchange, plan: out, why: "L1 contract addresses and RPC info; the environments page lists the contracts"}
-      - {path: /api/v1/txFromL1TxHash, host: exchange, plan: out, why: "maps one L1 tx to its L2 tx; tx (plan 2) reads L2 txs"}
+      - {path: /api/v1/txFromL1TxHash, host: exchange, plan: out, why: "it takes an Ethereum deposit hash, and no plan-2 source reads Ethereum; a later source on the ZkLighter contract (0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7) can use it"}
       - {path: /api/v1/accountLimits, host: exchange, plan: out, why: "the caller's tier and limits; needs a token"}
       - {path: /api/v1/accountMetadata, host: exchange, plan: out, why: "names an account gives itself; needs a token"}
       - {path: /api/v1/l1Metadata, host: exchange, plan: out, why: "settings of the caller's L1 address; needs a token"}
       - {path: /api/v1/pnlLeaderboard, host: exchange, plan: out, why: "app leaderboard; pnl (plan 2) gives each account's series"}
-      - {path: /api/v1/publicPoolsMetadata, host: exchange, plan: out, why: "pool list and share stats now; no history"}
       - {path: /api/v1/events, host: exchange, plan: out, why: "binary-option events; no plan models binary options"}
       - {path: /api/v1/upDownCandles, host: exchange, plan: out, why: "binary-option candles; no plan models binary options"}
       - {path: /api/v1/portfolio/boPnl, host: exchange, plan: out, why: "binary-option PnL; needs a token"}
@@ -430,7 +718,7 @@ inventory:
       - {path: /api/v1/accountOrders, host: exchange, plan: out, why: "orders by client id, recent only; needs a token"}
       - {path: /api/v1/export, host: exchange, plan: out, why: "CSV of one account's trades or funding; needs a token"}
       - {path: /api/v1/export/historicalTrades, host: exchange, plan: out, why: "legacy paid route to the S3 trade files"}
-      - {path: /api/v1/aggregatedTrades, host: exchange, plan: out, why: "fills grouped by order; S3 trades hold each fill"}
+      - {path: /api/v1/aggregatedTrades, host: exchange, plan: out, why: "plan 1's S3 trades hold every fill with its position and pnl; this endpoint regroups them by order, 100 at a time under the 60-a-minute limit"}
       - {path: /api/v1/recentTrades, host: exchange, plan: out, why: "a market's newest trades, weight 600; S3 holds them all"}
       - {path: /api/v1/orderBooks, host: exchange, plan: out, why: "a subset of orderBookDetails"}
       - {path: /api/v1/orderBookOrders, host: exchange, plan: out, why: "the live order book; no history"}
@@ -446,5 +734,7 @@ inventory:
       - {path: /api/v1/withdrawalDelay, host: exchange, plan: out, why: "one setting, in seconds"}
       - {path: "/markets/{symbol}/logs", host: explorer, plan: out, why: "a market's latest logs; S3 trades hold every trade"}
       - {path: /markets, host: explorer, plan: out, why: "market list; orderBookDetails holds more"}
-      - {path: /search, host: explorer, plan: out, why: "the site's search box"}
-      - {path: /total, host: explorer, plan: out, why: "running totals now; no history"}
+      - {path: /search, host: explorer, plan: out, why: "the site's search box: a lookup that the batches and logs already hold"}
+      - {path: /total, host: explorer, plan: out, why: "running totals now: counts that the batches and logs already hold"}
+      - {path: /blocks, host: explorer, plan: out, why: "a batch reply lists every block's time and tx count"}
+      - {path: "/blocks/{blockId}", host: explorer, plan: out, why: "weight 5; adds only a sample of logs and a market price list to what a batch reply holds"}
