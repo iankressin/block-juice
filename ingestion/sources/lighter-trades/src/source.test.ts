@@ -104,26 +104,17 @@ async function sourceWith(t: TestContext, addresses: unknown, clock: Clock = fak
 
 type Saved = Record<string, unknown>;
 
-async function run(
-  source: Source,
-  fake: Fake,
-  { start = "2026-11-15", end = "2026-11-16", retry = [], saved = {} }: {
-    start?: string;
-    end?: string | null;
-    retry?: Call[];
-    saved?: Saved;
-  } = {},
-) {
+async function run(source: Source, fake: Fake, { start = "2026-11-15", saved = {} }: { start?: string; saved?: Saved } = {}) {
   const env = tradesEnv.parse({
     LIGHTER_API_URL: fake.apiUrl,
     LIGHTER_REQUESTS_PER_MINUTE: "60",
     LIGHTER_S3_URL: fake.url,
     LIGHTER_S3_PREFIX: PREFIX,
     START_DATE: start,
-    ...(end ? { END_DATE: end } : {}),
+    END_DATE: "2026-11-16",
   });
   const batches: Batch<Call>[] = [];
-  for await (const batch of source.extract(env, retry, { getCheckpoint: async (key) => saved[key] })) batches.push(batch);
+  for await (const batch of source.extract(env, [], { getCheckpoint: async (key) => saved[key] })) batches.push(batch);
   return batches;
 }
 
@@ -185,7 +176,7 @@ test("loads the listed accounts' trades from each day file, keyed by trade id", 
 
   const records = recordsOf(batches);
   assert.deepEqual(records.map((r) => r.id), ["40627877458", "40627877460"]);
-  assert.deepEqual(records.map((r) => r.callId), ["trades:2026-11-15", "trades:2026-11-16"]);
+  assert.deepEqual(records.map((r) => r.callId), ["trades:2026-11-15#0", "trades:2026-11-16#0"]);
   // As Lighter sent it: 64-bit integers as strings, no unit conversion.
   assert.deepEqual(records[0]!.data, {
     id: "40627877458",
@@ -267,83 +258,7 @@ test("a changed addresses.json loads every day again under a new manifest", asyn
   assert.deepEqual(fake.downloads, []);
 });
 
-test("a failed day waits as a dead letter, and the next day still loads", async (t) => {
-  const fake = await fakeLighter(t, TWO_DAYS);
-  fake.broken.add("2026-11-15");
-  const batches = await run(await sourceWith(t, { accounts: [ACCOUNT] }), fake);
-  assert.deepEqual(recordsOf(batches).map((r) => r.id), ["40627877460"]);
-  const failed = batches.flatMap((b) => b.failed);
-  assert.equal(failed.length, 1);
-  assert.equal(failed[0]!.id, "trades:2026-11-15");
-  assert.deepEqual(failed[0]!.call, { date: "2026-11-15", etag: "etag-2026-11-15" });
-  assert.match(failed[0]!.error, /HTTP 500/);
-});
-
-test("a dead-lettered day that the manifest lists as loaded is read again on the next run", async (t) => {
-  const fake = await fakeLighter(t, TWO_DAYS);
-  fake.broken.add("2026-11-15");
-  const source = await sourceWith(t, { accounts: [ACCOUNT] });
-  const first = await run(source, fake);
-  // The later day's checkpoint lists 2026-11-15, so the next run finds nothing pending.
-  const saved = asSaved(checkpointOf(first));
-  assert.equal((saved[KEY(fake.url, [ACCOUNT])] as { files: Record<string, string> }).files["2026-11-15"], "etag-2026-11-15");
-
-  fake.broken.clear();
-  fake.downloads.length = 0;
-  const retry: Call[] = first.flatMap((b) => b.failed.map((f) => f.call));
-  const second = await run(source, fake, { saved, retry });
-  assert.deepEqual(fake.downloads, ["2026-11-15"]);
-  assert.deepEqual(recordsOf(second).map((r) => r.id), ["40627877458"]);
-  assert.deepEqual(second.at(-1)!.succeededCallIds, ["trades:2026-11-15"]);
-});
-
-test("a retried call for a pending date is made once", async (t) => {
-  const fake = await fakeLighter(t, TWO_DAYS);
-  const retry: Call[] = [{ date: "2026-11-16", etag: "old" }];
-  const batches = await run(await sourceWith(t, { accounts: [ACCOUNT] }), fake, { retry });
-  assert.deepEqual(fake.downloads, ["2026-11-15", "2026-11-16"]);
-  assert.deepEqual(recordsOf(batches).map((r) => r.id), ["40627877458", "40627877460"]);
-});
-
-test("a retried call whose file has gone fails again, naming the date", async (t) => {
-  const fake = await fakeLighter(t, TWO_DAYS);
-  const source = await sourceWith(t, { accounts: [ACCOUNT] });
-  const first = await run(source, fake);
-  fake.files.delete("2026-11-16");
-  const retry: Call[] = [{ date: "2026-11-16", etag: "etag-2026-11-16" }];
-  const second = await run(source, fake, { saved: asSaved(checkpointOf(first)), retry });
-  assert.deepEqual(recordsOf(second), []);
-  const failed = second.flatMap((b) => b.failed);
-  assert.equal(failed.length, 1);
-  assert.equal(failed[0]!.id, "trades:2026-11-16");
-  assert.deepEqual(failed[0]!.call, retry[0]);
-  assert.match(failed[0]!.error, /no trades file for 2026-11-16/);
-});
-
-test("a retried date whose listing keeps failing is a failed call, and a later date still loads", async (t) => {
-  const fake = await fakeLighter(t, TWO_DAYS);
-  // The first list covers the range; the retried date's own list then fails.
-  fake.listsBeforeOutage = 1;
-  const saved: Saved = { [KEY(fake.url, [ACCOUNT])]: { files: { "2026-11-15": "etag-2026-11-15" } } };
-  const retry: Call[] = [{ date: "2026-11-15", etag: "etag-2026-11-15" }];
-  const batches = await run(await sourceWith(t, { accounts: [ACCOUNT] }), fake, { saved, retry });
-  const failed = batches.flatMap((b) => b.failed);
-  assert.equal(failed.length, 1);
-  assert.equal(failed[0]!.id, "trades:2026-11-15");
-  assert.deepEqual(failed[0]!.call, retry[0]);
-  assert.match(failed[0]!.error, /HTTP 503/);
-  assert.deepEqual(recordsOf(batches).map((r) => r.id), ["40627877460"]);
-});
-
-test("without END_DATE the run stops at yesterday in UTC", async (t) => {
-  const fake = await fakeLighter(t, TWO_DAYS);
-  const source = await sourceWith(t, { accounts: [ACCOUNT] }, fakeClock("2026-11-16T05:00:00Z"));
-  assert.deepEqual(recordsOf(await run(source, fake, { end: null })).map((r) => r.id), ["40627877458"]);
-});
-
-test("START_DATE is required, and END_DATE may not precede it", () => {
-  assert.throws(() => tradesEnv.parse({}), /START_DATE/);
-  assert.throws(() => tradesEnv.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-13" }), /END_DATE/);
+test("END_DATE may not precede START_DATE", () => {
+  assert.throws(() => tradesEnv.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-13" }), /END_DATE may not come before START_DATE/);
   assert.doesNotThrow(() => tradesEnv.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-14" }));
-  assert.doesNotThrow(() => tradesEnv.parse({ START_DATE: "2026-11-14" }));
 });

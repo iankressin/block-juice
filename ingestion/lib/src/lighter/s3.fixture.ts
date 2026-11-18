@@ -41,6 +41,8 @@ export type FakeBucket = {
   env: LighterS3Env;
   /** Every request's path and query, in order. */
   requests: string[];
+  /** How many listing pages the bucket was asked for. */
+  lists: number;
   /** The date of each download, in order. */
   downloads: string[];
   /** The day files the bucket lists and serves, by date. */
@@ -66,7 +68,6 @@ export type FakeBucket = {
 export async function fakeBucket(t: TestContext, dataset: LighterDataset, files: Record<string, Buffer>): Promise<FakeBucket> {
   const folder = `${PREFIX}/${dataset}/`;
   const keyOf = (date: string) => `${folder}date=${date}/${FILE_NAMES[dataset]}`;
-  let lists = 0;
 
   const page = (query: URLSearchParams): Buffer => {
     // The real bucket lists the dataset's folder as a key of its own, ahead of the day files.
@@ -90,7 +91,7 @@ export async function fakeBucket(t: TestContext, dataset: LighterDataset, files:
     bucket.requests.push(req.url!);
     const url = new URL(req.url!, "http://s3");
     if (url.searchParams.get("list-type") === "2") {
-      const outage = lists++ >= bucket.listsBeforeOutage;
+      const outage = bucket.lists++ >= bucket.listsBeforeOutage;
       res.setHeader("content-type", "application/xml");
       send(res, bucket.listReplies.shift() ?? (outage ? { status: 503 } : undefined), page(url.searchParams));
       return;
@@ -113,6 +114,7 @@ export async function fakeBucket(t: TestContext, dataset: LighterDataset, files:
   const bucket: FakeBucket = {
     env: { LIGHTER_S3_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, LIGHTER_S3_PREFIX: PREFIX },
     requests: [],
+    lists: 0,
     downloads: [],
     files: new Map(Object.entries(files)),
     etags: new Map(),

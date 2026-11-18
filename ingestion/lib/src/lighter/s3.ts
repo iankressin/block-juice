@@ -9,9 +9,10 @@ import { DuckDBInstance } from "@duckdb/node-api";
 import * as z from "zod";
 import { describeError } from "#src/calls.ts";
 import { retryAfterMs, systemClock, type Clock } from "#src/clock.ts";
+import { DAY_MS, historyKey } from "#src/history.ts";
 import { LighterError, withRetries } from "#src/lighter/retry.ts";
 import { observedFetch } from "#src/transport-metrics.ts";
-import type { Batch, Checkpoint, RawRecord } from "#src/source.ts";
+import type { Batch, Checkpoint, ExtractionContext } from "#src/source.ts";
 
 // Lighter publishes one Parquet file per UTC day on a public bucket: catalog/vendors/lighter/NOTES.md, "S3 files".
 export const lighterS3Env = z.object({
@@ -20,6 +21,16 @@ export const lighterS3Env = z.object({
 });
 
 export type LighterS3Env = z.infer<typeof lighterS3Env>;
+
+/** The settings of a source that loads day files with `loadDays`: the bucket, the first day and the last. */
+export const lighterDaysEnv = lighterS3Env
+  .extend({ START_DATE: z.iso.date(), END_DATE: z.iso.date().optional() })
+  .refine((env) => !env.END_DATE || env.END_DATE >= env.START_DATE, {
+    path: ["END_DATE"],
+    message: "END_DATE may not come before START_DATE",
+  });
+
+export type LighterDaysEnv = z.infer<typeof lighterDaysEnv>;
 
 export type LighterDataset = "trades" | "open_interest_hourly";
 
@@ -117,16 +128,14 @@ async function download(env: LighterS3Env, file: DayFile, path: string, clock: C
   });
 }
 
+type ReadDayOptions = { where?: string; rowsPerChunk?: number; tmpDir?: string; clock?: Clock; downloadTimeoutMs?: number };
+
 /**
  * One day file as chunks of rows. It downloads the file to a temporary folder, then lets DuckDB read
  * it with a memory cap, so memory stays flat. 64-bit integers come as strings and times in UTC.
  * `where` is trusted SQL: callers build it only from validated integers.
  */
-export async function* readDay(
-  env: LighterS3Env,
-  file: DayFile,
-  options: { where?: string; rowsPerChunk?: number; tmpDir?: string; clock?: Clock; downloadTimeoutMs?: number } = {},
-): AsyncGenerator<Record<string, unknown>[]> {
+export async function* readDay(env: LighterS3Env, file: DayFile, options: ReadDayOptions = {}): AsyncGenerator<Record<string, unknown>[]> {
   const { where, rowsPerChunk = 10_000, tmpDir = tmpdir(), clock = systemClock, downloadTimeoutMs = S3_DOWNLOAD_TIMEOUT_MS } = options;
   const folder = await mkdtemp(join(tmpDir, "lighter-"));
   try {
@@ -171,62 +180,88 @@ export async function* readDay(
 const manifestSchema = z.object({ files: z.record(z.string(), z.string()) });
 
 /**
- * Which day files still need a load. A day is done when the saved manifest holds its ETag.
- * `loaded(day)` gives the checkpoint that records it, next to every day recorded before.
+ * The ETag of each day the source has tried, saved as a checkpoint under `key`. A saved value of
+ * another shape counts as empty. `record(day)` adds the day and gives the checkpoint that saves it,
+ * next to every day recorded before.
  */
-export function dayManifest(key: string, saved: unknown, days: readonly DayFile[]) {
+function dayManifest(key: string, saved: unknown) {
   const files: Record<string, string> = { ...(manifestSchema.safeParse(saved).data?.files ?? {}) };
   return {
-    pending: days.filter((day) => files[day.date] !== day.etag),
-    loaded(day: DayFile): Checkpoint {
+    holds: (day: DayFile) => files[day.date] === day.etag,
+    record(day: DayFile): Checkpoint {
       files[day.date] = day.etag;
       return { key, value: { files: { ...files } } };
     },
   };
 }
 
-/**
- * One day as batches. It reads a chunk ahead, so each batch but the last gives its records the call id
- * `<dataset>:<date>#<n>`. The last gives them the day's id and clears its dead letter, and holds the
- * checkpoint, so a day that fails halfway records nothing and its retry rewrites the chunks by id.
- */
-export async function* dayBatches(
+/** One day as a batch per chunk of rows, then a closing batch that ends the day's call and records it. */
+async function* dayBatches(
   env: LighterS3Env,
   file: DayFile,
-  options: {
-    where?: string;
-    rowId(row: Record<string, unknown>): string;
-    checkpoint: Checkpoint;
-    rowsPerChunk?: number;
-    clock?: Clock;
-    downloadTimeoutMs?: number;
-  },
+  manifest: ReturnType<typeof dayManifest>,
+  rowId: (row: Record<string, unknown>) => string,
+  read: ReadDayOptions,
 ): AsyncGenerator<Batch<DayCall>> {
   const id = `${file.dataset}:${file.date}`;
-  const records = (rows: Record<string, unknown>[], callId: string): RawRecord[] =>
-    rows.map((data) => ({ id: options.rowId(data), callId, data }));
-  const readOptions = {
-    ...(options.where ? { where: options.where } : {}),
-    ...(options.rowsPerChunk ? { rowsPerChunk: options.rowsPerChunk } : {}),
-    ...(options.clock ? { clock: options.clock } : {}),
-    ...(options.downloadTimeoutMs ? { downloadTimeoutMs: options.downloadTimeoutMs } : {}),
-  };
+  let end: Pick<Batch<DayCall>, "failed" | "succeededCallIds">;
   try {
-    let ahead: Record<string, unknown>[] | undefined;
     let n = 0;
-    for await (const rows of readDay(env, file, readOptions)) {
-      // 0, so the run does not count each chunk id as a call: only the last batch completes the day.
-      if (ahead) yield { records: records(ahead, `${id}#${n++}`), failed: [], callsCompleted: 0 };
-      ahead = rows;
+    for await (const rows of readDay(env, file, read)) {
+      const callId = `${id}#${n++}`;
+      // 0, so the run counts the day once, at its closing batch.
+      yield { records: rows.map((data) => ({ id: rowId(data), callId, data })), failed: [], callsCompleted: 0 };
     }
-    yield {
-      records: records(ahead ?? [], id),
-      failed: [],
-      succeededCallIds: [id],
-      callsCompleted: 1,
-      checkpoints: [options.checkpoint],
-    };
+    end = { failed: [], succeededCallIds: [id] };
   } catch (error) {
-    yield { records: [], failed: [{ id, call: { date: file.date, etag: file.etag }, error: describeError(error) }], callsCompleted: 1 };
+    end = { failed: [{ id, call: { date: file.date, etag: file.etag }, error: describeError(error) }] };
   }
+  yield { records: [], ...end, callsCompleted: 1, checkpoints: [manifest.record(file)] };
+}
+
+/**
+ * Loads the day files of `dataset` as a call source's batches. Each day is one call, id `<dataset>:<date>`.
+ *
+ * - The last day is `END_DATE`, or yesterday in UTC when it is unset: Lighter writes a day's file about
+ *   07:03 UTC the next day.
+ * - A manifest of day ETags, saved as a checkpoint, keeps the days the source has tried. Its key names
+ *   the bucket, the dataset and `keyParts`, so a source that filters rows passes its filter there. A day
+ *   from `START_DATE` to the last day whose ETag the manifest lacks is pending.
+ * - A run lists the bucket once, over the pending days and the retried dates. A retried date reads its
+ *   current file from that listing, and fails again when the file has gone. A failed listing fails the run.
+ * - Days load oldest first, one at a time. A chunk's records carry the call id `<dataset>:<date>#<n>`, so
+ *   no chunk clears the day's dead letter. A closing batch with no records clears it, or holds the failure.
+ *   A day that fails halfway keeps the chunks it wrote, and its retry rewrites them by row id.
+ * - The closing batch records the day in the manifest, whether it loaded or failed, so a failed day's
+ *   checkpoint and dead letter commit together. Only the dead letter brings a failed day back, as in the
+ *   history sources. Once the framework parks it (five failed runs), the day loads again only when its
+ *   ETag changes.
+ */
+export async function* loadDays(
+  env: LighterDaysEnv,
+  retry: readonly DayCall[],
+  context: ExtractionContext<DayCall> | undefined,
+  options: ReadDayOptions & { dataset: LighterDataset; keyParts?: unknown[]; rowId(row: Record<string, unknown>): string },
+): AsyncGenerator<Batch<DayCall>> {
+  const { dataset, keyParts = [], rowId, clock = systemClock, ...read } = options;
+  const last = env.END_DATE ?? new Date(clock.now() - DAY_MS).toISOString().slice(0, 10);
+  const retried = new Map(retry.map((call) => [call.date, call]));
+  const retriedDates = [...retried.keys()];
+  const from = retriedDates.reduce((min, date) => (date < min ? date : min), env.START_DATE);
+  const to = retriedDates.reduce((max, date) => (date > max ? date : max), last);
+  const listed = await listDays(env, dataset, from, to, clock);
+  const key = historyKey(["lighter", env.LIGHTER_S3_URL, env.LIGHTER_S3_PREFIX, dataset, ...keyParts]);
+  const manifest = dayManifest(key, await context?.getCheckpoint?.(key));
+
+  const listedDates = new Set(listed.map((day) => day.date));
+  for (const [date, call] of retried) {
+    if (listedDates.has(date)) continue;
+    const error = `Lighter S3 has no ${dataset} file for ${date}`;
+    yield { records: [], failed: [{ id: `${dataset}:${date}`, call, error }], callsCompleted: 1 };
+  }
+  // Chosen before any day loads, since loading a day records it in the manifest.
+  const days = listed.filter(
+    (day) => retried.has(day.date) || (day.date >= env.START_DATE && day.date <= last && !manifest.holds(day)),
+  );
+  for (const day of days) yield* dayBatches(env, day, manifest, rowId, { ...read, clock });
 }

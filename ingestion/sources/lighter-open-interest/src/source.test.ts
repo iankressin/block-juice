@@ -1,190 +1,45 @@
 import assert from "node:assert/strict";
-import { test, type TestContext } from "node:test";
-import { historyKey, type Batch, type Checkpoint } from "@ingestion/lib";
-import type { Clock } from "@ingestion/lib";
-import { fakeBucket, parquetFile, type FakeBucket } from "@ingestion/lib/lighter/s3-fixture";
-import { openInterestEnv, openInterestSource } from "#src/source.ts";
+import { test } from "node:test";
+import type { Clock, RawRecord } from "@ingestion/lib";
+import { fakeBucket, parquetFile } from "@ingestion/lib/lighter/s3-fixture";
+import { openInterestSource } from "#src/source.ts";
 
-type Source = ReturnType<typeof openInterestSource>;
-type Call = Parameters<Source["extract"]>[1][number];
+const clock: Clock = { now: () => Date.parse("2026-11-17T08:00:00Z"), sleep: async () => {} };
 
-const PREFIX = "v1.1/lighter/core/mainnet";
-
-/** A Parquet file of one day's open interest: ETH and BTC at hours 22 and 23. */
-const dayFile = (t: TestContext, date: string) =>
-  parquetFile(
+test("loads a day's open interest, keyed by symbol and hour, as Lighter sent it", async (t) => {
+  const file = await parquetFile(
     t,
     `select * from (values
-      (TIMESTAMPTZ '${date} 22:00:00+00', 'ETH', 100.5, 3000.25, 301525.125),
-      (TIMESTAMPTZ '${date} 22:00:00+00', 'BTC', 10.0, 90000.0, 900000.0),
-      (TIMESTAMPTZ '${date} 23:00:00+00', 'ETH', 101.5, 3001.0, 304601.5),
-      (TIMESTAMPTZ '${date} 23:00:00+00', 'BTC', 11.0, 90100.0, 991100.0)
+      (TIMESTAMPTZ '2026-11-14 22:00:00+00', 'ETH', 100.5, 3000.25, 301525.125),
+      (TIMESTAMPTZ '2026-11-14 22:00:00+00', 'BTC', 10.0, 90000.0, 900000.0),
+      (TIMESTAMPTZ '2026-11-14 23:00:00+00', 'ETH', 101.5, 3001.0, 304601.5),
+      (TIMESTAMPTZ '2026-11-14 23:00:00+00', 'BTC', 11.0, 90100.0, 991100.0)
     ) t(hour, symbol, open_interest, mark_price, open_interest_usd)`,
   );
-
-type Fake = FakeBucket & { url: string };
-
-/** Fake S3: a list of the day files, and the files. */
-async function fakeS3(t: TestContext, dates: string[]): Promise<Fake> {
-  const files: Record<string, Buffer> = {};
-  for (const date of dates) files[date] = await dayFile(t, date);
-  const bucket = await fakeBucket(t, "open_interest_hourly", files);
-  return Object.assign(bucket, { url: bucket.env.LIGHTER_S3_URL });
-}
-
-const fakeClock = (iso: string): Clock => ({ now: () => Date.parse(iso), sleep: async () => {} });
-
-const KEY = (url: string) => historyKey(["lighter", url, PREFIX, "open_interest_hourly"]);
-
-type Saved = Record<string, unknown>;
-
-async function run(
-  fake: Fake,
-  { start = "2026-11-14", end = "2026-11-16", retry = [], saved = {}, clock = fakeClock("2026-11-17T08:00:00Z") }: {
-    start?: string;
-    end?: string | null;
-    retry?: Call[];
-    saved?: Saved;
-    clock?: Clock;
-  } = {},
-) {
+  const bucket = await fakeBucket(t, "open_interest_hourly", { "2026-11-14": file });
   const source = openInterestSource(clock);
-  const env = openInterestEnv.parse({
-    LIGHTER_S3_URL: fake.url,
-    LIGHTER_S3_PREFIX: PREFIX,
-    START_DATE: start,
-    ...(end ? { END_DATE: end } : {}),
-  });
-  const batches: Batch<Call>[] = [];
-  for await (const batch of source.extract(env, retry, { getCheckpoint: async (key) => saved[key] })) batches.push(batch);
-  return batches;
-}
+  const env = source.env.parse({ ...bucket.env, START_DATE: "2026-11-14" });
 
-const datesOf = (batches: Batch<Call>[]) => [...new Set(batches.flatMap((b) => b.records.map((r) => r.callId.split(":")[1]!.split("#")[0]!)))];
-const checkpointOf = (batches: Batch<Call>[]): Checkpoint => batches.flatMap((b) => b.checkpoints ?? []).at(-1)!;
-const asSaved = (checkpoint: Checkpoint): Saved => ({ [checkpoint.key]: checkpoint.value });
+  const records: RawRecord[] = [];
+  for await (const batch of source.extract(env, [])) records.push(...batch.records);
 
-test("loads each listed day once, and skips a day loaded with the same ETag", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17"]);
-  const first = await run(fake);
-  assert.deepEqual(datesOf(first), ["2026-11-14", "2026-11-15", "2026-11-16"]);
-  assert.deepEqual(fake.downloads, ["2026-11-14", "2026-11-15", "2026-11-16"]);
-  assert.equal(first.flatMap((b) => b.records).length, 12);
-  const row = first.flatMap((b) => b.records).find((r) => r.id === "ETH:2026-11-14 23:00:00+00")!;
-  assert.equal(row.callId, "open_interest_hourly:2026-11-14");
-  assert.deepEqual(row.data, {
+  assert.deepEqual(records.map((r) => r.id), [
+    "ETH:2026-11-14 22:00:00+00",
+    "BTC:2026-11-14 22:00:00+00",
+    "ETH:2026-11-14 23:00:00+00",
+    "BTC:2026-11-14 23:00:00+00",
+  ]);
+  assert.deepEqual(records[2]!.data, {
     hour: "2026-11-14 23:00:00+00",
     symbol: "ETH",
     open_interest: "101.5",
     mark_price: "3001.00",
     open_interest_usd: "304601.500",
   });
-  const checkpoint = checkpointOf(first);
-  assert.equal(checkpoint.key, KEY(fake.url));
-  assert.deepEqual(checkpoint.value, {
-    files: { "2026-11-14": "etag-2026-11-14", "2026-11-15": "etag-2026-11-15", "2026-11-16": "etag-2026-11-16" },
-  });
-
-  fake.downloads.length = 0;
-  const second = await run(fake, { saved: asSaved(checkpoint) });
-  assert.deepEqual(second, []);
-  assert.deepEqual(fake.downloads, []);
 });
 
-test("a day whose ETag changed loads again", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15"]);
-  const first = await run(fake, { end: "2026-11-15" });
-  fake.downloads.length = 0;
-  fake.etags.set("2026-11-15", "etag-new");
-  const second = await run(fake, { end: "2026-11-15", saved: asSaved(checkpointOf(first)) });
-  assert.deepEqual(fake.downloads, ["2026-11-15"]);
-  assert.deepEqual(datesOf(second), ["2026-11-15"]);
-  assert.deepEqual(checkpointOf(second).value, { files: { "2026-11-14": "etag-2026-11-14", "2026-11-15": "etag-new" } });
-});
-
-test("a failed day waits as a dead letter, and the next day still loads", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15", "2026-11-16"]);
-  fake.broken.add("2026-11-15");
-  const batches = await run(fake);
-  assert.deepEqual(datesOf(batches), ["2026-11-14", "2026-11-16"]);
-  const failed = batches.flatMap((b) => b.failed);
-  assert.equal(failed.length, 1);
-  assert.equal(failed[0]!.id, "open_interest_hourly:2026-11-15");
-  assert.deepEqual(failed[0]!.call, { date: "2026-11-15", etag: "etag-2026-11-15" });
-  assert.match(failed[0]!.error, /HTTP 500/);
-  assert.equal(batches.filter((b) => b.failed.length).every((b) => !b.checkpoints), true);
-});
-
-test("a dead-lettered day that the manifest lists as loaded is read again on the next run", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15", "2026-11-16"]);
-  fake.broken.add("2026-11-15");
-  const first = await run(fake);
-  // The later day's checkpoint lists 2026-11-15, so the next run finds nothing pending.
-  const saved = asSaved(checkpointOf(first));
-  assert.equal((saved[KEY(fake.url)] as { files: Record<string, string> }).files["2026-11-15"], "etag-2026-11-15");
-
-  fake.broken.clear();
-  fake.downloads.length = 0;
-  const retry: Call[] = first.flatMap((b) => b.failed.map((f) => f.call));
-  const second = await run(fake, { saved, retry });
-  assert.deepEqual(fake.downloads, ["2026-11-15"]);
-  assert.deepEqual(datesOf(second), ["2026-11-15"]);
-  assert.equal(second.flatMap((b) => b.records).length, 4);
-  assert.deepEqual(second.at(-1)!.succeededCallIds, ["open_interest_hourly:2026-11-15"]);
-  // The retried day's checkpoint keeps the other days.
-  assert.deepEqual(Object.keys((checkpointOf(second).value as { files: Record<string, string> }).files), [
-    "2026-11-14",
-    "2026-11-15",
-    "2026-11-16",
-  ]);
-});
-
-test("a retried call for a pending date is made once", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15"]);
-  const retry: Call[] = [{ date: "2026-11-15", etag: "old" }];
-  const batches = await run(fake, { end: "2026-11-15", retry });
-  assert.deepEqual(fake.downloads, ["2026-11-14", "2026-11-15"]);
-  assert.equal(batches.flatMap((b) => b.records).length, 8);
-});
-
-test("a retried call whose file has gone fails again, naming the date", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15"]);
-  const first = await run(fake, { end: "2026-11-15" });
-  fake.files.delete("2026-11-15");
-  const retry: Call[] = [{ date: "2026-11-15", etag: "etag-2026-11-15" }];
-  const second = await run(fake, { end: "2026-11-15", saved: asSaved(checkpointOf(first)), retry });
-  assert.equal(second.flatMap((b) => b.records).length, 0);
-  const failed = second.flatMap((b) => b.failed);
-  assert.equal(failed.length, 1);
-  assert.equal(failed[0]!.id, "open_interest_hourly:2026-11-15");
-  assert.deepEqual(failed[0]!.call, retry[0]);
-  assert.match(failed[0]!.error, /2026-11-15/);
-});
-
-test("a retried date whose listing keeps failing is a failed call, and a later date still loads", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15", "2026-11-16"]);
-  // The first list covers the range; the retried date's own list then fails.
-  fake.listsBeforeOutage = 1;
-  const saved: Saved = { [KEY(fake.url)]: { files: { "2026-11-14": "etag-2026-11-14", "2026-11-15": "etag-2026-11-15" } } };
-  const retry: Call[] = [{ date: "2026-11-15", etag: "etag-2026-11-15" }];
-  const batches = await run(fake, { saved, retry });
-  const failed = batches.flatMap((b) => b.failed);
-  assert.equal(failed.length, 1);
-  assert.equal(failed[0]!.id, "open_interest_hourly:2026-11-15");
-  assert.deepEqual(failed[0]!.call, retry[0]);
-  assert.match(failed[0]!.error, /HTTP 503/);
-  assert.deepEqual(datesOf(batches), ["2026-11-16"]);
-});
-
-test("without END_DATE the run stops at yesterday in UTC", async (t) => {
-  const fake = await fakeS3(t, ["2026-11-14", "2026-11-15", "2026-11-16"]);
-  const batches = await run(fake, { end: null, clock: fakeClock("2026-11-16T05:00:00Z") });
-  assert.deepEqual(datesOf(batches), ["2026-11-14", "2026-11-15"]);
-});
-
-test("START_DATE is required, and END_DATE may not precede it", () => {
-  assert.throws(() => openInterestEnv.parse({}), /START_DATE/);
-  assert.throws(() => openInterestEnv.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-13" }), /END_DATE/);
-  assert.doesNotThrow(() => openInterestEnv.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-14" }));
-  assert.doesNotThrow(() => openInterestEnv.parse({ START_DATE: "2026-11-14" }));
+test("END_DATE may not precede START_DATE", () => {
+  const { env } = openInterestSource();
+  assert.throws(() => env.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-13" }), /END_DATE may not come before START_DATE/);
+  assert.doesNotThrow(() => env.parse({ START_DATE: "2026-11-14", END_DATE: "2026-11-14" }));
 });

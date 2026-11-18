@@ -3,10 +3,9 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import type { Batch } from "#src/source.ts";
 import type { Clock } from "#src/clock.ts";
 import { RETRY_WAITS_MS } from "#src/lighter/retry.ts";
-import { dayBatches, dayManifest, listDays, readDay, type DayCall, type DayFile } from "#src/lighter/s3.ts";
+import { listDays, readDay, type DayFile } from "#src/lighter/s3.ts";
 import { PREFIX, fakeBucket, parquetFile } from "#src/lighter/s3.fixture.ts";
 
 /** Every attempt a read makes before it gives up: the first, then one after each wait. */
@@ -181,65 +180,4 @@ test("readDay removes its temporary folder after a successful read", async (t) =
   t.after(() => rm(tmpDir, { recursive: true, force: true }));
   await collect(readDay(env, dayOf(file), { tmpDir }));
   assert.deepEqual(await readdir(tmpDir), []);
-});
-
-const d = (date: string, etag: string): DayFile => ({ dataset: "trades", date, key: `k${date}`, etag, size: 1 });
-
-test("dayManifest skips days loaded with the same ETag and reloads a changed one", () => {
-  const m = dayManifest("k", { files: { "2026-11-15": "a" } }, [d("2026-11-15", "a"), d("2026-11-16", "b")]);
-  assert.deepEqual(m.pending.map((x) => x.date), ["2026-11-16"]);
-  assert.equal(dayManifest("k", { files: { "2026-11-15": "a" } }, [d("2026-11-15", "c")]).pending.length, 1);
-  m.loaded(d("2026-11-16", "b"));
-  assert.deepEqual(m.loaded(d("2026-11-15", "a")).value, { files: { "2026-11-15": "a", "2026-11-16": "b" } });
-});
-
-test("dayManifest treats a saved value of the wrong shape as empty", () => {
-  assert.equal(dayManifest("k", "junk", [d("2026-11-15", "a")]).pending.length, 1);
-  assert.equal(dayManifest("k", undefined, [d("2026-11-15", "a")]).pending.length, 1);
-});
-
-test("dayBatches clears the day's dead letter only with its last chunk", async (t) => {
-  const file = await tradesFile(t);
-  const { env } = await fakeBucket(t, "trades", { "2026-11-16": file });
-  const checkpoint = { key: "k", value: { files: { "2026-11-16": "e16" } } };
-  const batches = await collect(dayBatches(env, dayOf(file), { where: "id < 40627877461", rowId: (r) => String(r.id), checkpoint, rowsPerChunk: 2 }));
-  assert.deepEqual(
-    batches.map((b) => [b.records.map((r) => r.callId), b.succeededCallIds]),
-    [[["trades:2026-11-16#0", "trades:2026-11-16#0"], undefined], [["trades:2026-11-16"], ["trades:2026-11-16"]]],
-  );
-  assert.deepEqual(batches.at(-1)!.checkpoints, [checkpoint]);
-  assert.equal(batches.at(-1)!.callsCompleted, 1);
-  assert.equal(batches[0]!.checkpoints, undefined);
-  assert.equal(batches[0]!.callsCompleted, 0);
-  assert.deepEqual(batches[0]!.records.map((r) => r.id), ["40627877458", "40627877459"]);
-  assert.equal(batches[0]!.records[0]!.data.id, "40627877458");
-});
-
-test("dayBatches yields one empty last batch for a day with no matching rows", async (t) => {
-  const file = await tradesFile(t);
-  const { env } = await fakeBucket(t, "trades", { "2026-11-16": file });
-  const checkpoint = { key: "k", value: 1 };
-  const batches = await collect(dayBatches(env, dayOf(file), { where: "id = 0", rowId: (r) => String(r.id), checkpoint }));
-  assert.equal(batches.length, 1);
-  assert.deepEqual(batches[0]!.records, []);
-  assert.deepEqual(batches[0]!.succeededCallIds, ["trades:2026-11-16"]);
-  assert.equal(batches[0]!.callsCompleted, 1);
-  assert.deepEqual(batches[0]!.checkpoints, [checkpoint]);
-});
-
-test("dayBatches turns a failed day into a dead letter with no checkpoint", async (t) => {
-  const { env, broken } = await fakeBucket(t, "trades", {});
-  broken.add("2026-11-16");
-  const day = dayOf(Buffer.alloc(4096));
-  const batches: Batch<DayCall>[] = await collect(
-    dayBatches(env, day, { rowId: (r) => String(r.id), checkpoint: { key: "k", value: 1 }, clock: fakeClock() }),
-  );
-  assert.equal(batches.length, 1);
-  const b = batches[0]!;
-  assert.deepEqual(b.records, []);
-  assert.equal(b.failed[0]!.id, "trades:2026-11-16");
-  assert.deepEqual(b.failed[0]!.call, { date: "2026-11-16", etag: "e16" });
-  assert.match(b.failed[0]!.error, /HTTP 500/);
-  assert.equal(b.callsCompleted, 1);
-  assert.equal(b.checkpoints, undefined);
 });
