@@ -90,6 +90,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter account movements](#lighter-account-movements) | | | | | | | | ✓ | |
 | [Lighter account snapshots](#lighter-account-snapshots) | | | | | | | | ✓ | |
 | [Lighter account value history](#lighter-account-value-history) | | | | | | | | ✓ | |
+| [Lighter account ledger](#lighter-account-ledger) | | | | | | | | ✓ | |
 | [Lighter tx counts](#lighter-tx-counts) | | | | | | | | ✓ | |
 | [Lighter assets](#lighter-assets) | | | | | | | | ✓ | |
 | [Lighter system accounts](#lighter-system-accounts) | | | | | | | | ✓ | |
@@ -791,6 +792,49 @@ One row per account, resolution and point time. Every column but `volume` is a r
 | `volume` | numeric | Trading volume in the period. |
 
 The warn test `lighter_account_flows_match_pnl` checks the account log against these points. For each UTC day inside the window the log source loaded, it sets the day's change in `inflow`, `outflow`, `spot_inflow` and `spot_outflow` against the USDC movements in `lighter_account_movements` that day, and lists each account, day and field that differs.
+
+### Lighter account ledger
+
+`analytics.lighter_account_ledger`
+
+Every change to a listed Lighter account's holdings that the loaded data can price, one row per change: each leg of a money move, each perp fill, each hour of funding and each position exit, with a running total per asset and route. Covers the accounts in `ingestion/sources/lighter-account-logs/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there. Fills and funding cover only the trades `lighter_trades` loads: to start, 313004's ETH trades.
+
+The `lighter` pipeline builds it from [`lighter_account_movements`](#lighter-account-movements), [`lighter_account_fills`](#lighter-account-fills) and [`lighter_funding_rates`](#lighter-funding-rates), with no source of its own. It runs daily at 07:30 UTC. Each history starts where its data does. Logs start at the account-log source's `START_TIME` (2026-11-16 to start), and the Explorer holds none before 2025-08-25. Fills start at the first S3 day `lighter-trades` loads (2026-11-14 to start), and funding at each account's first loaded fill. Readings to check against start at the first run of `lighter-accounts`.
+
+`kind` says what changed:
+
+- `deposit`, `withdrawal`, `transfer_out`, `transfer_in`, `transfer_fee`, `route_move`, `pool_mint`, `pool_burn`, `stake`, `unstake`, `unlock`, `margin_move`: a leg of `lighter_account_movements`, with its `signed_amount` as `amount`.
+- `fill`: a perp fill, USDC on perps. `amount` is the fill's realized pnl less its fee and its role's integrator fee.
+- `funding`: an hour mark at which the account held a perp position, USDC on perps. Lighter books funding on every open position at each hour mark, with no log entry. `amount` is -position × `value_usdc_per_unit` when the rate's `direction` is `long` and +position × value when it is `short`: the side that `direction` names pays. `value_usdc_per_unit` has 8 decimals, so an hour can miss Lighter's own amount by up to `|position| × 0.5 × 10^-8` USDC.
+- `exit_position`: an `ExitPosition` or `ExitPositionWithFunding` entry, which closes the account's position in `market_id`.
+
+`amount` is null for `stake`, `unstake`, `unlock` and `margin_move`, whose sign is unproven, and for `exit_position`, whose entry carries a settlement price but no amount. `cumulative_amount` skips those rows. Spot fills stay out until the asset a spot fill's fee is paid in is proven.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `move:<movement id>`, `fill:<fill id>`, `funding:<account_index>:<market_id>:<funding_time in s>` or `exit:<hash>:<account_index>`. Unique. |
+| `account_index` | bigint | The account. |
+| `event_time` | timestamptz | The log entry's time, the trade's time or the funding hour mark. |
+| `kind` | text | What changed, as listed above. |
+| `asset` | text | The asset's symbol. `USDC` for fills, funding and exits. |
+| `route` | text | `perps` or `spot`. Null for stake, unstake, unlock and margin moves. |
+| `amount` | numeric | The change, signed, in the asset's units. Null as described above. |
+| `cumulative_amount` | numeric | The sum of `amount` over the account's rows of the same asset and route so far, in `event_time` and `id` order. A balance only if the loaded history reaches back to the account's first move. |
+| `market_id` | integer | The market of a fill, funding hour or exit. |
+| `position_after` | numeric | The account's position in `market_id` after the row, negative when short. 0 after an exit. For funding, the position that paid. |
+| `trade_id` | bigint | The trade of a fill. |
+| `hash` | text | The log entry's hash, or the fill's trade tx hash. Null for funding. |
+| `block_number` | bigint | The L2 block of a move, fill or exit. |
+| `batch_number`, `batch_status` | bigint, text | The loaded batch whose block range holds `block_number`, and its status, as in [`lighter_batches`](#lighter-batches). |
+| `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed the batch, and when. Null on a `nothing_to_execute` batch. |
+
+Three warn tests check the ledger against Lighter's own data:
+
+- `lighter_funding_prefix_steps_match_rates` lists each step of a market's `funding_rate_prefix_sum`, as the logs' `TradeWithFunding` entries carry it, that differs from the hourly rates between: 10^8 × `value_usdc_per_unit` per hour mark, up for `long` and down for `short`. It compares only steps whose every hour mark has a loaded rate.
+- `lighter_positions_match_snapshots` lists each position in [`lighter_account_position_snapshots`](#lighter-account-snapshots) that differs from the account's position after its last fill or exit in that market up to the reading, or 0 with none.
+- `lighter_ledger_matches_collateral` lists each pair of consecutive readings in `lighter_account_snapshots` whose change in `collateral` differs from the sum of the account's USDC perps `amount` between them, beyond 0.000002 per row summed plus the funding rounding above. It skips a pair when a position in either reading is not in cross margin (`margin_mode` 0), or when a row between them has a null `amount`.
+
+The two reading checks compare only readings that the loaded fills cover: the account must have a fill or exit after the reading, and for the collateral check one before the earlier reading too. A day's S3 trade file lands the next morning, so a reading from one run is first compared by the next day's run, and only if the account traded after it.
 
 ### Lighter tx counts
 
