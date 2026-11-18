@@ -89,6 +89,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter batches](#lighter-batches) | | | | | | | | ✓ | |
 | [Lighter account movements](#lighter-account-movements) | | | | | | | | ✓ | |
 | [Lighter account snapshots](#lighter-account-snapshots) | | | | | | | | ✓ | |
+| [Lighter account value history](#lighter-account-value-history) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -759,6 +760,33 @@ The `lighter` pipeline builds them from the call source `lighter-accounts`, whic
 | `account_index`, `read_at`, `asset_id`, `symbol` | | As above. |
 | `balance`, `locked_balance`, `margin_balance` | numeric | In the asset's own units. |
 | `margin_mode` | text | As Lighter sends it. |
+
+### Lighter account value history
+
+`analytics.lighter_account_value_history`
+
+Lighter's own daily and hourly record of each listed account's value, from its `pnl` endpoint. It covers the accounts in `ingestion/sources/lighter-pnl/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there. Unlike a snapshot, it goes back to the day the account began.
+
+The `lighter` pipeline builds it from the call source `lighter-pnl`. Each run reads every account's `1d` series from `START_TIME` and its last 7 days of `1h`, and keeps each point whole. Lighter ends a series with a point at the request time. That point is still open, so the source leaves it for the next run. Lighter sends the values as JSON numbers, so they keep up to 15 significant digits.
+
+One row per account, resolution and point time. Every column but `volume` is a running total since the account began, up to `point_time`, in USDC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<resolution>:<point time in s>`. Unique. |
+| `account_index` | bigint | The account. |
+| `resolution` | text | `1d` for a point at UTC midnight, `1h` for a point on the hour. |
+| `point_time` | timestamptz | The time the totals run up to. |
+| `perps_value` | numeric | `inflow - outflow + trade_pnl`: the account's collateral plus unrealized pnl at `point_time`. |
+| `trade_pnl`, `trade_spot_pnl` | numeric | Perps and spot trading pnl. |
+| `inflow`, `outflow` | numeric | USDC moved onto and off the perps route, each fee included. |
+| `spot_inflow`, `spot_outflow` | numeric | The same on the spot route. |
+| `pool_pnl`, `pool_inflow`, `pool_outflow` | numeric | Public pool pnl, and USDC into and out of pools. |
+| `staking_pnl`, `staking_inflow`, `staking_outflow` | numeric | The same for staking. |
+| `pool_total_shares` | numeric | Pool shares held. |
+| `volume` | numeric | Trading volume in the period. |
+
+The warn test `lighter_account_flows_match_pnl` checks the account log against these points. For each UTC day inside the window the log source loaded, it sets the day's change in `inflow`, `outflow`, `spot_inflow` and `spot_outflow` against the USDC movements in `lighter_account_movements` that day, and lists each account, day and field that differs.
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

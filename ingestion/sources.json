@@ -321,6 +321,11 @@
   },
   {
     "name": "lighter",
+    "table": "pnl",
+    "package": "lighter-pnl"
+  },
+  {
+    "name": "lighter",
     "table": "trades",
     "package": "lighter-trades"
   },
