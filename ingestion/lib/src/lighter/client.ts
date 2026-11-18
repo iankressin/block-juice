@@ -15,7 +15,7 @@ export type LighterEnv = z.infer<typeof lighterEnv>;
 const TIMEOUT_MS = 60_000;
 
 // Lighter's error replies and its 200 replies both carry `code` and `message`.
-const errorBody = z.object({ code: z.number().optional(), message: z.string().optional() });
+// `.optional()` is needed: zod 4 treats a bare `z.unknown()` key as required.
 const envelope = z.looseObject({ code: z.unknown().optional(), message: z.unknown().optional() });
 
 function parseJson(text: string): unknown {
@@ -29,8 +29,10 @@ function parseJson(text: string): unknown {
 async function lighterError(response: Response, nowMs: number): Promise<LighterError> {
   // The status is known, so a body that fails to read must not turn this into a network error.
   const text = await response.text().catch(() => "");
-  const body = errorBody.safeParse(parseJson(text));
-  const { code, message } = body.success ? body.data : {};
+  const body = envelope.safeParse(parseJson(text));
+  const fields = body.success ? body.data : undefined;
+  const code = typeof fields?.code === "number" ? fields.code : undefined;
+  const message = typeof fields?.message === "string" ? fields.message : undefined;
   const detail = code === undefined ? "" : ` (code ${code})`;
   const { status } = response;
   return new LighterError(

@@ -29,6 +29,7 @@ with sides as (
                 t.maker_position_before, t.maker_entry_quote_before_usdc, t.maker_position_sign_changed
             ),
             (
+                -- is not true: a null is_maker_ask makes the maker the bid, so the taker is the ask, as before.
                 'taker', t.is_maker_ask is not true, t.taker_account_index, t.taker_fee_ppm, t.taker_fee_usdc,
                 t.taker_position_before, t.taker_entry_quote_before_usdc, t.taker_position_sign_changed
             )

@@ -85,7 +85,7 @@ export async function listDays(
     if (page > S3_MAX_LIST_PAGES) throw new Error(`Lighter S3 list of ${dataset} ran past ${S3_MAX_LIST_PAGES} pages`);
     const query = new URLSearchParams({ "list-type": "2", prefix: `${env.LIGHTER_S3_PREFIX}/${dataset}/` });
     if (token) query.set("continuation-token", token);
-    const xml = await withRetries(`list of ${dataset}`, clock, async () => {
+    const xml = await withRetries(`S3 list of ${dataset}`, clock, async () => {
       const response = await observedFetch(`${env.LIGHTER_S3_URL}/?${query}`, { signal: AbortSignal.timeout(timeoutMs) });
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
@@ -115,7 +115,7 @@ export async function listDays(
  * A retry writes the file again from the start. The deadline covers the whole body.
  */
 async function download(env: LighterS3Env, file: DayFile, path: string, clock: Clock, timeoutMs: number): Promise<void> {
-  await withRetries(file.key, clock, async () => {
+  await withRetries(`S3 ${file.key}`, clock, async () => {
     const response = await observedFetch(`${env.LIGHTER_S3_URL}/${file.key}`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok || !response.body) {
       await response.body?.cancel().catch(() => undefined);
@@ -226,7 +226,7 @@ async function* dayBatches(
  *   07:03 UTC the next day.
  * - A manifest of day ETags, saved as a checkpoint, keeps the days the source has tried. Its key names
  *   the bucket, the dataset and `keyParts`, so a source that filters rows passes its filter there. A day
- *   from `START_DATE` to the last day whose ETag the manifest lacks is pending.
+ *   from `START_DATE` to the last day is pending when the manifest lacks its ETag.
  * - A run lists the bucket once, over the pending days and the retried dates. A retried date reads its
  *   current file from that listing, and fails again when the file has gone. A failed listing fails the run.
  * - Days load oldest first, one at a time. A chunk's records carry the call id `<dataset>:<date>#<n>`, so
@@ -259,7 +259,6 @@ export async function* loadDays(
     const error = `Lighter S3 has no ${dataset} file for ${date}`;
     yield { records: [], failed: [{ id: `${dataset}:${date}`, call, error }], callsCompleted: 1 };
   }
-  // Chosen before any day loads, since loading a day records it in the manifest.
   const days = listed.filter(
     (day) => retried.has(day.date) || (day.date >= env.START_DATE && day.date <= last && !manifest.holds(day)),
   );

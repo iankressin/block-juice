@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import type { Clock } from "#src/clock.ts";
 import { historyKey } from "#src/history.ts";
+import { RETRY_WAITS_MS } from "#src/lighter/retry.ts";
 import { lighterDaysEnv, loadDays, type DayCall } from "#src/lighter/s3.ts";
 import { PREFIX, fakeBucket, parquetFile, type FakeBucket } from "#src/lighter/s3.fixture.ts";
 import type { Batch, Checkpoint } from "#src/source.ts";
@@ -198,7 +199,7 @@ test("a retried date before START_DATE loads from the same listing", async (t) =
 
 test("a failed listing fails the run", async (t) => {
   const bucket = await bucketOf(t, ["2026-11-16"]);
-  bucket.listsBeforeOutage = 0;
+  bucket.listReplies.push(...Array<{ status: number }>(RETRY_WAITS_MS.length + 1).fill({ status: 503 }));
   await assert.rejects(run(bucket, { retry: [{ date: "2026-11-15", etag: "etag-2026-11-15" }] }), /list of trades answered HTTP 503/);
   assert.deepEqual(bucket.downloads, []);
 });

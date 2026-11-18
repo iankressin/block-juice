@@ -132,7 +132,7 @@ test("a body that stalls after its headers fails at the deadline", async (t) => 
     collect(readDay(stalled.env, dayOf(Buffer.alloc(4096)), { clock: fakeClock(), downloadTimeoutMs: 150 })),
     (error: Error) => {
       // The error names the key and keeps the timeout as its cause.
-      assert.match(error.message, /date=2026-11-16.*timeout/);
+      assert.match(error.message, /^Lighter S3 .*date=2026-11-16.*timeout/);
       assert.equal((error.cause as Error).name, "TimeoutError");
       return true;
     },

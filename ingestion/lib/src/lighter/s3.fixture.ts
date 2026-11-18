@@ -53,9 +53,7 @@ export type FakeBucket = {
   broken: Set<string>;
   /** Keys per listing page. A longer listing hands out continuation tokens. */
   pageSize: number;
-  /** Listings after this many answer HTTP 503. */
-  listsBeforeOutage: number;
-  /** Replies for the next listings, one each, before the outage and the real pages. */
+  /** Replies for the next listings, one each, before the real pages. */
   listReplies: Reply[];
   /** Replies for the next downloads, one each, before `broken` and the real files. */
   downloadReplies: Reply[];
@@ -91,9 +89,9 @@ export async function fakeBucket(t: TestContext, dataset: LighterDataset, files:
     bucket.requests.push(req.url!);
     const url = new URL(req.url!, "http://s3");
     if (url.searchParams.get("list-type") === "2") {
-      const outage = bucket.lists++ >= bucket.listsBeforeOutage;
+      bucket.lists++;
       res.setHeader("content-type", "application/xml");
-      send(res, bucket.listReplies.shift() ?? (outage ? { status: 503 } : undefined), page(url.searchParams));
+      send(res, bucket.listReplies.shift(), page(url.searchParams));
       return;
     }
     const key = url.pathname.slice(1);
@@ -120,7 +118,6 @@ export async function fakeBucket(t: TestContext, dataset: LighterDataset, files:
     etags: new Map(),
     broken: new Set(),
     pageSize: Infinity,
-    listsBeforeOutage: Infinity,
     listReplies: [],
     downloadReplies: [],
   };
