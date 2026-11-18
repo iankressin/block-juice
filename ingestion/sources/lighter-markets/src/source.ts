@@ -1,5 +1,5 @@
-import { describeError, type Source } from "@ingestion/lib";
-import { createLighterClient, lighterEnv, systemClock, type Clock, type LighterEnv } from "@ingestion/lib/lighter";
+import { describeError, systemClock, type Source, type Clock } from "@ingestion/lib";
+import { createLighterClient, lighterEnv, type LighterEnv } from "@ingestion/lib/lighter";
 import * as z from "zod";
 
 const callSchema = z.object({ kind: z.literal("order_book_details") });

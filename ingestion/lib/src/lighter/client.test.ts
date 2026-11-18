@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { createLighterClient, lighterEnv, retryAfterMs, RETRY_AFTER_CAP_MS, type Clock } from "#src/lighter/client.ts";
+import { retryAfterMs, type Clock } from "#src/clock.ts";
+import { createLighterClient, lighterEnv } from "#src/lighter/client.ts";
+import { RETRY_AFTER_CAP_MS } from "#src/lighter/retry.ts";
 
 /** `status` 0 drops the connection instead of answering. */
 type Reply = { status: number; body: unknown; headers?: Record<string, string> };
@@ -181,6 +183,13 @@ test("a 400 fails at once, quoting Lighter's message", async (t) => {
   ]);
   await assert.rejects(client.get("/api/v1/x"), /HTTP 400 .*20001.*invalid param : auth required/);
   assert.equal(requests.length, 1);
+});
+
+test("a 200 whose body is not JSON fails without a retry", async (t) => {
+  const { client, clock, requests } = await setup(t, [{ status: 200, body: undefined }]);
+  await assert.rejects(client.get("/api/v1/x"), /Lighter \/api\/v1\/x/);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(clock.sleeps, []);
 });
 
 test("a reply whose code is not 200 fails", async (t) => {

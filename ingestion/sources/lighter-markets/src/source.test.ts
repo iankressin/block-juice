@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
 import type { Batch } from "@ingestion/lib";
-import { lighterEnv, type Clock } from "@ingestion/lib/lighter";
+import type { Clock } from "@ingestion/lib";
+import { lighterEnv } from "@ingestion/lib/lighter";
 import { marketsSource } from "#src/source.ts";
 
 const NOW = 1794918000000;

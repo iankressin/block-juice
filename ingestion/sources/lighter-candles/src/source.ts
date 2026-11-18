@@ -5,15 +5,15 @@ import {
   historyPlan,
   historyState,
   readJson,
+  systemClock,
   type Batch,
   type RawRecord,
   type Source,
+  type Clock,
 } from "@ingestion/lib";
 import {
   createLighterClient,
   lighterEnv,
-  systemClock,
-  type Clock,
   type LighterClient,
   type LighterMarket,
 } from "@ingestion/lib/lighter";

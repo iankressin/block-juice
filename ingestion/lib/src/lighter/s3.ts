@@ -7,8 +7,10 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { DuckDBInstance } from "@duckdb/node-api";
 import * as z from "zod";
-import { describeError, logger, observedFetch, observeDelay } from "@ingestion/lib";
-import { RETRY_AFTER_CAP_MS, retryAfterMs, systemClock, type Clock } from "#src/lighter/client.ts";
+import { describeError } from "#src/calls.ts";
+import { retryAfterMs, systemClock, type Clock } from "#src/clock.ts";
+import { LighterError, withRetries } from "#src/lighter/retry.ts";
+import { observedFetch } from "#src/transport-metrics.ts";
 import type { Batch, Checkpoint, RawRecord } from "#src/source.ts";
 
 // Lighter publishes one Parquet file per UTC day on a public bucket: catalog/vendors/lighter/NOTES.md, "S3 files".
@@ -34,60 +36,17 @@ export const dayCallSchema: z.ZodType<DayCall> = z.object({ date: z.string(), et
 export const S3_LIST_TIMEOUT_MS = 60_000;
 /** The longest one day-file download may take, body included. */
 export const S3_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
-/** The waits before each retry of a 429, a 5xx, a network error, a timeout or a short download. */
-export const S3_RETRY_WAITS_MS = [2_000, 10_000, 60_000];
 /** More listing pages than this means the listing loops. */
 export const S3_MAX_LIST_PAGES = 1_000;
 
-/** A failure that already knows whether a retry can help, and what `Retry-After` asked. */
-class S3Error extends Error {
-  readonly retryable: boolean;
-  readonly retryAfterMs: number | undefined;
-
-  constructor(message: string, retryable: boolean, retryAfter?: number) {
-    super(message);
-    this.retryable = retryable;
-    this.retryAfterMs = retryAfter;
-  }
-}
-
 /** The error for a reply that is not a 200. A 429 and a 5xx can pass on a retry; any other 4xx cannot. */
-function httpError(what: string, response: Response, clock: Clock): S3Error {
+function httpError(what: string, response: Response, clock: Clock): LighterError {
   const { status } = response;
   const retryable = status === 429 || status >= 500;
-  return new S3Error(
-    `Lighter S3 ${what} answered HTTP ${status}`,
-    retryable,
-    retryable ? retryAfterMs(response.headers.get("retry-after"), clock.now()) : undefined,
-  );
-}
-
-/** A transport failure: undici's TypeError ("fetch failed", "terminated") or an abort from the deadline. A local error, such as a full disk, is not. */
-function isTransportFailure(error: Error): boolean {
-  return error instanceof TypeError || error.name === "TimeoutError" || error.name === "AbortError";
-}
-
-/**
- * Runs `attempt` again after a retryable failure, waiting as `S3_RETRY_WAITS_MS` says, then throws the last failure.
- * Only a retryable S3Error or a transport failure is retried. A failure that is not an S3Error is thrown with `what` in its message.
- */
-async function withRetries<T>(what: string, clock: Clock, attempt: () => Promise<T>): Promise<T> {
-  for (let n = 0; ; n++) {
-    try {
-      return await attempt();
-    } catch (cause) {
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      const scheduledMs = S3_RETRY_WAITS_MS[n];
-      const retryable = error instanceof S3Error ? error.retryable : isTransportFailure(error);
-      if (!retryable || scheduledMs === undefined) {
-        throw error instanceof S3Error ? error : new Error(`Lighter S3 ${what}: ${describeError(error)}`, { cause: error });
-      }
-      const asked = error instanceof S3Error ? error.retryAfterMs : undefined;
-      const waitMs = asked === undefined ? scheduledMs : Math.min(asked, RETRY_AFTER_CAP_MS);
-      logger.info({ what, error: describeError(error), waitMs }, "Lighter S3 failed a request, waiting before trying again");
-      await observeDelay(() => clock.sleep(waitMs));
-    }
-  }
+  return new LighterError(`Lighter S3 ${what} answered HTTP ${status}`, retryable, {
+    status,
+    retryAfterMs: retryable ? retryAfterMs(response.headers.get("retry-after"), clock.now()) : undefined,
+  });
 }
 
 const xmlText = (s: string) =>
@@ -154,7 +113,7 @@ async function download(env: LighterS3Env, file: DayFile, path: string, clock: C
     // createWriteStream opens with "w", which empties a file that an earlier attempt left.
     await pipeline(Readable.fromWeb(response.body as WebReadableStream), createWriteStream(path));
     const { size } = await stat(path);
-    if (size !== file.size) throw new S3Error(`Lighter S3 ${file.key} gave ${size} bytes, expected ${file.size} bytes`, true);
+    if (size !== file.size) throw new LighterError(`Lighter S3 ${file.key} gave ${size} bytes, expected ${file.size} bytes`, true);
   });
 }
 

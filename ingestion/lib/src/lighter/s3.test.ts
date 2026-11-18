@@ -7,8 +7,9 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import type { Batch } from "#src/source.ts";
-import type { Clock } from "#src/lighter/client.ts";
-import { dayBatches, dayManifest, listDays, readDay, S3_RETRY_WAITS_MS, type DayCall, type DayFile, type LighterS3Env } from "#src/lighter/s3.ts";
+import type { Clock } from "#src/clock.ts";
+import { RETRY_WAITS_MS } from "#src/lighter/retry.ts";
+import { dayBatches, dayManifest, listDays, readDay, type DayCall, type DayFile, type LighterS3Env } from "#src/lighter/s3.ts";
 
 const PREFIX = "v1.1/lighter/core/mainnet";
 
@@ -164,7 +165,7 @@ test("a listing that answers 503 then 200 succeeds after the first wait", async 
   const days = await listDays(env, "trades", "2026-11-15", "2026-11-16", clock);
   assert.equal(days.length, 2);
   assert.equal(requests.length, 3);
-  assert.deepEqual(clock.sleeps, [S3_RETRY_WAITS_MS[0]]);
+  assert.deepEqual(clock.sleeps, [RETRY_WAITS_MS[0]]);
 });
 
 test("a Retry-After on a retried listing replaces the wait", async (t) => {
@@ -180,7 +181,7 @@ test("a listing that keeps failing throws after every wait", async (t) => {
   const clock = fakeClock();
   await assert.rejects(listDays(env, "trades", "2026-11-15", "2026-11-16", clock), /HTTP 500/);
   assert.equal(requests.length, 4);
-  assert.deepEqual(clock.sleeps, S3_RETRY_WAITS_MS);
+  assert.deepEqual(clock.sleeps, RETRY_WAITS_MS);
 });
 
 test("a listing that hands back a used continuation token throws, naming the dataset", async (t) => {
@@ -200,7 +201,7 @@ test("a download that answers 500 then 200 loads the whole file", async (t) => {
   const chunks = await collect(readDay(env, dayOf(file), { clock }));
   assert.equal(chunks.flat().length, 4);
   assert.equal(requests.length, 2);
-  assert.deepEqual(clock.sleeps, [S3_RETRY_WAITS_MS[0]]);
+  assert.deepEqual(clock.sleeps, [RETRY_WAITS_MS[0]]);
 });
 
 test("a body that stalls after its headers fails at the deadline", async (t) => {

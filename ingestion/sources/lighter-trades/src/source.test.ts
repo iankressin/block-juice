@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { historyKey, type Batch, type Checkpoint } from "@ingestion/lib";
-import type { Clock } from "@ingestion/lib/lighter";
+import type { Clock } from "@ingestion/lib";
 import { tradesEnv } from "#src/source.ts";
 
 type Source = Awaited<ReturnType<typeof sourceWith>>;

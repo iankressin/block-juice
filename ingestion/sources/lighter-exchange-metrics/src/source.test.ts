@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Batch } from "@ingestion/lib";
-import { lighterEnv, type Clock } from "@ingestion/lib/lighter";
+import type { Clock } from "@ingestion/lib";
+import { lighterEnv } from "@ingestion/lib/lighter";
 
 type Source = Awaited<ReturnType<typeof sourceWith>>;
 type Call = Parameters<Source["extract"]>[1][number];

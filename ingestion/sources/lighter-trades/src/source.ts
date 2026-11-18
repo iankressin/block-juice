@@ -1,4 +1,4 @@
-import { describeError, historyKey, readJson, uniqueBy, type Source } from "@ingestion/lib";
+import { describeError, historyKey, readJson, uniqueBy, systemClock, type Source, type Clock } from "@ingestion/lib";
 import {
   createLighterClient,
   dayBatches,
@@ -7,8 +7,6 @@ import {
   lighterEnv,
   lighterS3Env,
   listDays,
-  systemClock,
-  type Clock,
   type DayCall,
   type DayFile,
 } from "@ingestion/lib/lighter";

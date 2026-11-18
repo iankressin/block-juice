@@ -1,9 +1,7 @@
-import { describeError, readJson, uniqueBy, type Batch, type RawRecord, type Source } from "@ingestion/lib";
+import { describeError, readJson, uniqueBy, systemClock, type Batch, type RawRecord, type Source, type Clock } from "@ingestion/lib";
 import {
   createLighterClient,
   lighterEnv,
-  systemClock,
-  type Clock,
   type LighterClient,
   type LighterEnv,
 } from "@ingestion/lib/lighter";

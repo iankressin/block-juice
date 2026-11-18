@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { historyKey, type Batch, type Checkpoint } from "@ingestion/lib";
-import type { Clock } from "@ingestion/lib/lighter";
+import type { Clock } from "@ingestion/lib";
 import { openInterestEnv, openInterestSource } from "#src/source.ts";
 
 type Source = ReturnType<typeof openInterestSource>;

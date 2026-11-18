@@ -1,12 +1,10 @@
-import { describeError, historyKey, uniqueBy, type Source } from "@ingestion/lib";
+import { describeError, historyKey, uniqueBy, systemClock, type Source, type Clock } from "@ingestion/lib";
 import {
   dayBatches,
   dayCallSchema,
   dayManifest,
   lighterS3Env,
   listDays,
-  systemClock,
-  type Clock,
   type DayCall,
   type DayFile,
 } from "@ingestion/lib/lighter";
