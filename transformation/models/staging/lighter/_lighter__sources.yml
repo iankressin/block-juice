@@ -60,3 +60,18 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: assets
+        identifier: lighter_assets
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: system_config
+        identifier: lighter_system_config
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: public_pools
+        identifier: lighter_public_pools
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

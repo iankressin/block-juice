@@ -40,6 +40,8 @@ The `lighter-pnl` source reads `pnl` for each account in its `addresses.json`, a
 
 The `lighter-tx-stats` source reads the Explorer's `stats/tx` once a run, in one call of weight 1. The reply holds the whole hourly series from 2025-10-02, so each run reads it again. The source reads the clock before the request and keeps only the hours that ended by then, since the last point is the hour still open and a later run writes it when it closes. A record is keyed by the hour's timestamp in seconds and holds the reply's `types` list and the one point as sent. It fails the call when `types` is not `["timestamp","count","uopsCount"]`, so `stg_lighter__tx_stats` can read each point by position and cast the counts to `bigint`. The `lighter_tx_stats` mart carries one row per hour.
 
+The `lighter-assets`, `lighter-system-config` and `lighter-public-pools` sources each read the exchange API once a run and keep a reading keyed by what it read and the time `extract` started, so a changed setting shows as a new row. `lighter-assets` reads `assetDetails`, a record per asset; `lighter-system-config` reads `systemConfig`, one record per run. `lighter-public-pools` walks `publicPoolsMetadata?filter=all&limit=100` from `index=281474976710655`. The `index` is an exclusive cursor, so the next page asks from the last `account_index` it got, and a page that does not end below the index asked, or a walk of 50 pages, fails the call. Only the last page's records carry the call id, so a walk that fails keeps its dead letter and the pages before it. A retried call is the run's own call, so each source makes it once. `lighter_assets` and `lighter_system_accounts` keep the latest reading; `lighter_system_accounts` turns the config's five account indexes into one row per role. `lighter_public_pools` keeps every reading.
+
 ## Repo layout
 
 ```
@@ -148,6 +150,9 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd ingestion/sources/lighter-accounts && pnpm ingest)
 (cd ingestion/sources/lighter-pnl && pnpm ingest)
 (cd ingestion/sources/lighter-tx-stats && pnpm ingest)
+(cd ingestion/sources/lighter-assets && pnpm ingest)
+(cd ingestion/sources/lighter-system-config && pnpm ingest)
+(cd ingestion/sources/lighter-public-pools && pnpm ingest)
 (cd ingestion/sources/binance-candles && pnpm ingest)
 (cd ingestion/sources/coinbase-candles && pnpm ingest)
 (cd ingestion/sources/evm-chainlink-price-feeds && CHAIN=ethereum pnpm ingest)

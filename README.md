@@ -91,6 +91,9 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter account snapshots](#lighter-account-snapshots) | | | | | | | | ✓ | |
 | [Lighter account value history](#lighter-account-value-history) | | | | | | | | ✓ | |
 | [Lighter tx counts](#lighter-tx-counts) | | | | | | | | ✓ | |
+| [Lighter assets](#lighter-assets) | | | | | | | | ✓ | |
+| [Lighter system accounts](#lighter-system-accounts) | | | | | | | | ✓ | |
+| [Lighter public pools](#lighter-public-pools) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -804,6 +807,76 @@ One row per hour.
 | `hour` | timestamptz | The start of the hour. Unique. |
 | `tx_count` | bigint | Txs in the hour. |
 | `uops_count` | bigint | User operations in the hour. |
+
+### Lighter assets
+
+`analytics.lighter_assets`
+
+The assets Lighter lists, with the settings of each one as the latest run read them: how many decimals it carries, its token on Ethereum, its margin mode, caps and price.
+
+The `lighter` pipeline builds it from the call source `lighter-assets`, which reads `assetDetails` once a run and keeps each asset as a reading. It runs daily at 07:30 UTC.
+
+One row per asset. Amounts and ratios are numeric.
+
+| Column | Type | Description |
+|---|---|---|
+| `asset_id` | integer | Lighter's id for the asset. Unique. USDC is 3, ETH 1 and LIT 2. |
+| `symbol` | text | The asset's symbol. |
+| `decimals` | integer | Decimal places of the asset on Lighter. USDC has 6. |
+| `l1_decimals` | integer | Decimal places of the token on Ethereum. |
+| `l1_address` | text | The token's contract on Ethereum. |
+| `margin_mode` | text | `enabled` or `disabled`. |
+| `min_transfer_amount` | numeric | The smallest transfer. |
+| `min_withdrawal_amount` | numeric | The smallest withdrawal. |
+| `loan_to_value` | numeric | The ratio of loan to collateral value allowed. |
+| `liquidation_threshold` | numeric | The ratio at which a position is liquidated. |
+| `global_supply_cap` | numeric | The most of the asset the exchange takes in. |
+| `user_supply_cap` | numeric | The most of the asset one account supplies. |
+| `index_price` | numeric | The price in USDC when the run read it. |
+| `read_at` | timestamptz | When the run read these settings. |
+
+### Lighter system accounts
+
+`analytics.lighter_system_accounts`
+
+The five accounts Lighter's own logic uses, from the latest `systemConfig` reading. Join `account_index` to the movements and pools to tell them from user accounts.
+
+The `lighter` pipeline builds it from the call source `lighter-system-config`, which reads `systemConfig` once a run. It runs daily at 07:30 UTC.
+
+One row per role.
+
+| Column | Type | Description |
+|---|---|---|
+| `role` | text | `liquidity_pool`, `staking_pool`, `funding_fee_rebate`, `market_maker_incentive` or `fee_collector`. Unique. |
+| `account_index` | bigint | The account that holds the role. |
+| `read_at` | timestamptz | When the run read the config. |
+
+### Lighter public pools
+
+`analytics.lighter_public_pools`
+
+Lighter's public pools, with their value and yield. The Lighter liquidity pool (LLP) is `account_index` 281474976710654. Each run adds a reading of every pool, so the table shows how a pool changes from run to run.
+
+The `lighter` pipeline builds it from the call source `lighter-public-pools`, which reads `publicPoolsMetadata` in pages of 100, from the top account index down, until a page is short. It runs daily at 07:30 UTC.
+
+One row per pool and reading.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<read_at in ms>`. Unique. |
+| `account_index` | bigint | The pool's account. |
+| `read_at` | timestamptz | When the run read the pool. |
+| `name` | text | The pool's name. |
+| `account_type` | integer | 3 for the LLP, 2 for the others. |
+| `master_account_index` | bigint | The account that runs the pool. |
+| `operator_fee` | numeric | The operator's fee, as Lighter sends it. |
+| `annual_percentage_yield` | numeric | The yield, as Lighter sends it. |
+| `total_asset_value` | numeric | The pool's value in USDC. |
+| `total_spot_value` | numeric | The spot part of that value. |
+| `total_perps_value` | numeric | The perps part of that value. |
+| `total_shares` | numeric | Shares issued. |
+| `status` | integer | Lighter's status code for the pool. |
+| `created_at` | timestamptz | When the pool was made. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 
