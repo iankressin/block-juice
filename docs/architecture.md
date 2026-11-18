@@ -38,6 +38,8 @@ The ninth source, `lighter-accounts`, reads `account` for each account in its `a
 
 The `lighter-pnl` source reads `pnl` for each account in its `addresses.json`, as two calls: the whole `1d` series from `START_TIME` and the last 7 days of `1h`, since Lighter refuses a longer hourly range with 22403. A point is a record keyed `<account>:<resolution>:<timestamp>`, kept as sent. Lighter ends each series with a point at the request time, off the resolution's boundary, and the source drops it so a later run writes it when it closes. Lighter sends the values as JSON numbers, so `stg_lighter__pnl` casts each to `numeric` and they keep up to 15 significant digits. `lighter_account_value_history` adds `perps_value`, and the warn test `lighter_account_flows_match_pnl` sets each day's change in the flow fields against `lighter_account_movements`, for the days inside the window the account-log checkpoint in `raw._checkpoints` holds.
 
+The `lighter-tx-stats` source reads the Explorer's `stats/tx` once a run, in one call of weight 1. The reply holds the whole hourly series from 2025-10-02, so each run reads it again. The source reads the clock before the request and keeps only the hours that ended by then, since the last point is the hour still open and a later run writes it when it closes. A record is keyed by the hour's timestamp in seconds and holds the reply's `types` list and the one point as sent. It fails the call when `types` is not `["timestamp","count","uopsCount"]`, so `stg_lighter__tx_stats` can read each point by position and cast the counts to `bigint`. The `lighter_tx_stats` mart carries one row per hour.
+
 ## Repo layout
 
 ```
@@ -145,6 +147,7 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd ingestion/sources/lighter-account-logs && pnpm ingest)
 (cd ingestion/sources/lighter-accounts && pnpm ingest)
 (cd ingestion/sources/lighter-pnl && pnpm ingest)
+(cd ingestion/sources/lighter-tx-stats && pnpm ingest)
 (cd ingestion/sources/binance-candles && pnpm ingest)
 (cd ingestion/sources/coinbase-candles && pnpm ingest)
 (cd ingestion/sources/evm-chainlink-price-feeds && CHAIN=ethereum pnpm ingest)

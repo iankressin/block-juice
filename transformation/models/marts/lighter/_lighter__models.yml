@@ -512,6 +512,21 @@ models:
       - name: perps_value
         description: "`inflow - outflow + trade_pnl`: the account's `collateral` plus unrealized pnl."
 
+  - name: lighter_tx_stats
+    description: >-
+      Lighter's tx count for each closed UTC hour since 2025-10-02, from the Explorer's `stats/tx`. `hour`
+      is the start of the hour. The hour still open waits for a later run, so the newest row is the last
+      hour that ended before the latest run.
+    columns:
+      - name: hour
+        data_tests: [unique, not_null]
+      - name: tx_count
+        description: Txs in the hour.
+        data_tests: [not_null]
+      - name: uops_count
+        description: User operations in the hour.
+        data_tests: [not_null]
+
 unit_tests:
   # Account 1000, idle since 2025-12-30 (catalog/vendors/lighter/NOTES.md, Account value, L14): its point reads
   # 156508.908444 - 153478.114476 - 3030.185271 = 0.608697, its collateral and total_asset_value.

@@ -433,6 +433,15 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  sources/lighter-tx-stats:
+    dependencies:
+      '@ingestion/lib':
+        specifier: workspace:*
+        version: link:../../lib
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   sources/polygon-polymarket-ctf:
     dependencies:
       '@ingestion/lib':

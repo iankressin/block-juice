@@ -110,6 +110,17 @@ models:
       - name: point_time
         data_tests: [not_null]
 
+  - name: stg_lighter__tx_stats
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: hour
+        data_tests: [unique, not_null]
+      - name: tx_count
+        data_tests: [not_null]
+      - name: uops_count
+        data_tests: [not_null]
+
 unit_tests:
   # 313004's reading of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Snapshots).
   - name: transaction_time_is_microseconds

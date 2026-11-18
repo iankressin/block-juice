@@ -330,6 +330,11 @@
     "package": "lighter-trades"
   },
   {
+    "name": "lighter",
+    "table": "tx_stats",
+    "package": "lighter-tx-stats"
+  },
+  {
     "name": "polygon",
     "table": "polymarket_ctf",
     "package": "polygon-polymarket-ctf",

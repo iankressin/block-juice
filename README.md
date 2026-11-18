@@ -90,6 +90,7 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter account movements](#lighter-account-movements) | | | | | | | | ✓ | |
 | [Lighter account snapshots](#lighter-account-snapshots) | | | | | | | | ✓ | |
 | [Lighter account value history](#lighter-account-value-history) | | | | | | | | ✓ | |
+| [Lighter tx counts](#lighter-tx-counts) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -787,6 +788,22 @@ One row per account, resolution and point time. Every column but `volume` is a r
 | `volume` | numeric | Trading volume in the period. |
 
 The warn test `lighter_account_flows_match_pnl` checks the account log against these points. For each UTC day inside the window the log source loaded, it sets the day's change in `inflow`, `outflow`, `spot_inflow` and `spot_outflow` against the USDC movements in `lighter_account_movements` that day, and lists each account, day and field that differs.
+
+### Lighter tx counts
+
+`analytics.lighter_tx_stats`
+
+The number of txs on Lighter in each UTC hour, from the Explorer's `stats/tx`. It covers every closed hour from 2025-10-02 00:00 UTC. The hour still open loads on a later run.
+
+The `lighter` pipeline builds it from the call source `lighter-tx-stats`. Each run reads the whole hourly series again, in one call, and keeps the hours that ended before the call. It runs daily at 07:30 UTC.
+
+One row per hour.
+
+| Column | Type | Description |
+|---|---|---|
+| `hour` | timestamptz | The start of the hour. Unique. |
+| `tx_count` | bigint | Txs in the hour. |
+| `uops_count` | bigint | User operations in the hour. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

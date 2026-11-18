@@ -55,3 +55,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: tx_stats
+        identifier: lighter_tx_stats
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
