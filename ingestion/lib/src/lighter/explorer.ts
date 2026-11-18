@@ -71,7 +71,7 @@ async function explorerError(response: Response, path: string, nowMs: number): P
   }
   return new ExplorerError(
     response.status,
-    `Lighter's Explorer answered HTTP ${response.status} for ${path}:${message ?? text.slice(0, 200)}`,
+    `Lighter's Explorer answered HTTP ${response.status} for ${path}: ${message ?? text.slice(0, 200)}`,
     retryAfterMs(response.headers.get("retry-after"), nowMs),
   );
 }

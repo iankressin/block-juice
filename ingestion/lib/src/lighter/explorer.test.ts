@@ -94,13 +94,17 @@ test("a 404 batch reads as undefined; a 404 log fails, quoting the error", async
     { status: 404, body: { error: "log deadbeef not found" } },
   ]);
   assert.equal(await explorer.batch(28909), undefined);
-  await assert.rejects(explorer.log("deadbeef"), /HTTP 404 .*log deadbeef not found/);
+  await assert.rejects(explorer.log("deadbeef"), {
+    message: "Lighter's Explorer answered HTTP 404 for /api/logs/deadbeef: log deadbeef not found",
+  });
   assert.deepEqual(requests.map((r) => r.path), ["/api/batches/28909", "/api/logs/deadbeef"]);
 });
 
 test("a 400 fails at once, quoting the Explorer's error", async (t) => {
   const { explorer, requests, clock } = await setup(t, [{ status: 400, body: { error: "invalid pubDataType=Nope" } }]);
-  await assert.rejects(explorer.get("/api/accounts/1/logs", { pub_data_type: "Nope" }, 4), /invalid pubDataType=Nope/);
+  await assert.rejects(explorer.get("/api/accounts/1/logs", { pub_data_type: "Nope" }, 4), {
+    message: "Lighter's Explorer answered HTTP 400 for /api/accounts/1/logs: invalid pubDataType=Nope",
+  });
   assert.equal(requests.length, 1);
   assert.deepEqual(clock.sleeps, []);
 });
@@ -114,6 +118,16 @@ test("a 429 waits and is sent again", async (t) => {
   assert.deepEqual(await explorer.recentBatches(), []);
   assert.equal(requests.length, 2);
   assert.deepEqual(clock.sleeps, [2000]);
+});
+
+test("a failed weight-4 page still spends its weight: a 429 at 15 a minute waits 2 s, then the rest of the 16 s", async (t) => {
+  const { explorer, requests, clock } = await setup(t, [
+    { status: 429, body: { error: "slow down" } },
+    { status: 200, body: [] },
+  ]);
+  assert.deepEqual(await explorer.accountLogs(1, { limit: 10, offset: 0 }), []);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(clock.sleeps, [2000, 14000]);
 });
 
 test("a Retry-After sets the wait, capped", async (t) => {
