@@ -409,6 +409,7 @@ models:
                 values: [perps, spot]
       - name: amount
         description: The amount as Lighter sent it, in the asset's units with its decimals. Unsigned.
+        data_tests: [not_null]
       - name: signed_amount
         description: >-
           `amount`, negative when it leaves the account or route. Null for stake, unstake, unlock and

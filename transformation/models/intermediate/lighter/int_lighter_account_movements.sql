@@ -14,10 +14,12 @@
 --   L2TransferV2 from an account to itself: a route_move, -amount on the from route and +amount on the
 --   to route.
 --   L2MintShares: pool_mint of usdc_amount USDC from perps into the pool. BurnedShares: pool_burn of
---   shares_to_burn_usdc USDC back (L15).
+--   shares_to_burn_usdc USDC back (L15, L22, L23).
 --   L2StakeAssets and UnstakeAssets: stake and unstake of lit_amount LIT with the staking pool.
 --   ExecutedPendingUnlock: unlock of amount of asset_symbol. L2UpdateMargin: margin_move of usdc_amount
---   USDC. Their sign and route are unproven, so signed_amount and route are null.
+--   USDC. Their sign and route are unproven, so signed_amount and route are null (L24 to L27).
+-- Each field name comes from a real entry of its type. The test lighter_movements_cover_handled_types
+-- warns when a loaded entry of a handled type gives its account no leg, as a wrong name would.
 -- Every other type gives no row: trades, position exits and settings changes. The batch is the one whose
 -- block range holds the detail's block_number. The detail's own batch_number is null when the source read
 -- it before the batch formed, and a join on time can miss: L16's withdrawal, at 08:38:14.781, is timed

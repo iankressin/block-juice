@@ -382,3 +382,73 @@ unit_tests:
     expect:
       rows:
         - {id: "00000000001782c02e00000130000000000000000000000000000000000000000000000000000000:1000:self", account_index: 1000, kind: withdrawal, asset: USDC, route: perps, signed_amount: "-104503.000000", block_number: 137652420, batch_number: 109274, detail_batch_number: null, batch_status: executed, is_final: true, commit_tx_hash: "0xa8c5c97cd3e1f2150d63655b73cda225deeaddf6a842d8dc011bf940ac7a8933", execute_tx_hash: "0x23a3d85cc05e63342464cf05cf14df49ca4701089ed1779f06ceac577cba32fe", executed_at: "2025-12-30 11:33:23+00", final_at: "2025-12-30 11:33:23+00"}
+
+  - name: a_pool_mint_and_burn_move_usdc_with_the_pool
+    description: >-
+      1000 minted shares of pool 281474976710654 for 7747.974151 USDC on 2025-10-02 and burned shares for
+      7399.753218 USDC on 2025-10-11 (L22, L23). The mint is -7747.974151 USDC on perps and the burn
+      +7399.753218, each with the pool as counterparty.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 1000::bigint as account_index,
+              'ac1f7b9de3492e2bc9eac8adeefbce56c44cb7fb326afe02a26da977ec97d15e132c40179199544d'::text as hash,
+              'L2MintShares'::text as tx_type, 'L2MintShares'::text as pubdata_type,
+              '2025-10-02 16:22:41.699846+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"account_index": "1000", "public_pool_index": 281474976710654, "share_amount": "2313338", "usdc_amount": "7747.974151"}'::jsonb as pubdata
+          union all
+          select 1000, 'a2db9e6d3c6a2b10ebdeb425ed021563f8e91c220f06a71c2357137e359e54d7922ec02216954f94',
+              'L2BurnShares', 'BurnedShares', '2025-10-11 10:26:09.382883+00', 'executed',
+              '{"account_index": "1000", "public_pool_index": 281474976710654, "shares_to_burn": "2313340", "operator_fee_share_amount": "0", "shares_to_burn_usdc": "7399.753218"}'
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_details
+      - input: ref('int_lighter_batches')
+        format: sql
+        rows: *no_batches
+    expect:
+      rows:
+        - {id: "ac1f7b9de3492e2bc9eac8adeefbce56c44cb7fb326afe02a26da977ec97d15e132c40179199544d:1000:self", kind: pool_mint, asset: USDC, route: perps, amount: "7747.974151", signed_amount: "-7747.974151", counterparty_account_index: 281474976710654}
+        - {id: "a2db9e6d3c6a2b10ebdeb425ed021563f8e91c220f06a71c2357137e359e54d7922ec02216954f94:1000:self", kind: pool_burn, asset: USDC, route: perps, amount: "7399.753218", signed_amount: "7399.753218", counterparty_account_index: 281474976710654}
+
+  - name: stake_unstake_unlock_and_margin_keep_the_amount_unsigned
+    description: >-
+      693073 staked 10000.19000087 LIT on 2026-04-22, unstaked 10228.37989914 LIT on 2026-10-01, had that
+      amount unlocked on 2026-10-04, and moved 2.710264 USDC of margin on 2026-09-09 (L24 to L27). Each
+      gives one leg with the amount as sent. Their sign and route are unproven, so both are null.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 693073::bigint as account_index,
+              '1b52d68691ad1b9dd2c7a3c32752ca5e72aeba98ca25cfa6d76e0c78f6bbc6a96a1bc8baca10440a'::text as hash,
+              'L2StakeAssets'::text as tx_type, 'L2StakeAssets'::text as pubdata_type,
+              '2026-04-22 18:53:43.711+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"account_index": "693073", "staking_pool_index": 281474976624800, "share_amount": "975743814", "lit_amount": "10000.19000087"}'::jsonb as pubdata
+          union all
+          select 693073, '8ad8810ed23a49803127910a715083aca2008e5dc5f4f0d4ec25bd82bc39c177c845fe451c52c171',
+              'L2UnstakeAssets', 'UnstakeAssets', '2026-10-01 15:56:02.532+00', 'executed',
+              '{"account_index": "693073", "staking_pool_index": 281474976624800, "share_amount": "975743814", "lit_amount": "10228.37989914"}'
+          union all
+          select 693073, '0000001e8e683bff000001a107a120b0000000000000000000000000000000000000000000000000',
+              'InternalPendingUnlock', 'ExecutedPendingUnlock', '2026-10-04 15:56:02.608+00', 'nothing_to_execute',
+              '{"account_index": "693073", "asset_symbol": "LIT", "amount": "10228.37989914"}'
+          union all
+          select 693073, 'ae2ea19e23847b4063cc330bc56533ac113894bb8868d54dc537809d778c8649f1380d574631f03d',
+              'L2UpdateMargin', 'L2UpdateMargin', '2026-09-09 14:39:54.465+00', 'executed',
+              '{"account_index": "693073", "market_index": 93, "usdc_amount": "2.710264", "direction": 1}'
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_details
+      - input: ref('int_lighter_batches')
+        format: sql
+        rows: *no_batches
+    expect:
+      rows:
+        - {id: "1b52d68691ad1b9dd2c7a3c32752ca5e72aeba98ca25cfa6d76e0c78f6bbc6a96a1bc8baca10440a:693073:self", kind: stake, asset: LIT, route: null, amount: "10000.19000087", signed_amount: null, counterparty_account_index: 281474976624800}
+        - {id: "8ad8810ed23a49803127910a715083aca2008e5dc5f4f0d4ec25bd82bc39c177c845fe451c52c171:693073:self", kind: unstake, asset: LIT, route: null, amount: "10228.37989914", signed_amount: null, counterparty_account_index: 281474976624800}
+        - {id: "0000001e8e683bff000001a107a120b0000000000000000000000000000000000000000000000000:693073:self", kind: unlock, asset: LIT, route: null, amount: "10228.37989914", signed_amount: null, counterparty_account_index: null}
+        - {id: "ae2ea19e23847b4063cc330bc56533ac113894bb8868d54dc537809d778c8649f1380d574631f03d:693073:self", kind: margin_move, asset: USDC, route: null, amount: "2.710264", signed_amount: null, counterparty_account_index: null}
