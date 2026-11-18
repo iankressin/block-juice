@@ -7,9 +7,10 @@ import type { Batch } from "#src/source.ts";
 import type { Clock } from "#src/clock.ts";
 import { RETRY_WAITS_MS } from "#src/lighter/retry.ts";
 import { dayBatches, dayManifest, listDays, readDay, type DayCall, type DayFile } from "#src/lighter/s3.ts";
-import { fakeBucket, parquetFile } from "#src/lighter/s3.fixture.ts";
+import { PREFIX, fakeBucket, parquetFile } from "#src/lighter/s3.fixture.ts";
 
-const PREFIX = "v1.1/lighter/core/mainnet";
+/** Every attempt a read makes before it gives up: the first, then one after each wait. */
+const ATTEMPTS = RETRY_WAITS_MS.length + 1;
 
 async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
@@ -94,10 +95,10 @@ test("a Retry-After on a retried listing replaces the wait", async (t) => {
 test("a listing that keeps failing throws after every wait", async (t) => {
   const down = { status: 500 };
   const { env, requests, listReplies } = await listing(t);
-  listReplies.push(down, down, down, down);
+  listReplies.push(...Array<typeof down>(ATTEMPTS).fill(down));
   const clock = fakeClock();
   await assert.rejects(listDays(env, "trades", "2026-11-15", "2026-11-16", clock), /HTTP 500/);
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, ATTEMPTS);
   assert.deepEqual(clock.sleeps, RETRY_WAITS_MS);
 });
 
@@ -126,7 +127,7 @@ test("a download that answers 500 then 200 loads the whole file", async (t) => {
 
 test("a body that stalls after its headers fails at the deadline", async (t) => {
   const stalled = await fakeBucket(t, "trades", { "2026-11-16": Buffer.alloc(4096) });
-  stalled.downloadReplies.push("stall", "stall", "stall", "stall");
+  stalled.downloadReplies.push(...Array<"stall">(ATTEMPTS).fill("stall"));
   const started = Date.now();
   await assert.rejects(
     collect(readDay(stalled.env, dayOf(Buffer.alloc(4096)), { clock: fakeClock(), downloadTimeoutMs: 150 })),
@@ -137,7 +138,7 @@ test("a body that stalls after its headers fails at the deadline", async (t) => 
       return true;
     },
   );
-  assert.equal(stalled.requests.length, 4);
+  assert.equal(stalled.requests.length, ATTEMPTS);
   assert.ok(Date.now() - started < 10_000);
 });
 
@@ -168,7 +169,7 @@ test("a failed or short download fails, naming the key, and leaves no temporary 
   failing.broken.add("2026-11-16");
   await assert.rejects(collect(readDay(failing.env, dayOf(Buffer.alloc(4096)), { tmpDir, clock: fakeClock() })), /date=2026-11-16.*HTTP 500/);
   const short = await fakeBucket(t, "trades", { "2026-11-16": Buffer.alloc(4096) });
-  short.downloadReplies.push("short", "short", "short", "short");
+  short.downloadReplies.push(...Array<"short">(ATTEMPTS).fill("short"));
   await assert.rejects(collect(readDay(short.env, dayOf(Buffer.alloc(4096)), { tmpDir, clock: fakeClock() })), /expected 4096 bytes/);
   assert.deepEqual(await readdir(tmpDir), []);
 });

@@ -7,7 +7,8 @@ import type { TestContext } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import type { LighterDataset, LighterS3Env } from "#src/lighter/s3.ts";
 
-const PREFIX = "v1.1/lighter/core/mainnet";
+/** The prefix the fake bucket serves its datasets under. */
+export const PREFIX = "v1.1/lighter/core/mainnet";
 const FILE_NAMES = { trades: "trades.parquet", open_interest_hourly: "oi.parquet" } as const;
 // What S3 lists for an empty object, such as the dataset's folder key.
 const EMPTY_ETAG = "d41d8cd98f00b204e9800998ecf8427e";
