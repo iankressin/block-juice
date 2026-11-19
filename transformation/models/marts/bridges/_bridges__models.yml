@@ -54,3 +54,56 @@ unit_tests:
     expect:
       rows:
         - {from_chain: arbitrum, from_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", to_chain: base, to_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", withdrawal_id: "508746303:6", deposit_id: "52056280:3", candidates: 1}
+
+  - name: only_a_withdrawal_from_another_chain_pays_for_a_deposit
+    description: >-
+      The pair read on Portal, plus two made-up moves of the same Ethereum address, token and amount: a
+      deposit into Arbitrum before the withdrawal, and a withdrawal from Base before the Base deposit. The
+      deposit into Arbitrum is no withdrawal, so it pays for nothing, and the Base withdrawal is no deposit,
+      so nothing pays for it. The pair stays as it was. The Base withdrawal is ready in time, but it is on
+      the deposit's own chain, so candidates leaves it out.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: arbitrum, id: "508746303:6", direction: to_ethereum, l2_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_token: "0x607f451f850cb612a07b37b6315be23f55165610", amount: "716990784284181798845975", block_timestamp: "2026-09-25 11:19:50+00"}
+          - {chain: base, id: "52056280:3", direction: from_ethereum, l2_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_token: "0x607f451f850cb612a07b37b6315be23f55165610", amount: "716990784284181798845975", block_timestamp: "2026-10-02 00:45:07+00"}
+          # Made up: a deposit into Arbitrum, 5 days before the withdrawal.
+          - {chain: arbitrum, id: "1:1", direction: from_ethereum, l2_address: "0xaa", ethereum_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_token: "0x607f451f850cb612a07b37b6315be23f55165610", amount: "716990784284181798845975", block_timestamp: "2026-09-20 00:00:00+00"}
+          # Made up: a withdrawal from Base, ready on 2026-09-29, before the Base deposit.
+          - {chain: base, id: "2:1", direction: to_ethereum, l2_address: "0xbb", ethereum_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", ethereum_token: "0x607f451f850cb612a07b37b6315be23f55165610", amount: "716990784284181798845975", block_timestamp: "2026-09-28 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: arbitrum, to_chain: base, withdrawal_id: "508746303:6", deposit_id: "52056280:3", candidates: 1}
+
+  - name: a_deposit_at_the_end_of_the_base_delay_pairs
+    description: >-
+      Made up: a withdrawal from Base and a deposit into Arbitrum exactly 1 day later, Base's delay. The
+      deposit is ready on time, so the two pair and the withdrawal counts as a candidate.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: base, id: "1:1", direction: to_ethereum, l2_address: "0xaa", ethereum_address: "0xcc", ethereum_token: "0x11", amount: 7, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: arbitrum, id: "2:1", direction: from_ethereum, l2_address: "0xbb", ethereum_address: "0xcc", ethereum_token: "0x11", amount: 7, block_timestamp: "2026-10-02 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: base, to_chain: arbitrum, withdrawal_id: "1:1", deposit_id: "2:1", candidates: 1}
+
+  - name: the_first_withdrawal_pays_for_the_first_deposit_of_its_token
+    description: >-
+      Made up: two withdrawals from Arbitrum of the same Ethereum address, token and amount, then a deposit
+      into Base of that token and a deposit of another token. Both withdrawals are ready before the first
+      deposit, so it has two candidates, and the first withdrawal pays for it. The second withdrawal waits
+      for a second deposit of its own token, and the deposit of the other token pairs with nothing.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: arbitrum, id: "1:1", direction: to_ethereum, l2_address: "0xaa", ethereum_address: "0xcc", ethereum_token: "0x11", amount: 7, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: arbitrum, id: "2:1", direction: to_ethereum, l2_address: "0xaa", ethereum_address: "0xcc", ethereum_token: "0x11", amount: 7, block_timestamp: "2026-10-02 00:00:00+00"}
+          - {chain: base, id: "3:1", direction: from_ethereum, l2_address: "0xbb", ethereum_address: "0xcc", ethereum_token: "0x11", amount: 7, block_timestamp: "2026-10-10 00:00:00+00"}
+          - {chain: base, id: "4:1", direction: from_ethereum, l2_address: "0xbb", ethereum_address: "0xcc", ethereum_token: "0x22", amount: 7, block_timestamp: "2026-10-11 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: arbitrum, to_chain: base, withdrawal_id: "1:1", deposit_id: "3:1", candidates: 2}
