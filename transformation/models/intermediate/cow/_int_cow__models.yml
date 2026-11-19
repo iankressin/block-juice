@@ -21,3 +21,23 @@ unit_tests:
       rows:
         - {log_index: 266, order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "1000000000000000000000"}
         - {log_index: 267, order_uid: null, eth_value_wei: null}
+  - name: ethflow_placements_pair_with_calls_in_trace_order
+    description: >-
+      One transaction, as a batching contract sends it, that places two ETH Flow orders from the same wallet
+      through calls at trace addresses [2] and [10]. Calls pair with placements in trace order, element by
+      element and as numbers, so the first placement (log 5) takes the call at [2] and the second (log 30)
+      the call at [10]. Sorting the jsonb's text form would put [10] first and swap the two hashes.
+    model: int_ethereum_cow_ethflow_orders
+    given:
+      - input: ref('stg_ethereum__cow_ethflow')
+        rows:
+          - {block_number: 26380868, transaction_index: 89, log_index: 5, tx_hash: "0x53ed", event: OrderPlacement, contract: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", order_sender: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", order_valid_to: 4294967295}
+          - {block_number: 26380868, transaction_index: 89, log_index: 30, tx_hash: "0x53ed", event: OrderPlacement, contract: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", order_sender: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", order_valid_to: 4294967295}
+      - input: ref('stg_ethereum__cow_ethflow_traces')
+        rows:
+          - {tx_hash: "0x53ed", trace_address: "[10]", error: null, from_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", to_address: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", value: "2000000000000000000", output: "0x1010101010101010101010101010101010101010101010101010101010101010"}
+          - {tx_hash: "0x53ed", trace_address: "[2]", error: null, from_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", to_address: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", value: "1000000000000000000", output: "0x0202020202020202020202020202020202020202020202020202020202020202"}
+    expect:
+      rows:
+        - {log_index: 5, order_uid: "0x0202020202020202020202020202020202020202020202020202020202020202ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "1000000000000000000"}
+        - {log_index: 30, order_uid: "0x1010101010101010101010101010101010101010101010101010101010101010ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "2000000000000000000"}
