@@ -58,6 +58,8 @@ The demo starts its own throwaway Postgres, builds the real balance models from 
 
 ## What it covers
 
+[Check the full catalog here](https://blockjuice.asof.sh/catalog/)
+
 Each table lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so a table covers the addresses you follow, not the whole chain.
 
 | | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Binance, Coinbase |
