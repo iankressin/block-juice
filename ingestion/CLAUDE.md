@@ -1,5 +1,7 @@
 # Ingestion
 
+This folder's contract (interface, invariants and side effects) is in [README.md](README.md), and `lib/`, `scripts/` and each source package have their own.
+
 TypeScript sources that extract chain data and load it raw. To add one, copy the closest source with `uv run --project orchestration bj new-source <source> <table> --like <package>`. It scaffolds the package and the staging stub and regenerates `sources.json`; `docs/architecture.md#add-a-source` covers the rest.
 
 ## What a source may do
