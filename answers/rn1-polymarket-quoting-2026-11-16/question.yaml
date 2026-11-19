@@ -1,0 +1,52 @@
+question: How does the bot behind wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea place its Polymarket quotes?
+asked: 2026-11-16
+definitions:
+  RN1: The Polygon wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea.
+  bid: >-
+    One of RN1's maker orders, all of which buy an outcome. An order's price is fixed; a fill at a new price is
+    a new order.
+  resting at once: >-
+    Two of RN1's bids were on the book at the same moment when both filled in one block, or when one filled
+    between the first and last fill of the other.
+  bid sum: >-
+    The sum of RN1's bids on the two outcomes of one market while both rested, in pUSD per pair. 1 minus the
+    sum is the spread RN1 quoted, since a pair always pays 1 pUSD.
+  prices: Rounded to 0.001 pUSD, the exchange's finest tick, to drop the rounding noise of shares and pUSD.
+  phase: The block time against Gamma's game_start_time.
+alternatives:
+  - Take each side's lowest filled price in a block instead of its highest; a sweep through several levels would
+    then give a lower sum.
+  - Count the overlap of two orders from first to last fill only when each filled at least twice.
+window:
+  chain: polygon
+  from: 2026-08-10T00:00:00Z
+  to: 2026-11-10T00:00:00Z
+  blocks: [91743315, 97042228]
+inputs:
+  - name: wallet_fills
+    strategy: history
+    source: polygon.polymarket_ctf_exchange_v2
+    mart: polymarket_wallet_fills
+    filter:
+      exchanges:
+        - '0xe111180000d2663c0091e4f400237545b87b996b'
+        - '0xe2222d279d744050d28e00520010520000310f59'
+        - '0xe2222d002000ba0053cef3375333610f64600036'
+      wallets:
+        - '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
+  - name: conditions
+    strategy: history
+    source: polygon.polymarket_ctf
+    mart: polymarket_markets
+  - name: market_metadata
+    strategy: state
+    source: polymarket.markets
+    mart: polymarket_markets
+marts: [polymarket_wallet_fills, polymarket_markets]
+analyses:
+  - rn1_polymarket_quoting_2026_11_16
+  - rn1_polymarket_quoting_2026_11_16_bid_sums
+  - rn1_polymarket_quoting_2026_11_16_ladder
+  - rn1_polymarket_quoting_2026_11_16_requotes
+  - rn1_polymarket_quoting_2026_11_16_by_holdings_gap
+  - rn1_polymarket_quoting_2026_11_16_stop
