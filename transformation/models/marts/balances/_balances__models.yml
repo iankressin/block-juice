@@ -29,3 +29,24 @@ models:
       - name: balance
         description: The amount in the asset's base units (wei, lamports, satoshis, or token base units).
         data_tests: [not_null]
+
+unit_tests:
+  - name: the_latest_balance_reading_wins
+    description: >-
+      Made up: three readings of one wallet's ETH balance, one at an earlier block and two at a later
+      block, loaded one after another. The mart keeps the reading at the latest block, and of the two
+      there, the one loaded last.
+    model: latest_balances
+    given:
+      - input: ref('int_ethereum_balances')
+        rows:
+          - {chain: ethereum, wallet: "0x00000000000000000000000000000000000000aa", asset_type: native, asset: eth, block_number: 100, balance: 1, _loaded_at: "2026-11-01 00:00:00+00"}
+          - {chain: ethereum, wallet: "0x00000000000000000000000000000000000000aa", asset_type: native, asset: eth, block_number: 200, balance: 2, _loaded_at: "2026-11-02 00:00:00+00"}
+          - {chain: ethereum, wallet: "0x00000000000000000000000000000000000000aa", asset_type: native, asset: eth, block_number: 200, balance: 3, _loaded_at: "2026-11-03 00:00:00+00"}
+      - input: ref('int_solana_balances')
+        rows: []
+      - input: ref('int_bitcoin_balances')
+        rows: []
+    expect:
+      rows:
+        - {chain: ethereum, wallet: "0x00000000000000000000000000000000000000aa", asset: eth, block_number: 200, balance: 3}

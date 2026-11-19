@@ -38,3 +38,20 @@ models:
       - name: _loaded_at
         data_type: timestamp with time zone
         description: When the warehouse wrote this record into the raw table.
+
+unit_tests:
+  - name: a_reverted_erc20_balance_call_is_left_out
+    description: >-
+      Made up: two ERC-20 balance readings of one wallet at one block. The call for the second token
+      reverted, as it does before the token is deployed, so its balance is null and it is left out.
+    model: int_ethereum_balances
+    given:
+      - input: ref('stg_ethereum__eth_balances')
+        rows: []
+      - input: ref('stg_ethereum__erc20_balances')
+        rows:
+          - {id: a, wallet: "0x00000000000000000000000000000000000000aa", token: "0x00000000000000000000000000000000000000cc", block_number: 100, balance: 5}
+          - {id: b, wallet: "0x00000000000000000000000000000000000000aa", token: "0x00000000000000000000000000000000000000dd", block_number: 100, balance: null}
+    expect:
+      rows:
+        - {id: a, asset_type: erc20, asset: "0x00000000000000000000000000000000000000cc", balance: 5}
