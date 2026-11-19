@@ -34,3 +34,24 @@ models:
           assume 18.
       - name: block_number
         description: The block this reading was taken at.
+
+unit_tests:
+  - name: the_latest_metadata_reading_wins
+    description: >-
+      Made up: three readings of one token, one at an earlier block and two at a later block, loaded one
+      after another. The mart keeps the reading at the latest block, and of the two there, the one loaded
+      last.
+    model: tokens
+    given:
+      - input: ref('int_ethereum_erc20_metadata')
+        rows:
+          - {chain: ethereum, token: "0x00000000000000000000000000000000000000cc", name: First, symbol: ONE, decimals: 6, block_number: 100, _loaded_at: "2026-11-01 00:00:00+00"}
+          - {chain: ethereum, token: "0x00000000000000000000000000000000000000cc", name: Second, symbol: TWO, decimals: 6, block_number: 200, _loaded_at: "2026-11-02 00:00:00+00"}
+          - {chain: ethereum, token: "0x00000000000000000000000000000000000000cc", name: Third, symbol: THREE, decimals: 6, block_number: 200, _loaded_at: "2026-11-03 00:00:00+00"}
+      - input: ref('int_arbitrum_erc20_metadata')
+        rows: []
+      - input: ref('int_base_erc20_metadata')
+        rows: []
+    expect:
+      rows:
+        - {chain: ethereum, token: "0x00000000000000000000000000000000000000cc", name: Third, symbol: THREE, block_number: 200}
