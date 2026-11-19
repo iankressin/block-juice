@@ -22,9 +22,9 @@ models:
   - name: bridge_pairs
     columns:
       - name: withdrawal_id
-        data_tests: [not_null]
+        data_tests: [unique, not_null]
       - name: deposit_id
-        data_tests: [not_null]
+        data_tests: [unique, not_null]
 
 unit_tests:
   - name: a_late_deposit_of_the_same_amount_pairs
