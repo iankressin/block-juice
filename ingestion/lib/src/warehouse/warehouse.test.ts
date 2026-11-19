@@ -229,3 +229,15 @@ test("a stale retry snapshot cannot park a newer valid call", async (t) => {
   await pages.return(undefined);
   assert.deepEqual(await table.backlog(), { pending: 2, parked: 0 });
 });
+
+test("open holds one session lock on the source table, keyed on its quoted name", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  await warehouse.open("test_wallets");
+  const { rows } = await db.query<{ key: number }>(
+    `select objid::bigint as key from pg_locks
+     where locktype = 'advisory' and granted and pid = pg_backend_pid() and objsubid = 2
+       and classid = hashtext('ingestion.source')::oid`);
+  const { rows: [expected] } = await db.query<{ key: number }>(
+    `select hashtext('"raw"."test_wallets"')::oid::bigint as key`);
+  assert.deepEqual(rows, [expected]);
+});

@@ -629,11 +629,11 @@ def test_gdoc_creates_a_new_doc_when_the_recorded_one_is_gone(answered, drive, c
     "env, message",
     [
         ({}, "In a Google Cloud project, enable the Google Drive API, create an OAuth client ID of type Desktop app"),
-        ({"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json"}, "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json, which does not exist"),
-        ({"GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"}, "GOOGLE_APPLICATION_CREDENTIALS is /missing/key.json, which does not exist"),
+        ({"GOOGLE_OAUTH_CLIENT_SECRET": "/secret/marker-path.json"}, "GOOGLE_OAUTH_CLIENT_SECRET names a file that does not exist"),
+        ({"GOOGLE_APPLICATION_CREDENTIALS": "/secret/marker-path.json"}, "GOOGLE_APPLICATION_CREDENTIALS names a file that does not exist"),
         (
-            {"GOOGLE_OAUTH_CLIENT_SECRET": "/missing/client.json", "GOOGLE_APPLICATION_CREDENTIALS": "/missing/key.json"},
-            "GOOGLE_OAUTH_CLIENT_SECRET is /missing/client.json",
+            {"GOOGLE_OAUTH_CLIENT_SECRET": "/secret/marker-path.json", "GOOGLE_APPLICATION_CREDENTIALS": "/secret/marker-path.json"},
+            "GOOGLE_OAUTH_CLIENT_SECRET names a file that does not exist",
         ),
     ],
 )
@@ -645,7 +645,10 @@ def test_gdoc_without_usable_credentials_exits_2_and_writes_nothing(answered, mo
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     assert main(["report", "top-wallets", "--format", "docx,gdoc"]) == 2
-    assert message in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert message in err
+    # A command names a bad setting by its key, never its value.
+    assert "marker" not in err
     assert not (folder / "reports").exists()
 
 
@@ -679,6 +682,19 @@ def test_gdoc_takes_only_a_service_account_key_from_google_application_credentia
     )
     with pytest.raises(BadInput, match="GOOGLE_APPLICATION_CREDENTIALS is not a service account key"):
         gdoc.connect()
+
+
+def test_a_bad_service_account_key_is_named_by_its_key_without_the_contents_of_the_file(tmp_path, monkeypatch):
+    key = tmp_path / "key.json"
+    # google-auth puts the repr of a private_key it cannot read into its error.
+    key.write_text(json.dumps({"type": "service_account", "private_key": ["marker-secret"],
+                               "client_email": "bj@project-1.iam.gserviceaccount.com",
+                               "token_uri": "https://oauth2.googleapis.com/token"}))
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key))
+    with pytest.raises(BadInput, match="GOOGLE_APPLICATION_CREDENTIALS is not a service account key") as raised:
+        gdoc.connect()
+    assert "marker" not in str(raised.value)
 
 
 def google_token(token, expires_in):

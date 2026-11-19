@@ -109,7 +109,8 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
       let capturedInputs: { runId: string; read: (complete: boolean) => InputEvidence } | undefined;
       let inputEvidenceAvailable = false;
       try {
-        // Hold ownership across batch commits and the final progress push, until db.close().
+        // One run of a source table at a time: this session owns the table from before the DDL,
+        // through call extraction, batch commits and the final progress push, until db.close().
         await db.query("select pg_advisory_lock(hashtext('ingestion.source'), hashtext($1))", [table]);
         // IF NOT EXISTS fails when two sessions create the same object at once, and Dagster opens
         // a pipeline's sources at once, so they take turns here. The key has two parts: Postgres
@@ -145,9 +146,6 @@ export function postgresWarehouse(settings?: WarehouseSettings) {
         await prepareProvenance(db, raw);
         inputEvidenceAvailable = await prepareInputEvidence(db, raw);
         await db.query("commit");
-        // Serialize a whole source run (including call extraction), not just individual batches.
-        // DDL's transaction lock is already released; Pipes takes its cursor lock only afterwards.
-        await db.query("select pg_advisory_lock(hashtext('ingestion.source'), hashtext($1))", [`${schema}.${sourceTable}`]);
       } catch (error) {
         await db.query("rollback").catch(() => {});
         await db.close();

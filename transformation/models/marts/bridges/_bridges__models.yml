@@ -20,6 +20,13 @@ models:
       - name: amount
         data_tests: [not_null]
   - name: bridge_pairs
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "from_chain || ':' || withdrawal_id"
+      - unique:
+          arguments:
+            column_name: "to_chain || ':' || deposit_id"
     columns:
       - name: withdrawal_id
         data_tests: [not_null]

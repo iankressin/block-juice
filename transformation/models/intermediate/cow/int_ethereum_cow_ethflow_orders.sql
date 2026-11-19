@@ -11,10 +11,16 @@ with placements as (
     where event = 'OrderPlacement'
 ),
 
+-- trace_address is a jsonb array such as [2, 10]. Rewritten as the int[] {2, 10}, it sorts element by
+-- element as numbers, with a parent before its children, which is the order the calls ran in. Its text
+-- form would put [10] before [2].
 calls as (
     select
         *,
-        row_number() over (partition by tx_hash, to_address, from_address order by trace_address::text) as nth
+        row_number() over (
+            partition by tx_hash, to_address, from_address
+            order by translate(trace_address::text, '[]', '{}')::int[]
+        ) as nth
     from {{ ref('stg_ethereum__cow_ethflow_traces') }}
     where error is null and output is not null
 )
