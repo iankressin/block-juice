@@ -2,6 +2,8 @@
 
 The dbt project. Run dbt with the command in the root `CLAUDE.md`, which exports `.env` first. Raw tables live in `RAW_SCHEMA` (`raw`) and models build in `DBT_SCHEMA` (`analytics`).
 
+CI makes an empty raw table for every source and builds every model on them, so each unit test passes and each data test's SQL runs, or the pull request fails. The reference tests stay out. To run that check yourself, point `WAREHOUSE_DB` at a new, empty database and run the two commands of the step `dbt build with unit tests on empty raw tables` in `.github/workflows/ci.yml` from `transformation/`.
+
 ## Layers
 
 - Staging, in `models/staging/<name>/`: one view per raw table and kind of record, named `stg_<name>__<table>`, where `<name>` is the source's name (the chain for `evm-*` sources). A raw table that holds logs and transactions gets `stg_<name>__<table>` and `stg_<name>__<table>_transactions`. Cast fields out of `data` and lowercase EVM addresses. Keep Solana and Bitcoin addresses as they are, since base58 is case-sensitive. No joins and no rules.

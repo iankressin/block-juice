@@ -77,9 +77,10 @@ jobs:
           WAREHOUSE_PASSWORD: elt
         run: pnpm exec tsx --test src/warehouse/concurrent-open.test.ts
 
-  # The dbt project and the Dagster code. dbt parses, seeds and compiles against a throwaway Postgres, which
-  # also lets the warehouse tests run instead of skipping. pytest needs the ingestion packages installed,
-  # because test_sources_json regenerates ingestion/sources.json with pnpm.
+  # The dbt project and the Dagster code. dbt parses, seeds and compiles against a throwaway Postgres, then
+  # builds every model with its unit and data tests on empty raw tables. The Postgres also lets the warehouse
+  # tests run instead of skipping. pytest needs the ingestion packages installed, because test_sources_json
+  # regenerates ingestion/sources.json with pnpm.
   transformation-and-orchestration:
     name: Transformation and orchestration (dbt and pytest)
     runs-on: ubuntu-latest
@@ -134,6 +135,17 @@ jobs:
           uv run --project ../orchestration dbt parse
           uv run --project ../orchestration dbt seed --quiet
           uv run --project ../orchestration dbt compile --quiet
+        working-directory: transformation
+
+      # A unit test needs the relations its model reads, and CI loads no raw rows. So this makes an empty raw
+      # table for every dbt source, as planted_bugs.py does, and builds the project on no rows: every model
+      # must build, every unit test pass and every data test's SQL run. The reference tests need a question's
+      # rows, and oracle_prices_within_heartbeat reads the cursor table Pipes makes on its first run, so both
+      # stay out.
+      - name: dbt build with unit tests on empty raw tables
+        run: |
+          uv run --project ../orchestration python -c 'import json, planted_bugs; from pipeline.warehouse import connect; planted_bugs.load_raw(connect(), json.load(open("target/manifest.json")), None)'
+          uv run --project ../orchestration dbt build --exclude tag:reference oracle_prices_within_heartbeat
         working-directory: transformation
 
       - name: pytest
