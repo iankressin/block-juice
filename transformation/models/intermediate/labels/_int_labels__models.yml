@@ -40,3 +40,22 @@ unit_tests:
         - {address: "0x00000000000000000000000000000000000000bb", code_kind: eip7702_delegation}
         - {address: "0x00000000000000000000000000000000000000cc", code_kind: contract}
         - {address: "0x00000000000000000000000000000000000000dd", code_kind: contract}
+  - name: arbitrum_code_kinds_follow_eip_7702
+    description: >-
+      The Arbitrum model applies the same rules as Base. Made up: four addresses, one with each kind of code
+      and one whose code changed, where the later reading wins.
+    model: int_arbitrum_address_code
+    given:
+      - input: ref('stg_arbitrum__address_code')
+        rows:
+          - {address: "0x00000000000000000000000000000000000000aa", block_number: 1, code: "0x"}
+          - {address: "0x00000000000000000000000000000000000000bb", block_number: 1, code: "0xef010063c0c19a282a1b52b07dd5a65b58948a07dae32b"}
+          - {address: "0x00000000000000000000000000000000000000cc", block_number: 1, code: "0x6080604052"}
+          - {address: "0x00000000000000000000000000000000000000dd", block_number: 1, code: "0x"}
+          - {address: "0x00000000000000000000000000000000000000dd", block_number: 2, code: "0x6080604052"}
+    expect:
+      rows:
+        - {address: "0x00000000000000000000000000000000000000aa", code_kind: none}
+        - {address: "0x00000000000000000000000000000000000000bb", code_kind: eip7702_delegation}
+        - {address: "0x00000000000000000000000000000000000000cc", code_kind: contract}
+        - {address: "0x00000000000000000000000000000000000000dd", code_kind: contract}
