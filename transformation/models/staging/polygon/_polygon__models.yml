@@ -73,3 +73,56 @@ models:
               arguments:
                 values:
                   - matchOrders
+
+# Each input row is a raw log in the shape the polygon-polymarket-ctf source writes: args as the ABI decodes
+# them, with uint values as strings. The expected rows are SQL because dbt cannot cast a text value to an
+# array column.
+unit_tests:
+  - name: ctf_logs_stage_their_arrays_and_wallet
+    description: >-
+      Proof rows 9, 4, 6 and 7. A resolution keeps its payoutNumerators, a split its partition, a CTF
+      redemption its indexSets and a NegRiskAdapter redemption its amounts, each as an array, and an event
+      without one gets null. The wallet is the split's stakeholder or the redemption's redeemer.
+    model: stg_polygon__polymarket_ctf
+    given:
+      - input: source('polygon', 'polymarket_ctf')
+        rows:
+          - id: "95573552:698"
+            data: '{"kind":"log","event":"ctf.ConditionResolution","block_number":95573552,"timestamp":"2026-10-15T12:00:53.000Z","tx_hash":"0xf7ad2df84dee12995955bbe2b30cfab664860b42b12c637def7c404b1cd45741","log_index":698,"contract":"0x4D97DCd97eC945f40cF65F87097ACe5EA0476045","args":{"conditionId":"0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3","oracle":"0x58e1745bedda7312c4cddb72618923da1b90efde","questionId":"0x3eb8976c590698d977b3708eaeeba997a5220b8f5e0454422ffaaef26dcac854","outcomeSlotCount":"2","payoutNumerators":["1","0"]}}'
+          - id: "96926001:206"
+            data: '{"kind":"log","event":"ctf.PositionSplit","block_number":96926001,"tx_hash":"0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215","log_index":206,"contract":"0x4D97DCd97eC945f40cF65F87097ACe5EA0476045","args":{"stakeholder":"0xAdA100Db00Ca00073811820692005400218FcE1f","collateralToken":"0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174","parentCollectionId":"0x0000000000000000000000000000000000000000000000000000000000000000","conditionId":"0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52","partition":["1","2"],"amount":"150000000"}}'
+          - id: "96926007:1365"
+            data: '{"kind":"log","event":"ctf.PayoutRedemption","block_number":96926007,"tx_hash":"0x71119fa6e5180d26b5415f8629cffd21f36c3f35460823f28b8b6e97150ff83e","log_index":1365,"contract":"0x4D97DCd97eC945f40cF65F87097ACe5EA0476045","args":{"redeemer":"0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82","collateralToken":"0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174","parentCollectionId":"0x0000000000000000000000000000000000000000000000000000000000000000","conditionId":"0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c","indexSets":["1","2"],"payout":"186826243"}}'
+          - id: "96926008:1072"
+            data: '{"kind":"log","event":"neg_risk.PayoutRedemption","block_number":96926008,"tx_hash":"0xf12f6adb5cd1f8edc4f3ef26efd6bc97f7e4cbd6df7072ec6d79e6510d43a084","log_index":1072,"contract":"0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296","args":{"redeemer":"0xa1200000d0002264C9a1698e001292D00E1b00af","conditionId":"0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95","amounts":["0","24285715"],"payout":"24285715"}}'
+    expect:
+      format: sql
+      rows: |
+        select * from (values
+            ('95573552:698', 'ctf.ConditionResolution', 95573552::bigint, '2026-10-15 12:00:53+00'::timestamptz,
+                '0xf7ad2df84dee12995955bbe2b30cfab664860b42b12c637def7c404b1cd45741', 698, '0x4d97dcd97ec945f40cf65f87097ace5ea0476045',
+                '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3', '0x58e1745bedda7312c4cddb72618923da1b90efde',
+                '0x3eb8976c590698d977b3708eaeeba997a5220b8f5e0454422ffaaef26dcac854', 2::numeric, array[1, 0]::numeric[],
+                null::text, null::text, null::text, null::text, null::text, null::numeric[], null::numeric, null::numeric,
+                null::numeric[], null::numeric, null::text, null::numeric, null::numeric, null::numeric, null::boolean, null::timestamptz),
+            ('96926001:206', 'ctf.PositionSplit', 96926001, null,
+                '0xd97bece7d3eeb1908edd64f2028c8d986a5ec4ecf3f9b41d21beaa9b9be75215', 206, '0x4d97dcd97ec945f40cf65f87097ace5ea0476045',
+                '0x30dc1d24ca16b5301ed82c298e206fb988d04627efd798e7eca34fbff7df4b52', null, null, null, null,
+                '0xada100db00ca00073811820692005400218fce1f', null, null, '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+                '0x0000000000000000000000000000000000000000000000000000000000000000', array[1, 2], 150000000, null,
+                null, null, null, null, null, null, null, null),
+            ('96926007:1365', 'ctf.PayoutRedemption', 96926007, null,
+                '0x71119fa6e5180d26b5415f8629cffd21f36c3f35460823f28b8b6e97150ff83e', 1365, '0x4d97dcd97ec945f40cf65f87097ace5ea0476045',
+                '0xe447be6d6f2ad8d109b548594a251296137a5afa1fa6f468c909060890cb549c', null, null, null, null,
+                '0x26d76c9bd18c5322ae112c9dbb6e96a2a1159b82', null, null, '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+                '0x0000000000000000000000000000000000000000000000000000000000000000', array[1, 2], null, null,
+                null, 186826243, null, null, null, null, null, null),
+            ('96926008:1072', 'neg_risk.PayoutRedemption', 96926008, null,
+                '0xf12f6adb5cd1f8edc4f3ef26efd6bc97f7e4cbd6df7072ec6d79e6510d43a084', 1072, '0xd91e80cf2e7be2e162c6513ced06f1dd0da35296',
+                '0x031071a274d8c857452bfaf84175163b177d8021db125f46f92623819df3db95', null, null, null, null,
+                '0xa1200000d0002264c9a1698e001292d00e1b00af', null, null, null, null, null, null, null,
+                array[0, 24285715], 24285715, null, null, null, null, null, null)
+        ) as e(id, event, block_number, block_timestamp, tx_hash, log_index, contract, condition_id, oracle, question_id,
+            outcome_slot_count, payout_numerators, stakeholder, initiator, from_address, collateral_token, parent_collection_id,
+            index_sets, amount, amount_out, amounts, payout, neg_risk_market_id, index_set, fee_bips, question_index, outcome,
+            _loaded_at)

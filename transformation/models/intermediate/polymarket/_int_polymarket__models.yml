@@ -1488,6 +1488,33 @@ unit_tests:
         - {condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", prepared_block: 96926007, prepared_at: "2026-11-07 23:34:27+00", history_complete: false}
         - {condition_id: "0xaa", prepared_block: 96900000, prepared_at: "2026-11-07 12:44:16+00", history_complete: false}
 
+  - name: coverage_starts_at_each_raw_tables_lowest_block
+    description: >-
+      Each raw table holds more than one block. The CTF table's lowest is proof row 9's ConditionResolution
+      at 95573552 and the exchange table's is proof row 44's fill at 91791857, so the coverage start is
+      95573552. Proof row 18's first condition, prepared at 96924595, and proof row 19's, prepared at
+      96926007, are both complete. Taking either table's highest block in place of its lowest would move the
+      start past 96924595 and mark row 18's condition incomplete.
+    model: int_polygon_polymarket_ctf_conditions
+    given:
+      - input: ref('stg_polygon__polymarket_ctf')
+        format: sql
+        rows: |
+          select * from (values
+              ('95573552:698', 'ctf.ConditionResolution', 95573552::bigint, null::timestamptz, 698,
+                  '0x21a77299dec1537c744abdbcb382c9e6b9d2386b8a495948f5745a336e8bade3'),
+              ('96924595:88', 'ctf.ConditionPreparation', 96924595, null, 88, '0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c'),
+              ('96926007:1235', 'ctf.ConditionPreparation', 96926007, null, 1235, '0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a')
+          ) as l(id, event, block_number, block_timestamp, log_index, condition_id)
+      - input: ref('stg_polygon__polymarket_ctf_exchange_v2')
+        rows:
+          - {id: "91791857:426", event: ctf_exchange_v2.OrderFilled, block_number: 91791857, log_index: 426}
+          - {id: "96926000:403", event: ctf_exchange_v2.OrderFilled, block_number: 96926000, log_index: 403}
+    expect:
+      rows:
+        - {condition_id: "0xa1ab475d4e704da5a381cb622ef441c280e81fc628d88a9dcb2206db7594b29c", prepared_block: 96924595, history_complete: true}
+        - {condition_id: "0xf38448bdd650770b9bbbc27157cff1a0fbdbc3d75f581c9f2a1947c1411f659a", prepared_block: 96926007, history_complete: true}
+
   - name: gamma_markets_give_one_row_per_condition
     description: >-
       Gamma market 6826443 (proof row 19's condition) gives its row. A made-up market 10000000 that lists

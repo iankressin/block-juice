@@ -324,6 +324,28 @@ unit_tests:
       rows:
         - {id: "96926000:403", version: ctf_exchange_v2, exchange: "0xe111180000d2663c0091e4f400237545b87b996b", block_number: 96926000, block_timestamp: "2026-11-07 23:34:16+00", tx_hash: "0x58f6ac1b129ebbf968d51fd5f66ed0563ee317b5b862e7c8f93bd4ab5e00ba30", log_index: 403, condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", outcome: Down, maker: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", taker: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", maker_side: sell, shares: "5.106383", usdc: "4.800000", price: "0.93999999608333334965", fee_usdc: "0.000000"}
 
+  - name: wallet_fills_keep_both_roles
+    description: >-
+      Proof row 1: the maker fill and the taker order's own fill both stay, one per wallet. The maker's
+      counterparty is the taker order's owner; the taker fill's counterparty is null, not the exchange its log
+      names. Proof row 11's maker fill trades a token the outcome tokens lack, so it keeps its row with no
+      condition or outcome.
+    model: polymarket_wallet_fills
+    given:
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows:
+          - {id: "96926000:403", wallet: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", counterparty: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", is_taker_order: false, token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", side: sell}
+          - {id: "96926000:405", wallet: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", counterparty: "0xe111180000d2663c0091e4f400237545b87b996b", is_taker_order: true, token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", side: buy}
+          - {id: "96926000:78", wallet: "0x3089fcf3fe5b67ec287654b4d627bcd1d51135e4", counterparty: "0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d", is_taker_order: false, token_id: "105985080724064245114012949518165989083729807961896494806795246958083187261670", side: buy}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 1, outcome: Down, complement_token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285"}
+    expect:
+      rows:
+        - {id: "96926000:403", wallet: "0x1dd2a69e73ba444ecd5d87f0073d51a670ad51c2", role: maker, counterparty: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 1, outcome: Down, side: sell}
+        - {id: "96926000:405", wallet: "0x8d220bbd98c5e47d9ae7781811cbba029cbaae40", role: taker, counterparty: null, condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome_index: 1, outcome: Down, side: buy}
+        - {id: "96926000:78", wallet: "0x3089fcf3fe5b67ec287654b4d627bcd1d51135e4", role: maker, counterparty: "0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d", condition_id: null, outcome_index: null, outcome: null, side: buy}
+
   - name: a_no_trade_also_prices_yes
     description: >-
       Made up: YES trades at 0.68, then NO at 0.30 in the same minute, so YES closes at 0.70 and NO opens
