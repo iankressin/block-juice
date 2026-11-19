@@ -556,3 +556,60 @@ unit_tests:
             'D.C. United SC vs. New York City FC - Exact Score', true, 'ctf', array['Yes', 'No'], '2026-11-07 21:00:00+00',
             null, '2026-11-07 23:34:18+00', array[0, 1]::numeric[], false, true, 'exact_score', 'mls-2026',
             '2026-11-07 19:00:00+00'
+
+  - name: a_fill_of_a_token_gamma_lacks_is_no_trade
+    description: >-
+      Proof row 11's maker fill trades a token the outcome tokens lack (they hold proof row 1's market
+      only), so it is no trade.
+    model: polymarket_trades
+    given:
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_fills')
+        rows:
+          - {id: "96926000:78", is_taker_order: false, token_id: "105985080724064245114012949518165989083729807961896494806795246958083187261670"}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome: Up}
+          - {token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome: Down}
+    expect:
+      rows: []
+
+  - name: a_trade_of_a_token_gamma_lacks_gets_no_candle
+    description: >-
+      Proof row 11's trade, at 0.73, of a token the outcome tokens lack (they hold proof row 1's market
+      only). It has no outcome to chart, so it gets no candle.
+    model: polymarket_price_candles
+    given:
+      - input: ref('polymarket_trades')
+        rows:
+          - {block_number: 96926000, log_index: 78, block_timestamp: "2026-11-07 23:34:16+00", token_id: "105985080724064245114012949518165989083729807961896494806795246958083187261670", shares: "5.000000", usdc: "3.650000", price: "0.73"}
+      - input: ref('int_polymarket_outcome_tokens')
+        rows:
+          - {token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome: Up, complement_token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951"}
+          - {token_id: "21815194618493357610873019371928881814153899863038016502475197588875103719951", condition_id: "0x02325f5f418f5446661695dfc9bb3caee4db76ee78ca1741e0c0d53d217ea0e9", outcome: Down, complement_token_id: "105582437629466959292065586662578638325585336929397724642751248747938523923285"}
+    expect:
+      rows: []
+
+  - name: orders_add_up_their_fills
+    description: >-
+      Proof rows 44 and 45: two buys of one wallet. Row 44's order rests: it posted 5,023 shares at 0.5,
+      and its fill took 30 shares for 15 pUSD. Made up: a second fill of it, 7 minutes later, takes 10 more
+      for 5. Row 45's order is the call's taker order: it posted 540 shares at 0.055 and filled in full, with
+      a fee of 1.40332. Made up: a sell that posted 10 shares for 6 pUSD and filled 4 of them for 2.4, with a
+      fee of 0.0012, and a fill that matched no order of its call, which gives no row.
+    model: polymarket_wallet_orders
+    given:
+      - input: ref('int_polygon_polymarket_ctf_exchange_v2_orders')
+        rows:
+          - {id: "91791857:426", block_number: 91791857, log_index: 426, block_timestamp: "2026-08-10 20:13:33+00", order_hash: "0x506c8c385be8a4e54af34fa91edb83707e25cc6134beb9065fb1a0cb86830a28", is_taker_order: false, call_position: 1, maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", side: 0, maker_amount: "2511500000", taker_amount: "5023000000", maker_amount_filled: "15000000", taker_amount_filled: "30000000", fee: "0"}
+          # Made up: a later fill of row 44's order.
+          - {id: "91792057:10", block_number: 91792057, log_index: 10, block_timestamp: "2026-08-10 20:20:13+00", order_hash: "0x506c8c385be8a4e54af34fa91edb83707e25cc6134beb9065fb1a0cb86830a28", is_taker_order: false, call_position: 1, maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", side: 0, maker_amount: "2511500000", taker_amount: "5023000000", maker_amount_filled: "5000000", taker_amount_filled: "10000000", fee: "0"}
+          - {id: "91878987:376", block_number: 91878987, log_index: 376, block_timestamp: "2026-08-12 08:31:48+00", order_hash: "0x7c60998686409e480f797aa1621ab7a7f14498812cba38955443601c734047d8", is_taker_order: true, call_position: 0, maker: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", side: 0, maker_amount: "29700000", taker_amount: "540000000", maker_amount_filled: "29700000", taker_amount_filled: "540000000", fee: "1403320"}
+          # Made up: a sell, partly filled.
+          - {id: "91900000:1", block_number: 91900000, log_index: 1, block_timestamp: "2026-08-12 12:00:00+00", order_hash: "0xa1", is_taker_order: false, call_position: 1, maker: "0x00000000000000000000000000000000000000aa", side: 1, maker_amount: "10000000", taker_amount: "6000000", maker_amount_filled: "4000000", taker_amount_filled: "2400000", fee: "1200"}
+          # Made up: a fill that matched no order of its call.
+          - {id: "91900000:2", block_number: 91900000, log_index: 2, block_timestamp: "2026-08-12 12:00:00+00", order_hash: "0xa2", is_taker_order: false, call_position: null, maker: "0x00000000000000000000000000000000000000bb", side: null, maker_amount: null, taker_amount: null, maker_amount_filled: "1000000", taker_amount_filled: "2000000", fee: "0"}
+    expect:
+      rows:
+        - {order_hash: "0x506c8c385be8a4e54af34fa91edb83707e25cc6134beb9065fb1a0cb86830a28", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", side: buy, posted_shares: "5023.000000", posted_usdc: "2511.500000", limit_price: "0.50000000000000000000", first_fill_at: "2026-08-10 20:13:33+00", last_fill_at: "2026-08-10 20:20:13+00", fills: 2, taker_fills: 0, filled_shares: "40.000000", filled_usdc: "20.000000", fee_usdc: "0.000000", filled_in_full: false}
+        - {order_hash: "0x7c60998686409e480f797aa1621ab7a7f14498812cba38955443601c734047d8", wallet: "0x2005d16a84ceefa912d4e380cd32e7ff827875ea", side: buy, posted_shares: "540.000000", posted_usdc: "29.700000", limit_price: "0.05500000000000000000", first_fill_at: "2026-08-12 08:31:48+00", last_fill_at: "2026-08-12 08:31:48+00", fills: 1, taker_fills: 1, filled_shares: "540.000000", filled_usdc: "29.700000", fee_usdc: "1.403320", filled_in_full: true}
+        - {order_hash: "0xa1", wallet: "0x00000000000000000000000000000000000000aa", side: sell, posted_shares: "10.000000", posted_usdc: "6.000000", limit_price: "0.60000000000000000000", first_fill_at: "2026-08-12 12:00:00+00", last_fill_at: "2026-08-12 12:00:00+00", fills: 1, taker_fills: 0, filled_shares: "4.000000", filled_usdc: "2.400000", fee_usdc: "0.001200", filled_in_full: false}
