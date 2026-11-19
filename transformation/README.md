@@ -23,6 +23,7 @@ Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses a
 - `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
 - After touching an analysis or a `question.yaml`: `uv run --project orchestration bj questions --check`.
 - With a warehouse up: `uv run --project orchestration bj run <pipeline> --select <model>`, which also runs the model's tests.
+- After adding or changing a model: `uv run --project orchestration python transformation/planted_bugs.py --changed-since origin/main`, which fails when no unit test catches a bug planted in it. CI runs it on every pull request ([docs/planted-bugs.md](../docs/planted-bugs.md)).
 
 ## Adding a chain
 

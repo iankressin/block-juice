@@ -19,6 +19,25 @@ Without `--rows`, every raw table is empty. The dbt unit tests bring their own r
 
 A run that is killed leaves its database behind, named `planted_bugs_<id>`. Drop it by hand.
 
+The script exits 0 when it is done, 1 when the check below fails, and 2 when the input, the server or the project is not what it needs.
+
+## On pull requests
+
+The `planted-bugs` job in CI runs the script on every pull request as a check:
+
+```sh
+uv run --project orchestration python transformation/planted_bugs.py --changed-since origin/main
+```
+
+`--changed-since` plants bugs only in the models whose `.sql` file under `transformation/models/` the branch adds or changes since it left `origin/main`, uncommitted changes and new files included. A deleted model, an analysis, a test, a macro or a seed does not count. The raw tables stay empty, so only the unit tests can catch a bug. The check fails when:
+
+- a bug changes the output and no test catches it;
+- no test catches any bug planted in a changed model;
+- a changed model does not build before any bug is planted, as when dbt skips it because its unit test fails.
+
+A model whose SQL does not run stops the whole run with exit 2, and the message names it.
+A changed model with no place for a bug passes, and so does one whose every bug breaks the build or times out, since no test could catch those. A branch that changes no model passes with a note. The job prints the table to its log and its summary, and under it each model that fails, with its bugs by line. To fix one, write a unit test that fails under a bug it lists. Each missed bug needs a test that catches it.
+
 ## The bugs
 
 Each bug is one rewrite of the model's SQL, outside comments, Jinja and string literals.

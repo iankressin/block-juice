@@ -152,3 +152,51 @@ jobs:
 
       - name: Validate the compose files
         run: docker compose config --quiet
+
+  # Planted bugs (docs/planted-bugs.md) in each model the pull request adds or changes. It fails when a bug
+  # changes the output and no test catches it, when no test catches any bug in a changed model, or when a
+  # changed model does not build. The raw tables stay empty, so only the dbt unit tests can catch a bug.
+  planted-bugs:
+    name: Planted bugs (changed models)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      warehouse:
+        image: postgres:16
+        env:
+          POSTGRES_USER: elt
+          POSTGRES_PASSWORD: elt
+          POSTGRES_DB: warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elt -d warehouse"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      # The whole history, so git finds the commit where the branch left the base.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: orchestration/uv.lock
+
+      - name: Install Python packages
+        run: uv sync --locked
+        working-directory: orchestration
+
+      - name: Load .env.example into the environment
+        run: grep -E '^[A-Z_]+=' .env.example >> "$GITHUB_ENV"
+
+      # An explicit bash runs with pipefail, so the script's exit status survives the pipe into the summary.
+      - name: Plant bugs in the changed models
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: uv run --project orchestration python transformation/planted_bugs.py --changed-since "origin/$BASE_REF" | tee -a "$GITHUB_STEP_SUMMARY"

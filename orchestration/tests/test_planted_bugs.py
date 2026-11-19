@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import psycopg2
@@ -157,6 +158,90 @@ def test_the_table_counts_per_model_and_rates_only_the_bugs_that_changed_the_out
     )
 
 
+@pytest.mark.parametrize(
+    ("results", "unbuilt", "expected"),
+    [
+        ([result("m", "caught"), result("m", "not_exercised"), result("m", "build_error")], [], []),
+        ([], [], []),
+        ([result("m", "build_error"), result("m", "timeout")], [], []),
+        ([result("m", "caught"), result("other", "missed"), result("other", "not_exercised")], [], []),
+        (
+            [result("m", "caught"), result("m", "missed", line=7), result("m", "not_exercised")],
+            [],
+            ["- m: these bugs change the output and no test catches them. Write unit tests that fail under them:\n  - m:7 (bound) `a >= 1` became `a > 1`"],
+        ),
+        (
+            [result("m", "not_exercised"), result("m", "not_exercised", line=9, operator="number", after="a >= 2"), result("m", "build_error")],
+            [],
+            [
+                "- m: no test catches any bug planted in it. Write a unit test that fails under one of these:"
+                "\n  - m:3 (bound) `a >= 1` became `a > 1`\n  - m:9 (number) `a >= 1` became `a >= 2`"
+            ],
+        ),
+        ([], ["m"], ["- m does not build before any bug is planted. Fix it, or the unit test that fails on it: dbt skips a model whose unit test fails."]),
+    ],
+)
+def test_what_the_check_says_of_a_changed_model(results, unbuilt, expected):
+    assert planted_bugs.check(planted_bugs.Planted(["m"], unbuilt, results, [])) == expected
+
+
+def git(repo, *arguments):
+    subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", *arguments], cwd=repo, check=True, capture_output=True)
+
+
+def branch_off_main(repo, files):
+    """A git repo whose main holds `files`, checked out on a new branch."""
+    for name, text in files.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(text)
+    git(repo, "init", "-b", "main")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "base")
+    git(repo, "switch", "-c", "branch")
+
+
+def test_only_the_models_the_branch_adds_or_changes_count_as_changed(tmp_path, monkeypatch):
+    project = tmp_path / "transformation"
+    names = ("edited", "gone", "kept", "moved", "touched_on_main")
+    branch_off_main(tmp_path, {
+        **{f"transformation/models/marts/{name}.sql": f"select 1 as {name}\n" for name in names},
+        **{f"transformation/{path}": "select 1\n" for path in ("analyses/a.sql", "macros/m.sql", "tests/t.sql", "models/marts/_models.yml")},
+    })  # fmt: skip
+    git(tmp_path, "switch", "main")
+    (project / "models/marts/touched_on_main.sql").write_text("select 2\n")
+    git(tmp_path, "commit", "-am", "later on main")
+    git(tmp_path, "switch", "branch")
+    for path in ("models/marts/edited.sql", "analyses/a.sql", "macros/m.sql", "tests/t.sql", "models/marts/_models.yml"):
+        (project / path).write_text("select 3\n")
+    (project / "models/staging/new.sql").parent.mkdir(parents=True)
+    (project / "models/staging/new.sql").write_text("select 4\n")
+    git(tmp_path, "rm", "-q", "transformation/models/marts/gone.sql")
+    git(tmp_path, "mv", "transformation/models/marts/moved.sql", "transformation/models/marts/renamed.sql")
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-m", "change")
+    (project / "models/marts/kept.sql").write_text("select 5\n")
+    (project / "models/marts/untracked.sql").write_text("select 6\n")
+    monkeypatch.setattr(planted_bugs, "PROJECT", project)
+    assert planted_bugs.changed_models("main") == [
+        "models/marts/edited.sql", "models/marts/kept.sql", "models/marts/renamed.sql", "models/marts/untracked.sql", "models/staging/new.sql",
+    ]  # fmt: skip
+
+
+def test_a_branch_that_changes_no_model_passes_without_a_server(tmp_path, monkeypatch, capsys):
+    branch_off_main(tmp_path, {"transformation/models/m.sql": "select 1\n", "transformation/macros/m.sql": "select 1\n"})
+    (tmp_path / "transformation/macros/m.sql").write_text("select 2\n")
+    monkeypatch.setattr(planted_bugs, "PROJECT", tmp_path / "transformation")
+    for name in planted_bugs.SERVER:
+        monkeypatch.delenv(name, raising=False)
+    assert planted_bugs.main(["--changed-since", "main"]) == 0
+    assert capsys.readouterr().out == "No model changed since main, so the check plants no bug and passes.\n"
+
+
+def test_a_base_git_does_not_know_is_bad_input(capsys):
+    assert planted_bugs.main(["--changed-since", "no-such-ref"]) == 2
+    assert "planted_bugs.py: git cannot list the models changed since no-such-ref:" in capsys.readouterr().err
+
+
 PROJECT = {
     "dbt_project.yml": "name: sample\nversion: '1.0.0'\nprofile: transformation\nmodel-paths: [models]\n",
     "models/sources.yml": "sources:\n  - name: raw\n    schema: \"{{ env_var('RAW_SCHEMA', 'raw') }}\"\n    tables:\n      - name: things\n",
@@ -242,10 +327,34 @@ def test_a_run_catches_bugs_a_test_covers_and_misses_the_ones_none_does(sample_p
     }
     assert "1 test(s) fail before any bug is planted, so they catch nothing: unbuilt.never_passes" in printed.err
     assert "1 model(s) do not build before any bug is planted, so none was planted in them: unbuilt" in printed.err
+    assert "1 model(s) have no place for a bug: stg_things" in printed.err
+
+
+def test_the_check_fails_the_changed_models_whose_tests_prove_nothing(sample_project, capsys):
+    project = planted_bugs.PROJECT
+    branch_off_main(project.parent, {})
+    for name in ("tested", "untested", "unbuilt"):
+        with (project / "models" / f"{name}.sql").open("a") as model:
+            model.write("-- changed on the branch\n")
+    git(project.parent, "commit", "-am", "change three models")
+    assert planted_bugs.main(["--changed-since", "main"]) == 1
+    printed = capsys.readouterr().out
+    assert "| tested | 6 | 6 | 0 | 0 | 0 | 0 | 100% |" in printed
+    assert "lazy" not in printed
+    assert printed.endswith(
+        "The check fails for these changed models:\n\n"
+        "- unbuilt does not build before any bug is planted. Fix it, or the unit test that fails on it: dbt skips a model whose unit test fails.\n"
+        "- untested: no test catches any bug planted in it. Write a unit test that fails under one of these:\n"
+        "  - untested:2 (arithmetic) `select id, amount + 1 as bumped` became `select id, amount - 1 as bumped`\n"
+        "  - untested:4 (bound) `where amount < 100` became `where amount <= 100`\n"
+        "  - untested:4 (condition) `where amount < 100` became `(line removed)`\n"
+        "  - untested:2 (number) `select id, amount + 1 as bumped` became `select id, amount + 2 as bumped`\n"
+        "  - untested:4 (number) `where amount < 100` became `where amount < 101`\n"
+    )
 
 
 def test_no_server_settings_is_bad_input(monkeypatch, capsys):
     for name in planted_bugs.SERVER:
         monkeypatch.delenv(name, raising=False)
-    assert planted_bugs.main([]) == 1
+    assert planted_bugs.main([]) == 2
     assert "set WAREHOUSE_HOST, WAREHOUSE_PORT, WAREHOUSE_USER, WAREHOUSE_PASSWORD" in capsys.readouterr().err

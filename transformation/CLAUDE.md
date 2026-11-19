@@ -12,6 +12,8 @@ The dbt project. Run dbt with the command in the root `CLAUDE.md`, which exports
 - A test that covers every entry of a seed, such as each feed in `chainlink_feeds`, starts from the seed and left joins the loaded rows, so an entry with no rows fails instead of dropping out. It also counts rows per key, so a duplicate fails. `macros/reference_mismatches.sql` does both.
 - YAML sits beside the models: `_<name>__sources.yml` and `_<name>__models.yml` in staging, `_int_<pipeline>__models.yml` in intermediate (`balances/` has one per chain), `_<pipeline>__models.yml` in marts.
 
+On a pull request, CI plants bugs in each model you add or change, and fails when no unit test catches them (`docs/planted-bugs.md`). So a new or changed model needs a unit test.
+
 ## Materialization
 
 - Staging builds views and marts build tables. Intermediate models default to ephemeral; most pipeline folders override that with `+materialized: view` in `dbt_project.yml`, so each model shows as its own step in Dagster. Do the same for a new folder.

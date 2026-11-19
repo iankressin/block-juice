@@ -8,7 +8,11 @@ Postgres server whose user may create databases:
 
 It works in a database of its own, which it creates and drops, so it reads and changes no warehouse. There it
 makes an empty raw table for every dbt source, loads the rows of --rows when given, and builds a copy of the dbt
-project. Exit codes: 0 done, 1 the input or the server is not what this needs.
+project.
+
+With --changed-since it plants bugs only in the models whose .sql file changed since a git ref, and checks that
+their tests catch them. CI runs it this way on every pull request. Exit codes: 0 done, or the check passed; 1 the
+check failed; 2 the input, the server or the project is not what this needs.
 """
 
 import argparse
@@ -16,6 +20,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -30,6 +35,9 @@ BUGS_PER_MODEL = 12
 # A dropped join condition can multiply rows without end. A statement this slow counts as its own outcome.
 STATEMENT_TIMEOUT_SECONDS = 60
 ROWS_BATCH_SIZE = 1000
+GIT_TIMEOUT_SECONDS = 30
+# A git pathspec, relative to the dbt project. Its * also matches a /, so it takes every folder under models/.
+MODEL_FILES = "models/*.sql"
 OUTCOMES = ("caught", "missed", "not_exercised", "build_error", "timeout")
 MATERIALIZED = ("view", "table", "incremental")
 
@@ -60,7 +68,7 @@ Edit = tuple[int, int, str]
 
 
 class Invalid(Exception):
-    """The input, the server or the project is not what this script needs. main prints it and exits 1."""
+    """The input, the server or the project is not what this script needs. main prints it and exits 2."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,17 @@ class Bug:
     before: str
     after: str
     sql: str
+
+
+@dataclass(frozen=True)
+class Planted:
+    """One run: the models it planted bugs in, those of them that did not build before any bug, one result per
+    bug, and notes on what the run left out."""
+
+    models: list[str]
+    unbuilt: list[str]
+    results: list[dict]
+    notes: list[str]
 
 
 def masked(sql: str) -> str:
@@ -216,6 +235,10 @@ def rate(counts: dict[str, int]) -> str:
     return f"{100 * counts['caught'] // silent}%" if silent else ""
 
 
+def described(result: dict) -> str:
+    return f"{result['model']}:{result['line']} ({result['operator']}) `{result['before']}` became `{result['after']}`"
+
+
 def table(results: list[dict], notes: list[str]) -> str:
     """Markdown: one row per model, a total, each missed bug with its line and rewrite, then the notes."""
     models = sorted({result["model"] for result in results})
@@ -227,10 +250,44 @@ def table(results: list[dict], notes: list[str]) -> str:
     missed = [result for result in results if result["outcome"] == "missed"]
     if missed:
         lines += ["", "Missed: the output changed, and no test that passed or only warned before failed."]
-        lines += [f"- {r['model']}:{r['line']} ({r['operator']}) `{r['before']}` became `{r['after']}`" for r in missed]
+        lines += [f"- {described(result)}" for result in missed]
     if notes:
         lines += ["", *(f"Note: {note}" for note in notes)]
     return "\n".join(lines) + "\n"
+
+
+def check(planted: Planted) -> list[str]:
+    """Why the models fail the check: one Markdown item for each model that fails, none when all pass. A model
+    fails when it does not build before any bug, when a bug changes the output and no test catches it, or when
+    no test catches any bug that runs in it. A model with no place for a bug passes, and so does one whose every
+    bug breaks the build or times out, since no test could catch those."""
+    failures = []
+    for name in planted.models:
+        mine = [result for result in planted.results if result["model"] == name]
+        missed = [result for result in mine if result["outcome"] == "missed"]
+        unexercised = [result for result in mine if result["outcome"] == "not_exercised"]
+        if name in planted.unbuilt:
+            failures.append(f"- {name} does not build before any bug is planted. Fix it, or the unit test that fails on it: dbt skips a model whose unit test fails.")
+        elif missed:
+            failures.append(f"- {name}: these bugs change the output and no test catches them. Write unit tests that fail under them:" + "".join(f"\n  - {described(result)}" for result in missed))
+        elif unexercised and not any(result["outcome"] == "caught" for result in mine):
+            failures.append(f"- {name}: no test catches any bug planted in it. Write a unit test that fails under one of these:" + "".join(f"\n  - {described(result)}" for result in unexercised))
+    return failures
+
+
+def changed_models(base: str) -> list[str]:
+    """The model files, relative to the dbt project, that the working tree adds or changes since the commit where
+    HEAD left `base`, new files git does not track yet included. A deleted model is gone, so it does not count."""
+    found = []
+    for command in (
+        ["git", "diff", "--name-only", "--relative", "--diff-filter=d", "--merge-base", base, "--", MODEL_FILES],
+        ["git", "ls-files", "--others", "--exclude-standard", "--", MODEL_FILES],
+    ):
+        listed = subprocess.run(command, cwd=PROJECT, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECONDS)
+        if listed.returncode:
+            raise Invalid(f"git cannot list the models changed since {base}: {' '.join(listed.stderr.split())}")
+        found += listed.stdout.splitlines()
+    return sorted(found)
 
 
 def dbt(project: Path, *arguments: str):
@@ -301,11 +358,11 @@ def load_raw(connection, manifest: dict, rows: Path | None) -> None:
     connection.commit()
 
 
-def plant(project: Path, connection, manifest: dict, names: list[str], per_operator: int, per_model: int, say) -> tuple[list[dict], list[str]]:
+def plant(project: Path, connection, manifest: dict, names: list[str], per_operator: int, per_model: int, say) -> Planted:
     """Build the whole project once as it is, then plant each bug, rebuild its model and everything
-    downstream, and record what the tests and the output did. Returns one result per bug, and notes on what
-    the first build left out: a test that fails before any bug catches none, and a model that does not build
-    gets none."""
+    downstream, and record what the tests and the output did. The notes say what the run left out: a test
+    that fails before any bug catches none, a model that does not build gets none, and a model may have no
+    place for one."""
     import psycopg2
 
     models = {node["name"]: node for node in manifest["nodes"].values() if node["resource_type"] == "model"}
@@ -313,7 +370,7 @@ def plant(project: Path, connection, manifest: dict, names: list[str], per_opera
     # The whole project, so every relation a later rebuild reads is there.
     first = statuses(dbt(project, "build", "--full-refresh"))
     if first is None or any(node.startswith("model.") and status == "error" for node, (status, _) in first.items()):
-        failed = [f"{node}: {message}" for node, (status, message) in (first or {}).items() if status == "error"][:3]
+        failed = [f"{node}: {message}" for node, (status, message) in (first or {}).items() if node.startswith("model.") and status == "error"][:3]
         raise Invalid("the project does not build before any bug is planted: " + ("; ".join(failed) or "dbt could not start"))
     baseline = {node: status for node, (status, _) in first.items()}
     built = {node: relations[node] for node, status in baseline.items() if node in relations and status == "success"}
@@ -329,13 +386,15 @@ def plant(project: Path, connection, manifest: dict, names: list[str], per_opera
     say(f"built {len(built)} models")
     for note in notes:
         say(note)
-    results = []
+    results, empty = [], []
     for name in names:
         if name in unbuilt:
             continue
         path = project / models[name]["original_file_path"]
         authored = path.read_text(encoding="utf-8")
         planted = bugs(name, authored, per_operator, per_model)
+        if not planted:
+            empty.append(name)
         for bug in planted:
             path.write_text(bug.sql, encoding="utf-8")
             run = statuses(dbt(project, "build", "--full-refresh", "--select", f"{name}+"))
@@ -358,10 +417,13 @@ def plant(project: Path, connection, manifest: dict, names: list[str], per_opera
             connection.commit()
         counts = {kind: sum(r["model"] == name and r["outcome"] == kind for r in results) for kind in OUTCOMES}
         say(", ".join([f"{name}: {len(planted)} planted", *(f"{count} {kind}" for kind, count in counts.items() if count)]))
-    return results, notes
+    if empty:
+        notes.append(f"{len(empty)} model(s) have no place for a bug: {', '.join(empty)}")
+        say(notes[-1])
+    return Planted(names, unbuilt, results, notes)
 
 
-def run(select: list[str], rows: Path | None, per_operator: int, per_model: int, say) -> tuple[list[dict], list[str]]:
+def run(select: list[str], rows: Path | None, per_operator: int, per_model: int, say) -> Planted:
     import psycopg2
     from psycopg2 import sql
 
@@ -399,7 +461,12 @@ def run(select: list[str], rows: Path | None, per_operator: int, per_model: int,
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="planted_bugs.py", description=__doc__.split("\n\n")[0])
-    parser.add_argument("--select", nargs="+", default=[], metavar="SELECTOR", help="dbt selectors for the models to plant bugs in; every model when left out")
+    chosen = parser.add_mutually_exclusive_group()
+    chosen.add_argument("--select", nargs="+", default=[], metavar="SELECTOR", help="dbt selectors for the models to plant bugs in; every model when left out")
+    chosen.add_argument(
+        "--changed-since", metavar="REF",
+        help="plant bugs only in the models whose .sql file changed since HEAD left the git ref REF, and exit 1 when their tests prove nothing about them",
+    )  # fmt: skip
     parser.add_argument("--rows", type=Path, help="a folder of <raw table>.jsonl files to load, one {id, data} object a line; the raw tables stay empty without it")
     parser.add_argument("--per-operator", type=int, default=BUGS_PER_OPERATOR, help=f"bugs of one kind in one model, at most (default {BUGS_PER_OPERATOR})")
     parser.add_argument("--per-model", type=int, default=BUGS_PER_MODEL, help=f"bugs in one model, at most (default {BUGS_PER_MODEL})")
@@ -407,12 +474,27 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.per_operator < 1 or args.per_model < 1:
         parser.error("--per-operator and --per-model must be at least 1")
+    # The check's verdict goes after the table, or out of the way of the JSON lines.
+    verdict = sys.stderr if args.json else sys.stdout
     try:
-        results, notes = run(args.select, args.rows, args.per_operator, args.per_model, lambda text: print(f"planted_bugs.py: {text}", file=sys.stderr, flush=True))
+        select = args.select
+        if args.changed_since is not None:
+            select = [f"path:{path}" for path in changed_models(args.changed_since)]
+            if not select:
+                print(f"No model changed since {args.changed_since}, so the check plants no bug and passes.", file=verdict)
+                return 0
+        planted = run(select, args.rows, args.per_operator, args.per_model, lambda text: print(f"planted_bugs.py: {text}", file=sys.stderr, flush=True))
     except Invalid as error:
         print(f"planted_bugs.py: {error}", file=sys.stderr)
+        return 2
+    sys.stdout.write("".join(json.dumps(result) + "\n" for result in planted.results) if args.json else table(planted.results, planted.notes))
+    if args.changed_since is None:
+        return 0
+    failures = check(planted)
+    if failures:
+        print("\nThe check fails for these changed models:\n\n" + "\n".join(failures), file=verdict)
         return 1
-    sys.stdout.write("".join(json.dumps(result) + "\n" for result in results) if args.json else table(results, notes))
+    print(f"\nThe check passes for {', '.join(planted.models)}.", file=verdict)
     return 0
 
 
