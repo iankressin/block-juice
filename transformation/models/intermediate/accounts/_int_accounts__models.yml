@@ -44,3 +44,17 @@ unit_tests:
         - {address: "0xaa", block_number: 1, balance_wei: 9, code_kind: none}
         - {address: "0xbb", block_number: 1, balance_wei: null, code_kind: eip7702_delegation}
         - {address: "0xcc", block_number: 1, balance_wei: null, code_kind: contract}
+  - name: one_row_holds_the_balance_nonce_and_code_read_at_a_block
+    description: >-
+      Made up: three reads of one address at one block, one of each kind. Each value lands in its own
+      column of one row, so the nonce comes from the nonce read, not from the balance or code reads.
+    model: int_ethereum_account_states
+    given:
+      - input: ref('stg_ethereum__account_state')
+        rows:
+          - {kind: balance, block_number: 1, address: "0xaa", balance: 9, _loaded_at: "2026-11-10 00:00:00"}
+          - {kind: nonce, block_number: 1, address: "0xaa", nonce: 3, _loaded_at: "2026-11-10 00:00:00"}
+          - {kind: code, block_number: 1, address: "0xaa", code: "0x", _loaded_at: "2026-11-10 00:00:00"}
+    expect:
+      rows:
+        - {address: "0xaa", block_number: 1, balance_wei: 9, nonce: 3, code: "0x", code_kind: none}
