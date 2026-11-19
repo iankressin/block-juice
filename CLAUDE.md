@@ -4,6 +4,8 @@ A self-hosted ELT framework for chain data. TypeScript sources in `ingestion/` l
 
 `ingestion/`, `transformation/` and `orchestration/` each have a CLAUDE.md with that layer's rules, and `.github/` has one for the factory workflows.
 
+Each folder with code has a README.md with its contract (interface, invariants and side effects) and a CLAUDE.md that imports it. The root README's "Code map" section links the four layers, and each layer's README links the folders under it.
+
 ## Commands
 
 Run these from the repo root. None needs a `cd`.

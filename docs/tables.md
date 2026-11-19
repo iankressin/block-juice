@@ -1,0 +1,464 @@
+# Tables
+
+Every table below lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so each table covers the addresses you follow, not the whole chain. Every row traces back to the raw rows in `raw.<chain>_<table>` it was built from, such as `raw.ethereum_uniswap_v3`, and one Dagster job per pipeline rebuilds its tables each day at 06:00 UTC once you enable its schedule.
+
+Each section says what a row is, where it comes from, and lists the columns with their types. The [README](../README.md#what-it-covers) shows which chains each table covers.
+
+## Balances
+
+`analytics.latest_balances`
+
+Each wallet's latest balance of each asset, in the asset's base units: wei, lamports, satoshis or token units. One row per chain, wallet and asset. Covers ETH and ERC-20 on Ethereum, SOL and SPL on Solana, and BTC on Bitcoin.
+
+The `balances` pipeline builds it from five call sources: `evm-eth-balances`, `evm-erc20-balances`, `solana-sol-balances`, `solana-spl-balances` and `bitcoin-btc-balances`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `solana` or `bitcoin`. |
+| `wallet` | text | The address whose balance was read. |
+| `asset_type` | text | `native`, `erc20` or `spl`. |
+| `asset` | text | `eth`, `sol` or `btc`, or the token or mint address. |
+| `block_number` | bigint | The block, or Solana slot, the balance was read at. |
+| `balance` | numeric | The amount in the asset's base units. |
+
+## Transfers
+
+`analytics.erc20_transfers`, `analytics.classified_transfers` and `analytics.labelled_wallet_flows`
+
+Every ERC-20 transfer of the tokens you list, or only those into or out of your wallets. One row per Transfer log, in the token's base units. `classified_transfers` adds what kind of address each side is and sorts the transfer into a category: bridge, exchange, contract, p2p or unknown. Covers Ethereum, Arbitrum and Base. Classification reads [labels](#labels), which cover Arbitrum and Base.
+
+The `transfers` pipeline builds both from the stream source `evm-erc20-transfers`, which reads Portal.
+
+### `erc20_transfers`
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `arbitrum` or `base`. |
+| `id` | text | The log's place on its chain, `<block>:<logIndex>`. Unique with `chain`. |
+| `block_number` | bigint | The block the transfer was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+| `token` | text | The token's contract address, lowercased. |
+| `from_address` | text | The sender, lowercased. |
+| `to_address` | text | The receiver, lowercased. |
+| `value` | numeric | The amount in the token's base units. |
+
+### `classified_transfers`
+
+Every column of `erc20_transfers`, and these:
+
+| Column | Type | Description |
+|---|---|---|
+| `from_kind` | text | `exchange`, `deposit`, `contract`, `eoa`, `bridge` or `unknown`. |
+| `from_exchange` | text | The exchange behind an exchange or deposit address. Else null. |
+| `from_entity` | text | The exchange, `bridge:<chain>`, or the address itself. |
+| `from_group` | text | The kind, with a deposit address counted as `exchange`. |
+| `to_kind` | text | As `from_kind`, for the receiver. |
+| `to_exchange` | text | As `from_exchange`, for the receiver. |
+| `to_entity` | text | As `from_entity`, for the receiver. |
+| `to_group` | text | As `from_group`, for the receiver. |
+| `category` | text | `bridge`, `exchange`, `contract`, `p2p` or `unknown`. |
+
+### `labelled_wallet_flows`
+
+One row per value movement that touches a wallet in `seeds/wallet_labels`, seen from the labelled entity's side. A movement is a successful top-level transaction with value from `wallet_transactions` (asset `native`, value in wei) or an ERC-20 Transfer from `erc20_transfers` (asset is the token's address). A movement between two entities comes once for each.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | The chain the movement was on. |
+| `id` | text | The movement's id in its mart: `tx:<hash>` or `<block>:<logIndex>`. Unique with `chain` and `entity`. |
+| `block_number` | bigint | The block the movement was in. |
+| `asset` | text | `native`, or the token's address. |
+| `value` | numeric | The amount, in wei or the token's base units. |
+| `entity` | text | The labelled entity. |
+| `wallet` | text | The entity's side of the movement, the sender for `intra`. |
+| `direction` | text | `inflow`, `outflow` or `intra`. |
+| `counterparty_address` | text | The other side. |
+| `counterparty_entity` | text | The other side's entity; null when it has no label, or for `intra`. |
+
+## DEX trades
+
+`analytics.dex_trades`
+
+One Uniswap swap: the token the swapper received and the token they paid, in each token's base units, with no decimals or prices applied. One row per Swap log. Covers Uniswap v2, v3 and v4 on Ethereum, for the pools that trade the tokens you list.
+
+The `dex` pipeline builds it from the stream sources `evm-uniswap-v2`, `evm-uniswap-v3` and `evm-uniswap-v4`.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The Swap log's place on its chain, `<block>:<logIndex>`. |
+| `chain` | text | `ethereum`. |
+| `protocol` | text | `uniswap`. |
+| `version` | text | `v2`, `v3` or `v4`. |
+| `pool` | text | The pool's address, or its id in v4. |
+| `block_number` | bigint | The block the swap was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+| `tx_from` | text | Who signed the transaction. |
+| `sender` | text | The pool's own sender field, often a router. |
+| `recipient` | text | The pool's own recipient field. Null in v4. |
+| `hooks` | text | The v4 pool's hooks contract. Null in v2 and v3. |
+| `token_bought` | text | The token the swapper received. The zero address is native ETH. |
+| `amount_bought` | numeric | How much of it, in base units. |
+| `token_sold` | text | The token the swapper paid. |
+| `amount_sold` | numeric | How much of it, in base units. |
+
+## Bridges
+
+`analytics.bridge_transfers` and `analytics.bridge_pairs`
+
+One token move between an L2 and Ethereum through the chain's own bridge, in the token's base units. `direction` is `to_ethereum` for a withdrawal and `from_ethereum` for a deposit. `bridge_pairs` matches a withdrawal from one L2 with the deposit into another L2 it could have paid for: the same Ethereum address, token and amount, after the withdrawal chain's finality delay. The match uses amount and timing only. It does not read the Ethereum leg, which would prove it. Covers the Arbitrum token bridge and the OP Standard Bridge on Base, for the Ethereum tokens you list.
+
+The `bridges` pipeline builds both from the stream sources `arbitrum-token-bridge` and `evm-op-standard-bridge`.
+
+### `bridge_transfers`
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `arbitrum` or `base`, the L2 the move was read on. |
+| `id` | text | The log's place on its chain, `<block>:<logIndex>`. Unique with `chain`. |
+| `direction` | text | `to_ethereum` for a withdrawal, `from_ethereum` for a deposit. |
+| `l2_address` | text | The address on the L2 side. |
+| `ethereum_address` | text | The address on the Ethereum side. |
+| `ethereum_token` | text | The token's address on Ethereum. |
+| `l2_token` | text | The token's address on the L2. |
+| `amount` | numeric | The amount in the token's base units. |
+| `block_number` | bigint | The block the move was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+
+### `bridge_pairs`
+
+| Column | Type | Description |
+|---|---|---|
+| `from_chain` | text | The L2 the withdrawal left. |
+| `from_address` | text | The address it left from. |
+| `ethereum_address` | text | The Ethereum address both legs share. |
+| `to_chain` | text | The L2 the deposit reached. |
+| `to_address` | text | The address it reached. |
+| `ethereum_token` | text | The Ethereum token both legs share. |
+| `amount` | numeric | The amount both legs share, in base units. |
+| `withdrawal_id` | text | The withdrawal's `id` in `bridge_transfers`. |
+| `withdrawn_at` | timestamptz | When the withdrawal was made. |
+| `withdrawal_tx_hash` | text | The withdrawal's transaction. |
+| `deposit_id` | text | The deposit's `id` in `bridge_transfers`. |
+| `deposited_at` | timestamptz | When the deposit was made. |
+| `deposit_tx_hash` | text | The deposit's transaction. |
+| `candidates` | bigint | How many withdrawals could have paid for the deposit. |
+
+## Labels
+
+`analytics.address_labels`
+
+What kind of address each listed address is: `exchange` when the seed names it, `contract` when it has code, else `eoa`, which includes EIP-7702 delegations. One row per chain and address, with the exchange that owns it when one does. Covers Arbitrum and Base.
+
+The `labels` pipeline builds it from the call source `evm-address-code`, which reads each address's code with `eth_getCode`, and the seed `transformation/seeds/cex_addresses.csv`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `arbitrum` or `base`. |
+| `address` | text | The address, lowercased. |
+| `code_block` | bigint | The block the code was read at. |
+| `code_kind` | text | `contract`, `eip7702_delegation` or `none`. |
+| `exchange` | text | The exchange that owns the address, from the seed. Else null. |
+| `exchange_label` | text | The seed's label for the address, such as `Coinbase 1`. Else null. |
+| `kind` | text | `exchange`, `contract` or `eoa`. |
+
+## Tokens
+
+`analytics.tokens`
+
+Each listed token's latest `name`, `symbol` and `decimals`. One row per chain and token. Symbols repeat, so key on `chain` and `token`. A null `decimals` means the contract has none, so never assume 18. Covers ERC-20 tokens on Ethereum, Arbitrum and Base.
+
+The `tokens` pipeline builds it from the call source `evm-erc20-metadata`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `arbitrum` or `base`. |
+| `token` | text | The token's contract address, lowercased. |
+| `name` | text | What `name()` returned, with a `bytes32` reply decoded. Null when the call reverted. |
+| `symbol` | text | What `symbol()` returned, decoded like `name`. Null when the call reverted. |
+| `decimals` | integer | What `decimals()` returned. Null when the contract has none. |
+| `block_number` | bigint | The block the reading was taken at. |
+
+## Exchange prices
+
+`analytics.token_prices`
+
+One candle of one token against one quote asset at one interval, from one exchange. Prices are in quote-asset units and volume in token units. Covers Binance and Coinbase spot markets, for the pairs in each source's `tokens.json`. Binance serves intervals from `1m` to `1w`, Coinbase `1m`, `5m`, `15m`, `1h`, `6h` and `1d`.
+
+The `prices` pipeline builds it from the call sources `binance-candles` and `coinbase-candles`, which read each exchange's public market-data API.
+
+| Column | Type | Description |
+|---|---|---|
+| `exchange` | text | `binance` or `coinbase`. |
+| `token` | text | The token's ticker on the exchange, such as `UNI`. |
+| `quote` | text | The asset the prices are in, such as `USDT` or `USD`. |
+| `interval` | text | The candle's length in Binance's names, such as `1h` or `1d`. |
+| `open_time` | timestamptz | When the candle opened. |
+| `close_time` | timestamptz | The candle's last millisecond. |
+| `open` | numeric | The first trade's price, in quote-asset units. |
+| `high` | numeric | The highest trade price. |
+| `low` | numeric | The lowest trade price. |
+| `close` | numeric | The last trade's price. |
+| `volume` | numeric | How much of the token traded, in token units. |
+| `quote_volume` | numeric | How much of the quote asset traded. Null for Coinbase. |
+| `trades` | bigint | How many trades the candle holds. Null for Coinbase. |
+
+## Oracle prices
+
+`analytics.oracle_prices`
+
+One round of one Chainlink price feed: the answer scaled by the feed's decimals into a price in quote units, with the round id the feed's proxy reports. One row per round. Covers Chainlink feeds on Ethereum, Arbitrum and Base, for the aggregators you list.
+
+The `prices` pipeline builds it from the stream source `evm-chainlink-price-feeds` and the seed `transformation/seeds/chainlink_feeds.csv`, which names each aggregator's feed, proxy, phase, decimals and heartbeat.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`, `arbitrum` or `base`. |
+| `oracle` | text | `chainlink`. |
+| `id` | text | The log's place on its chain, `<block>:<logIndex>`. Unique with `chain`. |
+| `feed` | text | The feed's name as its proxy describes it, such as `ETH / USD`. |
+| `token` | text | The asset the feed prices, such as `ETH`. |
+| `quote` | text | The asset the price is in, such as `USD`. |
+| `proxy` | text | The address the feed is known by and that users read. |
+| `aggregator` | text | The contract that stored the round and emitted its log. |
+| `round_id` | numeric | The round's id as the proxy reports it. |
+| `price` | numeric | The answer scaled by `decimals`, in quote units. |
+| `answer` | numeric | The answer as the aggregator emitted it, an integer in the feed's decimals. |
+| `decimals` | integer | How many decimals the feed's answer carries. |
+| `updated_at` | timestamptz | When the aggregator stored the round. |
+| `block_number` | bigint | The block the round's log was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+
+## Polymarket
+
+`analytics.polymarket_markets`, `analytics.polymarket_trades`, `analytics.polymarket_wallet_fills`, `analytics.polymarket_price_candles` and `analytics.polymarket_market_participants`
+
+Polymarket's prediction markets on Polygon. A market is one condition in ConditionalTokens, with one outcome token per outcome. Once the market resolves, a share of each outcome redeems for that outcome's payout fraction in pUSD. Amounts are whole pUSD and whole shares, not base units. The `addresses.json` files list Polymarket's own contracts, so the tables cover every market, from the block the stream sources start at. A market prepared before that block has `history_complete` false, and its trades, candles and PnL miss what came before.
+
+The `polymarket` pipeline builds all five from the call source `polymarket-markets`, which reads Polymarket's Gamma API for market names, and two stream sources that read Portal. `polygon-polymarket-ctf` loads each condition's preparation and resolution, and the splits, merges, redemptions and conversions of ConditionalTokens, the NegRiskAdapter, and the adapters and auto-redeemers in front of them. `polygon-polymarket-ctf-exchange-v2` loads every fill of the three CTF Exchange v2 contracts.
+
+To follow specific wallets, list them under `wallets` in both stream sources' `addresses.json`. New runs load those wallets' fills, splits, merges, redemptions and conversions. Conditions and resolutions still load for every market. The trades and candles use maker fills, so taker-only trades by the selected wallets do not contribute. With wallet-scoped history, `history_complete` describes block coverage and open positions are valued at the tracked wallets' trade prices. Trust PnL on resolved markets only.
+
+Changing the wallet list preserves previously loaded rows. If a warehouse previously tracked the whole market, its trades and candles still include other wallets' historical fills alongside the newly filtered data. For wallet-only marts, set the wallet lists before the first load into an empty `RAW_SCHEMA`, choose a separate `DBT_SCHEMA` for the models, and run the Polymarket pipeline over the desired window. Use `bj coverage` to inspect verified filters and ranges. See the [backfill instructions](source-provenance.md#nondestructive-backfill) for untracked history.
+
+### `polymarket_markets`
+
+One row per market.
+
+| Column | Type | Description |
+|---|---|---|
+| `condition_id` | text | The market's condition in ConditionalTokens. Unique. |
+| `market_id` | text | Gamma's market id. |
+| `question` | text | Gamma's question. |
+| `slug` | text | Gamma's slug for the market. |
+| `event_id` | text | Gamma's event id. A neg-risk event holds several markets. |
+| `event_title` | text | Gamma's title for the event. |
+| `neg_risk` | boolean | True when the market belongs to a neg-risk event. |
+| `protocol` | text | `ctf`, for markets that settle in ConditionalTokens. |
+| `outcomes` | text[] | Gamma's outcome names, such as `Yes` and `No`. |
+| `end_date` | timestamptz | When Gamma says the market ends. |
+| `prepared_block` | bigint | The block of the condition's ConditionPreparation log. Null when that came before the start block. |
+| `resolved_at` | timestamptz | When the condition resolved. Null until then. |
+| `payout_fractions` | numeric[] | The pUSD one share of each outcome redeems for, in the order of `outcomes`. Null until resolved. |
+| `history_complete` | boolean | True when the condition was prepared at or after the first block every Polymarket stream source loaded. Its trades, candles and PnL are then whole, unless the stream sources list `wallets`. |
+
+### `polymarket_trades`
+
+One row per fill of a maker order. A match also logs the taker order's own fill, which repeats the same trade, so that one stays out.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The OrderFilled log's place on Polygon, `<block>:<logIndex>`. Unique. |
+| `version` | text | `ctf_exchange_v2`. |
+| `exchange` | text | The exchange contract that emitted the fill. |
+| `block_number` | bigint | The block the fill was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `tx_hash` | text | The transaction the log was in. |
+| `log_index` | integer | The log's position in the block. |
+| `condition_id` | text | The market the token belongs to. |
+| `token_id` | numeric | The outcome token traded. |
+| `outcome` | text | Gamma's name for the token's outcome. |
+| `maker` | text | The maker order's owner: the proxy wallet or Safe that Polymarket shows as the trader. |
+| `taker` | text | The taker order's owner. |
+| `maker_side` | text | `buy` or `sell`, for the maker. |
+| `shares` | numeric | Outcome tokens traded. |
+| `usdc` | numeric | pUSD paid or received, before fees. |
+| `price` | numeric | `usdc / shares`, in pUSD per share. |
+| `fee_usdc` | numeric | The maker's fee, in pUSD. |
+
+### `polymarket_wallet_fills`
+
+One row per fill per wallet: every OrderFilled, read for the wallet whose pUSD or shares moved, with its role in the match. Unlike `polymarket_trades`, which keeps maker fills only, it keeps the taker order's own fills too, so a wallet's taker fills count.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The OrderFilled log's key from the raw table. |
+| `block_timestamp` | timestamptz | When that block was mined. |
+| `tx_hash` | text | The transaction the fill was in. |
+| `wallet` | text | The order's owner, the proxy wallet or Safe that Polymarket shows as the trader. |
+| `role` | text | `taker` on the taker order's own fill; `maker` on every other fill, where the wallet's order rested on the book. |
+| `counterparty` | text | The taker order's owner on a maker fill; null on a taker fill. |
+| `condition_id` | text | The market the token belongs to; null when Gamma lacks the token. |
+| `token_id` | numeric | The outcome token traded. |
+| `side` | text | `buy` or `sell`, for the wallet. |
+| `shares` | numeric | Outcome tokens traded. |
+| `usdc` | numeric | pUSD paid or received, before fees. |
+| `fee_usdc` | numeric | The wallet's fee in pUSD. |
+| `price` | numeric | `usdc / shares`, in pUSD per share. |
+
+### `polymarket_price_candles`
+
+One row per outcome token and minute, in pUSD per share. In a two-outcome market a trade of one outcome at a price also prices the other at 1 minus that price, so a token can have a candle in a minute it did not trade.
+
+| Column | Type | Description |
+|---|---|---|
+| `token_id` | numeric | The outcome token. |
+| `minute` | timestamptz | The minute the candle covers, from its start. |
+| `condition_id` | text | The market the token belongs to. |
+| `outcome` | text | Gamma's name for the token's outcome. |
+| `open` | numeric | The minute's first price. |
+| `high` | numeric | The minute's highest price. |
+| `low` | numeric | The minute's lowest price. |
+| `close` | numeric | The minute's last price. |
+| `trades` | bigint | The token's own trades in the minute. 0 when only the other outcome traded. |
+| `shares_volume` | numeric | Shares of the token traded in the minute. |
+| `usdc_volume` | numeric | pUSD paid for them, before fees. |
+
+### `polymarket_market_participants`
+
+One row per market and wallet: every wallet that traded, split, merged, redeemed or converted in the market. `pnl_usdc` is the cash the wallet got, after fees, plus what its shares are worth.
+
+| Column | Type | Description |
+|---|---|---|
+| `condition_id` | text | The market. |
+| `wallet` | text | The proxy wallet or Safe that Polymarket shows as the trader. |
+| `trades` | bigint | The wallet's fills in the market, as the maker of either order. |
+| `buy_usdc` | numeric | pUSD the wallet paid for shares, before fees. |
+| `sell_usdc` | numeric | pUSD the wallet got for shares, before fees. |
+| `fees_usdc` | numeric | Fees the wallet paid on its fills, in pUSD. |
+| `net_cash_usdc` | numeric | Cash the wallet got less cash it paid, from trades, splits, merges, redemptions and conversions, after fees. |
+| `open_shares` | numeric | Shares the wallet still holds, over all the market's outcomes. |
+| `position_value_usdc` | numeric | What those shares are worth: each outcome's shares times its payout fraction once resolved, else the close of its last candle. Null when a held outcome has no price. |
+| `pnl_usdc` | numeric | `net_cash_usdc + position_value_usdc`. Null when `position_value_usdc` is. |
+| `first_activity_at` | timestamptz | The wallet's first move in the market. |
+| `last_activity_at` | timestamptz | The wallet's last move in the market. |
+| `resolved` | boolean | True when the market has resolved. |
+| `history_complete` | boolean | The market's `history_complete`. When false, PnL misses what happened before the start block. |
+
+## HyperCore fills
+
+`analytics.hypercore_fills`
+
+One user's side of one trade on Hyperliquid's HyperCore. The two sides of a trade are two rows that share `tid`. One row per fill. Prices and `notional` are in the coin's quote asset, which may not be USD. Sizes are in units of the coin, and fees are in `fee_token`. Covers only the users and coins listed in `ingestion/sources/hypercore-fills/addresses.json`.
+
+The `hypercore` pipeline builds it from the stream source `hypercore-fills`, which reads Portal.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The fill's place on HyperCore, `<block>:<fillIndex>`. Unique. |
+| `block_number` | bigint | The block the fill was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `fill_time` | timestamptz | The fill's own time. |
+| `fill_index` | integer | The fill's position in the block. |
+| `tx_hash` | text | The action that made the trade. One action can make several trades. |
+| `tid` | bigint | The trade. Both of its sides share it. |
+| `oid` | bigint | The user's order. One order can fill in several trades. |
+| `cloid` | text | The user's own id for the order. Null when unset. |
+| `twap_id` | bigint | The TWAP order the fill belongs to. Null when unset. |
+| `user_address` | text | The user whose side this is, lowercased. |
+| `coin` | text | The coin as HyperCore spells it, such as `ZEC` or `xyz:SNDK`. |
+| `side` | text | `B` for a buy, `A` for a sell, for the user. |
+| `dir` | text | What the fill did to the user's position, such as `Open Long` or `Close Short`. |
+| `px` | numeric | The price, in the quote asset per coin. |
+| `sz` | numeric | How much of the coin traded. |
+| `signed_size` | numeric | `sz` for a buy, `-sz` for a sell. |
+| `notional` | numeric | `px * sz`, in the quote asset. |
+| `is_taker` | boolean | True on the taker's side of the trade. |
+| `start_position` | numeric | The user's position in the coin before the fill. Negative is short. |
+| `closed_pnl` | numeric | The profit or loss the fill realized by closing a position. |
+| `fee` | numeric | What the user paid, in `fee_token`. Negative is a rebate. |
+| `fee_token` | text | The token the fee is in, such as `USDC`. |
+| `builder` | text | The builder address on the order, lowercased. Null when none. |
+| `builder_fee` | numeric | The builder's fee. The data does not show whether `fee` includes it. |
+
+## HyperCore actions
+
+`analytics.hypercore_actions`
+
+One signed action a user sent to Hyperliquid's HyperCore: an order, a cancel, a modify, a leverage change, a transfer and the rest, accepted or rejected. One row per action. The payload and the L1's response stay as JSON. Orders name assets by number, not by coin. Covers only the users listed in `ingestion/sources/hypercore-actions/addresses.json`, which must list at least one.
+
+The `hypercore` pipeline builds it from the stream source `hypercore-actions`, which reads Portal. Portal serves actions about two hours behind fills.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | The action's place on HyperCore, `<block>:<actionIndex>`. Unique. |
+| `block_number` | bigint | The block the action was in. |
+| `block_timestamp` | timestamptz | When that block was produced. |
+| `action_index` | integer | The action's position in the block. |
+| `user_address` | text | The user who sent the action, lowercased. |
+| `vault_address` | text | The vault the user acted for, lowercased. Null when the user acted for itself. |
+| `action_type` | text | The kind of action, such as `order`, `cancelByCloid`, `batchModify` or `usdSend`. |
+| `action` | jsonb | The action as the user signed it. Its keys depend on `action_type`. |
+| `status` | text | `ok` or `err`, for the action as a whole. An `ok` action can still fail item by item. |
+| `response` | jsonb | The L1's answer, with per-item results. An object on most actions, a JSON string on some rejected ones. |
+| `nonce` | bigint | A time in milliseconds that the signer picks. |
+
+## Accounts
+
+`analytics.wallet_transactions`, `analytics.wallet_eth_outflows`, `analytics.account_states` and `analytics.address_attributions`
+
+The wallets you follow on Ethereum. `wallet_transactions` holds each top-level transaction sent from or to them, in wei; internal transfers, which only traces show, are not here. `wallet_eth_outflows` takes each successful one with value and gives it one class: `sold` (a CoW Protocol ETH Flow order that settled into a stablecoin back to the sender), `sent_to_exchange` (to an address in `seeds/cex_addresses`) or `sent_out`. `account_states` holds each address's balance, nonce and code at the blocks a source read it. `address_attributions` lists the addresses a public body ties to an incident, from `seeds/attributed_addresses`.
+
+The `accounts` pipeline builds them from the sources `evm-wallet-transactions` and `evm-account-state` and those seeds. `wallet_eth_outflows` also reads [`cow_ethflow_orders`](#cow-eth-flow).
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`. |
+| `tx_hash` | text | The transaction. |
+| `from_address` | text | The sender. |
+| `to_address` | text | The receiver. |
+| `value_wei` | numeric | The ETH sent, in wei. It moved only when `succeeded` is true. |
+| `succeeded` | boolean | Whether the transaction succeeded. |
+| `fee_wei` | numeric | `gas_used × effective_gas_price`, paid by `from_address` either way. |
+| `outflow_class` | text | `sold`, `sent_to_exchange` or `sent_out` (`wallet_eth_outflows`). |
+| `code_kind` | text | `none`, `eip7702_delegation` or `contract` (`account_states`). |
+| `attribution` | text | The incident a public body ties the address to (`address_attributions`). |
+
+## Deployments
+
+`analytics.deployment_state_gas`
+
+One contract-deployment transaction per row on Ethereum: a successful transaction with at least one create or create2 that stood. `state_gas` is the EIP-8037 state gas its creates and new storage slots would cost, as a lower bound, and `rule_version` names the rule. The `deployments` pipeline builds it from the source `evm-contract-deployments`.
+
+| Column | Type | Description |
+|---|---|---|
+| `chain` | text | `ethereum`. |
+| `tx_hash` | text | The deployment transaction. Unique while the table holds one chain. |
+| `block_number` | bigint | The block it was in. |
+| `code_bytes` | bigint | The bytes of code its creates left. |
+| `new_slots` | bigint | The new storage slots it wrote. |
+| `state_gas` | bigint | The EIP-8037 state gas, in gas, as a lower bound. |
+| `rule_version` | text | The rule `state_gas` follows. |
+
+## CoW ETH Flow
+
+`analytics.cow_ethflow_orders`
+
+One CoW Protocol ETH Flow order placed by a wallet you follow on Ethereum, with the settlement that filled it when one did. Amounts are in token base units; the ETH sent is in wei. An order is settled when a later GPv2Settlement Trade carries its UID. An order with no such Trade may be open, expired, refunded or invalidated; this table does not tell them apart. The `cow` pipeline builds it from the source `evm-cow-ethflow`.
+
+| Column | Type | Description |
+|---|---|---|
+| `order_uid` | text | The 56-byte GPv2 order UID. |
+| `tx_hash` | text | The transaction that placed the order. |
+| `owner` | text | The wallet that placed it. |
+| `eth_value_wei` | numeric | The ETH sent, in wei. |
+| `buy_token` | text | The token the order buys. |
+| `settled` | boolean | True when a later GPv2Settlement Trade carries its UID. |
+| `received_amount` | numeric | The buy token sent to the receiver, in base units. Null when not settled; 0 when nothing came or the receiver is not a wallet you follow. |
