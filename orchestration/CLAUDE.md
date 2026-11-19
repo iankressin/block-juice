@@ -1,5 +1,7 @@
 # Orchestration
 
+This folder's contract (interface, invariants and side effects) is in [README.md](README.md), and each folder under `pipeline/` has its own.
+
 Dagster definitions and the `bj` CLI, in Python. Run everything through `uv run --project orchestration` from the repo root.
 
 ## The CLI

@@ -1,5 +1,7 @@
 # Transformation
 
+This folder's contract (interface, invariants and side effects) is in [README.md](README.md), and each folder under `models/`, `macros/`, `analyses/` and `benchmarks/` has its own.
+
 The dbt project. Run dbt with the command in the root `CLAUDE.md`, which exports `.env` first. Raw tables live in `RAW_SCHEMA` (`raw`) and models build in `DBT_SCHEMA` (`analytics`).
 
 ## Layers
