@@ -47,7 +47,7 @@ def user_credentials(client_secret: Path) -> Credentials:
     """The cached token, refreshed when it has expired. The first time, or when Google refuses the refresh,
     the browser asks the user for consent. The new token goes to the cache."""
     if not client_secret.is_file():
-        raise BadInput(f"GOOGLE_OAUTH_CLIENT_SECRET is {client_secret}, which does not exist")
+        raise BadInput("GOOGLE_OAUTH_CLIENT_SECRET names a file that does not exist")
     try:
         credentials = Credentials.from_authorized_user_file(TOKEN, SCOPES) if TOKEN.is_file() else None
     except ValueError as error:
@@ -89,11 +89,12 @@ def connect() -> Any:
         credentials = user_credentials(Path(client_secret).expanduser())
     elif key := os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         if not Path(key).is_file():
-            raise BadInput(f"GOOGLE_APPLICATION_CREDENTIALS is {key}, which does not exist")
+            raise BadInput("GOOGLE_APPLICATION_CREDENTIALS names a file that does not exist")
         try:
             credentials = service_account.Credentials.from_service_account_file(key, scopes=SCOPES)
-        except ValueError as error:
-            raise BadInput(f"GOOGLE_APPLICATION_CREDENTIALS is not a service account key: {error}") from None
+        except ValueError:
+            # google-auth's error can quote the private key it could not read.
+            raise BadInput("GOOGLE_APPLICATION_CREDENTIALS is not a service account key") from None
     else:
         raise BadInput(SETUP)
     return build("drive", "v3", credentials=credentials, cache_discovery=False)

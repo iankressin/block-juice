@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import psycopg2
 import pytest
 
 from pipeline.cli import BadInput, coverage, main
@@ -170,6 +171,42 @@ def test_a_start_block_that_is_not_a_number_is_bad_input(repo, monkeypatch):
     (repo / "ingestion" / "sources" / "evm-erc20-transfers/chains/ethereum" / ".env").write_text("START_BLOCK=latest\n")
     with pytest.raises(BadInput, match="START_BLOCK in ingestion/sources/evm-erc20-transfers/chains/ethereum/.env must be"):
         coverage.read(repo, "ethereum.erc20_transfers")
+
+
+def test_a_bad_start_block_names_its_key_and_file_but_not_its_value(repo, monkeypatch):
+    folder = coverage.folders(repo)["ethereum.erc20_transfers"]
+    (folder / ".env").write_text("START_BLOCK=marker-value\n")
+    with pytest.raises(BadInput) as raised:
+        coverage.start_block(repo, folder)
+    message = str(raised.value)
+    assert message.startswith("START_BLOCK in ingestion/sources/evm-erc20-transfers/chains/ethereum/.env must be")
+    assert "marker" not in message
+
+
+# A connection error names the host, port, user and database it tried.
+CONNECTION_ERROR = psycopg2.OperationalError(
+    'connection to server at "marker-host" (10.0.0.1), port 5432 failed: '
+    'FATAL:  password authentication failed for user "marker-user"'
+)
+
+
+def refuse(*args):
+    raise CONNECTION_ERROR
+
+
+@pytest.mark.parametrize("reader, place", [
+    ("read_cursor", "the cursor in raw._sync"),
+    ("read_coverage", "ingestion provenance in raw"),
+    ("read_configuration_cursor", "the configuration cursor in raw"),
+])
+def test_a_failed_warehouse_read_names_the_error_type_but_not_the_driver_message(repo, monkeypatch, reader, place):
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: None)
+    monkeypatch.setattr(coverage, reader, refuse)
+    with pytest.raises(BadInput) as raised:
+        coverage.read(repo, "ethereum.erc20_transfers")
+    message = str(raised.value)
+    assert message.startswith(f"could not read {place} (OperationalError)")
+    assert "marker" not in message
 
 
 def coverage_json(repo, monkeypatch, capsys, cursor, *args):

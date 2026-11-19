@@ -227,7 +227,7 @@ def parse_start_block(value: str, origin: str) -> int:
             raise ValueError
         return int(number)
     except (ValueError, OverflowError):
-        raise BadInput(f"START_BLOCK in {origin} must be a block number, not {value!r}") from None
+        raise BadInput(f"START_BLOCK in {origin} must be a whole block number from 0 to 2^53 - 1") from None
 
 
 def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = False,
@@ -263,17 +263,18 @@ def read(repo_root: Path, name: str) -> Coverage:
     case_sensitive = frozenset(contract.get("caseSensitive", []))
     block, block_file = start_block(repo_root, folder)
     schema = os.environ["RAW_SCHEMA"]
+    # Only the error type: a driver message can name the warehouse host, port, user and database.
     try:
         cursor = read_cursor(f"{source}_{table}")
     except psycopg2.Error as error:
-        raise BadInput(f"could not read the cursor in {schema}._sync: {' '.join(str(error).split())}") from None
+        raise BadInput(f"could not read the cursor in {schema}._sync ({type(error).__name__})") from None
     loaded_filter = address_filter(
         repo_root, folder, supported=supported, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
     )
     try:
         evidence = tuple(read_coverage(f"{source}_{table}"))
     except psycopg2.Error as error:
-        raise BadInput(f"could not read ingestion provenance in {schema}: {' '.join(str(error).split())}") from None
+        raise BadInput(f"could not read ingestion provenance in {schema} ({type(error).__name__})") from None
     settings = {}
     paths = [folder / ".env", folder / ".env.example"]
     if folder.parent.name == "chains":
@@ -297,7 +298,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     try:
         tracked, current_cursor = read_configuration_cursor(f"{source}_{table}", expected)
     except psycopg2.Error as error:
-        raise BadInput(f"could not read the configuration cursor in {schema}: {' '.join(str(error).split())}") from None
+        raise BadInput(f"could not read the configuration cursor in {schema} ({type(error).__name__})") from None
     if tracked:
         cursor = current_cursor
     return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
