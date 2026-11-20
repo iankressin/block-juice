@@ -273,7 +273,7 @@ unit_tests:
         format: sql
         rows: &no_details |
           select null::text as hash, null::bigint as block_number, null::bigint as batch_number where false
-      - input: ref('int_lighter_batches')
+      - input: ref('lighter_batches')
         format: sql
         rows: &no_batches |
           select null::bigint as batch_number, null::bigint as first_block, null::bigint as last_block,
@@ -305,7 +305,7 @@ unit_tests:
       - input: ref('stg_lighter__account_log_details')
         format: sql
         rows: *no_details
-      - input: ref('int_lighter_batches')
+      - input: ref('lighter_batches')
         format: sql
         rows: *no_batches
     expect:
@@ -331,7 +331,7 @@ unit_tests:
       - input: ref('stg_lighter__account_log_details')
         format: sql
         rows: *no_details
-      - input: ref('int_lighter_batches')
+      - input: ref('lighter_batches')
         format: sql
         rows: *no_batches
     expect:
@@ -361,7 +361,7 @@ unit_tests:
         rows: |
           select '00000000001782c02e00000130000000000000000000000000000000000000000000000000000000'::text as hash,
               137652420::bigint as block_number, null::bigint as batch_number
-      - input: ref('int_lighter_batches')
+      - input: ref('lighter_batches')
         format: sql
         rows: |
           select 109273::bigint as batch_number, 137651587::bigint as first_block, 137652411::bigint as last_block,
@@ -405,7 +405,7 @@ unit_tests:
       - input: ref('stg_lighter__account_log_details')
         format: sql
         rows: *no_details
-      - input: ref('int_lighter_batches')
+      - input: ref('lighter_batches')
         format: sql
         rows: *no_batches
     expect:
@@ -443,7 +443,7 @@ unit_tests:
       - input: ref('stg_lighter__account_log_details')
         format: sql
         rows: *no_details
-      - input: ref('int_lighter_batches')
+      - input: ref('lighter_batches')
         format: sql
         rows: *no_batches
     expect:
