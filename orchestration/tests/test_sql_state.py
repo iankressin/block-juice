@@ -33,25 +33,28 @@ def test_bridge_candidates_include_ready_ties_and_exclude_same_chain(postgres):
     postgres.execute("""
         create temp table bridge_transfers (
             id text, chain text, ethereum_address text, ethereum_token text, amount numeric,
-            block_timestamp timestamptz, direction text, l2_address text, tx_hash text
+            block_timestamp timestamptz, block_number bigint, log_index int, direction text,
+            l2_address text, tx_hash text
         );
         insert into bridge_transfers values
-            ('b1', 'base', 'wallet', 'token', 10, '2026-01-01', 'to_ethereum', 'b', 'b1'),
-            ('b2', 'base', 'wallet', 'token', 10, '2026-01-01', 'to_ethereum', 'b', 'b2'),
-            ('b3', 'base', 'wallet', 'token', 10, '2026-01-05', 'to_ethereum', 'b', 'b3'),
-            ('a1', 'arbitrum', 'wallet', 'token', 10, '2025-12-01', 'to_ethereum', 'a', 'a1'),
-            ('d1', 'arbitrum', 'wallet', 'token', 10, '2026-01-02', 'from_ethereum', 'a', 'd1'),
-            ('d2', 'arbitrum', 'wallet', 'token', 10, '2026-01-02', 'from_ethereum', 'a', 'd2'),
-            ('d3', 'arbitrum', 'wallet', 'token', 10, '2026-01-05', 'from_ethereum', 'a', 'd3'),
-            ('other', 'base', 'wallet', 'different', 10, '2025-01-01', 'to_ethereum', 'b', 'x');
+            ('b1', 'base', 'wallet', 'token', 10, '2026-01-01', 1, 1, 'to_ethereum', 'b', 'b1'),
+            ('b2', 'base', 'wallet', 'token', 10, '2026-01-01', 1, 2, 'to_ethereum', 'b', 'b2'),
+            ('b3', 'base', 'wallet', 'token', 10, '2026-01-05', 5, 1, 'to_ethereum', 'b', 'b3'),
+            ('a1', 'arbitrum', 'wallet', 'token', 10, '2025-12-01', 1, 1, 'to_ethereum', 'a', 'a1'),
+            ('d1', 'arbitrum', 'wallet', 'token', 10, '2026-01-02', 2, 1, 'from_ethereum', 'a', 'd1'),
+            ('d2', 'arbitrum', 'wallet', 'token', 10, '2026-01-02', 2, 2, 'from_ethereum', 'a', 'd2'),
+            ('d3', 'arbitrum', 'wallet', 'token', 10, '2026-01-05', 5, 1, 'from_ethereum', 'a', 'd3'),
+            ('other', 'base', 'wallet', 'different', 10, '2025-01-01', 0, 1, 'to_ethereum', 'b', 'x');
     """)
     query = model_sql("marts/bridges/bridge_pairs.sql")
     postgres.execute(f"select withdrawal_id, deposit_id, candidates from ({query}) q order by 1")
-    assert postgres.fetchall() == [("b1", "d1", 2), ("b2", "d2", 2)]
+    # a1 waits longest, so d1 takes it as a round trip on Arbitrum and pairs nothing. d2 takes b1, ready at
+    # d2's exact time; a1 is on d2's own chain, so candidates counts only b1 and b2.
+    assert postgres.fetchall() == [("b1", "d2", 2), ("b2", "d3", 2)]
     # A late correction changes eligibility and must affect the already-existing deposit.
     postgres.execute("update bridge_transfers set block_timestamp='2026-01-03' where id='b2'")
     postgres.execute(f"select withdrawal_id, deposit_id, candidates from ({query}) q order by 1")
-    assert postgres.fetchall() == [("b1", "d1", 1)]
+    assert postgres.fetchall() == [("b1", "d2", 1), ("b2", "d3", 2)]
 
 
 def test_candles_preserve_order_complements_null_prices_and_own_volumes(postgres):

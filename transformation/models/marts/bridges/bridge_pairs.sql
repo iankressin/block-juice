@@ -21,10 +21,12 @@ deposits as (
 
 -- A withdrawal joins the timeline when it is ready, a deposit when it lands.
 events as (
-    select ethereum_address, ethereum_token, amount, chain, id, ready_at as at, true as withdrawal
+    select ethereum_address, ethereum_token, amount, chain, id, block_number, log_index, ready_at as at,
+        true as withdrawal
     from withdrawals
     union all
-    select ethereum_address, ethereum_token, amount, chain, id, block_timestamp as at, false as withdrawal
+    select ethereum_address, ethereum_token, amount, chain, id, block_number, log_index, block_timestamp as at,
+        false as withdrawal
     from deposits
 ),
 
@@ -46,7 +48,8 @@ counts as (
 ),
 
 -- Withdrawals ready and deposits made so far, in queue order. A withdrawal ready at a deposit's exact
--- time comes first, so the deposit can take it; chain and id break the remaining ties.
+-- time comes first, so the deposit can take it. Moves in one block share a timestamp, so block_number and
+-- log_index break the remaining ties on a chain; the text id would put "100:10" before "100:2".
 running as (
     select
         *,
@@ -55,7 +58,7 @@ running as (
     from events
     window queue as (
         partition by ethereum_address, ethereum_token, amount
-        order by at, withdrawal desc, chain, id
+        order by at, withdrawal desc, chain, block_number, log_index
         rows between unbounded preceding and current row
     )
 ),
@@ -78,7 +81,7 @@ deposit_turns as (
     where not withdrawal
     window earlier as (
         partition by ethereum_address, ethereum_token, amount
-        order by at, chain, id
+        order by at, chain, block_number, log_index
         rows between unbounded preceding and 1 preceding
     )
 ),
@@ -86,7 +89,9 @@ deposit_turns as (
 withdrawal_turns as (
     select
         *,
-        row_number() over (partition by ethereum_address, ethereum_token, amount order by ready_at, chain, id) as turn
+        row_number() over (
+            partition by ethereum_address, ethereum_token, amount order by ready_at, chain, block_number, log_index
+        ) as turn
     from withdrawals
 )
 

@@ -192,3 +192,24 @@ unit_tests:
     expect:
       rows:
         - {from_chain: arbitrum, to_chain: base, withdrawal_id: "1:1", deposit_id: "3:1", candidates: 2}
+
+  - name: moves_in_one_block_go_in_log_order
+    description: >-
+      Made up: moves in one block share a timestamp, so log order breaks the tie, not the text id, which
+      puts "100:10" before "100:2". Two Base deposits in block 100, logs 2 and 10: log 2 takes the one
+      Arbitrum withdrawal. Two Base withdrawals in block 50, logs 2 and 10: log 2 joins the queue first and
+      pays for the Arbitrum deposit.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: arbitrum, id: "90:1", direction: to_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_number: 90, log_index: 1, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: base, id: "100:10", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_number: 100, log_index: 10, block_timestamp: "2026-10-09 00:00:00+00"}
+          - {chain: base, id: "100:2", direction: from_ethereum, l2_address: "0xb2", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_number: 100, log_index: 2, block_timestamp: "2026-10-09 00:00:00+00"}
+          - {chain: base, id: "50:10", direction: to_ethereum, l2_address: "0xb1", ethereum_address: "0xe2", ethereum_token: "0x01", amount: 100, block_number: 50, log_index: 10, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: base, id: "50:2", direction: to_ethereum, l2_address: "0xb2", ethereum_address: "0xe2", ethereum_token: "0x01", amount: 100, block_number: 50, log_index: 2, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: arbitrum, id: "95:1", direction: from_ethereum, l2_address: "0xa1", ethereum_address: "0xe2", ethereum_token: "0x01", amount: 100, block_number: 95, log_index: 1, block_timestamp: "2026-10-05 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: arbitrum, withdrawal_id: "90:1", to_chain: base, deposit_id: "100:2", candidates: 1}
+        - {from_chain: base, withdrawal_id: "50:2", to_chain: arbitrum, deposit_id: "95:1", candidates: 2}
