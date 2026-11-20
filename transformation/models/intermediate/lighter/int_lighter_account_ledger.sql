@@ -16,8 +16,10 @@
 -- L2UpdateAccountConfig entries, whose effect on balances is unproven.
 -- position_after is the account's position in market_id after the row; for funding, the position that paid.
 -- A fill or exit takes the L1 batch whose block range holds its block. cumulative_amount runs per account,
--- asset and route in event_time and id order, from the start of what is loaded: logs from the account-log
--- source's START_TIME, fills from the first S3 day, funding from the account's first loaded fill.
+-- asset and route in event_time order, from the start of what is loaded: logs from the account-log
+-- source's START_TIME, fills from the first S3 day, funding from the account's first loaded fill. Rows at
+-- one time share one total, the sum up to and with that time: the transfer_out and transfer_fee legs of
+-- one entry tie, and no balance ever held one without the other.
 with listed as (
     select distinct account_index from {{ ref('stg_lighter__account_logs') }}
 ),
@@ -206,8 +208,8 @@ select
     amount,
     sum(amount) over (
         partition by account_index, asset, route
-        order by event_time, id
-        rows between unbounded preceding and current row
+        order by event_time
+        range between unbounded preceding and current row
     ) as cumulative_amount,
     market_id,
     position_after,

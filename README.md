@@ -819,7 +819,7 @@ The `lighter` pipeline builds it from [`lighter_account_movements`](#lighter-acc
 | `asset` | text | The asset's symbol. `USDC` for fills, funding and exits. |
 | `route` | text | `perps` or `spot`. Null for stake, unstake, unlock and margin moves. |
 | `amount` | numeric | The change, signed, in the asset's units. Null as described above. |
-| `cumulative_amount` | numeric | The sum of `amount` over the account's rows of the same asset and route so far, in `event_time` and `id` order. A balance only if the loaded history reaches back to the account's first move. |
+| `cumulative_amount` | numeric | The sum of `amount` over the account's rows of the same asset and route up to and with `event_time`. Rows at one time, such as a transfer and its fee, share one total. A balance only if the loaded history reaches back to the account's first move. |
 | `market_id` | integer | The market of a fill, funding hour or exit. |
 | `position_after` | numeric | The account's position in `market_id` after the row, negative when short. 0 after an exit. For funding, the position that paid. |
 | `trade_id` | bigint | The trade of a fill. |
