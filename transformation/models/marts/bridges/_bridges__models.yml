@@ -54,3 +54,80 @@ unit_tests:
     expect:
       rows:
         - {from_chain: arbitrum, from_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", to_chain: base, to_address: "0x81004f46e7fda526bd49529b544011dad06cfab9", withdrawal_id: "508746303:6", deposit_id: "52056280:3", candidates: 1}
+  - name: an_earlier_unpaired_deposit_blocks_no_later_pair
+    description: >-
+      A deposit into Base paid from other funds comes before any withdrawal. It takes no withdrawal and
+      leaves the next one free: the Arbitrum withdrawal of Oct 1, ready Oct 7, pays for the deposit of Oct 9.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: base, id: "1:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-09-20 00:00:00+00"}
+          - {chain: arbitrum, id: "10:1", direction: to_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: base, id: "2:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-09 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: arbitrum, withdrawal_id: "10:1", to_chain: base, deposit_id: "2:1", candidates: 1}
+  - name: the_withdrawal_ready_first_pays_first
+    description: >-
+      The Base withdrawal of Oct 2 is ready on Oct 3, before the Arbitrum one of Oct 1 is ready on Oct 7, so
+      it pays for the first deposit: the Arbitrum deposit at the exact time it became ready. The Arbitrum
+      withdrawal pays for the next deposit, into Base.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: arbitrum, id: "10:1", direction: to_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: base, id: "1:1", direction: to_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-02 00:00:00+00"}
+          - {chain: arbitrum, id: "11:1", direction: from_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-03 00:00:00+00"}
+          - {chain: base, id: "2:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-09 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: base, withdrawal_id: "1:1", to_chain: arbitrum, deposit_id: "11:1", candidates: 1}
+        - {from_chain: arbitrum, withdrawal_id: "10:1", to_chain: base, deposit_id: "2:1", candidates: 1}
+  - name: money_back_into_its_own_chain_pairs_nothing
+    description: >-
+      The same amount leaves Base and Arbitrum and comes back into each. Each deposit takes the oldest
+      waiting withdrawal, which left its own chain, so both are round trips and nothing pairs.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: base, id: "1:1", direction: to_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-09-30 00:00:00+00"}
+          - {chain: arbitrum, id: "10:1", direction: to_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: base, id: "2:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-09 00:00:00+00"}
+          - {chain: arbitrum, id: "11:1", direction: from_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-12 00:00:00+00"}
+    expect:
+      rows: []
+  - name: the_oldest_waiting_withdrawal_pays
+    description: >-
+      A Base withdrawal waits from Oct 2 and an Arbitrum one from Oct 26. The oldest pays for the Base
+      deposit of Oct 28, a round trip, and the Arbitrum withdrawal pays for the next Base deposit, on Nov 5.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: base, id: "1:1", direction: to_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: arbitrum, id: "10:1", direction: to_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-20 00:00:00+00"}
+          - {chain: base, id: "2:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-28 00:00:00+00"}
+          - {chain: base, id: "3:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-11-05 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: arbitrum, withdrawal_id: "10:1", to_chain: base, deposit_id: "3:1", candidates: 1}
+  - name: each_move_pays_once_across_three_chains
+    description: >-
+      With a third chain, a withdrawal fits deposits on two chains and a deposit fits withdrawals from two.
+      Each is used once: the Optimism withdrawal, ready first, pays for the Base deposit, and the Arbitrum
+      withdrawal pays for the Optimism deposit.
+    model: bridge_pairs
+    given:
+      - input: ref('bridge_transfers')
+        rows:
+          - {chain: optimism, id: "1:1", direction: to_ethereum, l2_address: "0xc1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-09-28 00:00:00+00"}
+          - {chain: arbitrum, id: "10:1", direction: to_ethereum, l2_address: "0xa1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-01 00:00:00+00"}
+          - {chain: base, id: "20:1", direction: from_ethereum, l2_address: "0xb1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-09 00:00:00+00"}
+          - {chain: optimism, id: "2:1", direction: from_ethereum, l2_address: "0xc1", ethereum_address: "0xe1", ethereum_token: "0x01", amount: 100, block_timestamp: "2026-10-10 00:00:00+00"}
+    expect:
+      rows:
+        - {from_chain: optimism, withdrawal_id: "1:1", to_chain: base, deposit_id: "20:1", candidates: 2}
+        - {from_chain: arbitrum, withdrawal_id: "10:1", to_chain: optimism, deposit_id: "2:1", candidates: 1}
