@@ -32,10 +32,10 @@ details as (
     select * from {{ ref('stg_lighter__account_log_details') }}
 ),
 
--- Built once: the planner guesses one detail row, and with a plain CTE it rebuilt the whole batches view,
--- every batch's block list unpacked, once for each detail.
-batches as materialized (
-    select * from {{ ref('int_lighter_batches') }}
+-- The lighter_batches table, not the int_lighter_batches view, which unpacks every batch's block list each
+-- time it is read.
+batches as (
+    select * from {{ ref('lighter_batches') }}
 ),
 
 legs as (
