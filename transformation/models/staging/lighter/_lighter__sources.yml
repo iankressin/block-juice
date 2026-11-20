@@ -35,3 +35,43 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: batches
+        identifier: lighter_batches
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: account_logs
+        identifier: lighter_account_logs
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: accounts
+        identifier: lighter_accounts
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: pnl
+        identifier: lighter_pnl
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: tx_stats
+        identifier: lighter_tx_stats
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: assets
+        identifier: lighter_assets
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: system_config
+        identifier: lighter_system_config
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+      - name: public_pools
+        identifier: lighter_public_pools
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

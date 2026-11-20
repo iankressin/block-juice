@@ -305,3 +305,425 @@ models:
         description: True when the trade changed the sign of the account's position.
       - name: realized_pnl
         description: The pnl the trade realized for this account, in USDC. Null when none.
+
+  - name: lighter_batches
+    description: >-
+      One Lighter L1 batch: the block range it holds, its tx count, its status, and the hash and time of
+      its commit, verify and execute on Ethereum. Join an L2 block to its batch on `block_number between
+      first_block and last_block`; the test `lighter_batches_are_contiguous` fails when a range has a gap
+      or two loaded neighbours do not meet. A batch is final once a status change is `executed` or
+      `nothing_to_execute`; until then each run reads it again. Batches before 29654 carry no L1 status,
+      so they stay `pending`; see `catalog/vendors/lighter/NOTES.md`.
+    columns:
+      - name: batch_number
+        data_tests: [unique, not_null]
+      - name: first_block
+        description: The lowest L2 block the batch holds.
+      - name: last_block
+        description: The highest L2 block the batch holds.
+      - name: block_count
+        description: How many blocks the batch lists. Equals `last_block - first_block + 1`.
+      - name: tx_count
+        description: The sum of the blocks' `total_transactions`.
+      - name: first_block_time
+        description: The first block's time, to the microsecond.
+      - name: last_block_time
+        description: The last block's time, to the microsecond.
+      - name: status
+        description: >-
+          The latest status change's, or `pending` with none. `committed` → `verified` → `executed`, or
+          `committed` → `nothing_to_execute` for a verified batch with no L1 work left.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [pending, committed, verified, executed, nothing_to_execute]
+      - name: is_final
+        description: True once a status change is `executed` or `nothing_to_execute`. A final batch changes no more.
+      - name: commit_tx_hash
+        description: The Ethereum tx that committed the batch. Null until then, and on batches 29654 to 29668.
+      - name: committed_at
+        description: When the status change carrying `commit_tx_hash` happened.
+      - name: verify_tx_hash
+        description: The Ethereum tx that verified the batch. A `nothing_to_execute` change carries it too.
+      - name: verified_at
+        description: When the status change carrying `verify_tx_hash` happened.
+      - name: execute_tx_hash
+        description: The Ethereum tx that executed the batch. Null on a `nothing_to_execute` batch. One tx can execute several batches.
+      - name: executed_at
+        description: When the status change carrying `execute_tx_hash` happened.
+      - name: final_at
+        description: When the first `executed` or `nothing_to_execute` change happened.
+      - name: updated_at
+        description: When the Explorer last updated the batch.
+
+  - name: lighter_account_movements
+    description: >-
+      One leg of a deposit, withdrawal, transfer, route move, pool, staking or margin move in the log of an
+      account the lighter-account-logs source lists, with the L1 batch whose block range holds the entry's
+      block and that batch's Ethereum hashes and times. An entry gives a leg for each account it moves,
+      and a row only for the legs of the account whose log holds it. A move has settled on Ethereum once
+      its batch is `executed` or `nothing_to_execute`; deposits and transfers sit in either. A transfer
+      to the fast-withdraw pool, likely account 675395, is the user's side of a fast withdrawal. The test
+      `lighter_movements_match_detail_batch` warns when the batch differs from the one the Explorer names,
+      or when a loaded batch should hold a row's block and none does; see `catalog/vendors/lighter/NOTES.md`.
+    columns:
+      - name: id
+        description: "`<hash>:<account_index>:<leg>`."
+        data_tests: [unique, not_null]
+      - name: hash
+        description: The entry's hash, the same in each account's log that holds it.
+        data_tests: [not_null]
+      - name: log_time
+        description: The entry's time, to the microsecond. Never join it to a batch by time.
+        data_tests: [not_null]
+      - name: account_index
+        description: The account whose log holds the entry, and whose leg this row is.
+        data_tests: [not_null]
+      - name: leg
+        description: "`from`, `to` or `fee` for a transfer or route move, `self` for the rest."
+      - name: kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - deposit
+                  - withdrawal
+                  - transfer_out
+                  - transfer_in
+                  - transfer_fee
+                  - route_move
+                  - pool_mint
+                  - pool_burn
+                  - stake
+                  - unstake
+                  - unlock
+                  - margin_move
+      - name: asset
+        description: The asset's symbol, such as `USDC` or `LIT`.
+      - name: route
+        description: "`perps` or `spot`. Null for stake, unstake, unlock and margin moves."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [perps, spot]
+      - name: amount
+        description: The amount as Lighter sent it, in the asset's units with its decimals. Unsigned.
+        data_tests: [not_null]
+      - name: signed_amount
+        description: >-
+          `amount`, negative when it leaves the account or route. Null for stake, unstake, unlock and
+          margin moves, whose sign is unproven.
+      - name: counterparty_account_index
+        description: >-
+          The other account of a transfer, the fee account of a transfer fee, or the pool of a mint, burn,
+          stake or unstake. Null for a deposit, a withdrawal and a route move.
+      - name: l1_address
+        description: The Ethereum address a deposit came from, lowercased. Null on other kinds.
+      - name: pubdata_type
+        description: The entry's type, such as `L1DepositV2` or `L2TransferV2`.
+      - name: tx_type
+        description: The tx's type, such as `L1Withdraw` or `L2Transfer`.
+      - name: block_number
+        description: The L2 block that holds the entry, from `logs/{hash}`. Null until that lookup succeeds.
+      - name: batch_number
+        description: The loaded batch whose block range holds `block_number`. Null until that batch loads.
+      - name: detail_batch_number
+        description: The batch `logs/{hash}` named, null when read before the batch formed. Use `batch_number`.
+      - name: batch_status
+        description: The batch's status, as in `lighter_batches`.
+      - name: is_final
+        description: True once the batch is `executed` or `nothing_to_execute`. False with no batch.
+      - name: commit_tx_hash
+        description: The Ethereum tx that committed the batch.
+      - name: committed_at
+        description: When the batch was committed.
+      - name: verify_tx_hash
+        description: The Ethereum tx that verified the batch.
+      - name: verified_at
+        description: When the batch was verified.
+      - name: execute_tx_hash
+        description: The Ethereum tx that executed the batch. Null on a `nothing_to_execute` batch.
+      - name: executed_at
+        description: When the batch was executed.
+      - name: final_at
+        description: When the batch became final.
+
+  - name: lighter_account_ledger
+    description: >-
+      One change to the holdings of an account the lighter-account-logs source lists: a leg of a money move,
+      a perp fill, an hour of funding or a position exit. `amount` is signed in the asset's units. It is null
+      where the change has no proven amount: stake, unstake, unlock and margin moves, whose sign is unproven,
+      and position exits, whose entry carries no amount. A fill's amount is its realized pnl less its fee and
+      its role's integrator fee. S3 records all three on every fill only from 2026-03-30
+      (catalog/vendors/lighter/NOTES.md, L30), so a fill before that day, or one with a null fee or
+      integrator fee, has a null amount; from that day on a fill or funding row with a null amount fails a
+      test. Funding is -position × `value_usdc_per_unit` when the rate's `direction` is `long` and
+      +position × value when `short` (L21). Spot fills stay out.
+      Logs start at the account-log source's START_TIME, and the Explorer holds none before 2025-08-25;
+      fills start at the first S3 day lighter-trades loads, and funding at each account's first loaded fill.
+      `lighter_positions_match_snapshots` and `lighter_ledger_matches_collateral` warn when it disagrees
+      with Lighter's own readings, and `lighter_funding_prefix_steps_match_rates` when the rates it prices
+      funding with disagree with the logs' prefix sums.
+    columns:
+      - name: id
+        description: >-
+          `move:<movement id>`, `fill:<fill id>`, `funding:<account_index>:<market_id>:<funding_time in s>` or
+          `exit:<hash>:<account_index>`.
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: event_time
+        description: The log entry's time, the trade's time or the funding hour mark.
+        data_tests: [not_null]
+      - name: kind
+        description: A movement's kind, or `fill`, `funding` or `exit_position`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - deposit
+                  - withdrawal
+                  - transfer_out
+                  - transfer_in
+                  - transfer_fee
+                  - route_move
+                  - pool_mint
+                  - pool_burn
+                  - stake
+                  - unstake
+                  - unlock
+                  - margin_move
+                  - fill
+                  - funding
+                  - exit_position
+      - name: asset
+        description: The asset's symbol. `USDC` for fills, funding and exits.
+      - name: route
+        description: "`perps` or `spot`. `perps` for fills, funding and exits; null for stake, unstake, unlock and margin moves."
+      - name: amount
+        description: >-
+          Signed, in the asset's units. Null for stake, unstake, unlock, margin moves and exits, and for a fill
+          before 2026-03-30 or with a null fee or integrator fee (L30).
+        data_tests:
+          # S3 records pnl and every fee from 2026-03-30 (L30); a null after it is a missing fee or rate.
+          - not_null:
+              config:
+                where: "kind in ('fill', 'funding') and event_time >= '2026-03-30 00:00:00+00'"
+      - name: cumulative_amount
+        description: >-
+          The sum of `amount` over the account's rows of the same asset and route up to and with `event_time`,
+          from the start of what is loaded. Rows at one time, such as a transfer and its fee, share one total.
+          Not a balance unless the history reaches back to the account's first move.
+      - name: market_id
+        description: The market of a fill, funding hour or exit. Null for money moves.
+        data_tests:
+          # An exit's market comes from a pubdata field by name (L28, L29); a renamed field would leave it null.
+          - not_null:
+              config:
+                where: "kind in ('fill', 'funding', 'exit_position')"
+      - name: position_after
+        description: >-
+          The account's position in `market_id` after the row, negative when short: a fill's, 0 after an exit,
+          and for funding the position that paid.
+      - name: trade_id
+        description: The trade of a fill.
+      - name: hash
+        description: The log entry's hash, or a fill's trade tx hash. Null for funding.
+      - name: block_number
+        description: The L2 block of a move, fill or exit. Null for funding.
+      - name: batch_number
+        description: The loaded batch whose block range holds `block_number`.
+      - name: batch_status
+        description: The batch's status, as in `lighter_batches`.
+      - name: execute_tx_hash
+        description: The Ethereum tx that executed the batch. Null on a `nothing_to_execute` batch.
+      - name: executed_at
+        description: When the batch was executed.
+
+  - name: lighter_account_snapshots
+    description: >-
+      One row per Lighter account per run that read it, from the account endpoint. `collateral` leaves
+      out unrealized pnl; `total_asset_value` includes it.
+    columns:
+      - name: id
+        description: "`<account_index>:<read_at in ms>`."
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: read_at
+        description: When the run read the account.
+        data_tests: [not_null]
+      - name: collateral
+        data_tests: [not_null]
+      - name: transaction_time
+        description: Lighter's time for the reading, to the microsecond.
+
+  - name: lighter_account_position_snapshots
+    description: >-
+      One row per position of an account in a reading. A closed position stays listed with `position` 0.
+    columns:
+      - name: id
+        description: "`<account_index>:<market_id>:<read_at in ms>`."
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: position
+        description: Signed size in base units, negative when short.
+      - name: total_funding_paid_out
+        description: Lighter leaves it out on some positions, so it can be null.
+
+  - name: lighter_account_asset_snapshots
+    description: One row per asset balance of an account in a reading, in the asset's own units.
+    columns:
+      - name: id
+        description: "`<account_index>:<asset_id>:<read_at in ms>`."
+        data_tests: [unique, not_null]
+      - name: read_at
+        data_tests: [not_null]
+
+  - name: lighter_account_value_history
+    description: >-
+      One row per account, resolution and point time, from the pnl endpoint. Every column but `volume` is a
+      running total since the account began, up to `point_time`. Lighter sends the values as JSON numbers,
+      so they keep up to 15 significant digits. `perps_value` is the account's perps value then.
+    columns:
+      - name: id
+        description: "`<account_index>:<resolution>:<point time in s>`."
+        data_tests: [unique, not_null]
+      - name: account_index
+        data_tests: [not_null]
+      - name: resolution
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['1d', '1h']
+      - name: point_time
+        data_tests: [not_null]
+      - name: perps_value
+        description: "`inflow - outflow + trade_pnl`: the account's `collateral` plus unrealized pnl."
+
+  - name: lighter_tx_stats
+    description: >-
+      Lighter's tx count for each closed UTC hour since 2025-10-02, from the Explorer's `stats/tx`. `hour`
+      is the start of the hour. The hour still open waits for a later run, so the newest row is the last
+      hour that ended before the latest run.
+    columns:
+      - name: hour
+        data_tests: [unique, not_null]
+      - name: tx_count
+        description: Txs in the hour.
+        data_tests: [not_null]
+      - name: uops_count
+        description: User operations in the hour.
+        data_tests: [not_null]
+
+  - name: lighter_assets
+    description: >-
+      One row per Lighter asset, from the latest run that read it. `decimals` is how many decimal places
+      an integer balance of the asset carries. Amounts and ratios are numeric, cast from Lighter's decimal
+      strings.
+    columns:
+      - name: asset_id
+        description: The id Lighter uses for the asset. USDC is 3, ETH 1 and LIT 2.
+        data_tests: [unique, not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: decimals
+        description: Decimal places of the asset on Lighter.
+        data_tests: [not_null]
+      - name: l1_decimals
+        description: Decimal places of the asset's token on Ethereum.
+      - name: l1_address
+        description: The asset's token contract on Ethereum.
+      - name: margin_mode
+        description: Whether the asset counts as margin, `enabled` or `disabled`.
+      - name: min_transfer_amount
+      - name: min_withdrawal_amount
+      - name: loan_to_value
+      - name: liquidation_threshold
+      - name: global_supply_cap
+      - name: user_supply_cap
+      - name: index_price
+        description: The asset's price in USDC when the run read it.
+      - name: read_at
+        description: When the run read these settings.
+
+  - name: lighter_system_accounts
+    description: >-
+      Lighter's five system accounts, one row per role, from the latest `systemConfig` reading.
+    columns:
+      - name: role
+        description: What the account does.
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [liquidity_pool, staking_pool, funding_fee_rebate, market_maker_incentive, fee_collector]
+      - name: account_index
+        data_tests: [not_null]
+      - name: read_at
+        description: When the run read the config.
+
+  - name: lighter_public_pools
+    description: >-
+      One reading of one public pool. Each run adds a reading for every pool, so a pool has a row per run.
+    columns:
+      - name: id
+        description: The reading's key, `<account_index>:<read_at in ms>`.
+        data_tests: [unique, not_null]
+      - name: account_index
+        description: The pool's account. The LLP is 281474976710654.
+        data_tests: [not_null]
+      - name: read_at
+        data_tests: [not_null]
+      - name: name
+      - name: account_type
+        description: 3 for the LLP, 2 for other pools.
+      - name: master_account_index
+      - name: operator_fee
+      - name: annual_percentage_yield
+      - name: total_asset_value
+        description: In USDC.
+      - name: total_spot_value
+      - name: total_perps_value
+      - name: total_shares
+      - name: status
+      - name: created_at
+
+unit_tests:
+  # Account 1000, idle since 2025-12-30 (catalog/vendors/lighter/NOTES.md, Account value, L14): its point reads
+  # 156508.908444 - 153478.114476 - 3030.185271 = 0.608697, its collateral and total_asset_value.
+  - name: perps_value_is_inflow_less_outflow_plus_trade_pnl
+    description: >-
+      Account 1000's point has inflow 156508.908444, outflow 153478.114476 and trade_pnl -3030.185271, so
+      its perps value is 0.608697.
+    model: lighter_account_value_history
+    given:
+      - input: ref('stg_lighter__pnl')
+        rows:
+          - {id: "1000:1d:1794268800", account_index: 1000, resolution: 1d, point_time: "2026-11-10 00:00:00+00", inflow: 156508.908444, outflow: 153478.114476, trade_pnl: -3030.185271}
+    expect:
+      rows:
+        - {id: "1000:1d:1794268800", account_index: 1000, resolution: 1d, point_time: "2026-11-10 00:00:00+00", inflow: 156508.908444, outflow: 153478.114476, trade_pnl: -3030.185271, perps_value: 0.608697}
+  # The reply of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Reference endpoints).
+  - name: system_roles_unpivot_the_config
+    description: >-
+      One systemConfig reading gives one row for each of the five roles, with the liquidity pool at
+      281474976710654. Only the latest reading counts.
+    model: lighter_system_accounts
+    given:
+      - input: ref('stg_lighter__system_config')
+        rows:
+          - {id: "1794831600000", read_at: "2026-11-16 12:00:00+00", liquidity_pool_index: 1, staking_pool_index: 2, funding_fee_rebate_account_index: 3, market_maker_incentive_account_index: 4, fee_collector_account_index: 5}
+          - {id: "1794918000000", read_at: "2026-11-17 12:00:00+00", liquidity_pool_index: 281474976710654, staking_pool_index: 281474976624800, funding_fee_rebate_account_index: 713888, market_maker_incentive_account_index: 723106, fee_collector_account_index: 281474976496476}
+    expect:
+      rows:
+        - {role: liquidity_pool, account_index: 281474976710654, read_at: "2026-11-17 12:00:00+00"}
+        - {role: staking_pool, account_index: 281474976624800, read_at: "2026-11-17 12:00:00+00"}
+        - {role: funding_fee_rebate, account_index: 713888, read_at: "2026-11-17 12:00:00+00"}
+        - {role: market_maker_incentive, account_index: 723106, read_at: "2026-11-17 12:00:00+00"}
+        - {role: fee_collector, account_index: 281474976496476, read_at: "2026-11-17 12:00:00+00"}

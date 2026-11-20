@@ -86,6 +86,15 @@ The grid shows which chains each table covers. Each section after it says what a
 | [Lighter open interest](#lighter-open-interest) | | | | | | | | ✓ | |
 | [Lighter trades](#lighter-trades) | | | | | | | | ✓ | |
 | [Lighter account fills](#lighter-account-fills) | | | | | | | | ✓ | |
+| [Lighter batches](#lighter-batches) | | | | | | | | ✓ | |
+| [Lighter account movements](#lighter-account-movements) | | | | | | | | ✓ | |
+| [Lighter account snapshots](#lighter-account-snapshots) | | | | | | | | ✓ | |
+| [Lighter account value history](#lighter-account-value-history) | | | | | | | | ✓ | |
+| [Lighter account ledger](#lighter-account-ledger) | | | | | | | | ✓ | |
+| [Lighter tx counts](#lighter-tx-counts) | | | | | | | | ✓ | |
+| [Lighter assets](#lighter-assets) | | | | | | | | ✓ | |
+| [Lighter system accounts](#lighter-system-accounts) | | | | | | | | ✓ | |
+| [Lighter public pools](#lighter-public-pools) | | | | | | | | ✓ | |
 
 ### Balances
 
@@ -658,6 +667,262 @@ The `lighter` pipeline builds it from `lighter_trades`' source. Two tests check 
 | `entry_quote_before_usdc` | numeric | The entry value of the account's position before the trade, in USDC. |
 | `position_sign_changed` | boolean | True when the trade changed the sign of the account's position. |
 | `realized_pnl` | numeric | The pnl the trade realized for this account, in USDC. Null when none. |
+
+### Lighter batches
+
+`analytics.lighter_batches`
+
+One Lighter L1 batch: the L2 block range it holds, its tx count, its status, and the hash and time of its commit, verify and execute on Ethereum. One row per batch. Join an L2 block to its batch on `block_number between first_block and last_block`. Covers every batch from the one that holds `START_TIME` (2026-11-16 to start) to the newest. The Explorer's history starts on 2025-08-25, and about 830 batches close a day.
+
+The `lighter` pipeline builds it from the call source `lighter-batches`, which reads Lighter's Explorer one batch at a time and keeps each reply whole. Each run reads again from the first batch not yet final, so a batch's L1 hashes fill in as it settles, which can take hours. A batch is final once it is `executed` or `nothing_to_execute`. `START_TIME` may not come before 2025-08-28: batches before 29654 carry no L1 status and never settle. Each day from `START_TIME` to now costs the first run about 830 reads, some 33 minutes at the shipped 25 weight a minute, and about 125 MB of JSON. `START_TIME` is a fixed date, so a checkout made a month after it waits about 17 hours on its first run; set it near today to load less. `lighter_batches_are_contiguous` fails when a batch's block count differs from its range, or when two loaded neighbours do not meet. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `batch_number` | bigint | The batch's number. Unique. |
+| `first_block`, `last_block` | bigint | The lowest and highest L2 block the batch holds. |
+| `block_count` | bigint | How many blocks the batch holds, `last_block - first_block + 1`. |
+| `tx_count` | bigint | The txs in its blocks. |
+| `first_block_time`, `last_block_time` | timestamptz | The first and last block's time, to the microsecond. |
+| `status` | text | `pending`, `committed`, `verified`, `executed` or `nothing_to_execute`: the latest status change's, or `pending` with none. |
+| `is_final` | boolean | True once the batch is `executed` or `nothing_to_execute`, a verified batch with no L1 work left. |
+| `commit_tx_hash`, `committed_at` | text, timestamptz | The Ethereum tx that committed the batch, and when. Null until then. |
+| `verify_tx_hash`, `verified_at` | text, timestamptz | The Ethereum tx that verified it, and when. A `nothing_to_execute` batch has these too. |
+| `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed it, and when. Null on a `nothing_to_execute` batch. One tx can execute several batches. |
+| `final_at` | timestamptz | When the batch became final. |
+| `updated_at` | timestamptz | When the Explorer last updated the batch. |
+
+### Lighter account movements
+
+`analytics.lighter_account_movements`
+
+One leg of a money move in a listed Lighter account's log: a deposit, a withdrawal, a transfer or its fee, a move between the account's perps and spot routes, a pool mint or burn, a stake, unstake or unlock, or a margin move. One row per entry, account and leg, with the L1 batch whose block range holds the entry's block and that batch's Ethereum hashes and times. Covers the accounts in `ingestion/sources/lighter-account-logs/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there, from `START_TIME` (2026-11-16 to start). A transfer between two listed accounts gives the sender's legs under the sender and the receiver's under the receiver.
+
+The `lighter` pipeline builds it from the call source `lighter-account-logs`, which walks each account's log on Lighter's Explorer, newest first, back to a day before the newest entry the last run saw. It skips plain trades, which [`lighter_trades`](#lighter-trades) holds, and reads `logs/{hash}` for each money move and position exit to find its L2 block. A money move has settled on Ethereum once its batch is `executed`, or `nothing_to_execute`: verified, with no L1 work left. `is_final` says so. The withdrawals checked so far sat in `executed` batches; deposits and transfers sat in either. A transfer to the fast-withdraw pool, likely account 675395, is the user's side of a fast withdrawal, so it shows as `transfer_out`, not `withdrawal`. `lighter_movements_match_detail_batch` warns when a row's batch differs from the one the Explorer names, or when a loaded batch should hold a row's block but none does. It runs daily at 07:30 UTC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<hash>:<account_index>:<leg>`. Unique. |
+| `hash` | text | The entry's hash, the same in each account's log that holds it. |
+| `log_time` | timestamptz | The entry's time, to the microsecond. Never join it to a batch by time. |
+| `account_index` | bigint | The account whose log holds the entry, and whose leg this row is. |
+| `leg` | text | `from`, `to` or `fee` for a transfer or route move, `self` for the rest. |
+| `kind` | text | `deposit`, `withdrawal`, `transfer_out`, `transfer_in`, `transfer_fee`, `route_move`, `pool_mint`, `pool_burn`, `stake`, `unstake`, `unlock` or `margin_move`. |
+| `asset` | text | The asset's symbol, such as `USDC` or `LIT`. |
+| `route` | text | `perps` or `spot`. Null for stake, unstake, unlock and margin moves. |
+| `amount` | numeric | The amount as Lighter sent it, in the asset's units. Unsigned. |
+| `signed_amount` | numeric | `amount`, negative when it leaves the account or route. Null for stake, unstake, unlock and margin moves, whose sign is unproven. |
+| `counterparty_account_index` | bigint | The other account of a transfer, the fee account of a fee, or the pool of a mint, burn, stake or unstake. |
+| `l1_address` | text | The Ethereum address a deposit came from, lowercased. |
+| `pubdata_type`, `tx_type` | text | The entry's type, such as `L2TransferV2`, and its tx's, such as `L2Transfer`. |
+| `block_number` | bigint | The L2 block that holds the entry. Null until `logs/{hash}` answers. |
+| `batch_number` | bigint | The loaded batch whose block range holds `block_number`. Null until that batch loads. |
+| `detail_batch_number` | bigint | The batch `logs/{hash}` named, null when read before the batch formed. Use `batch_number`. |
+| `batch_status`, `is_final` | text, boolean | The batch's status, and whether it is final, as in [`lighter_batches`](#lighter-batches). `is_final` is false with no batch. |
+| `commit_tx_hash`, `committed_at` | text, timestamptz | The Ethereum tx that committed the batch, and when. |
+| `verify_tx_hash`, `verified_at` | text, timestamptz | The Ethereum tx that verified the batch, and when. |
+| `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed the batch, and when. Null on a `nothing_to_execute` batch. |
+| `final_at` | timestamptz | When the batch became final. |
+
+### Lighter account snapshots
+
+`analytics.lighter_account_snapshots`, `analytics.lighter_account_position_snapshots` and `analytics.lighter_account_asset_snapshots`
+
+Lighter's own reading of each listed account: its collateral and value, each position and each asset balance, one reading per run. Covers the accounts in `ingestion/sources/lighter-accounts/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there. Readings start with the first run, since Lighter keeps no history of them.
+
+The `lighter` pipeline builds them from the call source `lighter-accounts`, which reads each account once a run and keeps the reply whole. It runs daily at 07:30 UTC. A reading is a check for a ledger rebuilt from the logs, not a history.
+
+`lighter_account_snapshots` has one row per account and reading:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<read_at in ms>`. Unique. |
+| `account_index` | bigint | The account. |
+| `read_at` | timestamptz | When the run read it. |
+| `l1_address` | text | The Ethereum address of the account, lowercased. |
+| `account_type`, `status` | integer | As Lighter sends them. |
+| `collateral` | numeric | USDC collateral. It leaves out unrealized pnl. |
+| `available_balance` | numeric | USDC free to use. |
+| `total_asset_value` | numeric | Collateral plus unrealized pnl. |
+| `cross_asset_value`, `cross_initial_margin_requirement`, `cross_maintenance_margin_requirement` | numeric | The cross-margin value and its margin requirements. |
+| `transaction_time` | timestamptz | Lighter's time for the reading, to the microsecond. |
+
+`lighter_account_position_snapshots` has one row per account, market and reading. A closed position stays listed with `position` 0.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<market_id>:<read_at in ms>`. Unique. |
+| `account_index`, `read_at`, `market_id`, `symbol` | | As above. Join the market on `market_id`. |
+| `position` | numeric | The size in base units, negative when short. Lighter sends it unsigned with a `sign`. |
+| `avg_entry_price`, `position_value`, `unrealized_pnl`, `realized_pnl`, `liquidation_price` | numeric | As Lighter sends them. |
+| `total_funding_paid_out` | numeric | Lighter leaves it out on some positions, so it can be null. |
+| `margin_mode`, `allocated_margin`, `initial_margin_fraction` | | As Lighter sends them. |
+
+`lighter_account_asset_snapshots` has one row per account, asset and reading:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<asset_id>:<read_at in ms>`. Unique. |
+| `account_index`, `read_at`, `asset_id`, `symbol` | | As above. |
+| `balance`, `locked_balance`, `margin_balance` | numeric | In the asset's own units. |
+| `margin_mode` | text | As Lighter sends it. |
+
+### Lighter account value history
+
+`analytics.lighter_account_value_history`
+
+Lighter's own daily and hourly record of each listed account's value, from its `pnl` endpoint. It covers the accounts in `ingestion/sources/lighter-pnl/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there. Unlike a snapshot, it goes back to the day the account began.
+
+The `lighter` pipeline builds it from the call source `lighter-pnl`. Each run reads every account's `1d` series from `START_TIME` and its last 7 days of `1h`, and keeps each point whole. Lighter ends a series with a point at the request time. That point is still open, so the source leaves it for the next run. Lighter sends the values as JSON numbers, so they keep up to 15 significant digits.
+
+One row per account, resolution and point time. Every column but `volume` is a running total since the account began, up to `point_time`, in USDC.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<resolution>:<point time in s>`. Unique. |
+| `account_index` | bigint | The account. |
+| `resolution` | text | `1d` for a point at UTC midnight, `1h` for a point on the hour. |
+| `point_time` | timestamptz | The time the totals run up to. |
+| `perps_value` | numeric | `inflow - outflow + trade_pnl`: the account's collateral plus unrealized pnl at `point_time`. |
+| `trade_pnl`, `trade_spot_pnl` | numeric | Perps and spot trading pnl. |
+| `inflow`, `outflow` | numeric | USDC moved onto and off the perps route, each fee included. |
+| `spot_inflow`, `spot_outflow` | numeric | The same on the spot route. |
+| `pool_pnl`, `pool_inflow`, `pool_outflow` | numeric | Public pool pnl, and USDC into and out of pools. |
+| `staking_pnl`, `staking_inflow`, `staking_outflow` | numeric | The same for staking. |
+| `pool_total_shares` | numeric | Pool shares held. |
+| `volume` | numeric | Trading volume in the period. |
+
+The warn test `lighter_account_flows_match_pnl` checks the account log against these points. For each UTC day inside the window the log source loaded, it sets the day's change in `inflow`, `outflow`, `spot_inflow` and `spot_outflow` against the USDC movements in `lighter_account_movements` that day, and lists each account, day and field that differs.
+
+### Lighter account ledger
+
+`analytics.lighter_account_ledger`
+
+Every change to a listed Lighter account's holdings that the loaded data can price, one row per change: each leg of a money move, each perp fill, each hour of funding and each position exit, with a running total per asset and route. Covers the accounts in `ingestion/sources/lighter-account-logs/addresses.json` (313004 and 693073 to start) and the sub-accounts of each L1 address listed there. Fills and funding cover only the trades `lighter_trades` loads: to start, 313004's ETH trades. For a listed account that `lighter-trades` does not load in full, such as 693073, the ledger holds only its trades against the accounts that source loads, and its funding has gaps; see `funding` below. List the account in `ingestion/sources/lighter-trades/addresses.json` to load all its trades. An account counts as listed once its Explorer log holds an entry the account-log source loads, any type but a plain trade, since `START_TIME`. An account in `addresses.json` whose log since then holds only plain trades gets no fill, funding or exit rows, and the warn test `lighter_listed_accounts_have_log_entries` lists it.
+
+The `lighter` pipeline builds it from [`lighter_account_movements`](#lighter-account-movements), [`lighter_account_fills`](#lighter-account-fills) and [`lighter_funding_rates`](#lighter-funding-rates), with no source of its own. It runs daily at 07:30 UTC. Each history starts where its data does. Logs start at the account-log source's `START_TIME` (2026-11-16 to start), and the Explorer holds none before 2025-08-25. Fills start at the first S3 day `lighter-trades` loads (2026-11-14 to start), and funding at each account's first loaded fill. Readings to check against start at the first run of `lighter-accounts`.
+
+`kind` says what changed:
+
+- `deposit`, `withdrawal`, `transfer_out`, `transfer_in`, `transfer_fee`, `route_move`, `pool_mint`, `pool_burn`, `stake`, `unstake`, `unlock`, `margin_move`: a leg of `lighter_account_movements`, with its `signed_amount` as `amount`.
+- `fill`: a perp fill, USDC on perps. `amount` is the fill's realized pnl less its fee and its role's integrator fee. Lighter's S3 files record pnl, the fees and the integrator fees on every fill only from 2026-03-30 (`catalog/vendors/lighter/NOTES.md`, L30). On older days a null can mean none or not recorded, so a fill before 2026-03-30 has a null `amount`, as has any fill with a null fee or integrator fee. A `START_DATE` before 2026-03-30 in `lighter-trades` loads fills the ledger cannot price. From 2026-03-30 on, a `fill` or `funding` row with a null `amount` fails a `not_null` test.
+- `funding`: an hour mark at which the account held a perp position, USDC on perps. Lighter books funding on every open position at each hour mark, with no log entry. `amount` is -position × `value_usdc_per_unit` when the rate's `direction` is `long` and +position × value when it is `short`: the side that `direction` names pays. `value_usdc_per_unit` has 8 decimals, so an hour can miss Lighter's own amount by up to `|position| × 0.5 × 10^-8` USDC. The position at a mark comes from the last loaded fill before it. When a fill's `position_before` differs from the `position_after` of the fill before it, trades between them were not loaded, so the marks between them have no row. A gap before an account's first loaded fill in a market, or after its last, cannot show: there funding assumes the account made no other trade. Nor can a gap whose unloaded trades net to zero, so that the next fill's `position_before` equals the last one's `position_after`: funding then carries that position through hours it may not have held.
+- `exit_position`: an `ExitPosition` or `ExitPositionWithFunding` entry, which closes the account's position in `market_id`, as when Lighter delists a market.
+
+`amount` is null for `stake`, `unstake`, `unlock` and `margin_move`, whose sign is unproven, for `exit_position`, whose entry carries a settlement price but no amount, and for a `fill` that S3 cannot price, as above. `cumulative_amount` skips those rows. Spot fills stay out until the asset a spot fill's fee is paid in is proven.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `move:<movement id>`, `fill:<fill id>`, `funding:<account_index>:<market_id>:<funding_time in s>` or `exit:<hash>:<account_index>`. Unique. |
+| `account_index` | bigint | The account. |
+| `event_time` | timestamptz | The log entry's time, the trade's time or the funding hour mark. |
+| `kind` | text | What changed, as listed above. |
+| `asset` | text | The asset's symbol. `USDC` for fills, funding and exits. |
+| `route` | text | `perps` or `spot`. Null for stake, unstake, unlock and margin moves. |
+| `amount` | numeric | The change, signed, in the asset's units. Null as described above. |
+| `cumulative_amount` | numeric | The sum of `amount` over the account's rows of the same asset and route up to and with `event_time`. Rows at one time, such as a transfer and its fee, share one total. A balance only if the loaded history reaches back to the account's first move. |
+| `market_id` | integer | The market of a fill, funding hour or exit. |
+| `position_after` | numeric | The account's position in `market_id` after the row, negative when short. 0 after an exit. For funding, the position that paid. |
+| `trade_id` | bigint | The trade of a fill. |
+| `hash` | text | The log entry's hash, or the fill's trade tx hash. Null for funding. |
+| `block_number` | bigint | The L2 block of a move, fill or exit. |
+| `batch_number`, `batch_status` | bigint, text | The loaded batch whose block range holds `block_number`, and its status, as in [`lighter_batches`](#lighter-batches). |
+| `execute_tx_hash`, `executed_at` | text, timestamptz | The Ethereum tx that executed the batch, and when. Null on a `nothing_to_execute` batch. |
+
+Three warn tests check the ledger against Lighter's own data:
+
+- `lighter_funding_prefix_steps_match_rates` lists each step of a market's `funding_rate_prefix_sum`, as the logs' `TradeWithFunding` entries carry it, that differs from the hourly rates between: 10^8 × `value_usdc_per_unit` per hour mark, up for `long` and down for `short`. It compares only steps whose every hour mark has a loaded rate.
+- `lighter_positions_match_snapshots` lists each position in [`lighter_account_position_snapshots`](#lighter-account-snapshots) that differs from the account's position after its last fill or exit in that market up to the reading, or 0 with none.
+- `lighter_ledger_matches_collateral` lists each pair of consecutive readings in `lighter_account_snapshots` whose change in `collateral` differs from the sum of the account's USDC perps `amount` between them, beyond 0.000002 per row summed plus the funding rounding above. It skips a pair when a position in either reading is not in cross margin (`margin_mode` 0), when a row between them has a null `amount`, or when either reading holds a position in a market with no loaded fills for the account.
+
+The two reading checks compare only readings that the loaded fills cover. The positions check needs a fill in the reading's market after it, and the collateral check a fill of the account before the earlier reading and one after the later. A later exit does not count, since exits come from the Explorer log, which is current, while fills wait for S3. A day's S3 trade file lands the next morning, so a reading from one run is first compared by the next day's run, and only if the account traded after it.
+
+They also skip what a gap in the loaded fills hides. Each fill carries S3's `position_before`, so where it differs from the `position_after` of the fill before it in that market, trades between the two were not loaded, as for an account like 693073 that `lighter-trades` loads only through its trades with 313004. The positions check skips a reading when the first fill after it does not start from the position the ledger carries to it. The collateral check skips a pair when any such gap overlaps the span between its readings, and counts a market's first loaded fill that starts from a position other than 0 as a gap from the start. Neither check can see unloaded trades that leave the position where it was: between two fills that still chain, or in a market with no loaded fills where the account holds nothing at either reading. Their pnl and fees then make the collateral check list a pair on correct data.
+
+### Lighter tx counts
+
+`analytics.lighter_tx_stats`
+
+The number of txs on Lighter in each UTC hour, from the Explorer's `stats/tx`. It covers every closed hour from 2025-10-02 00:00 UTC. The hour still open loads on a later run.
+
+The `lighter` pipeline builds it from the call source `lighter-tx-stats`. Each run reads the whole hourly series again, in one call, and keeps the hours that ended before the call. It runs daily at 07:30 UTC.
+
+One row per hour.
+
+| Column | Type | Description |
+|---|---|---|
+| `hour` | timestamptz | The start of the hour. Unique. |
+| `tx_count` | bigint | Txs in the hour. |
+| `uops_count` | bigint | User operations in the hour. |
+
+### Lighter assets
+
+`analytics.lighter_assets`
+
+The assets Lighter lists, with the settings of each one as the latest run read them: how many decimals it carries, its token on Ethereum, its margin mode, caps and price.
+
+The `lighter` pipeline builds it from the call source `lighter-assets`, which reads `assetDetails` once a run and keeps each asset as a reading. It runs daily at 07:30 UTC.
+
+One row per asset. Amounts and ratios are numeric.
+
+| Column | Type | Description |
+|---|---|---|
+| `asset_id` | integer | Lighter's id for the asset. Unique. USDC is 3, ETH 1 and LIT 2. |
+| `symbol` | text | The asset's symbol. |
+| `decimals` | integer | Decimal places of the asset on Lighter. USDC has 6. |
+| `l1_decimals` | integer | Decimal places of the token on Ethereum. |
+| `l1_address` | text | The token's contract on Ethereum. |
+| `margin_mode` | text | `enabled` or `disabled`. |
+| `min_transfer_amount` | numeric | The smallest transfer. |
+| `min_withdrawal_amount` | numeric | The smallest withdrawal. |
+| `loan_to_value` | numeric | The ratio of loan to collateral value allowed. |
+| `liquidation_threshold` | numeric | The ratio at which a position is liquidated. |
+| `global_supply_cap` | numeric | The most of the asset the exchange takes in. |
+| `user_supply_cap` | numeric | The most of the asset one account supplies. |
+| `index_price` | numeric | The price in USDC when the run read it. |
+| `read_at` | timestamptz | When the run read these settings. |
+
+### Lighter system accounts
+
+`analytics.lighter_system_accounts`
+
+The five accounts Lighter's own logic uses, from the latest `systemConfig` reading. Join `account_index` to the movements and pools to tell them from user accounts.
+
+The `lighter` pipeline builds it from the call source `lighter-system-config`, which reads `systemConfig` once a run. It runs daily at 07:30 UTC.
+
+One row per role.
+
+| Column | Type | Description |
+|---|---|---|
+| `role` | text | `liquidity_pool`, `staking_pool`, `funding_fee_rebate`, `market_maker_incentive` or `fee_collector`. Unique. |
+| `account_index` | bigint | The account that holds the role. |
+| `read_at` | timestamptz | When the run read the config. |
+
+### Lighter public pools
+
+`analytics.lighter_public_pools`
+
+Lighter's public pools, with their value and yield. The Lighter liquidity pool (LLP) is `account_index` 281474976710654. Each run adds a reading of every pool, so the table shows how a pool changes from run to run.
+
+The `lighter` pipeline builds it from the call source `lighter-public-pools`, which reads `publicPoolsMetadata` in pages of 100, from the top account index down, until a page is short. It runs daily at 07:30 UTC.
+
+One row per pool and reading.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | text | `<account_index>:<read_at in ms>`. Unique. |
+| `account_index` | bigint | The pool's account. |
+| `read_at` | timestamptz | When the run read the pool. |
+| `name` | text | The pool's name. |
+| `account_type` | integer | 3 for the LLP, 2 for the others. |
+| `master_account_index` | bigint | The account that runs the pool. |
+| `operator_fee` | numeric | The operator's fee, as Lighter sends it. |
+| `annual_percentage_yield` | numeric | The yield, as Lighter sends it. |
+| `total_asset_value` | numeric | The pool's value in USDC. |
+| `total_spot_value` | numeric | The spot part of that value. |
+| `total_perps_value` | numeric | The perps part of that value. |
+| `total_shares` | numeric | Shares issued. |
+| `status` | integer | Lighter's status code for the pool. |
+| `created_at` | timestamptz | When the pool was made. |
 
 TypeScript sources load raw rows into `raw.*`, dbt builds the models, and Dagster runs each pipeline as one job. Docker runs the warehouse, eRPC, Dshackle and monitoring. You drive it with the `bj` CLI (`dev`, `doctor`, `run`, `answer`, `report`, `new-source`) and the [blockjuice skill](#claude-code-skill). The contracts, events and ABIs of each protocol, and the endpoints and limits of each vendor API, are written up under `catalog/`.
 

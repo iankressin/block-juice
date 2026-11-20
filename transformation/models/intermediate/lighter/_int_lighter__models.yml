@@ -171,3 +171,609 @@ unit_tests:
     expect:
       rows:
         - {id: "7:maker", account_index: 313004, role: maker, side: buy, signed_size: 1, position_before: 2, position_after: 3}
+
+  # The int_lighter_batches tests use batches read from the Explorer on 2026-11-18 (catalog/vendors/lighter/NOTES.md,
+  # Batches and L1 settlement, L11 and L12). Each lists only the blocks the test needs, as the Explorer sent them.
+  - name: l1_times_come_from_status_changes
+    description: >-
+      Batch 270062 was committed at 11:54:23, verified at 12:08:59 and executed at 12:08:59 on 2026-11-17,
+      so it is executed and final. Its last two changes share a second; executed comes later in the list.
+      Batch 270064 was committed at 11:56:59 and went to nothing_to_execute at 12:14:35 with its verify
+      hash, so it was verified then, has no execute time, and is final.
+    model: int_lighter_batches
+    given:
+      - input: ref('stg_lighter__batches')
+        format: sql
+        rows: |
+          select 270062::bigint as batch_number, '2026-11-17 12:10:37.866067+00'::timestamptz as updated_at,
+              '0x50f0e5aa336f09405d3e264af44cbb4138f53b89b7beb7b23ecf1e6103f84316'::text as commit_tx_hash,
+              '0x9b84cad69e96774aee9ebfe6a47ddc2a98c505e439c7513ea2fb67ce371ff596'::text as verify_tx_hash,
+              '0x3da459769fb33f0b08709dafc6eae310f27ad43e16570bb7e6ddacc2014ba4da'::text as execute_tx_hash,
+              '[{"block_number": 391215230, "updated_at": "2026-11-17T11:45:05.194692Z", "total_transactions": 500}]'::jsonb as blocks,
+              '[{"hash": "0x50f0e5aa336f09405d3e264af44cbb4138f53b89b7beb7b23ecf1e6103f84316", "updated_at": "2026-11-17T11:54:23Z", "batch_status": "committed"},
+                {"hash": "0x9b84cad69e96774aee9ebfe6a47ddc2a98c505e439c7513ea2fb67ce371ff596", "updated_at": "2026-11-17T12:08:59Z", "batch_status": "verified"},
+                {"hash": "0x3da459769fb33f0b08709dafc6eae310f27ad43e16570bb7e6ddacc2014ba4da", "updated_at": "2026-11-17T12:08:59Z", "batch_status": "executed"}]'::jsonb as status_changes
+          union all
+          select 270064, '2026-11-17 12:16:14.557425+00',
+              '0x06461478d7061e4b3fde59e26cbe32a5626587fcc0b2ec2654fc98f8880a6b9a',
+              '0xc09974b4a796e325d06987f2d05ce614452ff2e276d68dfaa1246acb89ce91a6',
+              null,
+              '[{"block_number": 391218430, "updated_at": "2026-11-17T11:47:40.899007Z", "total_transactions": 500}]',
+              '[{"hash": "0x06461478d7061e4b3fde59e26cbe32a5626587fcc0b2ec2654fc98f8880a6b9a", "updated_at": "2026-11-17T11:56:59Z", "batch_status": "committed"},
+                {"hash": "0xc09974b4a796e325d06987f2d05ce614452ff2e276d68dfaa1246acb89ce91a6", "updated_at": "2026-11-17T12:14:35Z", "batch_status": "nothing_to_execute"}]'
+    expect:
+      rows:
+        - {batch_number: 270062, status: executed, is_final: true, committed_at: "2026-11-17 11:54:23+00", verified_at: "2026-11-17 12:08:59+00", executed_at: "2026-11-17 12:08:59+00", final_at: "2026-11-17 12:08:59+00"}
+        - {batch_number: 270064, status: nothing_to_execute, is_final: true, committed_at: "2026-11-17 11:56:59+00", verified_at: "2026-11-17 12:14:35+00", executed_at: null, final_at: "2026-11-17 12:14:35+00"}
+
+  - name: a_new_batch_is_pending
+    description: >-
+      Batch 270105, read at 13:14 on 2026-11-17 before its commit, had batch_details {} and no status
+      changes, so it is pending and not final. Batch 28910, the first the Explorer holds, has batch_details
+      null and no status changes: it is pending too, and never settles.
+    model: int_lighter_batches
+    given:
+      - input: ref('stg_lighter__batches')
+        format: sql
+        rows: |
+          -- updated_at is made up: the 13:14 reply's was not kept.
+          select 270105::bigint as batch_number, '2026-11-17 13:14:00+00'::timestamptz as updated_at,
+              null::text as commit_tx_hash, null::text as verify_tx_hash, null::text as execute_tx_hash,
+              '[{"block_number": 391284030, "updated_at": "2026-11-17T13:06:33.150264Z", "total_transactions": 500}]'::jsonb as blocks,
+              '[]'::jsonb as status_changes
+          union all
+          select 28910, '2025-08-25 16:20:38.646202+00', null, null, null,
+              '[{"block_number": 41849406, "updated_at": "2025-08-25T15:28:03.691073Z", "total_transactions": 498}]',
+              '[]'
+    expect:
+      rows:
+        - {batch_number: 270105, status: pending, is_final: false, commit_tx_hash: null, committed_at: null, verified_at: null, executed_at: null, final_at: null}
+        - {batch_number: 28910, status: pending, is_final: false, commit_tx_hash: null, committed_at: null, verified_at: null, executed_at: null, final_at: null}
+
+  - name: block_range_and_counts_come_from_the_block_list
+    description: >-
+      The first three blocks of batch 270063, 391216830 (500 txs), 391216831 (477) and 391216832 (500), give
+      a range of 391216830 to 391216832, 3 blocks and 1477 txs. The first block's time keeps its microseconds.
+    model: int_lighter_batches
+    given:
+      - input: ref('stg_lighter__batches')
+        format: sql
+        rows: |
+          select 270063::bigint as batch_number, '2026-11-17 12:11:01.993887+00'::timestamptz as updated_at,
+              null::text as commit_tx_hash, null::text as verify_tx_hash, null::text as execute_tx_hash,
+              '[{"block_number": 391216830, "updated_at": "2026-11-17T11:46:13.256136Z", "total_transactions": 500},
+                {"block_number": 391216831, "updated_at": "2026-11-17T11:46:13.300811Z", "total_transactions": 477},
+                {"block_number": 391216832, "updated_at": "2026-11-17T11:46:13.340002Z", "total_transactions": 500}]'::jsonb as blocks,
+              '[]'::jsonb as status_changes
+    expect:
+      rows:
+        - {batch_number: 270063, first_block: 391216830, last_block: 391216832, block_count: 3, tx_count: 1477, first_block_time: "2026-11-17 11:46:13.256136+00", last_block_time: "2026-11-17 11:46:13.340002+00"}
+
+  # The int_lighter_account_movements tests use log entries and batches as the Explorer sent them on
+  # 2026-11-18 (catalog/vendors/lighter/NOTES.md, Account logs, L15 and L16). pubdata is the entry's inner
+  # <kind>_pubdata object, as staging gives it.
+  - name: a_v1_deposit_is_usdc_on_perps
+    description: >-
+      313004's L1Deposit of 35.000000 on 2025-11-12 carries no asset and no route, so it is one leg: a
+      deposit of USDC onto perps, +35, from its L1 address.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 313004::bigint as account_index,
+              '00000000000cc7191f00000130000000000000000000000000000000000000000000000000000000'::text as hash,
+              'L1Deposit'::text as tx_type, 'L1Deposit'::text as pubdata_type,
+              '2025-11-12 05:32:11.513606+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"l1_address": "0xa522fe38eF16E2aDB68a589D11cD13F8A76AB1c1", "usdc_amount": "35.000000", "account_index": "313004"}'::jsonb as pubdata
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: &no_details |
+          select null::text as hash, null::bigint as block_number, null::bigint as batch_number where false
+      - input: ref('lighter_batches')
+        format: sql
+        rows: &no_batches |
+          select null::bigint as batch_number, null::bigint as first_block, null::bigint as last_block,
+              null::text as status, null::boolean as is_final,
+              null::text as commit_tx_hash, null::timestamptz as committed_at,
+              null::text as verify_tx_hash, null::timestamptz as verified_at,
+              null::text as execute_tx_hash, null::timestamptz as executed_at, null::timestamptz as final_at
+          where false
+    expect:
+      rows:
+        - {id: "00000000000cc7191f00000130000000000000000000000000000000000000000000000000000000:313004:self", account_index: 313004, leg: self, kind: deposit, asset: USDC, route: perps, amount: "35.000000", signed_amount: "35.000000", counterparty_account_index: null, l1_address: "0xa522fe38ef16e2adb68a589d11cd13f8a76ab1c1", batch_number: null, is_final: false}
+
+  - name: a_v2_transfer_with_a_fee_gives_the_sender_two_legs
+    description: >-
+      20000 sent 1900.900000 USDC to 675395 on 2025-12-30 with a usdc_fee of 3.000000, and its outflow
+      that day rose by 1903.9 (L15). Queried as 20000 the entry gives transfer_out -1900.9 and transfer_fee
+      -3, both with counterparty 675395; queried as 675395 it gives one transfer_in of +1900.9.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select account_index,
+              'f643dc905ba41838a4dee55abfc1c6a553dde01a6698ea2c9878d31b7301ef5dcc4f500cea2339e7'::text as hash,
+              'L2Transfer'::text as tx_type, 'L2TransferV2'::text as pubdata_type,
+              '2025-12-30 16:37:20.205+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"from_account_index": "20000", "to_account_index": "675395", "fee_account_index": "675395", "asset_index": "USDC", "from_route_type": "PERPS", "to_route_type": "PERPS", "amount": "1900.900000", "usdc_fee": "3.000000"}'::jsonb as pubdata
+          from (values (20000::bigint), (675395::bigint)) as queried (account_index)
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_details
+      - input: ref('lighter_batches')
+        format: sql
+        rows: *no_batches
+    expect:
+      rows:
+        - {id: "f643dc905ba41838a4dee55abfc1c6a553dde01a6698ea2c9878d31b7301ef5dcc4f500cea2339e7:20000:from", account_index: 20000, leg: from, kind: transfer_out, asset: USDC, route: perps, amount: "1900.900000", signed_amount: "-1900.900000", counterparty_account_index: 675395}
+        - {id: "f643dc905ba41838a4dee55abfc1c6a553dde01a6698ea2c9878d31b7301ef5dcc4f500cea2339e7:20000:fee", account_index: 20000, leg: fee, kind: transfer_fee, asset: USDC, route: perps, amount: "3.000000", signed_amount: "-3.000000", counterparty_account_index: 675395}
+        - {id: "f643dc905ba41838a4dee55abfc1c6a553dde01a6698ea2c9878d31b7301ef5dcc4f500cea2339e7:675395:to", account_index: 675395, leg: to, kind: transfer_in, asset: USDC, route: perps, amount: "1900.900000", signed_amount: "1900.900000", counterparty_account_index: 20000}
+
+  - name: a_route_move_gives_two_legs_on_one_account
+    description: >-
+      On 2025-12-30 account 1000 sent 104508.600000 USDC to itself from SPOT to PERPS, which moves funds
+      between its routes. It gives two route_move legs: -104508.6 on spot and +104508.6 on perps.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 1000::bigint as account_index,
+              'e7a0a2bb6af47df070e3e2273762a76a51b667968f61985ea9c4d73734a1cdd48b6df63acb471e55'::text as hash,
+              'L2Transfer'::text as tx_type, 'L2TransferV2'::text as pubdata_type,
+              '2025-12-30 08:07:07.462+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"from_account_index": "1000", "to_account_index": "1000", "fee_account_index": "675395", "asset_index": "USDC", "from_route_type": "SPOT", "to_route_type": "PERPS", "amount": "104508.600000", "usdc_fee": "0.000000"}'::jsonb as pubdata
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_details
+      - input: ref('lighter_batches')
+        format: sql
+        rows: *no_batches
+    expect:
+      rows:
+        - {id: "e7a0a2bb6af47df070e3e2273762a76a51b667968f61985ea9c4d73734a1cdd48b6df63acb471e55:1000:from", account_index: 1000, leg: from, kind: route_move, asset: USDC, route: spot, amount: "104508.600000", signed_amount: "-104508.600000", counterparty_account_index: null}
+        - {id: "e7a0a2bb6af47df070e3e2273762a76a51b667968f61985ea9c4d73734a1cdd48b6df63acb471e55:1000:to", account_index: 1000, leg: to, kind: route_move, asset: USDC, route: perps, amount: "104508.600000", signed_amount: "104508.600000", counterparty_account_index: null}
+
+  - name: a_movement_takes_the_batch_whose_range_holds_its_block
+    description: >-
+      Account 1000's withdrawal of 104503 USDC (tx_type L1Withdraw, pubdata_type WithdrawV2) at 2025-12-30
+      08:38:14.781 sits in block 137652420. Batch 109273 ends at block 137652411 and 109274 holds 137652412
+      to 137652838, so it is 109274's, executed at 11:33:23 by 0x23a3d85c (L16). The detail here is as
+      read before the batch formed, with batch_number null, so only the block range finds the batch. A
+      join on time would take 109273, whose last block came 105 ms after the withdrawal.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 1000::bigint as account_index,
+              '00000000001782c02e00000130000000000000000000000000000000000000000000000000000000'::text as hash,
+              'L1Withdraw'::text as tx_type, 'WithdrawV2'::text as pubdata_type,
+              '2025-12-30 08:38:14.781+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"from_account_index": "1000", "asset_index": "USDC", "route_type": "PERPS", "amount": "104503.000000"}'::jsonb as pubdata
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: |
+          select '00000000001782c02e00000130000000000000000000000000000000000000000000000000000000'::text as hash,
+              137652420::bigint as block_number, null::bigint as batch_number
+      - input: ref('lighter_batches')
+        format: sql
+        rows: |
+          select 109273::bigint as batch_number, 137651587::bigint as first_block, 137652411::bigint as last_block,
+              'executed'::text as status, true as is_final,
+              '0x79970ec0aac955a5ba60388bd805eec2e05f7512fcf1f76dc38dfaea1bc161c7'::text as commit_tx_hash,
+              '2025-12-30 10:49:47+00'::timestamptz as committed_at,
+              '0x3756b2c1d3cd636889c416e5a4a3e4c6c2f01d05cd0dada9d27bb2f472f5d24a'::text as verify_tx_hash,
+              '2025-12-30 11:30:47+00'::timestamptz as verified_at,
+              '0x3c39162306da1edec2407d5b799e0dcaac17dfb1aab9881b2c71fc468af4b1b0'::text as execute_tx_hash,
+              '2025-12-30 11:32:59+00'::timestamptz as executed_at,
+              '2025-12-30 11:32:59+00'::timestamptz as final_at
+          union all
+          select 109274, 137652412, 137652838, 'executed', true,
+              '0xa8c5c97cd3e1f2150d63655b73cda225deeaddf6a842d8dc011bf940ac7a8933', '2025-12-30 10:50:11+00',
+              '0x353d59b6e0649e72592adb0783528495eed24de9feeca1deef3f81304ec737b9', '2025-12-30 11:31:11+00',
+              '0x23a3d85cc05e63342464cf05cf14df49ca4701089ed1779f06ceac577cba32fe', '2025-12-30 11:33:23+00',
+              '2025-12-30 11:33:23+00'
+    expect:
+      rows:
+        - {id: "00000000001782c02e00000130000000000000000000000000000000000000000000000000000000:1000:self", account_index: 1000, kind: withdrawal, asset: USDC, route: perps, signed_amount: "-104503.000000", block_number: 137652420, batch_number: 109274, detail_batch_number: null, batch_status: executed, is_final: true, commit_tx_hash: "0xa8c5c97cd3e1f2150d63655b73cda225deeaddf6a842d8dc011bf940ac7a8933", execute_tx_hash: "0x23a3d85cc05e63342464cf05cf14df49ca4701089ed1779f06ceac577cba32fe", executed_at: "2025-12-30 11:33:23+00", final_at: "2025-12-30 11:33:23+00"}
+
+  - name: a_pool_mint_and_burn_move_usdc_with_the_pool
+    description: >-
+      1000 minted shares of pool 281474976710654 for 7747.974151 USDC on 2025-10-02 and burned shares for
+      7399.753218 USDC on 2025-10-11 (L22, L23). The mint is -7747.974151 USDC on perps and the burn
+      +7399.753218, each with the pool as counterparty.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 1000::bigint as account_index,
+              'ac1f7b9de3492e2bc9eac8adeefbce56c44cb7fb326afe02a26da977ec97d15e132c40179199544d'::text as hash,
+              'L2MintShares'::text as tx_type, 'L2MintShares'::text as pubdata_type,
+              '2025-10-02 16:22:41.699846+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"account_index": "1000", "public_pool_index": 281474976710654, "share_amount": "2313338", "usdc_amount": "7747.974151"}'::jsonb as pubdata
+          union all
+          select 1000, 'a2db9e6d3c6a2b10ebdeb425ed021563f8e91c220f06a71c2357137e359e54d7922ec02216954f94',
+              'L2BurnShares', 'BurnedShares', '2025-10-11 10:26:09.382883+00', 'executed',
+              '{"account_index": "1000", "public_pool_index": 281474976710654, "shares_to_burn": "2313340", "operator_fee_share_amount": "0", "shares_to_burn_usdc": "7399.753218"}'
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_details
+      - input: ref('lighter_batches')
+        format: sql
+        rows: *no_batches
+    expect:
+      rows:
+        - {id: "ac1f7b9de3492e2bc9eac8adeefbce56c44cb7fb326afe02a26da977ec97d15e132c40179199544d:1000:self", kind: pool_mint, asset: USDC, route: perps, amount: "7747.974151", signed_amount: "-7747.974151", counterparty_account_index: 281474976710654}
+        - {id: "a2db9e6d3c6a2b10ebdeb425ed021563f8e91c220f06a71c2357137e359e54d7922ec02216954f94:1000:self", kind: pool_burn, asset: USDC, route: perps, amount: "7399.753218", signed_amount: "7399.753218", counterparty_account_index: 281474976710654}
+
+  - name: stake_unstake_unlock_and_margin_keep_the_amount_unsigned
+    description: >-
+      693073 staked 10000.19000087 LIT on 2026-04-22, unstaked 10228.37989914 LIT on 2026-10-01, had that
+      amount unlocked on 2026-10-04, and moved 2.710264 USDC of margin on 2026-09-09 (L24 to L27). Each
+      gives one leg with the amount as sent. Their sign and route are unproven, so both are null.
+    model: int_lighter_account_movements
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 693073::bigint as account_index,
+              '1b52d68691ad1b9dd2c7a3c32752ca5e72aeba98ca25cfa6d76e0c78f6bbc6a96a1bc8baca10440a'::text as hash,
+              'L2StakeAssets'::text as tx_type, 'L2StakeAssets'::text as pubdata_type,
+              '2026-04-22 18:53:43.711+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"account_index": "693073", "staking_pool_index": 281474976624800, "share_amount": "975743814", "lit_amount": "10000.19000087"}'::jsonb as pubdata
+          union all
+          select 693073, '8ad8810ed23a49803127910a715083aca2008e5dc5f4f0d4ec25bd82bc39c177c845fe451c52c171',
+              'L2UnstakeAssets', 'UnstakeAssets', '2026-10-01 15:56:02.532+00', 'executed',
+              '{"account_index": "693073", "staking_pool_index": 281474976624800, "share_amount": "975743814", "lit_amount": "10228.37989914"}'
+          union all
+          select 693073, '0000001e8e683bff000001a107a120b0000000000000000000000000000000000000000000000000',
+              'InternalPendingUnlock', 'ExecutedPendingUnlock', '2026-10-04 15:56:02.608+00', 'nothing_to_execute',
+              '{"account_index": "693073", "asset_symbol": "LIT", "amount": "10228.37989914"}'
+          union all
+          select 693073, 'ae2ea19e23847b4063cc330bc56533ac113894bb8868d54dc537809d778c8649f1380d574631f03d',
+              'L2UpdateMargin', 'L2UpdateMargin', '2026-09-09 14:39:54.465+00', 'executed',
+              '{"account_index": "693073", "market_index": 93, "usdc_amount": "2.710264", "direction": 1}'
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_details
+      - input: ref('lighter_batches')
+        format: sql
+        rows: *no_batches
+    expect:
+      rows:
+        - {id: "1b52d68691ad1b9dd2c7a3c32752ca5e72aeba98ca25cfa6d76e0c78f6bbc6a96a1bc8baca10440a:693073:self", kind: stake, asset: LIT, route: null, amount: "10000.19000087", signed_amount: null, counterparty_account_index: 281474976624800}
+        - {id: "8ad8810ed23a49803127910a715083aca2008e5dc5f4f0d4ec25bd82bc39c177c845fe451c52c171:693073:self", kind: unstake, asset: LIT, route: null, amount: "10228.37989914", signed_amount: null, counterparty_account_index: 281474976624800}
+        - {id: "0000001e8e683bff000001a107a120b0000000000000000000000000000000000000000000000000:693073:self", kind: unlock, asset: LIT, route: null, amount: "10228.37989914", signed_amount: null, counterparty_account_index: null}
+        - {id: "ae2ea19e23847b4063cc330bc56533ac113894bb8868d54dc537809d778c8649f1380d574631f03d:693073:self", kind: margin_move, asset: USDC, route: null, amount: "2.710264", signed_amount: null, counterparty_account_index: null}
+
+  # The snapshot tests use 313004's account reply of 2026-11-17 (catalog/vendors/lighter/NOTES.md, Snapshots).
+  - name: position_is_signed_by_sign
+    description: >-
+      Lighter sends position unsigned. 313004's ETH has sign -1 and position 1.2821, so -1.2821. Its BTC
+      has sign 1 and position 0.00000, a closed position still listed, so 0.
+    model: int_lighter_account_position_snapshots
+    given:
+      - input: ref('stg_lighter__accounts')
+        format: sql
+        rows: |
+          select 313004::bigint as account_index, '2026-11-17 12:16:53+00'::timestamptz as read_at,
+              '[{"market_id": 0, "symbol": "ETH", "sign": -1, "position": "1.2821", "avg_entry_price": "2300.00", "unrealized_pnl": "-0.424714"},
+                {"market_id": 1, "symbol": "BTC", "sign": 1, "position": "0.00000", "avg_entry_price": "0.00", "total_funding_paid_out": "0.000000", "unrealized_pnl": "0.000000"}]'::jsonb as positions
+    expect:
+      rows:
+        - {id: "313004:0:1794917813000", account_index: 313004, market_id: 0, symbol: ETH, position: "-1.2821", unrealized_pnl: "-0.424714", total_funding_paid_out: null}
+        - {id: "313004:1:1794917813000", account_index: 313004, market_id: 1, symbol: BTC, position: "0.00000", unrealized_pnl: "0.000000", total_funding_paid_out: "0.000000"}
+
+  - name: assets_explode_one_row_each
+    description: >-
+      313004's LIT and USDC balances give two rows. The USDC margin_balance keeps all 12 decimals.
+    model: int_lighter_account_asset_snapshots
+    given:
+      - input: ref('stg_lighter__accounts')
+        format: sql
+        rows: |
+          select 313004::bigint as account_index, '2026-11-17 12:16:53+00'::timestamptz as read_at,
+              '[{"symbol": "LIT", "asset_id": 2, "balance": "0.00000000", "locked_balance": "0.00000000", "margin_mode": "disabled", "margin_balance": "0.00000000"},
+                {"symbol": "USDC", "asset_id": 3, "balance": "97972.003001669667", "locked_balance": "0.000000", "margin_mode": "enabled", "margin_balance": "97972.003001669667"}]'::jsonb as assets
+    expect:
+      rows:
+        - {id: "313004:2:1794917813000", asset_id: 2, symbol: LIT, balance: "0.00000000", margin_balance: "0.00000000"}
+        - {id: "313004:3:1794917813000", asset_id: 3, symbol: USDC, balance: "97972.003001669667", margin_balance: "97972.003001669667"}
+
+  # The funding test uses ETH's hourly values of 2026-11-17 from lighter_funding_rates, 313004's fill in
+  # trade 40969901633, and the sign rule of catalog/vendors/lighter/NOTES.md, Funding prefix sums (L21): the
+  # side that direction names pays. The other fills are made up around them.
+  - name: funding_is_position_times_value_signed_by_direction
+    description: >-
+      ETH's value at 13:00 on 2026-11-17 was 0.01641159, direction long. 313004's fill at 12:16:48 left it
+      long 0.7863, so it pays 0.7863 × 0.01641159: -0.012904433217. 693073's first ETH fill comes at 15:30,
+      after its BTC fill at 12:16, so at 13:00 it holds that fill's position_before, short 1.2821, and
+      receives 0.021041299539. At 16:00 the value was 0.00535704, direction short: 313004 still holds 0.7863
+      and receives 0.004212240552, and 693073 closed at 15:30, so it has no row. No BTC value is given, so
+      693073's BTC position has no row either.
+    model: int_lighter_funding_payments
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+          - {account_index: 693073}
+      - input: ref('lighter_account_fills')
+        rows:
+          - {id: "40969901633:taker", trade_id: 40969901633, trade_time: "2026-11-17 12:16:48.698+00", market_id: 0, account_index: 313004, position_before: 0.7974, position_after: 0.7863}
+          - {id: "2:maker", trade_id: 2, trade_time: "2026-11-17 12:16:53+00", market_id: 1, account_index: 693073, position_before: 0, position_after: 0.01}
+          - {id: "3:taker", trade_id: 3, trade_time: "2026-11-17 15:30:00+00", market_id: 0, account_index: 693073, position_before: -1.2821, position_after: 0}
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+          - {market_id: 1, symbol: BTC, market_type: perp}
+      - input: ref('lighter_trades')
+        rows:
+          - {trade_id: 3, trade_time: "2026-11-17 15:30:00+00"}
+      - input: ref('lighter_funding_rates')
+        rows:
+          - {id: "0:1794920400", market_id: 0, symbol: ETH, funding_time: "2026-11-17 13:00:00+00", value_usdc_per_unit: 0.01641159, direction: long}
+          - {id: "0:1794931200", market_id: 0, symbol: ETH, funding_time: "2026-11-17 16:00:00+00", value_usdc_per_unit: 0.00535704, direction: short}
+    expect:
+      rows:
+        - {account_index: 313004, market_id: 0, funding_time: "2026-11-17 13:00:00+00", position: 0.7863, value_usdc_per_unit: 0.01641159, direction: long, amount: -0.012904433217}
+        - {account_index: 693073, market_id: 0, funding_time: "2026-11-17 13:00:00+00", position: -1.2821, value_usdc_per_unit: 0.01641159, direction: long, amount: 0.021041299539}
+        - {account_index: 313004, market_id: 0, funding_time: "2026-11-17 16:00:00+00", position: 0.7863, value_usdc_per_unit: 0.00535704, direction: short, amount: 0.004212240552}
+
+  # A break in the fill chain: lighter_account_fills holds only the trades lighter-trades loads, so an account
+  # it does not load in full has gaps. 313004's fill at 12:16:48 is real; the rest are made up around it.
+  - name: a_break_in_the_fill_chain_drops_the_hours_it_hides
+    description: >-
+      313004's fill at 12:16:48 leaves it long 0.7863, but its next fill, at 15:30, starts from 1.5, so trades
+      between them are not loaded and its position at 13:00 and 14:00 is unknown: those hours have no row.
+      At 16:00 it holds that fill's 1.2 and receives 0.006428448 (value 0.00535704, short). 693073's chain
+      holds, short 1.2821 from 12:16 to 15:30, so it receives at 13:00 (0.021041299539) and 14:00
+      (value 0.01280559, long: 0.016418046939), and pays 0.00535704 on its short 1 at 16:00.
+    model: int_lighter_funding_payments
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+          - {account_index: 693073}
+      - input: ref('lighter_account_fills')
+        rows:
+          - {id: "40969901633:taker", trade_id: 40969901633, trade_time: "2026-11-17 12:16:48.698+00", market_id: 0, account_index: 313004, position_before: 0.7974, position_after: 0.7863}
+          - {id: "4:taker", trade_id: 4, trade_time: "2026-11-17 15:30:00+00", market_id: 0, account_index: 313004, position_before: 1.5, position_after: 1.2}
+          - {id: "5:maker", trade_id: 5, trade_time: "2026-11-17 12:16:53+00", market_id: 0, account_index: 693073, position_before: 0, position_after: -1.2821}
+          - {id: "6:maker", trade_id: 6, trade_time: "2026-11-17 15:30:00+00", market_id: 0, account_index: 693073, position_before: -1.2821, position_after: -1}
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        rows:
+          - {trade_id: 6, trade_time: "2026-11-17 15:30:00+00"}
+      - input: ref('lighter_funding_rates')
+        rows:
+          - {id: "0:1794920400", market_id: 0, symbol: ETH, funding_time: "2026-11-17 13:00:00+00", value_usdc_per_unit: 0.01641159, direction: long}
+          - {id: "0:1794924000", market_id: 0, symbol: ETH, funding_time: "2026-11-17 14:00:00+00", value_usdc_per_unit: 0.01280559, direction: long}
+          - {id: "0:1794931200", market_id: 0, symbol: ETH, funding_time: "2026-11-17 16:00:00+00", value_usdc_per_unit: 0.00535704, direction: short}
+    expect:
+      rows:
+        - {account_index: 313004, funding_time: "2026-11-17 16:00:00+00", position: 1.2, amount: 0.006428448}
+        - {account_index: 693073, funding_time: "2026-11-17 13:00:00+00", position: -1.2821, amount: 0.021041299539}
+        - {account_index: 693073, funding_time: "2026-11-17 14:00:00+00", position: -1.2821, amount: 0.016418046939}
+        - {account_index: 693073, funding_time: "2026-11-17 16:00:00+00", position: -1, amount: -0.00535704}
+
+  # The int_lighter_account_ledger tests give every input; the empty ones share the fixtures named here. The
+  # fill test uses trades 40969901633 and 40627886190 and batches 270078 to 270079 and 268847 as loaded on
+  # 2026-11-18.
+  - name: a_fill_moves_collateral_by_realized_pnl_less_fees
+    description: >-
+      In trade 40969901633 (ETH, 2026-11-17 12:16:48.698) 313004 was the taker, with realized_pnl -0.009548
+      and fee_usdc 0, so its amount is -0.009548. Maker 702389 realized 0.019542 and paid a fee of
+      0.000564021192: 0.018977978808. In trade 40627886190, maker 756068 realized nothing and paid a fee of
+      0.0077591439 and an integrator maker fee of 0.0387957195: -0.0465548634. Block 391242821 sits in batch
+      270079 (391242430 to 391244029), not 270078, which ends at 391242429; block 389272148 in 268847.
+    model: int_lighter_account_ledger
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+          - {account_index: 702389}
+          - {account_index: 756068}
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: &no_ledger_details |
+          select null::text as hash, null::bigint as block_number where false
+      - input: ref('lighter_account_movements')
+        format: sql
+        rows: &no_ledger_movements |
+          select null::text as id, null::text as hash, null::timestamptz as log_time, null::bigint as account_index,
+              null::text as kind, null::text as asset, null::text as route, null::numeric as signed_amount,
+              null::bigint as block_number, null::bigint as batch_number, null::text as batch_status,
+              null::text as execute_tx_hash, null::timestamptz as executed_at
+          where false
+      - input: ref('lighter_account_fills')
+        rows:
+          - {id: "40969901633:taker", trade_id: 40969901633, trade_time: "2026-11-17 12:16:48.698+00", market_id: 0, account_index: 313004, role: taker, fee_usdc: 0, position_after: 0.7863, realized_pnl: -0.009548}
+          - {id: "40969901633:maker", trade_id: 40969901633, trade_time: "2026-11-17 12:16:48.698+00", market_id: 0, account_index: 702389, role: maker, fee_usdc: 0.000564021192, position_after: -251.8407, realized_pnl: 0.019542}
+          - {id: "40627886190:maker", trade_id: 40627886190, trade_time: "2026-11-16 00:36:35.907+00", market_id: 0, account_index: 756068, role: maker, fee_usdc: 0.0077591439, position_after: 0.0853, realized_pnl: null}
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        rows:
+          - {trade_id: 40969901633, block_number: 391242821, tx_hash: "4d6b56c60f3586c8905a7e87b9b7538fbd83bdd2e995456e0319b23496fc0a796b6236144799c967", integrator_maker_fee_usdc: 0, integrator_taker_fee_usdc: 0}
+          - {trade_id: 40627886190, block_number: 389272148, integrator_maker_fee_usdc: 0.0387957195, integrator_taker_fee_usdc: 0}
+      - input: ref('lighter_batches')
+        rows:
+          - {batch_number: 268847, first_block: 389271230, last_block: 389272829, status: nothing_to_execute}
+          - {batch_number: 270078, first_block: 391240830, last_block: 391242429, status: executed, execute_tx_hash: "0x7b6ef0e0bfb438594a499e4d465818d46bafa59b303f9e9e57d52d17a897596c", executed_at: "2026-11-17 12:42:23+00"}
+          - {batch_number: 270079, first_block: 391242430, last_block: 391244029, status: executed, execute_tx_hash: "0x3a4b973c2c9475260c0d1c3d404532a076a9cf21f830834f3200e21febccb042", executed_at: "2026-11-17 12:43:23+00"}
+      - input: ref('int_lighter_funding_payments')
+        format: sql
+        rows: &no_funding |
+          select null::bigint as account_index, null::integer as market_id, null::timestamptz as funding_time,
+              null::numeric as position, null::numeric as value_usdc_per_unit, null::text as direction,
+              null::numeric as amount
+          where false
+    expect:
+      rows:
+        - {id: "fill:40969901633:taker", account_index: 313004, kind: fill, asset: USDC, route: perps, amount: -0.009548, market_id: 0, position_after: 0.7863, trade_id: 40969901633, hash: "4d6b56c60f3586c8905a7e87b9b7538fbd83bdd2e995456e0319b23496fc0a796b6236144799c967", block_number: 391242821, batch_number: 270079, batch_status: executed, execute_tx_hash: "0x3a4b973c2c9475260c0d1c3d404532a076a9cf21f830834f3200e21febccb042", executed_at: "2026-11-17 12:43:23+00"}
+        - {id: "fill:40969901633:maker", account_index: 702389, kind: fill, asset: USDC, route: perps, amount: 0.018977978808, market_id: 0, position_after: -251.8407, trade_id: 40969901633, hash: "4d6b56c60f3586c8905a7e87b9b7538fbd83bdd2e995456e0319b23496fc0a796b6236144799c967", block_number: 391242821, batch_number: 270079, batch_status: executed, execute_tx_hash: "0x3a4b973c2c9475260c0d1c3d404532a076a9cf21f830834f3200e21febccb042", executed_at: "2026-11-17 12:43:23+00"}
+        - {id: "fill:40627886190:maker", account_index: 756068, kind: fill, asset: USDC, route: perps, amount: -0.0465548634, market_id: 0, position_after: 0.0853, trade_id: 40627886190, hash: null, block_number: 389272148, batch_number: 268847, batch_status: nothing_to_execute, execute_tx_hash: null, executed_at: null}
+
+  # The exit test uses the LLP's entries, their blocks and their batches as the Explorer sent them on
+  # 2026-11-18 (catalog/vendors/lighter/NOTES.md, Account logs, L28 and L29).
+  - name: an_exit_zeroes_the_position
+    description: >-
+      The LLP (281474976710654) left market 155 (MAGS) by an ExitPosition entry on 2026-06-10 and market 157
+      (EDGE) by an ExitPositionWithFunding entry on 2026-10-28. Each gives an exit_position row in its
+      market, with position_after 0 and a null amount, since the entry carries a settlement price but no
+      amount. Block 259564659 sits in batch 187775, executed, and block 367828981 in batch 255445,
+      nothing_to_execute.
+    model: int_lighter_account_ledger
+    given:
+      - input: ref('stg_lighter__account_logs')
+        format: sql
+        rows: |
+          select 281474976710654::bigint as account_index,
+              '000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000'::text as hash,
+              'InternalExitPosition'::text as tx_type, 'ExitPosition'::text as pubdata_type,
+              '2026-06-10 14:58:00.642+00'::timestamptz as log_time, 'executed'::text as status,
+              '{"account_index": "281474976710654", "market_index": 155, "settlement_price": "65.085"}'::jsonb as pubdata
+          union all
+          select 281474976710654,
+              '00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000',
+              'InternalExitPosition', 'ExitPositionWithFunding', '2026-10-28 14:54:17.639+00', 'nothing_to_execute',
+              '{"account_index": "281474976710654", "market_index": 157, "settlement_price": "0.33160", "funding_rate_prefix_sum": 6406364482}'
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: |
+          select '000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000'::text as hash,
+              259564659::bigint as block_number
+          union all
+          select '00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000', 367828981
+      - input: ref('lighter_account_movements')
+        format: sql
+        rows: *no_ledger_movements
+      - input: ref('lighter_account_fills')
+        format: sql
+        rows: &no_ledger_fills |
+          select null::text as id, null::bigint as trade_id, null::timestamptz as trade_time, null::integer as market_id,
+              null::bigint as account_index, null::text as role, null::numeric as fee_usdc, null::numeric as position_after,
+              null::numeric as realized_pnl
+          where false
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        format: sql
+        rows: &no_ledger_trades |
+          select null::bigint as trade_id, null::bigint as block_number, null::text as tx_hash,
+              null::numeric as integrator_maker_fee_usdc, null::numeric as integrator_taker_fee_usdc
+          where false
+      - input: ref('lighter_batches')
+        rows:
+          - {batch_number: 187775, first_block: 259564112, last_block: 259565711, status: executed, execute_tx_hash: "0x8e3770fc21ad39fd36d94e44f19f3e3e2e5cdd0b88b7fa751bddaff665a83844", executed_at: "2026-06-10 16:13:35+00"}
+          - {batch_number: 255445, first_block: 367828613, last_block: 367830212, status: nothing_to_execute}
+      - input: ref('int_lighter_funding_payments')
+        format: sql
+        rows: *no_funding
+    expect:
+      rows:
+        - {id: "exit:000000159f3bd92f0000019eb20a4f42000000000000000000000000000000000000000000000000:281474976710654", account_index: 281474976710654, kind: exit_position, amount: null, market_id: 155, position_after: 0, block_number: 259564659, batch_number: 187775, batch_status: executed, execute_tx_hash: "0x8e3770fc21ad39fd36d94e44f19f3e3e2e5cdd0b88b7fa751bddaff665a83844"}
+        - {id: "exit:00000020b1adc7f0000001a183013827000000000000000000000000000000000000000000000000:281474976710654", account_index: 281474976710654, kind: exit_position, amount: null, market_id: 157, position_after: 0, block_number: 367828981, batch_number: 255445, batch_status: nothing_to_execute, execute_tx_hash: null}
+
+  - name: cumulative_amount_runs_per_account_asset_and_route
+    description: >-
+      313004 deposits 35 USDC onto perps (its L1Deposit of 2025-11-12), then 5 onto spot, then withdraws 10
+      from perps. The perps total runs 35, then 25; the spot deposit starts a total of its own, 5. 20000's
+      transfer of 1900.9 USDC at 2025-12-30 16:37:20 gives a transfer_out leg and a transfer_fee leg of 3 at
+      the same time (L15). Both show -1903.9: no balance ever held -3 or -1900.9 between them.
+    model: int_lighter_account_ledger
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_ledger_details
+      - input: ref('lighter_account_movements')
+        rows:
+          - {id: "a:313004:self", hash: a, log_time: "2025-11-12 05:32:11.513606+00", account_index: 313004, kind: deposit, asset: USDC, route: perps, signed_amount: 35}
+          - {id: "b:313004:self", hash: b, log_time: "2025-11-13 00:00:00+00", account_index: 313004, kind: deposit, asset: USDC, route: spot, signed_amount: 5}
+          - {id: "c:313004:self", hash: c, log_time: "2025-11-14 00:00:00+00", account_index: 313004, kind: withdrawal, asset: USDC, route: perps, signed_amount: -10}
+          - {id: "d:20000:from", hash: d, log_time: "2025-12-30 16:37:20+00", account_index: 20000, kind: transfer_out, asset: USDC, route: perps, signed_amount: -1900.9}
+          - {id: "d:20000:fee", hash: d, log_time: "2025-12-30 16:37:20+00", account_index: 20000, kind: transfer_fee, asset: USDC, route: perps, signed_amount: -3}
+      - input: ref('lighter_account_fills')
+        format: sql
+        rows: *no_ledger_fills
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        format: sql
+        rows: *no_ledger_trades
+      - input: ref('lighter_batches')
+        format: sql
+        rows: &no_ledger_batches |
+          select null::bigint as batch_number, null::bigint as first_block, null::bigint as last_block,
+              null::text as status, null::text as execute_tx_hash, null::timestamptz as executed_at
+          where false
+      - input: ref('int_lighter_funding_payments')
+        format: sql
+        rows: *no_funding
+    expect:
+      rows:
+        - {id: "move:a:313004:self", kind: deposit, route: perps, amount: 35, cumulative_amount: 35}
+        - {id: "move:b:313004:self", kind: deposit, route: spot, amount: 5, cumulative_amount: 5}
+        - {id: "move:c:313004:self", kind: withdrawal, route: perps, amount: -10, cumulative_amount: 25}
+        - {id: "move:d:20000:from", kind: transfer_out, route: perps, amount: -1900.9, cumulative_amount: -1903.9}
+        - {id: "move:d:20000:fee", kind: transfer_fee, route: perps, amount: -3, cumulative_amount: -1903.9}
+
+  # Trades 16855027518 and 16857081556 as S3 holds them (catalog/vendors/lighter/NOTES.md, L30).
+  - name: a_fill_before_2026_03_30_has_no_amount
+    description: >-
+      S3 records pnl, the fees and the integrator fees on every fill only from 2026-03-30 (L30). Trade
+      16855027518 (ETH, 2026-03-29 23:42:38.518) has them all: 313004, the taker, realized -0.000303 with
+      no fee, and 702389, the maker, realized nothing and paid 0.001681350636. Both fills still get a null
+      amount, since a null on such a day can mean none or not recorded. In trade 16857081556 (ETH,
+      2026-03-30 00:14:10.699), 313004, the taker, realized -0.00151 with no fee: -0.00151; 102394, the
+      maker, realized nothing and paid 0.00838564608: -0.00838564608.
+    model: int_lighter_account_ledger
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+          - {account_index: 702389}
+          - {account_index: 102394}
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_ledger_details
+      - input: ref('lighter_account_movements')
+        format: sql
+        rows: *no_ledger_movements
+      - input: ref('lighter_account_fills')
+        rows:
+          - {id: "16855027518:taker", trade_id: 16855027518, trade_time: "2026-03-29 23:42:38.518+00", market_id: 0, account_index: 313004, role: taker, fee_usdc: 0, position_after: 0.1271, realized_pnl: -0.000303}
+          - {id: "16855027518:maker", trade_id: 16855027518, trade_time: "2026-03-29 23:42:38.518+00", market_id: 0, account_index: 702389, role: maker, fee_usdc: 0.001681350636, position_after: 13.6911, realized_pnl: null}
+          - {id: "16857081556:taker", trade_id: 16857081556, trade_time: "2026-03-30 00:14:10.699+00", market_id: 0, account_index: 313004, role: taker, fee_usdc: 0, position_after: -2.37, realized_pnl: -0.00151}
+          - {id: "16857081556:maker", trade_id: 16857081556, trade_time: "2026-03-30 00:14:10.699+00", market_id: 0, account_index: 102394, role: maker, fee_usdc: 0.00838564608, position_after: -771.3358, realized_pnl: null}
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        rows:
+          - {trade_id: 16855027518, block_number: 205756057, tx_hash: "6899cfe55764fe98422cd4023a229e251f790a54379c3bc35ec7c30972433696659b640c5df941e1", integrator_maker_fee_usdc: 0, integrator_taker_fee_usdc: 0}
+          - {trade_id: 16857081556, block_number: 205776083, tx_hash: "2e092f72dae7c3fb632af40b79f5ed5a1f3c4c1e5916fea4ce630c7a9fa6139585190abb48175f2b", integrator_maker_fee_usdc: 0, integrator_taker_fee_usdc: 0}
+      - input: ref('lighter_batches')
+        format: sql
+        rows: *no_ledger_batches
+      - input: ref('int_lighter_funding_payments')
+        format: sql
+        rows: *no_funding
+    expect:
+      rows:
+        - {id: "fill:16855027518:taker", account_index: 313004, kind: fill, amount: null, position_after: 0.1271}
+        - {id: "fill:16855027518:maker", account_index: 702389, kind: fill, amount: null, position_after: 13.6911}
+        - {id: "fill:16857081556:taker", account_index: 313004, kind: fill, amount: -0.00151, position_after: -2.37}
+        - {id: "fill:16857081556:maker", account_index: 102394, kind: fill, amount: -0.00838564608, position_after: -771.3358}
