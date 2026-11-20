@@ -41,3 +41,57 @@ unit_tests:
       rows:
         - {log_index: 5, order_uid: "0x0202020202020202020202020202020202020202020202020202020202020202ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "1000000000000000000"}
         - {log_index: 30, order_uid: "0x1010101010101010101010101010101010101010101010101010101010101010ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "2000000000000000000"}
+
+  - name: each_placement_takes_its_own_create_order_call
+    description: >-
+      Made up: a smart-contract wallet places two ETH Flow orders in one transaction. Its first createOrder
+      call reverts, its third call goes to another contract, and its second and fourth are the createOrder
+      calls behind the two OrderPlacement logs. The nth placement takes the output of the nth createOrder
+      call that returned a hash, from that wallet to that ETH Flow contract, so the reverted call and the
+      call to the other contract shift nothing.
+    model: int_ethereum_cow_ethflow_orders
+    given:
+      - input: ref('stg_ethereum__cow_ethflow')
+        rows:
+          - {block_number: 100, transaction_index: 0, log_index: 1, tx_hash: "0xa1", event: OrderPlacement, contract: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", order_sender: "0x00000000000000000000000000000000000000aa", order_valid_to: 4294967295}
+          - {block_number: 100, transaction_index: 0, log_index: 2, tx_hash: "0xa1", event: OrderPlacement, contract: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", order_sender: "0x00000000000000000000000000000000000000aa", order_valid_to: 4294967295}
+      - input: ref('stg_ethereum__cow_ethflow_traces')
+        rows:
+          - {tx_hash: "0xa1", trace_address: "[0]", error: Reverted, from_address: "0x00000000000000000000000000000000000000aa", to_address: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", value: "8", output: null}
+          - {tx_hash: "0xa1", trace_address: "[1]", error: null, from_address: "0x00000000000000000000000000000000000000aa", to_address: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", value: "1", output: "0x01"}
+          - {tx_hash: "0xa1", trace_address: "[2]", error: null, from_address: "0x00000000000000000000000000000000000000aa", to_address: "0x00000000000000000000000000000000000000cc", value: "4", output: "0x04"}
+          - {tx_hash: "0xa1", trace_address: "[3]", error: null, from_address: "0x00000000000000000000000000000000000000aa", to_address: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", value: "2", output: "0x02"}
+    expect:
+      rows:
+        - {log_index: 1, order_uid: "0x01ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "1"}
+        - {log_index: 2, order_uid: "0x02ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", eth_value_wei: "2"}
+
+  - name: cow_trades_keep_only_trade_logs
+    description: >-
+      Settlement 0x4ccf…48b3 (catalog/protocols/cow-protocol/NOTES.md), proof rows 3 and 4: the Trade
+      (log 155) that fills the subject's ETH Flow order and the USDS Transfer (log 323) that pays its
+      receiver. Only the Trade is a trade.
+    model: int_ethereum_cow_trades
+    given:
+      - input: ref('stg_ethereum__cow_ethflow')
+        rows:
+          - {block_number: 26380873, transaction_index: 10, log_index: 155, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", event: Trade, contract: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", trade_owner: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", trade_sell_token: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", trade_buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", trade_sell_amount: "1000000000000000000000", trade_buy_amount: "2127112317765805877520044", trade_fee_amount: 0, trade_order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff"}
+          - {block_number: 26380873, transaction_index: 10, log_index: 323, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", event: Transfer, contract: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", transfer_from: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", transfer_to: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", transfer_value: "2127112317765805877520044"}
+    expect:
+      rows:
+        - {log_index: 155, settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", owner: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", buy_amount: "2127112317765805877520044", order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff"}
+
+  - name: cow_wallet_transfers_keep_only_transfer_logs
+    description: >-
+      Settlement 0x4ccf…48b3 (catalog/protocols/cow-protocol/NOTES.md), proof rows 3 and 4: the USDS
+      Transfer (log 323) from the settlement contract to the order's receiver, equal to the Trade's
+      buyAmount, and the Trade (log 155) beside it. Only the Transfer is a transfer.
+    model: int_ethereum_cow_wallet_transfers
+    given:
+      - input: ref('stg_ethereum__cow_ethflow')
+        rows:
+          - {block_number: 26380873, transaction_index: 10, log_index: 155, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", event: Trade, contract: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", trade_owner: "0xba3cb449bd2b4adddbc894d8697f5170800eadec", trade_buy_amount: "2127112317765805877520044"}
+          - {block_number: 26380873, transaction_index: 10, log_index: 323, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", event: Transfer, contract: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", transfer_from: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", transfer_to: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", transfer_value: "2127112317765805877520044"}
+    expect:
+      rows:
+        - {log_index: 323, token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", amount: "2127112317765805877520044"}

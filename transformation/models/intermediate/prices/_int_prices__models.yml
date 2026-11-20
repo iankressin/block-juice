@@ -50,3 +50,41 @@ unit_tests:
       rows:
         - {id: "26356594:572", feed: ETH / USD, token: ETH, quote: USD, proxy: "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419", round_id: "129127208515966896732", price: 2209.71, answer: 220971000000, decimals: 8}
         - {id: "2:1", feed: BTC / USD, token: BTC, quote: USD, proxy: "0x00000000000000000000000000000000000000cc", round_id: "18446744073709551617", price: "74919.440000000000000123", answer: "74919440000000000000123", decimals: 18}
+
+  - name: an_arbitrum_chainlink_round_is_priced_by_its_feed
+    description: >-
+      Proof row 4 of catalog/protocols/chainlink/NOTES.md: Arbitrum's ETH / USD aggregator, in phase 2,
+      reported 221943506752 at 8 decimals in its round 152162, which the proxy reports as round 2 << 64 |
+      152162. The feed's name splits into token and quote. Made up: a round from an aggregator that has no
+      seed row, which drops out.
+    model: int_arbitrum_chainlink_prices
+    given:
+      - input: ref('stg_arbitrum__chainlink_price_feeds')
+        rows:
+          - {id: "521823614:2", aggregator: "0xd827123d014578c965f6c9d87a641ec05faa5501", answer: 221943506752, aggregator_round_id: 152162}
+          - {id: "1:1", aggregator: "0x00000000000000000000000000000000000000aa", answer: 1, aggregator_round_id: 1}
+      - input: ref('chainlink_feeds')
+        rows:
+          - {chain: arbitrum, feed: ETH / USD, phase_id: 2, aggregator: "0xd827123d014578c965f6c9d87a641ec05faa5501", decimals: 8}
+    expect:
+      rows:
+        - {id: "521823614:2", token: ETH, quote: USD, round_id: "36893488147419255394", price: "2219.43506752"}
+
+  - name: a_base_chainlink_round_is_priced_by_its_feed
+    description: >-
+      Proof row 7 of catalog/protocols/chainlink/NOTES.md: Base's ETH / USD aggregator, in phase 3,
+      reported 221974518546 at 8 decimals in its round 12276, which the proxy reports as round 3 << 64 |
+      12276. The feed's name splits into token and quote. Made up: a round from an aggregator that has no
+      seed row, which drops out.
+    model: int_base_chainlink_prices
+    given:
+      - input: ref('stg_base__chainlink_price_feeds')
+        rows:
+          - {id: "53935095:55", aggregator: "0x05c84a58fe042275b37db038baacd15f410c7bb0", answer: 221974518546, aggregator_round_id: 12276}
+          - {id: "1:1", aggregator: "0x00000000000000000000000000000000000000aa", answer: 1, aggregator_round_id: 1}
+      - input: ref('chainlink_feeds')
+        rows:
+          - {chain: base, feed: ETH / USD, phase_id: 3, aggregator: "0x05c84a58fe042275b37db038baacd15f410c7bb0", decimals: 8}
+    expect:
+      rows:
+        - {id: "53935095:55", token: ETH, quote: USD, round_id: "55340232221128667124", price: "2219.74518546"}

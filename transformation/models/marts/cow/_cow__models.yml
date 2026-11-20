@@ -22,3 +22,78 @@ models:
         data_tests: [not_null]
       - name: settled
         data_tests: [not_null]
+
+unit_tests:
+  - name: an_ethflow_order_settles_in_a_later_trade_with_its_uid
+    description: >-
+      Proof rows 1 to 4 of catalog/protocols/cow-protocol/NOTES.md: the order placed in 0x53ed…fe36 is
+      settled by the Trade (log 155) in 0x4ccf…48b3, a later block, and the USDS Transfer (log 323) from
+      the settlement contract to its receiver in that transaction is what it received. Made up: an order
+      that a Trade with its UID in its own transaction does not settle; another trader's Trade in the same
+      settlement; and four Transfers that do not count, one to another wallet, one of another token, one
+      from another sender and one in another transaction.
+    model: cow_ethflow_orders
+    given:
+      - input: ref('int_ethereum_cow_ethflow_orders')
+        rows:
+          - {chain: ethereum, block_number: 26380868, transaction_index: 89, tx_hash: "0x53ed2e9588f6ac402cb07bf83b230e57cd29ab788bb102d829940638dabefe36", owner: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", receiver: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff"}
+          - {chain: ethereum, block_number: 26380870, transaction_index: 5, tx_hash: "0xb1", owner: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", receiver: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", order_uid: "0xb2"}
+      - input: ref('int_ethereum_cow_trades')
+        rows:
+          - {chain: ethereum, block_number: 26380873, transaction_index: 10, log_index: 155, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", sell_amount: "1000000000000000000000", buy_amount: "2127112317765805877520044", fee_amount: 0, order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff"}
+          # Made up: another trader's order in the same settlement.
+          - {chain: ethereum, block_number: 26380873, transaction_index: 10, log_index: 156, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", sell_amount: 16, buy_amount: 32, fee_amount: 0, order_uid: "0xc3"}
+          # Made up: a Trade with the second order's UID in that order's own transaction.
+          - {chain: ethereum, block_number: 26380870, transaction_index: 5, log_index: 1, tx_hash: "0xb1", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", sell_amount: 64, buy_amount: 128, fee_amount: 0, order_uid: "0xb2"}
+      - input: ref('int_ethereum_cow_wallet_transfers')
+        rows:
+          - {chain: ethereum, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", amount: "2127112317765805877520044"}
+          # Made up: the four Transfers below each miss one condition.
+          - {chain: ethereum, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x00000000000000000000000000000000000000aa", amount: 1}
+          - {chain: ethereum, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", token: "0x00000000000000000000000000000000000000cc", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", amount: 2}
+          - {chain: ethereum, tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", from_address: "0x00000000000000000000000000000000000000dd", to_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", amount: 4}
+          - {chain: ethereum, tx_hash: "0xe5", token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", amount: 8}
+    expect:
+      rows:
+        - {order_uid: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179ba3cb449bd2b4adddbc894d8697f5170800eadecffffffff", settled: true, trades: 1, settlement_tx_hash: "0x4ccf0d2c0ee097dd9912fa37935e8dddfcd76eeab87615fd4b3a6dda636c48b3", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", executed_buy_amount: "2127112317765805877520044", received_amount: "2127112317765805877520044"}
+        - {order_uid: "0xb2", settled: false, trades: 0, settlement_tx_hash: null, settlement: null, executed_buy_amount: null, received_amount: null}
+
+  - name: a_twice_filled_order_counts_each_transfer_once
+    description: >-
+      Made up: a partially fillable order that one settlement fills with two Trades, each paying the
+      receiver with its own Transfer. The order has two trades and received the sum of the two Transfers,
+      each counted once.
+    model: cow_ethflow_orders
+    given:
+      - input: ref('int_ethereum_cow_ethflow_orders')
+        rows:
+          - {chain: ethereum, block_number: 100, transaction_index: 0, tx_hash: "0xa1", owner: "0x00000000000000000000000000000000000000aa", receiver: "0x00000000000000000000000000000000000000aa", buy_token: "0x00000000000000000000000000000000000000cc", order_uid: "0xa2"}
+      - input: ref('int_ethereum_cow_trades')
+        rows:
+          - {chain: ethereum, block_number: 101, transaction_index: 0, log_index: 1, tx_hash: "0xa3", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", sell_amount: 1, buy_amount: 100, fee_amount: 0, order_uid: "0xa2"}
+          - {chain: ethereum, block_number: 101, transaction_index: 0, log_index: 2, tx_hash: "0xa3", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", sell_amount: 2, buy_amount: 200, fee_amount: 0, order_uid: "0xa2"}
+      - input: ref('int_ethereum_cow_wallet_transfers')
+        rows:
+          - {chain: ethereum, tx_hash: "0xa3", token: "0x00000000000000000000000000000000000000cc", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x00000000000000000000000000000000000000aa", amount: 100}
+          - {chain: ethereum, tx_hash: "0xa3", token: "0x00000000000000000000000000000000000000cc", from_address: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", to_address: "0x00000000000000000000000000000000000000aa", amount: 200}
+    expect:
+      rows:
+        - {order_uid: "0xa2", settled: true, trades: 2, executed_sell_amount: 3, executed_buy_amount: 300, received_amount: 300}
+
+  - name: an_order_paid_to_an_unfollowed_receiver_received_zero
+    description: >-
+      Made up: a settled order whose receiver is not a followed wallet, so no Transfer into it loads. It
+      is settled and received 0, not null.
+    model: cow_ethflow_orders
+    given:
+      - input: ref('int_ethereum_cow_ethflow_orders')
+        rows:
+          - {chain: ethereum, block_number: 100, transaction_index: 0, tx_hash: "0xa1", owner: "0x00000000000000000000000000000000000000aa", receiver: "0x00000000000000000000000000000000000000bb", buy_token: "0x00000000000000000000000000000000000000cc", order_uid: "0xa2"}
+      - input: ref('int_ethereum_cow_trades')
+        rows:
+          - {chain: ethereum, block_number: 101, transaction_index: 0, log_index: 1, tx_hash: "0xa3", settlement: "0x9008d19f58aabd9ed0d60971565aa8510560ab41", sell_amount: 1, buy_amount: 100, fee_amount: 0, order_uid: "0xa2"}
+      - input: ref('int_ethereum_cow_wallet_transfers')
+        rows: []
+    expect:
+      rows:
+        - {order_uid: "0xa2", settled: true, trades: 1, received_amount: 0}

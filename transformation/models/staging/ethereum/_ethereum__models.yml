@@ -248,3 +248,193 @@ models:
           - accepted_values:
               arguments:
                 values: ['+', '*', '-']
+
+# Several raw tables hold more than one kind of record, and each staging view keeps one kind. Each test gives
+# a record of each kind and expects only its own. Input rows are in the shape the source writes them; fields
+# that no proof row gives are left out, and the view reads them as null.
+unit_tests:
+  - name: deployment_traces_set_create_and_call_fields_by_trace_type
+    description: >-
+      Transaction 14 of block 26366424 from the evm-contract-deployments source test: the top call frame, the
+      create trace two frames down, and the transaction's own record. The view keeps the two traces. Only the
+      create trace gets create_from and create_value, and only the call frame gets call_from. The created
+      address and code are that test's stand-ins.
+    model: stg_ethereum__contract_deployments
+    given:
+      - input: source('ethereum', 'contract_deployments')
+        rows:
+          - id: "26366424:14:trace:"
+            data: '{"kind":"trace","trace_type":"call","transaction_index":14,"trace_address":[],"subtraces":1,"error":null,"revert_reason":null,"action":{"from":"0x2307278fc8ab0005974a6ded2fa6d1187333a223","to":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea"},"result":null,"block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+          - id: "26366424:14:trace:0.0"
+            data: '{"kind":"trace","trace_type":"create","transaction_index":14,"trace_address":[0,0],"subtraces":0,"error":null,"revert_reason":null,"action":{"from":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea","value":"0"},"result":{"address":"0x00000000000000000000000000000000000000c1","code":"0x363d3d37"},"block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+          - id: "tx:0xc7b2766c6e2e4bde1106a595dea8f1a15712d4d8453cbd7a53760d59dc238611"
+            data: '{"kind":"transaction","transactionIndex":14,"hash":"0xc7b2766c6e2e4bde1106a595dea8f1a15712d4d8453cbd7a53760d59dc238611","from":"0x2307278fc8ab0005974a6ded2fa6d1187333a223","to":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea","sighash":"0x82ecf2f6","type":2,"status":1,"block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+    expect:
+      rows:
+        - {id: "26366424:14:trace:", create_from: null, create_value: null, call_from: "0x2307278fc8ab0005974a6ded2fa6d1187333a223"}
+        - {id: "26366424:14:trace:0.0", create_from: "0x069c4c579671f8c120b1327a73217d01ea2ec5ea", create_value: 0, call_from: null}
+
+  - name: deployment_state_diffs_keep_only_state_diff_records
+    description: >-
+      A storage slot of 0x069c…c5ea that transaction 14 of block 26366424 changed, beside the create trace of
+      the same transaction, from the evm-contract-deployments source test. The view keeps only the state diff.
+    model: stg_ethereum__contract_deployments_state_diffs
+    given:
+      - input: source('ethereum', 'contract_deployments')
+        rows:
+          - id: "26366424:14:diff:0x069c4c579671f8c120b1327a73217d01ea2ec5ea:0x0000000000000000000000000000000000000000000000000000000000000001"
+            data: '{"kind":"state_diff","transaction_index":14,"address":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea","key":"0x0000000000000000000000000000000000000000000000000000000000000001","diff_kind":"*","prev":"0x0000000000000000000000000000000000000000000000000000000000000000","next":"0x0000000000000000000000000000000000000000000000000000000000000002","block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+          - id: "26366424:14:trace:0.0"
+            data: '{"kind":"trace","trace_type":"create","transaction_index":14,"trace_address":[0,0],"subtraces":0,"error":null,"revert_reason":null,"action":{"from":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea","value":"0"},"result":{"address":"0x00000000000000000000000000000000000000c1","code":"0x363d3d37"},"block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+    expect:
+      rows:
+        - {id: "26366424:14:diff:0x069c4c579671f8c120b1327a73217d01ea2ec5ea:0x0000000000000000000000000000000000000000000000000000000000000001", diff_kind: "*"}
+
+  - name: deployment_transactions_keep_only_transaction_records
+    description: >-
+      Transaction 14 of block 26366424 and its create trace, from the evm-contract-deployments source test.
+      The view keeps only the transaction.
+    model: stg_ethereum__contract_deployments_transactions
+    given:
+      - input: source('ethereum', 'contract_deployments')
+        rows:
+          - id: "tx:0xc7b2766c6e2e4bde1106a595dea8f1a15712d4d8453cbd7a53760d59dc238611"
+            data: '{"kind":"transaction","transactionIndex":14,"hash":"0xc7b2766c6e2e4bde1106a595dea8f1a15712d4d8453cbd7a53760d59dc238611","from":"0x2307278fc8ab0005974a6ded2fa6d1187333a223","to":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea","sighash":"0x82ecf2f6","type":2,"status":1,"block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+          - id: "26366424:14:trace:0.0"
+            data: '{"kind":"trace","trace_type":"create","transaction_index":14,"trace_address":[0,0],"subtraces":0,"error":null,"revert_reason":null,"action":{"from":"0x069c4c579671f8c120b1327a73217d01ea2ec5ea","value":"0"},"result":{"address":"0x00000000000000000000000000000000000000c1","code":"0x363d3d37"},"block_number":26366424,"timestamp":"2026-11-08T00:00:11.000Z"}'
+    expect:
+      rows:
+        - {id: "tx:0xc7b2766c6e2e4bde1106a595dea8f1a15712d4d8453cbd7a53760d59dc238611", transaction_index: 14, from_address: "0x2307278fc8ab0005974a6ded2fa6d1187333a223"}
+
+  - name: cow_ethflow_logs_keep_only_log_records
+    description: >-
+      The OrderPlacement (log 266) and the createOrder trace of transaction 0x53ed…fe36 in block 26380868
+      (catalog/protocols/cow-protocol/NOTES.md, proof table). The view keeps only the log. The log's args are
+      cut to the fields the proof table gives.
+    model: stg_ethereum__cow_ethflow
+    given:
+      - input: source('ethereum', 'cow_ethflow')
+        rows:
+          - id: "26380868:266"
+            data: '{"kind":"log","event":"OrderPlacement","tx_hash":"0x53ed2e9588f6ac402cb07bf83b230e57cd29ab788bb102d829940638dabefe36","transaction_index":89,"log_index":266,"contract":"0xba3cb449bd2b4adddbc894d8697f5170800eadec","args":{"sender":"0x5cbc6299fab3320e7758ac97fd4ca45e5b722059","order":{"receiver":"0x5cbc6299fab3320e7758ac97fd4ca45e5b722059","sellAmount":"1000000000000000000000","buyAmount":"2116825418314008471811971","validTo":4294967295}},"block_number":26380868}'
+          - id: "26380868:89:trace:"
+            data: '{"kind":"trace","tx_hash":"0x53ed2e9588f6ac402cb07bf83b230e57cd29ab788bb102d829940638dabefe36","transaction_index":89,"trace_address":[],"error":null,"from":"0x5cbc6299fab3320e7758ac97fd4ca45e5b722059","to":"0xba3cb449bd2b4adddbc894d8697f5170800eadec","value":"1000000000000000000000","sighash":"0x322bba21","output":"0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179","block_number":26380868}'
+    expect:
+      rows:
+        - {id: "26380868:266", event: OrderPlacement, order_sender: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", order_valid_to: 4294967295}
+
+  - name: cow_ethflow_traces_keep_only_trace_records
+    description: >-
+      The createOrder trace and the OrderPlacement (log 266) of transaction 0x53ed…fe36 in block 26380868
+      (catalog/protocols/cow-protocol/NOTES.md, proof table). The view keeps only the trace, with the order
+      hash it returned.
+    model: stg_ethereum__cow_ethflow_traces
+    given:
+      - input: source('ethereum', 'cow_ethflow')
+        rows:
+          - id: "26380868:89:trace:"
+            data: '{"kind":"trace","tx_hash":"0x53ed2e9588f6ac402cb07bf83b230e57cd29ab788bb102d829940638dabefe36","transaction_index":89,"trace_address":[],"error":null,"from":"0x5cbc6299fab3320e7758ac97fd4ca45e5b722059","to":"0xba3cb449bd2b4adddbc894d8697f5170800eadec","value":"1000000000000000000000","sighash":"0x322bba21","output":"0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179","block_number":26380868}'
+          - id: "26380868:266"
+            data: '{"kind":"log","event":"OrderPlacement","tx_hash":"0x53ed2e9588f6ac402cb07bf83b230e57cd29ab788bb102d829940638dabefe36","transaction_index":89,"log_index":266,"contract":"0xba3cb449bd2b4adddbc894d8697f5170800eadec","args":{"sender":"0x5cbc6299fab3320e7758ac97fd4ca45e5b722059","order":{"receiver":"0x5cbc6299fab3320e7758ac97fd4ca45e5b722059","sellAmount":"1000000000000000000000","buyAmount":"2116825418314008471811971","validTo":4294967295}},"block_number":26380868}'
+    expect:
+      rows:
+        - {id: "26380868:89:trace:", from_address: "0x5cbc6299fab3320e7758ac97fd4ca45e5b722059", value: "1000000000000000000000", output: "0x21249cf58047aacac4a79cb2bbadfa789758e6218dbb959cc26c3cbd90b05179"}
+
+  - name: uniswap_v2_logs_keep_only_log_records
+    description: >-
+      Proof row 2 of catalog/protocols/uniswap/NOTES.md: the Swap (log 1454) of the pair from row 1, beside its
+      transaction's record. The view keeps only the log. The proof table gives no block time, so timestamp is
+      left out.
+    model: stg_ethereum__uniswap_v2
+    given:
+      - input: source('ethereum', 'uniswap_v2')
+        rows:
+          - id: "26093739:1454"
+            data: '{"kind":"log","event":"Swap","block_number":26093739,"tx_hash":"0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74","log_index":1454,"contract":"0xa43fe16908251ee70ef74718545e4fe6c5ccec9f","args":{"sender":"0x0005ea683517b3a4463bfd798c9850Ad2d586795","amount0In":"3109917065813374624992507","amount1In":"0","amount0Out":"0","amount1Out":"4946989499112407","to":"0x0005ea683517b3a4463bfd798c9850Ad2d586795"}}'
+          - id: "tx:0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74"
+            data: '{"kind":"transaction","block_number":26093739,"hash":"0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74","from":"0x43370146366cfea21302962ae3a558d72bbcc487"}'
+    expect:
+      rows:
+        - {id: "26093739:1454", event: Swap, sender: "0x0005ea683517b3a4463bfd798c9850ad2d586795", amount0_in: "3109917065813374624992507", amount1_out: "4946989499112407"}
+
+  - name: uniswap_v2_transactions_keep_only_transaction_records
+    description: >-
+      Proof row 2 of catalog/protocols/uniswap/NOTES.md: the record of transaction 0xeb75…8d74, beside its Swap
+      (log 1454). The view keeps only the transaction, whose from is the account that signed it.
+    model: stg_ethereum__uniswap_v2_transactions
+    given:
+      - input: source('ethereum', 'uniswap_v2')
+        rows:
+          - id: "tx:0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74"
+            data: '{"kind":"transaction","block_number":26093739,"hash":"0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74","from":"0x43370146366cfea21302962ae3a558d72bbcc487"}'
+          - id: "26093739:1454"
+            data: '{"kind":"log","event":"Swap","block_number":26093739,"tx_hash":"0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74","log_index":1454,"contract":"0xa43fe16908251ee70ef74718545e4fe6c5ccec9f","args":{"sender":"0x0005ea683517b3a4463bfd798c9850Ad2d586795","amount0In":"3109917065813374624992507","amount1In":"0","amount0Out":"0","amount1Out":"4946989499112407","to":"0x0005ea683517b3a4463bfd798c9850Ad2d586795"}}'
+    expect:
+      rows:
+        - {id: "tx:0xeb750ba1ca0d3d19250561dfc1fa163b042753c1cf07e4a1fa1f4d714b418d74", from_address: "0x43370146366cfea21302962ae3a558d72bbcc487"}
+
+  - name: uniswap_v3_logs_keep_only_log_records
+    description: >-
+      Proof row 4 of catalog/protocols/uniswap/NOTES.md: the Swap (log 52) of the pool from row 3, beside its
+      transaction's record. The view keeps only the log. The proof table gives no block time, so timestamp is
+      left out.
+    model: stg_ethereum__uniswap_v3
+    given:
+      - input: source('ethereum', 'uniswap_v3')
+        rows:
+          - id: "26093754:52"
+            data: '{"kind":"log","event":"Swap","block_number":26093754,"tx_hash":"0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0","log_index":52,"contract":"0x11950d141ecb863f01007add7d1a342041227b58","args":{"sender":"0xBdb3ba9ffe392549E1f8658DD2630c141fDF47B6","recipient":"0xBdb3ba9ffe392549E1f8658DD2630c141fDF47B6","amount0":"60703901842778745531793408","amount1":"-96537242406164546","sqrtPriceX96":"3163888089013300511132022","liquidity":"10490809103799181309502369","tick":-202576}}'
+          - id: "tx:0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0"
+            data: '{"kind":"transaction","block_number":26093754,"hash":"0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0","from":"0x5b43453fce04b92e190f391a83136bfbecedefd1"}'
+    expect:
+      rows:
+        - {id: "26093754:52", event: Swap, sender: "0xbdb3ba9ffe392549e1f8658dd2630c141fdf47b6", amount0: "60703901842778745531793408", amount1: "-96537242406164546", tick: -202576}
+
+  - name: uniswap_v3_transactions_keep_only_transaction_records
+    description: >-
+      Proof row 4 of catalog/protocols/uniswap/NOTES.md: the record of transaction 0x7fd3…35a0, beside its Swap
+      (log 52). The view keeps only the transaction, whose from is the account that signed it.
+    model: stg_ethereum__uniswap_v3_transactions
+    given:
+      - input: source('ethereum', 'uniswap_v3')
+        rows:
+          - id: "tx:0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0"
+            data: '{"kind":"transaction","block_number":26093754,"hash":"0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0","from":"0x5b43453fce04b92e190f391a83136bfbecedefd1"}'
+          - id: "26093754:52"
+            data: '{"kind":"log","event":"Swap","block_number":26093754,"tx_hash":"0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0","log_index":52,"contract":"0x11950d141ecb863f01007add7d1a342041227b58","args":{"sender":"0xBdb3ba9ffe392549E1f8658DD2630c141fDF47B6","recipient":"0xBdb3ba9ffe392549E1f8658DD2630c141fDF47B6","amount0":"60703901842778745531793408","amount1":"-96537242406164546","sqrtPriceX96":"3163888089013300511132022","liquidity":"10490809103799181309502369","tick":-202576}}'
+    expect:
+      rows:
+        - {id: "tx:0x7fd3f10cb5fa331213578b92015bef72681a2fe6a8bae33b33f48ae134c035a0", from_address: "0x5b43453fce04b92e190f391a83136bfbecedefd1"}
+
+  - name: uniswap_v4_logs_keep_only_log_records
+    description: >-
+      Proof row 6 of catalog/protocols/uniswap/NOTES.md: the Swap (log 279) of the pool from row 5, beside its
+      transaction's record. The view keeps only the log. The proof table gives no block time, so timestamp is
+      left out.
+    model: stg_ethereum__uniswap_v4
+    given:
+      - input: source('ethereum', 'uniswap_v4')
+        rows:
+          - id: "26094121:279"
+            data: '{"kind":"log","event":"Swap","block_number":26094121,"tx_hash":"0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc","log_index":279,"contract":"0x000000000004444c5dc75cb358380d2e3de08a90","args":{"id":"0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca","sender":"0xC10eE9031F2a0B84766A86B55a8D90F357910fb4","amount0":"-367589580184782","amount1":"229267731471391791625501","sqrtPriceX96":"1981686837244223760687296407160875","liquidity":"20824203275420416362335","tick":202552,"fee":3499}}'
+          - id: "tx:0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc"
+            data: '{"kind":"transaction","block_number":26094121,"hash":"0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc","from":"0x1b10f9ae820d77828bd0daf4974247d62431afa7"}'
+    expect:
+      rows:
+        - {id: "26094121:279", event: Swap, pool_id: "0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca", amount0: "-367589580184782", amount1: "229267731471391791625501", fee: 3499}
+
+  - name: uniswap_v4_transactions_keep_only_transaction_records
+    description: >-
+      Proof row 6 of catalog/protocols/uniswap/NOTES.md: the record of transaction 0xeb8f…36fc, beside its Swap
+      (log 279). The view keeps only the transaction, whose from is the account that signed it.
+    model: stg_ethereum__uniswap_v4_transactions
+    given:
+      - input: source('ethereum', 'uniswap_v4')
+        rows:
+          - id: "tx:0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc"
+            data: '{"kind":"transaction","block_number":26094121,"hash":"0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc","from":"0x1b10f9ae820d77828bd0daf4974247d62431afa7"}'
+          - id: "26094121:279"
+            data: '{"kind":"log","event":"Swap","block_number":26094121,"tx_hash":"0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc","log_index":279,"contract":"0x000000000004444c5dc75cb358380d2e3de08a90","args":{"id":"0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca","sender":"0xC10eE9031F2a0B84766A86B55a8D90F357910fb4","amount0":"-367589580184782","amount1":"229267731471391791625501","sqrtPriceX96":"1981686837244223760687296407160875","liquidity":"20824203275420416362335","tick":202552,"fee":3499}}'
+    expect:
+      rows:
+        - {id: "tx:0xeb8fba8a980d0f0f236d4b57516e419c4ea4b3930c51229643feb1fc1a6c36fc", from_address: "0x1b10f9ae820d77828bd0daf4974247d62431afa7"}

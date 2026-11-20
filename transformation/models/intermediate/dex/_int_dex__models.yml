@@ -267,3 +267,62 @@ unit_tests:
     expect:
       rows:
         - {id: "26094121:279", version: v4, pool: "0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca", tx_from: "0x1b10f9ae820d77828bd0daf4974247d62431afa7", sender: "0xc10ee9031f2a0b84766a86b55a8d90f357910fb4", recipient: null, hooks: "0x0000000000000000000000000000000000000000", token_bought: "0x6982508145454ce325ddbe47a25d4ec3d2311933", amount_bought: "229267731471391791625501", token_sold: "0x0000000000000000000000000000000000000000", amount_sold: "367589580184782"}
+
+  - name: v2_a_one_unit_buy_of_token0_stays_without_its_transaction
+    description: >-
+      A buy of token0 paid in token1. The swapper's change in token1 is amount1Out - amount1In, here -5,
+      so the Swap trades. A change in token0 of 1 base unit, the least a buy can get, still counts as a buy
+      of token0. A Swap whose transaction is missing stays a trade with a null tx_from, for the not_null
+      test to flag, rather than drop out. The pair is proof row 1; the Swap is made up.
+    model: int_ethereum_uniswap_v2_trades
+    given:
+      - input: ref('stg_ethereum__uniswap_v2')
+        rows:
+          # Proof row 1.
+          - {id: "17046833:244", event: PairCreated, block_number: 17046833, contract: "0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f", token0: "0x6982508145454ce325ddbe47a25d4ec3d2311933", token1: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", pair: "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f"}
+          # Made up: the pair received 5 of token1 and sent out 1 of token0.
+          - {id: "26093740:1", event: Swap, block_number: 26093740, tx_hash: "0x01", contract: "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f", amount0_in: "0", amount1_in: "5", amount0_out: "1", amount1_out: "0"}
+      - input: ref('stg_ethereum__uniswap_v2_transactions')
+        rows: []
+    expect:
+      rows:
+        - {id: "26093740:1", tx_from: null, token_bought: "0x6982508145454ce325ddbe47a25d4ec3d2311933", amount_bought: 1, token_sold: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", amount_sold: 5}
+
+  - name: v3_a_one_unit_buy_of_token0_stays_without_its_transaction
+    description: >-
+      A buy of token0 paid in token1: the pool's amount0 is -1, so the swapper got 1 base unit of token0,
+      the least a buy can get, and still counts as buying it. A Swap whose transaction is missing stays a
+      trade with a null tx_from, for the not_null test to flag, rather than drop out. The pool is proof row
+      3; the Swap is made up.
+    model: int_ethereum_uniswap_v3_trades
+    given:
+      - input: ref('stg_ethereum__uniswap_v3')
+        rows:
+          # Proof row 3.
+          - {id: "17083569:219", event: PoolCreated, block_number: 17083569, contract: "0x1f98431c8ad98523631ae4a59f267346ea31f984", token0: "0x6982508145454ce325ddbe47a25d4ec3d2311933", token1: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", fee: 3000, tick_spacing: 60, pool: "0x11950d141ecb863f01007add7d1a342041227b58"}
+          # Made up: 5 of token1 entered the pool and 1 of token0 left it.
+          - {id: "26093755:1", event: Swap, block_number: 26093755, tx_hash: "0x01", contract: "0x11950d141ecb863f01007add7d1a342041227b58", amount0: "-1", amount1: "5"}
+      - input: ref('stg_ethereum__uniswap_v3_transactions')
+        rows: []
+    expect:
+      rows:
+        - {id: "26093755:1", tx_from: null, token_bought: "0x6982508145454ce325ddbe47a25d4ec3d2311933", amount_bought: 1, token_sold: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", amount_sold: 5}
+
+  - name: v4_a_one_unit_buy_of_currency0_stays_without_its_transaction
+    description: >-
+      A buy of currency0 paid in currency1: the swapper's amount0 is +1, the least a buy can get, and still
+      counts as buying it. A Swap whose transaction is missing stays a trade with a null tx_from, for the
+      not_null test to flag, rather than drop out. The pool is proof row 5; the Swap is made up.
+    model: int_ethereum_uniswap_v4_trades
+    given:
+      - input: ref('stg_ethereum__uniswap_v4')
+        rows:
+          # Proof row 5.
+          - {id: "21696324:169", event: Initialize, block_number: 21696324, contract: "0x000000000004444c5dc75cb358380d2e3de08a90", pool_id: "0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca", currency0: "0x0000000000000000000000000000000000000000", currency1: "0x6982508145454ce325ddbe47a25d4ec3d2311933", fee: 3000, tick_spacing: 60, hooks: "0x0000000000000000000000000000000000000000"}
+          # Made up: the swapper got 1 of currency0 and paid 5 of currency1.
+          - {id: "26094122:1", event: Swap, block_number: 26094122, tx_hash: "0x01", contract: "0x000000000004444c5dc75cb358380d2e3de08a90", pool_id: "0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca", amount0: "1", amount1: "-5"}
+      - input: ref('stg_ethereum__uniswap_v4_transactions')
+        rows: []
+    expect:
+      rows:
+        - {id: "26094122:1", tx_from: null, token_bought: "0x0000000000000000000000000000000000000000", amount_bought: 1, token_sold: "0x6982508145454ce325ddbe47a25d4ec3d2311933", amount_sold: 5}

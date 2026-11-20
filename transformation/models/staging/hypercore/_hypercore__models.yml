@@ -32,3 +32,19 @@ models:
         data_tests: [not_null]
       - name: status
         data_tests: [not_null]
+
+unit_tests:
+  - name: a_fill_stages_its_millisecond_time_as_a_timestamp
+    description: >-
+      Fill 0 of block 1223800001 (catalog/protocols/hypercore/NOTES.md, fills proof table), as the
+      hypercore-fills source test loads it. HyperCore sends the fill's time in epoch milliseconds; the view
+      turns it into the block's time, 2026-11-16 20:38:52.843 UTC.
+    model: stg_hypercore__fills
+    given:
+      - input: source('hypercore', 'fills')
+        rows:
+          - id: "1223800001:0"
+            data: '{"block_number":1223800001,"timestamp":"2026-11-16T20:38:52.843Z","fill":{"fillIndex":0,"user":"0x4394eddef02d15107e4999995496888504553498","coin":"io:ANTH","px":1694.7,"sz":0.008,"side":"B","time":1794861532843,"startPosition":16.597,"dir":"Open Long","closedPnl":0,"hash":"0x7efa9ec36a76d43680740448f1b4c102029200a90579f30822c34a16297aae21","oid":607436620893,"crossed":true,"fee":0.001171,"builderFee":null,"tid":374728780679102,"cloid":"0x9e9febb08d0f919e3eeea8fbc96c6026","feeToken":"USDC","builder":null,"twapId":null}}'
+    expect:
+      rows:
+        - {id: "1223800001:0", fill_time: "2026-11-16 20:38:52.843+00"}
