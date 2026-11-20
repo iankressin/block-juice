@@ -28,7 +28,7 @@ A change is done when the checks for each layer it touches pass:
 - `transformation/`: `dbt parse`, plus `bj questions --check` when you touch an analysis or a `question.yaml`. With a warehouse up, build what you changed with `bj run <pipeline> --select <model>`, which also runs its tests. When you add or change a model, a unit test must catch a bug planted in it: run `uv run --project orchestration python transformation/planted_bugs.py --changed-since origin/main` with `.env` exported (`docs/planted-bugs.md`).
 - `orchestration/`, or a new or renamed source, pipeline or analysis: pytest. The tests that tie the layers together live there.
 
-CI (`.github/workflows/ci.yml`) runs the same checks on every pull request.
+CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It also builds every model on empty raw tables, so each dbt unit test runs there (`transformation/CLAUDE.md`).
 
 ## How the parts connect
 

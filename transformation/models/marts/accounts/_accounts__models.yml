@@ -120,3 +120,51 @@ unit_tests:
         - {tx_hash: "0x03", outflow_class: sent_out, venue: null, value_wei: 1}
         - {tx_hash: "0x04", outflow_class: sent_out, venue: null, value_wei: 1}
         - {tx_hash: "0x05", outflow_class: sent_to_exchange, venue: Binance, value_wei: 1}
+  - name: sold_needs_the_sender_to_own_the_order_and_get_tokens_back
+    description: >-
+      Made up. 0x11's settled ETH Flow order sent 1 base unit of a stablecoin from the seed back to its
+      sender: sold. 0x12's settled order sent nothing back (received_amount 0): sent out. 0x13 went to a
+      followed wallet, 0xc1, which placed the order and received the tokens, so the sender owns no order:
+      sent out. Each sent 1 ETH: eth is value_wei over 1e18, at the scale Postgres gives that division.
+    model: wallet_eth_outflows
+    given:
+      - input: ref('wallet_transactions')
+        rows:
+          - {chain: ethereum, tx_hash: "0x11", from_address: "0xa1", to_address: "0xef", value_wei: "1000000000000000000", succeeded: true}
+          - {chain: ethereum, tx_hash: "0x12", from_address: "0xa1", to_address: "0xef", value_wei: "1000000000000000000", succeeded: true}
+          - {chain: ethereum, tx_hash: "0x13", from_address: "0xa1", to_address: "0xc1", value_wei: "1000000000000000000", succeeded: true}
+      - input: ref('cow_ethflow_orders')
+        rows:
+          - {chain: ethereum, tx_hash: "0x11", owner: "0xa1", receiver: "0xa1", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", settled: true, received_amount: 1}
+          - {chain: ethereum, tx_hash: "0x12", owner: "0xa1", receiver: "0xa1", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", settled: true, received_amount: 0}
+          - {chain: ethereum, tx_hash: "0x13", owner: "0xc1", receiver: "0xc1", buy_token: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", settled: true, received_amount: 5}
+      - input: ref('stablecoins')
+        rows:
+          - {chain: ethereum, address: "0xdc035d45d973e3ec169d2276ddab16f1e407384f", symbol: USDS}
+      - input: ref('cex_addresses')
+        rows: []
+    expect:
+      rows:
+        - {tx_hash: "0x11", outflow_class: sold, received_amount: 1, eth: "1.00000000000000000000"}
+        - {tx_hash: "0x12", outflow_class: sent_out, received_amount: null, eth: "1.00000000000000000000"}
+        - {tx_hash: "0x13", outflow_class: sent_out, received_amount: null, eth: "1.00000000000000000000"}
+  - name: an_exchange_address_with_two_labels_takes_the_first_name
+    description: >-
+      Made up: cex_addresses lists 0xe2 twice, in two cases and under two exchanges. The outflow to it
+      gets one row, and its venue is the first name in alphabetical order.
+    model: wallet_eth_outflows
+    given:
+      - input: ref('wallet_transactions')
+        rows:
+          - {chain: ethereum, tx_hash: "0x21", from_address: "0xa1", to_address: "0xe2", value_wei: 1, succeeded: true}
+      - input: ref('cow_ethflow_orders')
+        rows: []
+      - input: ref('stablecoins')
+        rows: []
+      - input: ref('cex_addresses')
+        rows:
+          - {chain: ethereum, address: "0xe2", exchange: Kraken}
+          - {chain: ethereum, address: "0xE2", exchange: Binance}
+    expect:
+      rows:
+        - {tx_hash: "0x21", outflow_class: sent_to_exchange, venue: Binance}

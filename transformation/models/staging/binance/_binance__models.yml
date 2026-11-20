@@ -13,3 +13,19 @@ models:
         data_tests: [not_null]
       - name: close
         data_tests: [not_null]
+
+unit_tests:
+  - name: a_binance_candle_stages_its_millisecond_times_as_timestamps
+    description: >-
+      Proof row 1 of catalog/vendors/binance/NOTES.md, in the shape binance-candles writes it. Binance sends
+      open_time and close_time in epoch milliseconds; the view turns them into the hour's first instant and its
+      last millisecond.
+    model: stg_binance__candles
+    given:
+      - input: source('binance', 'candles')
+        rows:
+          - id: "UNIUSDT:1h:1794074400000"
+            data: '{"symbol":"UNIUSDT","base_asset":"UNI","quote_asset":"USDT","interval":"1h","open_time":1794074400000,"open":"7.10700000","high":"7.21600000","low":"7.10700000","close":"7.20700000","volume":"194057.54000000","close_time":1794077999999,"quote_volume":"1389097.15368000","trades":5182,"taker_buy_base_volume":"115819.48000000","taker_buy_quote_volume":"829248.68986000"}'
+    expect:
+      rows:
+        - {id: "UNIUSDT:1h:1794074400000", open_time: "2026-11-07 18:00:00+00", close_time: "2026-11-07 18:59:59.999+00"}

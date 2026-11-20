@@ -13,3 +13,19 @@ models:
         data_tests: [not_null]
       - name: close
         data_tests: [not_null]
+
+unit_tests:
+  - name: a_coinbase_candle_stages_its_millisecond_times_as_timestamps
+    description: >-
+      Proof row 1 of catalog/vendors/coinbase/NOTES.md, in the shape coinbase-candles writes it: Coinbase's
+      time in seconds becomes open_time in milliseconds, and close_time is the hour's last millisecond. The view
+      turns both into timestamps.
+    model: stg_coinbase__candles
+    given:
+      - input: source('coinbase', 'candles')
+        rows:
+          - id: "UNI-USD:1h:1794074400000"
+            data: '{"product_id":"UNI-USD","base_asset":"UNI","quote_asset":"USD","interval":"1h","open_time":1794074400000,"close_time":1794077999999,"open":7.1,"high":7.2115,"low":7.0976,"close":7.195,"volume":53080.720652}'
+    expect:
+      rows:
+        - {id: "UNI-USD:1h:1794074400000", open_time: "2026-11-07 18:00:00+00", close_time: "2026-11-07 18:59:59.999+00"}

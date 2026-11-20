@@ -6,6 +6,8 @@
 
 A self-hosted ELT framework and warehouse for blockchain data. You can trace any number it gives you back to raw rows, and rebuild it.
 
+The site, [blockjuice.asof.sh](https://blockjuice.asof.sh), has a searchable catalog of every table and column, and articles built from these tables.
+
 ## Ask a question, get an answer you can check
 
 In Claude Code, from this repo:

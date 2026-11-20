@@ -159,3 +159,38 @@ unit_tests:
         - {id: "2:1", asset: "0xusdt", value: 3, entity: MEXC, direction: outflow, wallet: "0xm2", counterparty_address: "0xa1", counterparty_entity: null}
         - {id: "2:3", asset: "0xusdt", value: 6, entity: MEXC, direction: outflow, wallet: "0xm2", counterparty_address: "0xb1", counterparty_entity: Binance}
         - {id: "2:3", asset: "0xusdt", value: 6, entity: Binance, direction: inflow, wallet: "0xb1", counterparty_address: "0xm2", counterparty_entity: MEXC}
+  - name: a_deposit_address_may_send_several_transfers_to_one_exchange
+    description: >-
+      Made up: 0xd4 sends two tokens to two of Binance's addresses. It sent every transfer to one exchange,
+      so it is a Binance deposit address however many transfers it made.
+    model: classified_transfers
+    given:
+      - input: ref('erc20_transfers')
+        rows:
+          - {chain: arbitrum, id: "1:1", token: "0xt1", from_address: "0xd4", to_address: "0xe1", value: 1}
+          - {chain: arbitrum, id: "1:2", token: "0xt2", from_address: "0xd4", to_address: "0xe3", value: 1}
+      - input: ref('address_labels')
+        rows:
+          - {chain: arbitrum, address: "0xe1", kind: exchange, exchange: Binance}
+          - {chain: arbitrum, address: "0xe3", kind: exchange, exchange: Binance}
+    expect:
+      rows:
+        - {id: "1:1", from_kind: deposit, from_exchange: Binance, from_entity: Binance, category: exchange}
+        - {id: "1:2", from_kind: deposit, from_exchange: Binance, from_entity: Binance, category: exchange}
+  - name: a_payment_from_an_unlabelled_address_is_one_inflow
+    description: >-
+      Made up: an unlabelled address sends 1 wei, the smallest value, to MEXC's 0xm1. The movement is one
+      MEXC inflow with no counterparty entity, and no row for the sender's side.
+    model: labelled_wallet_flows
+    given:
+      - input: ref('wallet_labels')
+        rows:
+          - {chain: ethereum, address: "0xm1", entity: MEXC, list: test}
+      - input: ref('wallet_transactions')
+        rows:
+          - {chain: ethereum, block_number: 1, tx_hash: "0xt1", from_address: "0xa1", to_address: "0xm1", value_wei: 1, succeeded: true}
+      - input: ref('erc20_transfers')
+        rows: []
+    expect:
+      rows:
+        - {id: "tx:0xt1", asset: native, value: 1, entity: MEXC, direction: inflow, wallet: "0xm1", counterparty_address: "0xa1", counterparty_entity: null}
