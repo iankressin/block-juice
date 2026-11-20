@@ -47,6 +47,10 @@ const callId = (call: AccountLogsCall) => (call.kind === "walk" ? `walk:${call.a
 const PAGES_PER_BATCH = 10;
 // Retried details go out 100 to a batch.
 const DETAILS_PER_BATCH = 100;
+// At 100 entries a page, 1,000,000 entries: about 850 days of 313004's ledger entries at 1,170 a day,
+// more than the Explorer holds, since it starts at 2025-08-25 (NOTES.md, Account logs). At 15 weight a
+// minute that many pages take about 44 hours. A walk that reaches it is not ending, so it fails.
+export const MAX_PAGES_PER_WALK = 10_000;
 
 const progress = z.object({
   account_index: z.number(),
@@ -75,7 +79,8 @@ const emptyBatch = (): Batch<AccountLogsCall> & { callsCompleted: number } => ({
 
 // Walks the ledger entries of each account in addresses.json, and of each sub-account of an L1 address
 // there, newest first by offset. A walk stops at the first page shorter than a full page or holding an
-// entry older than its `since`, and writes the entries at or after `since`, keyed by account and hash:
+// entry older than its `since`, or fails once it has read MAX_PAGES_PER_WALK pages without either. It
+// writes the entries at or after `since`, keyed by account and hash:
 // an entry that new entries push onto the next page is written once, and a transfer between two listed
 // accounts is written under each. `since` is START_TIME on the first walk, then the newest entry the
 // last walk saw less HISTORY_OVERLAP_DAYS, never before START_TIME. After each page the source reads
@@ -143,6 +148,9 @@ export const accountLogsSource = (clock: Clock = systemClock): Source<LighterAcc
         let entries: z.infer<typeof logPage>;
         let times: number[];
         try {
+          if (page >= MAX_PAGES_PER_WALK) {
+            throw new Error(`Account ${account}'s log ran past ${MAX_PAGES_PER_WALK} pages, the most one walk reads, without reaching the walk's since`);
+          }
           if (page === 0) readAt = clock.now();
           const reply = await explorer.accountLogs(account, { limit: size, offset: page * size });
           // An Explorer that ignored offset would send the same page forever.
