@@ -132,7 +132,7 @@ Each layer also runs alone. dbt and the tests read the root settings from the en
 (cd orchestration && uv run pytest)
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same checks on every push to `main` and every pull request, one job per layer: `pnpm typecheck` and every package's tests in `ingestion/`, `dbt parse`, `dbt seed` and `dbt compile` against a throwaway Postgres 16, `uv run pytest` in `orchestration/`, and `docker compose config`. It loads `.env.example` as its environment, so the example values must keep pointing at a warehouse on `localhost:5432` with the user, password and database the Postgres service creates. It never reaches a chain, an RPC or Portal.
+CI (`.github/workflows/ci.yml`) runs the same checks on every push to `main` and every pull request, one job per layer: `pnpm typecheck` and every package's tests in `ingestion/`, `dbt parse`, `dbt seed` and `dbt compile` against a throwaway Postgres 16, then `dbt build` with every unit test and data test on an empty raw table for each source, `uv run pytest` in `orchestration/`, and `docker compose config`. It loads `.env.example` as its environment, so the example values must keep pointing at a warehouse on `localhost:5432` with the user, password and database the Postgres service creates. It never reaches a chain, an RPC or Portal.
 
 On a pull request, CI also plants bugs in each model the branch adds or changes, and fails when no unit test catches them ([planted bugs](planted-bugs.md)).
 
