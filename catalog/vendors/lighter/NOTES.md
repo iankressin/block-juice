@@ -58,6 +58,7 @@ Three answers that later tasks branch on:
 - The file has 43 columns. DuckDB adds a 44th, `date`, from the `date=` folder when it reads the S3 path. `vendor.yaml` lists each column's unit.
 - No row group can be skipped by account or market: in all three row groups of 2026-11-16 the footer stats span `market_id` 0 to 2056 or more and both account ids from 93 or less to 2^48 − 1. A filtered read still reads every row group.
 - Trade types on 2026-11-16: `trade` 2,192,564, `market-settlement` 1,874, `liquidation` 1,272, `deleverage` 2.
+- **Which days carry pnl and fees** (L30). On 2025-03-01 `maker_fee`, `taker_fee`, both integrator fees and both pnl columns are null on every row. By 2025-12-30 the maker and taker fees are set on every row, but pnl is still null on every row and the integrator fees on nearly all. Pnl starts during 2026-02-24; from 2026-02-25 every side that cuts an open position carries one. The integrator fees go from nearly all null to never null during 2026-03-29. So 2026-03-30 is the first whole day on which pnl, the fees and the integrator fees are all recorded, and every day from it to 2026-11-18 has no null fee. Before it, a null fee may mean none or not recorded, and so may a null pnl, so a fill's cash effect cannot be priced from those days.
 - Open interest: `hour` (timestamp with time zone, the start of the hour; the row is the end-of-hour snapshot), `symbol`, `open_interest` (base units), `mark_price`, `open_interest_usd` (`open_interest × mark_price`). 5,006 rows and 209 symbols on 2026-11-16, 118,471 bytes. It names markets by symbol only, and a symbol can name two listed markets (ASELS, under Market identity). A join to `orderBookDetails` on symbol alone matches both and counts the reading twice, so leave a symbol that names more than one market unmatched.
 
 ## Exchange metrics
@@ -359,7 +360,7 @@ for b in 50000 99999 100000; do sleep 2; curl -s "$EXP/batches/$b" | jq -c --arg
 
 ## Plan 2 proof table
 
-Every command ran on 2026-11-18 and printed the value in the table. L<n> is plan 2's P<n>; plan 1's rows above keep their P ids. Run them in an empty folder with `curl`, `jq` and the `duckdb` CLI; L19 writes `l19.jsonl`, which L20 and L21 read. Set:
+Every command ran on 2026-11-18, L30's on 2026-11-20, and printed the value in the table. L<n> is plan 2's P<n>; plan 1's rows above keep their P ids. Run them in an empty folder with `curl`, `jq` and the `duckdb` CLI; L19 writes `l19.jsonl`, which L20 and L21 read. Set:
 
 ```sh
 API=https://mainnet.zklighter.elliot.ai/api/v1
@@ -391,8 +392,9 @@ Space Explorer calls by weight: 6 s after an account-log page, 2 s after any oth
 | L27 | An `L2UpdateMargin` entry of 693073 | `["L2UpdateMargin","2026-09-09T14:39:54.465Z",329163051,231276,{"l2_update_margin_pubdata":{"account_index":"693073","market_index":93,"usdc_amount":"2.710264","direction":1}}]` |
 | L28 | An `ExitPosition` entry of the LLP, and the exits in its log | walks: `[3,[155,133,4096]]`, `[22,[157,57,75,124,89,80,51,213,154,150,170,173,169,152,135,125,81,70,148,143,142,140]]`; `["ExitPosition","InternalExitPosition","2026-06-10T14:58:00.642Z",259564659,187775,{"exit_position_pubdata":{"account_index":"281474976710654","market_index":155,"settlement_price":"65.085"}}]`; `[187775,259564112,259565711,"executed"]` |
 | L29 | An `ExitPositionWithFunding` entry of the LLP, and both markets delisted | `["ExitPositionWithFunding","InternalExitPosition","2026-10-28T14:54:17.639Z",367828981,255445,{"exit_position_pubdata_with_funding":{"account_index":"281474976710654","market_index":157,"settlement_price":"0.33160","funding_rate_prefix_sum":6406364482}}]`; `[255445,367828613,367830212,"nothing_to_execute"]`; `[[155,"MAGS","inactive"],[157,"EDGE","inactive"]]` |
+| L30 | 2026-03-30 is the first S3 day whose pnl, fees and integrator fees are all recorded | footers: `2025-03-01\|115499\|ask_account_pnl=115499 bid_account_pnl=115499 integrator_maker_fee=115499 integrator_taker_fee=115499 maker_fee=115499 taker_fee=115499`, `2025-12-30\|3616536\|ask_account_pnl=3616536 bid_account_pnl=3616536 integrator_maker_fee=3614556 integrator_taker_fee=3573285 maker_fee=0 taker_fee=0`, `2026-02-24\|2546728\|ask_account_pnl=1960843 bid_account_pnl=2032153 integrator_maker_fee=2545649 integrator_taker_fee=2545721 maker_fee=0 taker_fee=0`, `2026-02-25\|2753368\|ask_account_pnl=1391415 bid_account_pnl=1346188 integrator_maker_fee=2751921 integrator_taker_fee=2751358 maker_fee=0 taker_fee=0`, `2026-03-29\|1284128\|ask_account_pnl=644153 bid_account_pnl=705338 integrator_maker_fee=507848 integrator_taker_fee=507802 maker_fee=0 taker_fee=0`, `2026-03-30\|1924570\|ask_account_pnl=939588 bid_account_pnl=986694 integrator_maker_fee=0 integrator_taker_fee=0 maker_fee=0 taker_fee=0`; every day since: `234,2026-03-30,2026-11-18,0,0`; sides that cut a position, and those with no pnl: `2026-02-24\|2591306\|1521166`, `2026-02-25\|2710601\|0`, `2026-03-30\|1879638\|0` |
 
-L18, L19, L20 and L21 read live data, so a rerun prints other numbers of the same shape: L18's edge may move, L19's second and third numbers stay equal, the last two numbers of each line of L20's first command stay equal, and L21's two numbers stay within the rounding of `value` and its prefix counts stay equal. L14's count grows by one a day. L28's walks grow as Lighter delists markets the LLP holds.
+L18, L19, L20 and L21 read live data, so a rerun prints other numbers of the same shape: L18's edge may move, L19's second and third numbers stay equal, the last two numbers of each line of L20's first command stay equal, and L21's two numbers stay within the rounding of `value` and its prefix counts stay equal. L14's count grows by one a day. L28's walks grow as Lighter delists markets the LLP holds. L30's second command reads the days up to 2026-11-18, so it prints the same until its end date moves; its last two numbers must stay 0.
 
 **L11.** Batch 28910, then the edges of the batches with no status (29653 and below) and with no commit (29654 to 29668).
 
@@ -552,4 +554,16 @@ for b in 187775 255445; do
   sleep 2; curl -s "$EXP/batches/$b" | jq -c '[.batch_number, ([.blocks[].block_number] | min), ([.blocks[].block_number] | max), .status_changes[-1].batch_status]'
 done
 sleep 1.1; curl -s "$API/orderBookDetails" | jq -c '[(.order_book_details + .spot_order_book_details)[] | select(.market_id == 155 or .market_id == 157) | [.market_id, .symbol, .status]]'
+```
+
+**L30.** The footers of six days give each day's rows and each pnl and fee column's nulls, with no row read. The edges were found by bisecting days from 2025-12-30 to 2026-03-01 on the footers, twice: once for the first day whose pnl is not null on every row, once for the first whose integrator fees have no null. The second command reads the footers of every day from the later edge to 2026-11-18 and counts the days, the days with a null fee and the days whose pnl is null on every row. The last reads three days' rows: each side of a trade that cuts an open position, a sale from a long or a buy from a short, realizes pnl, so it counts those sides and the ones with a null pnl.
+
+```sh
+for d in 2025-03-01 2025-12-30 2026-02-24 2026-02-25 2026-03-29 2026-03-30; do
+  duckdb -noheader -list -c "select '$d', max(num_values), string_agg(path_in_schema || '=' || stats_null_count, ' ' order by path_in_schema) from (select path_in_schema, sum(num_values) as num_values, sum(stats_null_count) as stats_null_count from parquet_metadata('$S3/trades/date=$d/trades.parquet') where path_in_schema similar to '(ask|bid)_account_pnl|(integrator_)?(maker|taker)_fee' group by 1)"
+done
+duckdb -csv -c "with f as (select regexp_extract(file_name, 'date=([0-9-]+)', 1) as day, path_in_schema as col, sum(num_values) as n, sum(stats_null_count) as nulls from parquet_metadata(['$S3/trades/date=' || strftime(d, '%Y-%m-%d') || '/trades.parquet' for d in range(date '2026-03-30', date '2026-11-18' + 1, interval 1 day)]) where path_in_schema similar to '(ask|bid)_account_pnl|(integrator_)?(maker|taker)_fee' group by 1, 2) select count(distinct day) as days, min(day) as first, max(day) as last, count(distinct day) filter (where col like '%fee' and nulls > 0) as null_fee_days, count(distinct day) filter (where col like '%pnl' and nulls = n) as no_pnl_days from f"
+for d in 2026-02-24 2026-02-25 2026-03-30; do
+  duckdb -noheader -list -c "with t as (from '$S3/trades/date=$d/trades.parquet'), sides as (select (is_maker_ask and maker_position_size_before > 0) or (not is_maker_ask and maker_position_size_before < 0) as cuts, if(is_maker_ask, ask_account_pnl, bid_account_pnl) as pnl from t union all select (not is_maker_ask and taker_position_size_before > 0) or (is_maker_ask and taker_position_size_before < 0), if(is_maker_ask, bid_account_pnl, ask_account_pnl) from t) select '$d', count(*) filter (where cuts), count(*) filter (where cuts and pnl is null) from sides"
+done
 ```
