@@ -1,7 +1,8 @@
 -- One change to a listed Lighter account's holdings: a money move leg, a perp fill, an hour of funding or a
 -- position exit. amount is signed in the asset's units, and null where the change has no proven amount:
--- stake, unstake, unlock, margin moves and exits. cumulative_amount is the running sum of amount per
--- account, asset and route, from the start of what is loaded. Rules are in int_lighter_account_ledger.
+-- stake, unstake, unlock, margin moves, exits, and fills before 2026-03-30, the first S3 day that records
+-- pnl and every fee (L30). cumulative_amount is the running sum of amount per account, asset and route,
+-- from the start of what is loaded. Rules are in int_lighter_account_ledger.
 select
     id,
     account_index,

@@ -732,3 +732,51 @@ unit_tests:
         - {id: "move:c:313004:self", kind: withdrawal, route: perps, amount: -10, cumulative_amount: 25}
         - {id: "move:d:20000:from", kind: transfer_out, route: perps, amount: -1900.9, cumulative_amount: -1903.9}
         - {id: "move:d:20000:fee", kind: transfer_fee, route: perps, amount: -3, cumulative_amount: -1903.9}
+
+  # Trades 16855027518 and 16857081556 as S3 holds them (catalog/vendors/lighter/NOTES.md, L30).
+  - name: a_fill_before_2026_03_30_has_no_amount
+    description: >-
+      S3 records pnl, the fees and the integrator fees on every fill only from 2026-03-30 (L30). Trade
+      16855027518 (ETH, 2026-03-29 23:42:38.518) has them all: 313004, the taker, realized -0.000303 with
+      no fee, and 702389, the maker, realized nothing and paid 0.001681350636. Both fills still get a null
+      amount, since a null on such a day can mean none or not recorded. In trade 16857081556 (ETH,
+      2026-03-30 00:14:10.699), 313004, the taker, realized -0.00151 with no fee: -0.00151; 102394, the
+      maker, realized nothing and paid 0.00838564608: -0.00838564608.
+    model: int_lighter_account_ledger
+    given:
+      - input: ref('stg_lighter__account_logs')
+        rows:
+          - {account_index: 313004}
+          - {account_index: 702389}
+          - {account_index: 102394}
+      - input: ref('stg_lighter__account_log_details')
+        format: sql
+        rows: *no_ledger_details
+      - input: ref('lighter_account_movements')
+        format: sql
+        rows: *no_ledger_movements
+      - input: ref('lighter_account_fills')
+        rows:
+          - {id: "16855027518:taker", trade_id: 16855027518, trade_time: "2026-03-29 23:42:38.518+00", market_id: 0, account_index: 313004, role: taker, fee_usdc: 0, position_after: 0.1271, realized_pnl: -0.000303}
+          - {id: "16855027518:maker", trade_id: 16855027518, trade_time: "2026-03-29 23:42:38.518+00", market_id: 0, account_index: 702389, role: maker, fee_usdc: 0.001681350636, position_after: 13.6911, realized_pnl: null}
+          - {id: "16857081556:taker", trade_id: 16857081556, trade_time: "2026-03-30 00:14:10.699+00", market_id: 0, account_index: 313004, role: taker, fee_usdc: 0, position_after: -2.37, realized_pnl: -0.00151}
+          - {id: "16857081556:maker", trade_id: 16857081556, trade_time: "2026-03-30 00:14:10.699+00", market_id: 0, account_index: 102394, role: maker, fee_usdc: 0.00838564608, position_after: -771.3358, realized_pnl: null}
+      - input: ref('lighter_markets')
+        rows:
+          - {market_id: 0, symbol: ETH, market_type: perp}
+      - input: ref('lighter_trades')
+        rows:
+          - {trade_id: 16855027518, block_number: 205756057, tx_hash: "6899cfe55764fe98422cd4023a229e251f790a54379c3bc35ec7c30972433696659b640c5df941e1", integrator_maker_fee_usdc: 0, integrator_taker_fee_usdc: 0}
+          - {trade_id: 16857081556, block_number: 205776083, tx_hash: "2e092f72dae7c3fb632af40b79f5ed5a1f3c4c1e5916fea4ce630c7a9fa6139585190abb48175f2b", integrator_maker_fee_usdc: 0, integrator_taker_fee_usdc: 0}
+      - input: ref('lighter_batches')
+        format: sql
+        rows: *no_ledger_batches
+      - input: ref('int_lighter_funding_payments')
+        format: sql
+        rows: *no_funding
+    expect:
+      rows:
+        - {id: "fill:16855027518:taker", account_index: 313004, kind: fill, amount: null, position_after: 0.1271}
+        - {id: "fill:16855027518:maker", account_index: 702389, kind: fill, amount: null, position_after: 13.6911}
+        - {id: "fill:16857081556:taker", account_index: 313004, kind: fill, amount: -0.00151, position_after: -2.37}
+        - {id: "fill:16857081556:maker", account_index: 102394, kind: fill, amount: -0.00838564608, position_after: -771.3358}
