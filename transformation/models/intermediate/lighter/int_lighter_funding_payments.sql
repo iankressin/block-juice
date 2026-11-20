@@ -1,9 +1,9 @@
 -- The funding one listed Lighter account paid or received at one hour mark on one perp market. A listed
 -- account is one in stg_lighter__account_logs, so an account in the account-log source's addresses.json
 -- whose log holds no entry of a ledger type since START_TIME, such as one that only made plain trades, has
--- no rows here; lighter_listed_accounts_have_log_entries warns about it. Lighter books funding at each hour mark on every open
--- position, with no log entry, so it comes from plan 1's data (catalog/vendors/lighter/NOTES.md, Funding
--- prefix sums and Account value, L21):
+-- no rows here; lighter_listed_accounts_have_log_entries warns about it. Lighter books funding at each
+-- hour mark on every open position, with no log entry, so it comes from plan 1's data
+-- (catalog/vendors/lighter/NOTES.md, Funding prefix sums and Account value, L21):
 --   position is the account's position in the market at the mark: the position_after of its last fill
 --   there before funding_time, or, before its first fill there, that fill's position_before.
 --   amount is -position × value_usdc_per_unit when direction is long and +position × value when short, so
@@ -18,8 +18,10 @@
 -- position_after of the fill before it. The position at every mark between those two fills is unknown,
 -- and those marks have no row. What the data cannot show is a gap before such an account's first loaded
 -- fill in a market or after its last: there the position is the first fill's position_before or the last
--- fill's position_after, which assumes no trade went unloaded. Listing the account in lighter-trades'
--- addresses.json loads all its trades and makes those hours right.
+-- fill's position_after, which assumes no trade went unloaded. Nor can it show a gap whose unloaded trades
+-- net to zero, so that a fill's position_before equals the position_after of the fill before it: the marks
+-- between carry that position, though it may have moved and come back. Listing the account in
+-- lighter-trades' addresses.json loads all its trades and makes those hours right.
 with listed as (
     select distinct account_index from {{ ref('stg_lighter__account_logs') }}
 ),
