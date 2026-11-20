@@ -4,7 +4,12 @@
 --   Money moves (lighter_account_movements): each leg, kind as there, amount its signed_amount. Stake,
 --   unstake, unlock and margin moves keep a null amount: their sign is unproven (L24 to L27).
 --   Perp fills (lighter_account_fills, market_type perp): kind fill, USDC on perps, amount the realized
---   pnl less the fee and the integrator fee of the fill's role. Pnl and fees are USDC (plan 1's P9).
+--   pnl less the fee and the integrator fee of the fill's role. Pnl and fees are USDC (plan 1's P9). S3
+--   records pnl, the fees and the integrator fees on every fill only from 2026-03-30 (NOTES.md, S3 files,
+--   L30). On older days a null may mean none or not recorded: pnl is null on every row until 2026-02-24,
+--   and the integrator fees on nearly every row until 2026-03-29. So a fill before 2026-03-30 has a null
+--   amount, and so has any fill with a null fee or integrator fee, rather than a fee-only or pnl-only
+--   amount that looks priced. A null pnl from that day on means the fill realized none.
 --   Funding (int_lighter_funding_payments): kind funding, USDC on perps, one row per hour mark, except marks
 --   hidden by a gap in the loaded fills (see that model).
 --   Position exits (ExitPosition and ExitPositionWithFunding entries): kind exit_position, position_after
@@ -32,11 +37,14 @@ fills as (
         fills.trade_time,
         fills.market_id,
         fills.position_after,
-        coalesce(fills.realized_pnl, 0) - fills.fee_usdc
-            - case fills.role
-                when 'maker' then trades.integrator_maker_fee_usdc
-                when 'taker' then trades.integrator_taker_fee_usdc
-            end as amount,
+        case
+            when fills.trade_time >= '2026-03-30 00:00:00+00'::timestamptz then
+                coalesce(fills.realized_pnl, 0) - fills.fee_usdc
+                    - case fills.role
+                        when 'maker' then trades.integrator_maker_fee_usdc
+                        when 'taker' then trades.integrator_taker_fee_usdc
+                    end
+        end as amount,
         trades.tx_hash,
         trades.block_number
     from {{ ref('lighter_account_fills') }} as fills

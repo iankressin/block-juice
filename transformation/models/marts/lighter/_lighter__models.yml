@@ -455,8 +455,11 @@ models:
       a perp fill, an hour of funding or a position exit. `amount` is signed in the asset's units. It is null
       where the change has no proven amount: stake, unstake, unlock and margin moves, whose sign is unproven,
       and position exits, whose entry carries no amount. A fill's amount is its realized pnl less its fee and
-      its role's integrator fee; funding is -position × `value_usdc_per_unit` when the rate's `direction` is
-      `long` and +position × value when `short` (catalog/vendors/lighter/NOTES.md, L21). Spot fills stay out.
+      its role's integrator fee. S3 records all three on every fill only from 2026-03-30
+      (catalog/vendors/lighter/NOTES.md, L30), so a fill before that day, or one with a null fee or
+      integrator fee, has a null amount; from that day on a fill or funding row with a null amount fails a
+      test. Funding is -position × `value_usdc_per_unit` when the rate's `direction` is `long` and
+      +position × value when `short` (L21). Spot fills stay out.
       Logs start at the account-log source's START_TIME, and the Explorer holds none before 2025-08-25;
       fills start at the first S3 day lighter-trades loads, and funding at each account's first loaded fill.
       `lighter_positions_match_snapshots` and `lighter_ledger_matches_collateral` warn when it disagrees
@@ -500,7 +503,14 @@ models:
       - name: route
         description: "`perps` or `spot`. `perps` for fills, funding and exits; null for stake, unstake, unlock and margin moves."
       - name: amount
-        description: Signed, in the asset's units. Null for stake, unstake, unlock, margin moves and exits.
+        description: >-
+          Signed, in the asset's units. Null for stake, unstake, unlock, margin moves and exits, and for a fill
+          before 2026-03-30 or with a null fee or integrator fee (L30).
+        data_tests:
+          # S3 records pnl and every fee from 2026-03-30 (L30); a null after it is a missing fee or rate.
+          - not_null:
+              config:
+                where: "kind in ('fill', 'funding') and event_time >= '2026-03-30 00:00:00+00'"
       - name: cumulative_amount
         description: >-
           The sum of `amount` over the account's rows of the same asset and route up to and with `event_time`,
