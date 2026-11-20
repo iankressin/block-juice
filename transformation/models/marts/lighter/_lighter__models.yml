@@ -503,9 +503,9 @@ models:
         description: Signed, in the asset's units. Null for stake, unstake, unlock, margin moves and exits.
       - name: cumulative_amount
         description: >-
-          The sum of `amount` over the account's rows of the same asset and route, in `event_time` and `id`
-          order, from the start of what is loaded. Not a balance unless the history reaches back to the
-          account's first move.
+          The sum of `amount` over the account's rows of the same asset and route up to and with `event_time`,
+          from the start of what is loaded. Rows at one time, such as a transfer and its fee, share one total.
+          Not a balance unless the history reaches back to the account's first move.
       - name: market_id
         description: The market of a fill, funding hour or exit. Null for money moves.
         data_tests:

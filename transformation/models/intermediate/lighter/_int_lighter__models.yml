@@ -689,7 +689,9 @@ unit_tests:
   - name: cumulative_amount_runs_per_account_asset_and_route
     description: >-
       313004 deposits 35 USDC onto perps (its L1Deposit of 2025-11-12), then 5 onto spot, then withdraws 10
-      from perps. The perps total runs 35, then 25; the spot deposit starts a total of its own, 5.
+      from perps. The perps total runs 35, then 25; the spot deposit starts a total of its own, 5. 20000's
+      transfer of 1900.9 USDC at 2025-12-30 16:37:20 gives a transfer_out leg and a transfer_fee leg of 3 at
+      the same time (L15). Both show -1903.9: no balance ever held -3 or -1900.9 between them.
     model: int_lighter_account_ledger
     given:
       - input: ref('stg_lighter__account_logs')
@@ -703,6 +705,8 @@ unit_tests:
           - {id: "a:313004:self", hash: a, log_time: "2025-11-12 05:32:11.513606+00", account_index: 313004, kind: deposit, asset: USDC, route: perps, signed_amount: 35}
           - {id: "b:313004:self", hash: b, log_time: "2025-11-13 00:00:00+00", account_index: 313004, kind: deposit, asset: USDC, route: spot, signed_amount: 5}
           - {id: "c:313004:self", hash: c, log_time: "2025-11-14 00:00:00+00", account_index: 313004, kind: withdrawal, asset: USDC, route: perps, signed_amount: -10}
+          - {id: "d:20000:from", hash: d, log_time: "2025-12-30 16:37:20+00", account_index: 20000, kind: transfer_out, asset: USDC, route: perps, signed_amount: -1900.9}
+          - {id: "d:20000:fee", hash: d, log_time: "2025-12-30 16:37:20+00", account_index: 20000, kind: transfer_fee, asset: USDC, route: perps, signed_amount: -3}
       - input: ref('lighter_account_fills')
         format: sql
         rows: *no_ledger_fills
@@ -726,3 +730,5 @@ unit_tests:
         - {id: "move:a:313004:self", kind: deposit, route: perps, amount: 35, cumulative_amount: 35}
         - {id: "move:b:313004:self", kind: deposit, route: spot, amount: 5, cumulative_amount: 5}
         - {id: "move:c:313004:self", kind: withdrawal, route: perps, amount: -10, cumulative_amount: 25}
+        - {id: "move:d:20000:from", kind: transfer_out, route: perps, amount: -1900.9, cumulative_amount: -1903.9}
+        - {id: "move:d:20000:fee", kind: transfer_fee, route: perps, amount: -3, cumulative_amount: -1903.9}
