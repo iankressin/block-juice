@@ -640,6 +640,42 @@ unit_tests:
             null, '2026-11-07 23:34:18+00', array[0, 1]::numeric[], false, true, 'exact_score', 'mls-2026',
             '2026-11-07 19:00:00+00'
 
+  - name: only_conditions_with_tokens_are_markets
+    description: >-
+      Made up. Gamma lists condition 0xb1 in market 7, with no clobTokenIds yet, and in market 12, with
+      two tokens. A null array is skipped before the row whose tokens count is chosen, so 0xb1 is a market
+      with market 12's tokens. Condition 0xb2's one market is a placeholder with an empty array, so it is
+      not a market, as int_polymarket_outcome_tokens gives it no tokens. Only condition_id is checked.
+    model: polymarket_markets
+    given:
+      - input: ref('stg_polymarket__markets')
+        format: sql
+        rows: |
+          select '7' as market_id, '0xb1' as condition_id, 'Made up?' as question, 'made-up' as slug,
+              '3' as event_id, 'Made up' as event_title, false as neg_risk, array['Yes', 'No'] as outcomes,
+              '2026-10-31 00:00:00+00'::timestamptz as end_date, null::numeric[] as clob_token_ids,
+              'v1' as protocol_version, null::text as sports_market_type, null::text as fee_type,
+              null::text as series_slug, null::timestamptz as game_start_time
+          union all
+          select '12', '0xb1', 'Made up?', 'made-up-2', '3', 'Made up', false, array['Yes', 'No'],
+              '2026-10-31 00:00:00+00', array[21, 22]::numeric[], 'v1', null, null, null, null
+          union all
+          select '9', '0xb2', 'Placeholder?', 'placeholder', '4', 'Placeholder', false, array['Yes', 'No'],
+              '2026-10-31 00:00:00+00', array[]::numeric[], 'v1', null, null, null, null
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: []
+      # Not rows: [], which casts the empty outcomes column to a bare ARRAY type that Postgres rejects.
+      - input: ref('int_polymarket_markets')
+        format: sql
+        rows: select null::text as condition_id where false
+      - input: ref('int_polygon_polymarket_ctf_resolutions')
+        rows: []
+      - input: ref('int_polygon_polymarket_ctf_conditions')
+        rows: []
+    expect:
+      rows:
+        - {condition_id: "0xb1"}
+
   - name: a_fill_of_a_token_gamma_lacks_is_no_trade
     description: >-
       Proof row 11's maker fill trades a token the outcome tokens lack (they hold proof row 1's market
