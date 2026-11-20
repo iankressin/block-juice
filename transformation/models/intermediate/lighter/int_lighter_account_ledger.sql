@@ -1,4 +1,7 @@
 -- One change to a listed Lighter account's holdings. A listed account is one in stg_lighter__account_logs.
+-- An account in the account-log source's addresses.json whose log holds no entry of a ledger type since
+-- START_TIME, such as one that only made plain trades, is not listed and gets no fill, funding or exit
+-- rows; lighter_listed_accounts_have_log_entries warns about it.
 -- Each way an account's holdings change, from catalog/vendors/lighter/NOTES.md, and what this model does
 -- with it:
 --   Money moves (lighter_account_movements): each leg, kind as there, amount its signed_amount. Stake,

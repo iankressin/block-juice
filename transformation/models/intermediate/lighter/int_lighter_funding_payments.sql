@@ -1,5 +1,7 @@
 -- The funding one listed Lighter account paid or received at one hour mark on one perp market. A listed
--- account is one in stg_lighter__account_logs. Lighter books funding at each hour mark on every open
+-- account is one in stg_lighter__account_logs, so an account in the account-log source's addresses.json
+-- whose log holds no entry of a ledger type since START_TIME, such as one that only made plain trades, has
+-- no rows here; lighter_listed_accounts_have_log_entries warns about it. Lighter books funding at each hour mark on every open
 -- position, with no log entry, so it comes from plan 1's data (catalog/vendors/lighter/NOTES.md, Funding
 -- prefix sums and Account value, L21):
 --   position is the account's position in the market at the mark: the position_after of its last fill
