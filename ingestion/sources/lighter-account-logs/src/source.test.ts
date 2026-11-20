@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { historyKey, type Batch } from "@ingestion/lib";
 import { LEDGER_TYPES, type Clock } from "@ingestion/lib/lighter";
-import { accountLogsSource, type AccountLogsCall } from "#src/source.ts";
+import { accountLogsSource, MAX_PAGES_PER_WALK, type AccountLogsCall } from "#src/source.ts";
 
 type Entry = {
   tx_type: string;
@@ -264,6 +264,22 @@ test("a page that repeats the previous one fails the walk", async (t) => {
   assert.deepEqual(failure!.call, { kind: "walk", account_index: 313004, since: NOW - DAY });
   assert.match(failure!.error, /repeated/);
   assert.equal(fake.pages.length, 2);
+  assert.deepEqual(checkpoints(batches), []);
+});
+
+test("a walk that reaches MAX_PAGES_PER_WALK pages fails as a dead letter, naming the account and the limit", async (t) => {
+  await addressesHold(t, { accounts: [313004] });
+  // One entry a page, and one entry more than the limit lets a walk read, all newer than since.
+  const log = trades(MAX_PAGES_PER_WALK + 1, NOW - 10 * MINUTE, 1000);
+  const fake = await fakeLighter(t, { logs: { 313004: log } });
+
+  const batches = await run(fake.url, { start: NOW - DAY, env: { LIGHTER_LOG_PAGE_SIZE: "1" } });
+
+  assert.equal(fake.pages.length, MAX_PAGES_PER_WALK);
+  assert.deepEqual(failures(batches).map((f) => [f.id, f.error]), [
+    ["walk:313004", `Account 313004's log ran past ${MAX_PAGES_PER_WALK} pages, the most one walk reads, without reaching the walk's since`],
+  ]);
+  assert.deepEqual(logIds(batches), idsOf(313004, log.slice(0, MAX_PAGES_PER_WALK)));
   assert.deepEqual(checkpoints(batches), []);
 });
 

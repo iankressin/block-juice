@@ -331,7 +331,8 @@ endpoints:
     reply: '[{"tx_type":"…","hash":"…","time":"…","pubdata":{"<kind>_pubdata":{…}},"pubdata_type":"…","status":"…"}]'
     order: >-
       Newest first. New entries push old ones onto the next page, so a walk by offset reads some entries
-      twice (L19). An unknown account answers [] with HTTP 200.
+      twice (L19). An unknown account answers [] with HTTP 200. lighter-account-logs fails a walk at
+      10,000 pages (MAX_PAGES_PER_WALK).
     fields:
       tx_type: {type: string, example: "L2CreateOrder, InternalClaimOrder, L1Withdraw, L2Transfer"}
       hash: {type: string, note: "Each fill has its own; no two distinct entries shared one over four days of 313004 (L19). Internal and L1 entries carry made-up hashes such as 00000000001782c02e00000130…."}
