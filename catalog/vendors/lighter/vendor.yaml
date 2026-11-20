@@ -283,7 +283,7 @@ endpoints:
     params: none. limit is ignored; ?limit=5 returns 20.
     role: lighter-batches reads the head, the highest batch_number.
     reply: '[{"batch_number":…,"updated_at":"…","batch_size":1600,"batch_status":"…","batch_details":{…}}]'
-    count: 20 recent batches, ordered by updated_at, not by number. 270918 to 270939 at 13:11 UTC on 2026-11-18.
+    count: 20 recent batches, ordered by updated_at, not by number. Between 270918 and 270939 at 13:11 UTC on 2026-11-18.
     fields:
       batch_number: {type: integer}
       updated_at: {type: string, unit: RFC 3339 UTC}
