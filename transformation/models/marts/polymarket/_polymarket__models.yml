@@ -495,6 +495,87 @@ unit_tests:
         - {condition_id: "0xc2", wallet: "0xbb", trades: 0, buy_usdc: 0, sell_usdc: 0, fees_usdc: 0, net_cash_usdc: -10, open_shares: 20, position_value_usdc: null, pnl_usdc: null, first_activity_at: "2026-10-10 11:00:00+00", last_activity_at: "2026-10-10 11:00:00+00", resolved: false, history_complete: false}
         - {condition_id: "0xc2", wallet: "0xcc", trades: 0, buy_usdc: 0, sell_usdc: 0, fees_usdc: 0, net_cash_usdc: 0, open_shares: 0, position_value_usdc: 0, pnl_usdc: 0, first_activity_at: "2026-10-10 12:00:00+00", last_activity_at: "2026-10-10 13:00:00+00", resolved: false, history_complete: false}
 
+  - name: buys_and_sells_count_before_fees_at_any_size
+    description: >-
+      Made up: a wallet buys 0.5 YES for 0.20 with a fee of 0.01, so its usdc_delta is -0.21, then sells
+      the 0.5 for 0.30 with a fee of 0.012, so its usdc_delta is 0.288. buy_usdc is 0.20 and sell_usdc 0.30,
+      both before fees, and a fill of under one share counts like any other. It holds nothing, so PnL is the
+      cash, 0.078.
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:1", block_number: 100, log_index: 1, block_timestamp: "2026-10-10 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: "0.5", usdc_delta: "-0.21", fee_usdc: "0.01", zeroes_position: false}
+          - {id: "200:1", block_number: 200, log_index: 1, block_timestamp: "2026-10-11 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: "-0.5", usdc_delta: "0.288", fee_usdc: "0.012", zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: |
+          select '0xc1' as condition_id, null::timestamptz as resolved_at, null::numeric[] as payout_fractions, true as history_complete
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: *yes_no_tokens
+      - input: ref('polymarket_price_candles')
+        rows: *last_trade_candle
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 2, buy_usdc: "0.20", sell_usdc: "0.300", fees_usdc: "0.022", net_cash_usdc: "0.078", open_shares: "0.0",position_value_usdc: 0, pnl_usdc: "0.078", first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-11 10:00:00+00", resolved: false, history_complete: true}
+
+  - name: a_market_a_conversion_pays_only_in_shares_has_no_cash
+    description: >-
+      Made up: a conversion burns NO of other questions and pays the wallet 10 YES of this market's
+      question. In this market the wallet gets a token row and no cash row (the conversion's cash goes to
+      the NO questions), so its net cash is 0, not null, and its PnL is the 10 YES at the last close, 4.
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:4:1", block_number: 100, log_index: 4, block_timestamp: "2026-10-10 10:00:00+00", kind: convert, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 10, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: |
+          select '0xc1' as condition_id, null::timestamptz as resolved_at, null::numeric[] as payout_fractions, true as history_complete
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: *yes_no_tokens
+      - input: ref('polymarket_price_candles')
+        rows:
+          - {token_id: 1, minute: "2026-10-11 10:00:00+00", close: "0.40"}
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 0, buy_usdc: 0, sell_usdc: 0, fees_usdc: 0, net_cash_usdc: 0, open_shares: 10, position_value_usdc: "4.00", pnl_usdc: "4.00", first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-10 10:00:00+00", resolved: false, history_complete: true}
+
+  - name: only_shares_after_the_last_redemption_count
+    description: >-
+      The wallet of only_shares_gained_after_a_redemption_count redeems its 5 YES and 5 NO a second time
+      for 5, then splits 2 more (made up). It holds only the 2 YES and 2 NO from after its last redemption,
+      not the 7 of each since its first: cash is 37 + 5 - 2 = 40, the shares are worth 2, and PnL stays 42.
+    model: polymarket_market_participants
+    given:
+      - input: ref('int_polymarket_wallet_ledger')
+        rows:
+          - {id: "100:1", block_number: 100, log_index: 1, block_timestamp: "2026-10-10 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 100, usdc_delta: -40, fee_usdc: 0, zeroes_position: false}
+          - {id: "200:1", block_number: 200, log_index: 1, block_timestamp: "2026-10-11 10:00:00+00", kind: trade, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: -40, usdc_delta: 22, fee_usdc: 0, zeroes_position: false}
+          - {id: "300:7:1", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "300:7:2", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "300:7:cash", block_number: 300, log_index: 7, block_timestamp: "2026-10-13 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: 60, fee_usdc: null, zeroes_position: false}
+          - {id: "400:3:1", block_number: 400, log_index: 3, block_timestamp: "2026-10-14 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 5, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "400:3:2", block_number: 400, log_index: 3, block_timestamp: "2026-10-14 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: 5, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "400:3:cash", block_number: 400, log_index: 3, block_timestamp: "2026-10-14 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: -5, fee_usdc: null, zeroes_position: false}
+          - {id: "500:2:1", block_number: 500, log_index: 2, block_timestamp: "2026-10-15 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "500:2:2", block_number: 500, log_index: 2, block_timestamp: "2026-10-15 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: null, usdc_delta: null, fee_usdc: null, zeroes_position: true}
+          - {id: "500:2:cash", block_number: 500, log_index: 2, block_timestamp: "2026-10-15 10:00:00+00", kind: redeem, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: 5, fee_usdc: null, zeroes_position: false}
+          - {id: "600:9:1", block_number: 600, log_index: 9, block_timestamp: "2026-10-16 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: 1, shares_delta: 2, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "600:9:2", block_number: 600, log_index: 9, block_timestamp: "2026-10-16 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: 2, shares_delta: 2, usdc_delta: null, fee_usdc: null, zeroes_position: false}
+          - {id: "600:9:cash", block_number: 600, log_index: 9, block_timestamp: "2026-10-16 10:00:00+00", kind: split, wallet: "0xaa", condition_id: "0xc1", token_id: null, shares_delta: null, usdc_delta: -2, fee_usdc: null, zeroes_position: false}
+      - input: ref('polymarket_markets')
+        format: sql
+        rows: *resolved_yes
+      - input: ref('int_polymarket_outcome_tokens')
+        rows: *yes_no_tokens
+      - input: ref('polymarket_price_candles')
+        rows: *last_trade_candle
+    expect:
+      rows:
+        - {condition_id: "0xc1", wallet: "0xaa", trades: 2, buy_usdc: 40, sell_usdc: 22, fees_usdc: 0, net_cash_usdc: 40, open_shares: 4, position_value_usdc: 2, pnl_usdc: 42, first_activity_at: "2026-10-10 10:00:00+00", last_activity_at: "2026-10-16 10:00:00+00", resolved: true, history_complete: true}
+
   - name: markets_without_a_preparation_are_incomplete
     description: >-
       Each market takes its tokens and Gamma's names from stg_polymarket__markets, and prepared_block and
