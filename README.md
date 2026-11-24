@@ -64,22 +64,29 @@ The demo starts its own throwaway Postgres, builds the real balance models from 
 
 Each table lives in the `analytics` schema of your warehouse. A source reads only the wallets, tokens, feeds and contracts you list in its `addresses.json`, so a table covers the addresses you follow, not the whole chain.
 
-| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Binance, Coinbase |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [Balances](docs/tables.md#balances) | ✓ | | | | ✓ | ✓ | | |
-| [Transfers](docs/tables.md#transfers) | ✓ | ✓ | ✓ | | | | | |
-| [DEX trades](docs/tables.md#dex-trades) | ✓ | | | | | | | |
-| [Bridges](docs/tables.md#bridges) | | ✓ | ✓ | | | | | |
-| [Labels](docs/tables.md#labels) | | ✓ | ✓ | | | | | |
-| [Tokens](docs/tables.md#tokens) | ✓ | ✓ | ✓ | | | | | |
-| [Exchange prices](docs/tables.md#exchange-prices) | | | | | | | | ✓ |
-| [Oracle prices](docs/tables.md#oracle-prices) | ✓ | ✓ | ✓ | | | | | |
-| [Polymarket](docs/tables.md#polymarket) | | | | ✓ | | | | |
-| [HyperCore fills](docs/tables.md#hypercore-fills) | | | | | | | ✓ | |
-| [HyperCore actions](docs/tables.md#hypercore-actions) | | | | | | | ✓ | |
-| [Accounts](docs/tables.md#accounts) | ✓ | | | | | | | |
-| [Deployments](docs/tables.md#deployments) | ✓ | | | | | | | |
-| [CoW ETH Flow](docs/tables.md#cow-eth-flow) | ✓ | | | | | | | |
+| | Ethereum | Arbitrum | Base | Polygon | Solana | Bitcoin | HyperCore | Lighter | Binance, Coinbase |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| [Balances](docs/tables.md#balances) | ✓ | | | | ✓ | ✓ | | | |
+| [Transfers](docs/tables.md#transfers) | ✓ | ✓ | ✓ | | | | | | |
+| [DEX trades](docs/tables.md#dex-trades) | ✓ | | | | | | | | |
+| [Bridges](docs/tables.md#bridges) | | ✓ | ✓ | | | | | | |
+| [Labels](docs/tables.md#labels) | | ✓ | ✓ | | | | | | |
+| [Tokens](docs/tables.md#tokens) | ✓ | ✓ | ✓ | | | | | | |
+| [Exchange prices](docs/tables.md#exchange-prices) | | | | | | | | | ✓ |
+| [Oracle prices](docs/tables.md#oracle-prices) | ✓ | ✓ | ✓ | | | | | | |
+| [Polymarket](docs/tables.md#polymarket) | | | | ✓ | | | | | |
+| [HyperCore fills](docs/tables.md#hypercore-fills) | | | | | | | ✓ | | |
+| [HyperCore actions](docs/tables.md#hypercore-actions) | | | | | | | ✓ | | |
+| [Accounts](docs/tables.md#accounts) | ✓ | | | | | | | | |
+| [Deployments](docs/tables.md#deployments) | ✓ | | | | | | | | |
+| [CoW ETH Flow](docs/tables.md#cow-eth-flow) | ✓ | | | | | | | | |
+| [Lighter markets](docs/tables.md#lighter-markets) | | | | | | | | ✓ | |
+| [Lighter candles](docs/tables.md#lighter-candles) | | | | | | | | ✓ | |
+| [Lighter funding rates](docs/tables.md#lighter-funding-rates) | | | | | | | | ✓ | |
+| [Lighter exchange metrics](docs/tables.md#lighter-exchange-metrics) | | | | | | | | ✓ | |
+| [Lighter open interest](docs/tables.md#lighter-open-interest) | | | | | | | | ✓ | |
+| [Lighter trades](docs/tables.md#lighter-trades) | | | | | | | | ✓ | |
+| [Lighter account fills](docs/tables.md#lighter-account-fills) | | | | | | | | ✓ | |
 
 [docs/tables.md](docs/tables.md) says what a row of each table is, where it comes from, and lists every column with its type.
 

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import * as z from "zod";
 
 export const DAY_MS = 86_400_000;
 export type HistoryState = { origin: number; next: number; refreshedAt: number; refreshNext?: number };
@@ -7,6 +8,21 @@ export type HistorySettings = {
   HISTORY_REFRESH_DAYS?: number;
   HISTORY_FULL_REFRESH?: "0" | "1";
 };
+
+/** The settings every history source reads, to spread into its env with `.extend({ ...historyEnv.shape })`. */
+export const historyEnv = z.object({
+  START_TIME: z
+    .union([z.iso.date(), z.iso.datetime({ offset: true })], {
+      error: (issue) =>
+        issue.input === undefined
+          ? "Required"
+          : "Expected an ISO date or datetime, such as 2026-10-01 or 2026-10-01T00:00:00Z",
+    })
+    .transform((value) => Date.parse(value)),
+  HISTORY_OVERLAP_DAYS: z.coerce.number().int().nonnegative().optional(),
+  HISTORY_REFRESH_DAYS: z.coerce.number().int().positive().optional(),
+  HISTORY_FULL_REFRESH: z.enum(["0", "1"]).optional(),
+});
 
 /** Hash the complete request identity; credentials and URLs are never stored in plaintext. */
 export const historyKey = (identity: unknown) => createHash("sha256").update(JSON.stringify(identity)).digest("hex");
@@ -40,6 +56,13 @@ export function historyPlan(
   const from = origin + Math.max(0, Math.floor((lower - origin) / span)) * span;
   return {
     from,
+    /** Each window start this run fetches, in order. */
+    *windows(): Generator<number> {
+      for (let start = from; start <= now; start += span) yield start;
+    },
+    /** Whether a call is one of this run's own windows, so its end may save a checkpoint. */
+    covers: (start: number, end: number) =>
+      start >= from && start <= now && (start - from) % span === 0 && end === start + span - 1,
     checkpoint(next: number) {
       const finished = next > now;
       const value: HistoryState = { origin, next: Math.max(state.next, next),

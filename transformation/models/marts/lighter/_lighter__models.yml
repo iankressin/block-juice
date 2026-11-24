@@ -1,0 +1,307 @@
+version: 2
+
+models:
+  - name: lighter_markets
+    description: >-
+      One row per Lighter market, perp or spot, from the latest run that read it.
+    columns:
+      - name: market_id
+        description: The public market id the API uses. A symbol is not unique, so join on this.
+        data_tests: [unique, not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: market_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [perp, spot]
+      - name: size_decimals
+        data_tests: [not_null]
+      - name: price_decimals
+        data_tests: [not_null]
+      - name: maker_fee_pct
+        description: The maker fee in percent, as Lighter sends it.
+      - name: taker_fee_pct
+        description: The taker fee in percent, as Lighter sends it.
+      - name: read_at
+        description: When the run read these settings.
+
+  - name: lighter_candles
+    description: >-
+      One Lighter candle per market, price series and bucket. Only closed candles load.
+    columns:
+      - name: id
+        description: The candle's key, `<market_id>:<price>:<resolution>:<open_time in ms>`.
+        data_tests: [unique, not_null]
+      - name: market_id
+        description: The public market id the API uses. Join on this, not on `symbol`.
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: price
+        description: The series, `trade` for traded prices or `mark` for mark prices.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [trade, mark]
+      - name: resolution
+        data_tests: [not_null]
+      - name: open_time
+        description: The start of the bucket.
+        data_tests: [not_null]
+      - name: open
+        data_tests: [not_null]
+      - name: high
+        data_tests: [not_null]
+      - name: low
+        data_tests: [not_null]
+      - name: close
+        data_tests: [not_null]
+      - name: base_volume
+        description: Volume in base units. Null on a mark candle.
+      - name: quote_volume
+        description: Volume in USDC. Null on a mark candle.
+      - name: last_trade_id
+        description: The last trade id in the bucket. Null on a mark candle.
+      - name: samples
+        description: How many mark-price samples the bucket holds. Null on a trade candle.
+
+  - name: lighter_funding_rates
+    description: >-
+      One hourly funding rate per Lighter perp market. `funding_time` is the hour mark the rate is paid
+      at, and an entry loads once its hour mark has passed. `signed_rate_pct` is positive when longs pay shorts. Lighter
+      sends the rate unsigned with a `direction`, and that `long` names the paying side is inferred
+      from the funding page's rule, not stated by Lighter for `direction`; see
+      `catalog/vendors/lighter/NOTES.md`.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: market_id
+        description: The public market id the API uses. Join on this, not on `symbol`.
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: funding_time
+        description: The hour mark the rate is paid at.
+        data_tests: [not_null]
+      - name: rate_pct
+        description: The rate in percent per hour, unsigned, as Lighter sends it. A rate can be 0.
+        data_tests: [not_null]
+      - name: signed_rate_pct
+        description: >-
+          `rate_pct` for `long` and `-rate_pct` for `short`. Positive means longs pay shorts. That the
+          paying side is the `direction` side is inferred from the funding page's rule; see
+          `catalog/vendors/lighter/NOTES.md`.
+      - name: value_usdc_per_unit
+        description: USDC paid per one unit of base for the hour.
+      - name: direction
+        description: "`long` for a positive rate and `short` for a negative one."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [long, short]
+
+  - name: lighter_exchange_metrics
+    description: >-
+      One daily Lighter exchange metric. `day` is the UTC day, and only ended days load. `market` is
+      the symbol for a per-market series and null for an exchange-wide one. `value` is in the kind's
+      unit. USDC: `volume`, `maker_fee`, `taker_fee`, `liquidation_fee`, `liquidation_volume`,
+      `attribution_maker_fee`, `attribution_taker_fee`, `inflow`, `outflow`, `transfer_fee`,
+      `withdraw_fee`, `buyback_usdc` and `open_interest`. LIT: `buyback`. A count: `trade_count`,
+      `liquidation_count`, `account_count` and `active_account_count`. Only `volume`, the three fee
+      kinds, `trade_count`, `liquidation_count` and ETH's `liquidation_volume` are proven against
+      Lighter's trade files; the other units are as the kind's name says, not proven; see
+      `catalog/vendors/lighter/NOTES.md`. Eight kinds are exchange-wide whatever the market, so
+      their `market` is null.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: day
+        description: The UTC day the point covers.
+        data_tests: [not_null]
+      - name: kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - volume
+                  - maker_fee
+                  - taker_fee
+                  - liquidation_fee
+                  - trade_count
+                  - liquidation_count
+                  - liquidation_volume
+                  - open_interest
+                  - attribution_maker_fee
+                  - attribution_taker_fee
+                  - account_count
+                  - active_account_count
+                  - inflow
+                  - outflow
+                  - transfer_fee
+                  - withdraw_fee
+                  - buyback
+                  - buyback_usdc
+      - name: market
+        description: The symbol for a per-market series. Null for an exchange-wide one.
+      - name: value
+        description: The day's value in the kind's unit, as Lighter sends it.
+        data_tests: [not_null]
+
+  - name: lighter_open_interest
+    description: >-
+      One end-of-hour open interest reading per Lighter market, from Lighter's hourly S3 files.
+      `hour` is the start of the hour the reading closes. The file names the market by symbol only,
+      and two markets can share a symbol, so there is no `market_id`. A day's file appears about
+      07:03 UTC the next day, so only ended days load.
+    columns:
+      - name: id
+        description: "`<symbol>:<hour>`."
+        data_tests: [unique]
+      - name: hour
+        description: The start of the hour the reading closes, in UTC.
+        data_tests: [not_null]
+      - name: symbol
+        data_tests: [not_null]
+      - name: open_interest
+        description: Open interest in base units.
+        data_tests: [not_null]
+      - name: mark_price
+        description: The mark price at the end of the hour, in USDC.
+      - name: open_interest_usd
+        description: "`open_interest` times `mark_price`, in USDC."
+
+  - name: lighter_trades
+    description: >-
+      One Lighter trade of the accounts and markets that the lighter-trades source's `addresses.json`
+      lists, from Lighter's daily S3 files. A day's file appears about 07:03 UTC the next day, so only
+      ended days load. Values are in real units, from `catalog/vendors/lighter/NOTES.md`. A binary
+      option has no row in `lighter_markets`, so its `symbol`, `price`, `size` and positions are null.
+      Every trade of a market is scaled by that market's latest decimals. The test
+      `lighter_markets_keep_their_decimals` fails the build if a market's decimals ever change, since
+      older trades would then mis-scale: they would need scaling by the reading in effect at trade time.
+    columns:
+      - name: trade_id
+        description: Lighter's trade id, unique in the two day files checked (catalog/vendors/lighter/NOTES.md, P8). Raw trades are keyed on it, so a repeated id would merge two trades.
+        data_tests: [unique, not_null]
+      - name: trade_time
+        description: The block time of the trade.
+        data_tests: [not_null]
+      - name: block_number
+        description: The L2 block that holds the trade, the API's `block_height`.
+      - name: trade_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [trade, liquidation, deleverage, market-settlement]
+      - name: market_id
+        description: >-
+          The public market id the API uses: the file's `public_market_index`, or its slot before
+          2026-08-20, when the file has no public id. Join on this, never on `slot_market_id`.
+        data_tests: [not_null]
+      - name: slot_market_id
+        description: The file's `market_id`, a slot that Lighter reuses for later markets.
+      - name: price
+        description: USDC per base unit.
+      - name: size
+        description: Base units.
+      - name: price_raw
+        description: The price as the file holds it, times 10^`price_decimals`.
+        data_tests: [not_null]
+      - name: size_raw
+        description: The size as the file holds it, times 10^`size_decimals`.
+        data_tests: [not_null]
+      - name: notional_usdc
+        description: "The trade value in USDC, `usdc_amount / 10^6`. Set for a binary option, whose `size` and `price` are null."
+      - name: maker_account_index
+        description: The ask account when `is_maker_ask`, else the bid account.
+      - name: taker_account_index
+        description: The other account. 281474976710655 (2^48 − 1) means no account.
+      - name: taker_side
+        description: "`buy` when the taker is the bid account, `sell` when it is the ask."
+      - name: maker_fee_ppm
+        description: The maker fee in parts per million of notional.
+      - name: taker_fee_ppm
+        description: The taker fee in parts per million of notional.
+      - name: ask_order_index
+        description: The ask order's index.
+      - name: bid_order_index
+        description: The bid order's index.
+      - name: maker_position_before
+        description: The maker's position in base units before the trade, negative when short.
+      - name: taker_position_before
+        description: The taker's position in base units before the trade, negative when short.
+      - name: maker_entry_quote_before_usdc
+        description: The entry value of the maker's position before the trade, in USDC.
+      - name: taker_entry_quote_before_usdc
+        description: The entry value of the taker's position before the trade, in USDC.
+      - name: ask_account_pnl
+        description: The ask account's realized pnl from the trade, in USDC. Null when none.
+      - name: bid_account_pnl
+        description: The bid account's realized pnl from the trade, in USDC. Null when none.
+
+  - name: lighter_account_fills
+    description: >-
+      One fill per account and trade: each trade gives its maker one row and its taker one row, with the
+      account's position before and after. A side with no account (281474976710655, on
+      market-settlement trades) has no row. A binary option has no market row, so its `symbol`, `signed_size`
+      and positions are null.
+    columns:
+      - name: id
+        description: "`<trade_id>:<role>`."
+        data_tests: [unique, not_null]
+      - name: trade_id
+        description: Lighter's trade id.
+        data_tests: [not_null]
+      - name: trade_time
+        description: The block time of the trade.
+        data_tests: [not_null]
+      - name: market_id
+        description: The public market id the API uses. Join on this.
+        data_tests: [not_null]
+      - name: symbol
+        description: The market's name. Null for a binary option.
+      - name: account_index
+        description: The account that made this side of the trade.
+        data_tests: [not_null]
+      - name: role
+        description: "`maker` for the resting order's account, `taker` for the account that crossed it."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [maker, taker]
+      - name: side
+        description: "`sell` for the ask account, `buy` for the bid account."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [buy, sell]
+      - name: signed_size
+        description: Base units, positive for a buy and negative for a sell.
+        data_tests:
+          - not_null:
+              config:
+                where: "symbol is not null"
+      - name: price
+        description: USDC per base unit.
+      - name: notional_usdc
+        description: The trade's value in USDC.
+      - name: fee_ppm
+        description: The fee of this row's role, in parts per million of notional.
+      - name: fee_usdc
+        description: The fee of this row's role, in USDC.
+      - name: position_before
+        description: The account's position in base units before the trade, negative when short.
+      - name: position_after
+        description: "`position_before` plus `signed_size`."
+        data_tests:
+          - not_null:
+              config:
+                where: "symbol is not null"
+      - name: entry_quote_before_usdc
+        description: The entry value of the account's position before the trade, in USDC.
+      - name: position_sign_changed
+        description: True when the trade changed the sign of the account's position.
+      - name: realized_pnl
+        description: The pnl the trade realized for this account, in USDC. Null when none.

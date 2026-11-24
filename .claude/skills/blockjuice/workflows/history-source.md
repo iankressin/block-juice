@@ -42,6 +42,7 @@ When a source already reads the right events:
    | One contract that names its children by id, such as the v4 PoolManager | `evm-uniswap-v4` |
    | HyperCore fills | Nothing: set `users`, `coins` or both in `ingestion/sources/hypercore-fills/addresses.json` |
    | HyperCore actions, such as orders, cancels and transfers | Nothing: set `users` in `ingestion/sources/hypercore-actions/addresses.json` |
+   | Lighter trades | Nothing: set accounts, markets or both in `ingestion/sources/lighter-trades/addresses.json` |
 
    ```sh
    uv run --project orchestration bj new-source ethereum pancakeswap_v3 --like evm-uniswap-v3
