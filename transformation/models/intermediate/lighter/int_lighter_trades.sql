@@ -38,7 +38,7 @@ select
     -- Otherwise the bid is the maker and the ask the taker, who sells.
     case when trades.is_maker_ask then trades.ask_account_id else trades.bid_account_id end as maker_account_index,
     case when trades.is_maker_ask then trades.bid_account_id else trades.ask_account_id end as taker_account_index,
-    case when trades.is_maker_ask then 'buy' when not trades.is_maker_ask then 'sell' end as taker_side,
+    case when trades.is_maker_ask then 'buy' else 'sell' end as taker_side,
     trades.ask_account_id as ask_account_index,
     trades.bid_account_id as bid_account_index,
     -- Units: trade fees are parts per million of notional, so fee_usdc is usdc_amount × fee / 10^12.

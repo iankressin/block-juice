@@ -72,19 +72,22 @@ unit_tests:
     description: >-
       Trade 40627877458 has is_maker_ask true, so 757337, the ask, is the maker and 313004, the bid,
       the taker, who buys. Trade 40827970887 has it false, so the bid is the maker and 757337, the ask,
-      the taker, who sells.
+      the taker, who sells. A null is_maker_ask counts as false, as in int_lighter_account_fills, so
+      trade 9's taker is the ask and sells.
     model: int_lighter_trades
     given:
       - input: ref('stg_lighter__trades')
         rows:
           - {trade_id: 40627877458, slot_market_id: 0, public_market_index: 0, is_maker_ask: true, ask_account_id: 757337, bid_account_id: 313004}
           - {trade_id: 40827970887, slot_market_id: 110, public_market_index: 110, is_maker_ask: false, ask_account_id: 757337, bid_account_id: 281474976483190}
+          - {trade_id: 9, slot_market_id: 0, public_market_index: 0, is_maker_ask: null, ask_account_id: 757337, bid_account_id: 313004}
       - input: ref('int_lighter_markets')
         rows: *lighter_markets
     expect:
       rows:
         - {trade_id: 40627877458, maker_account_index: 757337, taker_account_index: 313004, taker_side: buy, ask_account_index: 757337, bid_account_index: 313004}
         - {trade_id: 40827970887, maker_account_index: 281474976483190, taker_account_index: 757337, taker_side: sell, ask_account_index: 757337, bid_account_index: 281474976483190}
+        - {trade_id: 9, maker_account_index: 313004, taker_account_index: 757337, taker_side: sell, ask_account_index: 757337, bid_account_index: 313004}
 
   - name: fees_are_parts_per_million_of_notional
     description: >-
