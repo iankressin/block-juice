@@ -281,6 +281,26 @@
   },
   {
     "name": "lighter",
+    "table": "account_logs",
+    "package": "lighter-account-logs"
+  },
+  {
+    "name": "lighter",
+    "table": "accounts",
+    "package": "lighter-accounts"
+  },
+  {
+    "name": "lighter",
+    "table": "assets",
+    "package": "lighter-assets"
+  },
+  {
+    "name": "lighter",
+    "table": "batches",
+    "package": "lighter-batches"
+  },
+  {
+    "name": "lighter",
     "table": "candles",
     "package": "lighter-candles"
   },
@@ -306,8 +326,28 @@
   },
   {
     "name": "lighter",
+    "table": "pnl",
+    "package": "lighter-pnl"
+  },
+  {
+    "name": "lighter",
+    "table": "public_pools",
+    "package": "lighter-public-pools"
+  },
+  {
+    "name": "lighter",
+    "table": "system_config",
+    "package": "lighter-system-config"
+  },
+  {
+    "name": "lighter",
     "table": "trades",
     "package": "lighter-trades"
+  },
+  {
+    "name": "lighter",
+    "table": "tx_stats",
+    "package": "lighter-tx-stats"
   },
   {
     "name": "polygon",

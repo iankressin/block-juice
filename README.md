@@ -87,6 +87,15 @@ Each table lives in the `analytics` schema of your warehouse. A source reads onl
 | [Lighter open interest](docs/tables.md#lighter-open-interest) | | | | | | | | ✓ | |
 | [Lighter trades](docs/tables.md#lighter-trades) | | | | | | | | ✓ | |
 | [Lighter account fills](docs/tables.md#lighter-account-fills) | | | | | | | | ✓ | |
+| [Lighter batches](docs/tables.md#lighter-batches) | | | | | | | | ✓ | |
+| [Lighter account movements](docs/tables.md#lighter-account-movements) | | | | | | | | ✓ | |
+| [Lighter account snapshots](docs/tables.md#lighter-account-snapshots) | | | | | | | | ✓ | |
+| [Lighter account value history](docs/tables.md#lighter-account-value-history) | | | | | | | | ✓ | |
+| [Lighter account ledger](docs/tables.md#lighter-account-ledger) | | | | | | | | ✓ | |
+| [Lighter tx counts](docs/tables.md#lighter-tx-counts) | | | | | | | | ✓ | |
+| [Lighter assets](docs/tables.md#lighter-assets) | | | | | | | | ✓ | |
+| [Lighter system accounts](docs/tables.md#lighter-system-accounts) | | | | | | | | ✓ | |
+| [Lighter public pools](docs/tables.md#lighter-public-pools) | | | | | | | | ✓ | |
 
 [docs/tables.md](docs/tables.md) says what a row of each table is, where it comes from, and lists every column with its type.
 
