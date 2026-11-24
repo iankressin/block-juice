@@ -5,8 +5,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { historyKey, type Batch } from "@ingestion/lib";
-import { LEDGER_TYPES, type Clock } from "@ingestion/lib/lighter";
+import { historyKey, type Batch, type Clock } from "@ingestion/lib";
+import { LEDGER_TYPES } from "@ingestion/lib/lighter";
 import { accountLogsSource, MAX_PAGES_PER_WALK, type AccountLogsCall } from "#src/source.ts";
 
 type Entry = {

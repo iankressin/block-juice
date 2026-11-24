@@ -5,8 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import type { Batch } from "@ingestion/lib";
-import type { Clock } from "@ingestion/lib/lighter";
+import type { Batch, Clock } from "@ingestion/lib";
 import { pnlSource, type PnlCall } from "#src/source.ts";
 
 // 2026-11-17T13:24:32Z, in ms and in seconds.

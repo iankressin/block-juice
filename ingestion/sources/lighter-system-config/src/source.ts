@@ -1,5 +1,5 @@
-import { describeError, type Source } from "@ingestion/lib";
-import { createLighterClient, lighterEnv, systemClock, type Clock, type LighterEnv } from "@ingestion/lib/lighter";
+import { describeError, systemClock, type Clock, type Source } from "@ingestion/lib";
+import { createLighterClient, lighterEnv, type LighterEnv } from "@ingestion/lib/lighter";
 import * as z from "zod";
 
 const callSchema = z.object({ kind: z.literal("system_config") });
@@ -19,7 +19,7 @@ export const systemConfigSource = (clock: Clock = systemClock): Source<LighterEn
     const lighter = createLighterClient(env, clock);
     const readAt = clock.now();
     try {
-      const { code: _code, ...config } = await lighter.get("/api/v1/systemConfig");
+      const { code: _code, ...config } = await lighter.get("/api/v1/systemConfig", {}, z.record(z.string(), z.unknown()));
       yield { records: [{ id: String(readAt), callId: CALL_ID, data: { read_at: readAt, config } }], failed: [] };
     } catch (error) {
       yield { records: [], failed: [{ id: CALL_ID, call: { kind: CALL_ID }, error: describeError(error) }] };

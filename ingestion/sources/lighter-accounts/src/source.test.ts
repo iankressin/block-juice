@@ -5,8 +5,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import type { Batch } from "@ingestion/lib";
-import { lighterEnv, type Clock } from "@ingestion/lib/lighter";
+import type { Batch, Clock } from "@ingestion/lib";
+import { lighterEnv } from "@ingestion/lib/lighter";
 import { accountsSource, type AccountsCall } from "#src/source.ts";
 
 const NOW = Date.parse("2026-11-17T12:16:53Z");

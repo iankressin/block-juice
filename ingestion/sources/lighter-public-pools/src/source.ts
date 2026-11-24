@@ -1,5 +1,5 @@
-import { describeError, type Batch, type Source } from "@ingestion/lib";
-import { createLighterClient, lighterEnv, systemClock, type Clock, type LighterEnv } from "@ingestion/lib/lighter";
+import { describeError, systemClock, type Batch, type Clock, type Source } from "@ingestion/lib";
+import { createLighterClient, lighterEnv, type LighterEnv } from "@ingestion/lib/lighter";
 import * as z from "zod";
 
 const callSchema = z.object({ kind: z.literal("public_pools") });
@@ -15,6 +15,7 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 
 const poolEntry = z.looseObject({ account_index: z.number() });
+const poolsReply = z.object({ public_pools: z.array(poolEntry) });
 
 // Walks every public pool, highest account_index first, in pages of PAGE_SIZE. Each pool is a record
 // keyed by account and read time. Only the last page's records carry the call id, so a walk that fails
@@ -34,12 +35,8 @@ export const publicPoolsSource = (clock: Clock = systemClock): Source<LighterEnv
       let pools: z.infer<typeof poolEntry>[];
       try {
         if (page >= MAX_PAGES) throw new Error(`Lighter's publicPoolsMetadata gave ${MAX_PAGES} pages without a short one`);
-        const reply = await lighter.get("/api/v1/publicPoolsMetadata", { filter: "all", index, limit: PAGE_SIZE });
-        const parsed = z.array(poolEntry).safeParse(reply.public_pools);
-        if (!parsed.success) {
-          throw new Error(`Lighter's publicPoolsMetadata sent public_pools in an unexpected shape:\n${z.prettifyError(parsed.error)}`);
-        }
-        pools = parsed.data;
+        const query = { filter: "all", index, limit: PAGE_SIZE };
+        pools = (await lighter.get("/api/v1/publicPoolsMetadata", query, poolsReply)).public_pools;
         // The reply lists pools below `index`, so a page that reaches it would repeat for ever.
         const top = pools[0]?.account_index;
         if (top !== undefined && top >= index) {

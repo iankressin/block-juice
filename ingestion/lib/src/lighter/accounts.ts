@@ -1,5 +1,6 @@
 import * as z from "zod";
-import { LighterError, type LighterClient } from "#src/lighter/client.ts";
+import type { LighterClient } from "#src/lighter/client.ts";
+import { LighterError } from "#src/lighter/retry.ts";
 
 export type AccountsFile = { accounts?: number[]; l1_addresses?: string[] };
 
@@ -25,16 +26,16 @@ const ACCOUNT_NOT_FOUND = 21100;
 export async function resolveAccounts(client: LighterClient, file: AccountsFile): Promise<number[]> {
   const indexes = new Set(file.accounts);
   for (const address of file.l1_addresses ?? []) {
-    let reply: Record<string, unknown>;
+    let reply: z.output<typeof accountsByL1Reply>;
     try {
-      reply = await client.get("/api/v1/accountsByL1Address", { l1_address: address });
+      reply = await client.get("/api/v1/accountsByL1Address", { l1_address: address }, accountsByL1Reply);
     } catch (error) {
       if (error instanceof LighterError && error.code === ACCOUNT_NOT_FOUND) {
         throw new Error(`addresses.json lists ${address}, but Lighter has no account for it`);
       }
       throw error;
     }
-    for (const { index } of accountsByL1Reply.parse(reply).sub_accounts) indexes.add(index);
+    for (const { index } of reply.sub_accounts) indexes.add(index);
   }
   return [...indexes].sort((a, b) => a - b);
 }

@@ -1,4 +1,4 @@
-import { batches, DAY_MS, describeError, historyKey, logger, readJson, uniqueBy, type Batch, type Source } from "@ingestion/lib";
+import { batches, DAY_MS, describeError, historyKey, logger, readJson, systemClock, uniqueBy, type Batch, type Clock, type Source } from "@ingestion/lib";
 import {
   accountsFileSchema,
   createExplorerClient,
@@ -8,8 +8,6 @@ import {
   lighterEnv,
   lighterExplorerEnv,
   resolveAccounts,
-  systemClock,
-  type Clock,
 } from "@ingestion/lib/lighter";
 import * as z from "zod";
 

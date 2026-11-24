@@ -1,5 +1,5 @@
-import { describeError, type Source } from "@ingestion/lib";
-import { createLighterClient, lighterEnv, systemClock, type Clock, type LighterEnv } from "@ingestion/lib/lighter";
+import { describeError, systemClock, type Clock, type Source } from "@ingestion/lib";
+import { createLighterClient, lighterEnv, type LighterEnv } from "@ingestion/lib/lighter";
 import * as z from "zod";
 
 const callSchema = z.object({ kind: z.literal("asset_details") });
@@ -8,6 +8,7 @@ type AssetsCall = z.infer<typeof callSchema>;
 const CALL_ID = "asset_details";
 
 const assetEntry = z.looseObject({ asset_id: z.number() });
+const assetsReply = z.object({ asset_details: z.array(assetEntry) });
 
 // One read lists every asset with its decimals, L1 address, caps and index price. Each asset is a
 // record keyed by asset and read time, so the models can see how an asset's settings change.
@@ -21,13 +22,9 @@ export const assetsSource = (clock: Clock = systemClock): Source<LighterEnv, Ass
     const lighter = createLighterClient(env, clock);
     const readAt = clock.now();
     try {
-      const reply = await lighter.get("/api/v1/assetDetails");
-      const parsed = z.array(assetEntry).safeParse(reply.asset_details);
-      if (!parsed.success) {
-        throw new Error(`Lighter's assetDetails sent asset_details in an unexpected shape:\n${z.prettifyError(parsed.error)}`);
-      }
+      const reply = await lighter.get("/api/v1/assetDetails", {}, assetsReply);
       yield {
-        records: parsed.data.map((asset) => ({
+        records: reply.asset_details.map((asset) => ({
           id: `${asset.asset_id}:${readAt}`,
           callId: CALL_ID,
           data: { read_at: readAt, asset },

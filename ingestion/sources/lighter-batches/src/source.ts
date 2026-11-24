@@ -1,9 +1,7 @@
-import { callBatches, describeError, historyKey, logger, type Batch, type RawRecord, type Source } from "@ingestion/lib";
+import { callBatches, describeError, historyKey, logger, systemClock, type Batch, type Clock, type RawRecord, type Source } from "@ingestion/lib";
 import {
   createExplorerClient,
   lighterExplorerEnv,
-  systemClock,
-  type Clock,
   type ExplorerClient,
 } from "@ingestion/lib/lighter";
 import * as z from "zod";

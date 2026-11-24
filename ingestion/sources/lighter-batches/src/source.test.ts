@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import { historyKey, type Batch, type ExtractionContext } from "@ingestion/lib";
-import type { Clock } from "@ingestion/lib/lighter";
+import { historyKey, type Batch, type Clock, type ExtractionContext } from "@ingestion/lib";
 import { batchesSource, type LighterBatchesEnv } from "#src/source.ts";
 
 type Call = { kind: "batch"; batch_number: number };

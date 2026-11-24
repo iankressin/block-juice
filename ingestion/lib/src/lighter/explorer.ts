@@ -1,6 +1,7 @@
 import { describeError, logger, observedFetch, observeDelay } from "@ingestion/lib";
 import * as z from "zod";
-import { RETRY_AFTER_CAP_MS, retryAfterMs, systemClock, type Clock } from "#src/lighter/client.ts";
+import { retryAfterMs, systemClock, type Clock } from "#src/clock.ts";
+import { RETRY_AFTER_CAP_MS } from "#src/lighter/retry.ts";
 
 // The Explorer's host, limits and replies, each checked on real calls: catalog/vendors/lighter/.
 // It allows 45 weight a minute per IP; a path costs 1 unless noted at its method.

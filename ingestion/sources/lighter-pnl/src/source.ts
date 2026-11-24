@@ -1,11 +1,9 @@
-import { DAY_MS, describeError, readJson, uniqueBy, type Source } from "@ingestion/lib";
+import { DAY_MS, describeError, readJson, systemClock, uniqueBy, type Clock, type Source } from "@ingestion/lib";
 import {
   accountsFileSchema,
   createLighterClient,
   lighterEnv,
   resolveAccounts,
-  systemClock,
-  type Clock,
 } from "@ingestion/lib/lighter";
 import * as z from "zod";
 
@@ -61,21 +59,16 @@ export const pnlSource = (clock: Clock = systemClock): Source<LighterPnlEnv, Pnl
     );
     for (const call of uniqueBy([...own, ...retry], callId)) {
       try {
-        const reply = await lighter.get("/api/v1/pnl", {
+        const query = {
           by: "index",
           value: call.account_index,
           resolution: call.resolution,
           start_timestamp: Math.floor(startMs[call.resolution] / 1000),
           end_timestamp: endS,
           count_back: 0,
-        });
-        const parsed = pnlReply.safeParse(reply);
-        if (!parsed.success) {
-          throw new Error(
-            `Lighter sent the ${call.resolution} pnl of account ${call.account_index} in an unexpected shape:\n${z.prettifyError(parsed.error)}`,
-          );
-        }
-        const records = parsed.data.pnl
+        };
+        const reply = await lighter.get("/api/v1/pnl", query, pnlReply);
+        const records = reply.pnl
           .filter((point) => point.timestamp % PERIOD_S[call.resolution] === 0)
           .map((point) => ({
             id: `${call.account_index}:${call.resolution}:${point.timestamp}`,

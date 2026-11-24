@@ -1,11 +1,9 @@
-import { describeError, readJson, uniqueBy, type Source } from "@ingestion/lib";
+import { describeError, readJson, systemClock, uniqueBy, type Clock, type Source } from "@ingestion/lib";
 import {
   accountsFileSchema,
   createLighterClient,
   lighterEnv,
   resolveAccounts,
-  systemClock,
-  type Clock,
   type LighterEnv,
 } from "@ingestion/lib/lighter";
 import * as z from "zod";
@@ -38,12 +36,8 @@ export const accountsSource = (clock: Clock = systemClock): Source<LighterEnv, A
     const own = (await resolveAccounts(lighter, file.data)).map((account_index): AccountsCall => ({ kind: "account", account_index }));
     for (const call of uniqueBy([...own, ...retry], callId)) {
       try {
-        const reply = await lighter.get("/api/v1/account", { by: "index", value: call.account_index });
-        const parsed = accountReply.safeParse(reply);
-        if (!parsed.success) {
-          throw new Error(`Lighter sent account ${call.account_index} in an unexpected shape:\n${z.prettifyError(parsed.error)}`);
-        }
-        const [account] = parsed.data.accounts;
+        const reply = await lighter.get("/api/v1/account", { by: "index", value: call.account_index }, accountReply);
+        const [account] = reply.accounts;
         yield {
           records: [{ id: `${call.account_index}:${readAt}`, callId: callId(call), data: { read_at: readAt, account } }],
           failed: [],

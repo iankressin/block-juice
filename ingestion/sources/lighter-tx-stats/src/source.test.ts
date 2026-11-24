@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test, type TestContext } from "node:test";
-import type { Batch } from "@ingestion/lib";
-import { lighterExplorerEnv, type Clock } from "@ingestion/lib/lighter";
+import type { Batch, Clock } from "@ingestion/lib";
+import { lighterExplorerEnv } from "@ingestion/lib/lighter";
 import { txStatsSource } from "#src/source.ts";
 
 type Call = { kind: "tx_stats" };
