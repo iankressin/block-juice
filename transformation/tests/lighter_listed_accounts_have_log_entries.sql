@@ -9,7 +9,7 @@
 
 with walked as (
     select distinct (checkpoint.value ->> 'account_index')::bigint as account_index
-    from "{{ env_var('RAW_SCHEMA', 'raw') }}"."_checkpoints" as checkpoint
+    from {{ raw_checkpoints() }} as checkpoint
     where checkpoint.source_table = 'lighter_account_logs'
 )
 

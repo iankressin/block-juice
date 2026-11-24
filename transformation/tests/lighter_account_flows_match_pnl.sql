@@ -14,7 +14,7 @@ with windows as (
         (checkpoint.value ->> 'account_index')::bigint as account_index,
         to_timestamp((checkpoint.value ->> 'origin')::bigint / 1000.0) as window_start,
         to_timestamp((checkpoint.value ->> 'read_at')::bigint / 1000.0) as window_end
-    from "{{ env_var('RAW_SCHEMA', 'raw') }}"."_checkpoints" as checkpoint
+    from {{ raw_checkpoints() }} as checkpoint
     where checkpoint.source_table = 'lighter_account_logs'
     order by checkpoint.value ->> 'account_index', checkpoint.updated_at desc
 ),
