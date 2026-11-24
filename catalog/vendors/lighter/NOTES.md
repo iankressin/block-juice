@@ -58,7 +58,7 @@ Three answers that later tasks branch on:
 - The file has 43 columns. DuckDB adds a 44th, `date`, from the `date=` folder when it reads the S3 path. `vendor.yaml` lists each column's unit.
 - No row group can be skipped by account or market: in all three row groups of 2026-11-16 the footer stats span `market_id` 0 to 2056 or more and both account ids from 93 or less to 2^48 − 1. A filtered read still reads every row group.
 - Trade types on 2026-11-16: `trade` 2,192,564, `market-settlement` 1,874, `liquidation` 1,272, `deleverage` 2.
-- Open interest: `hour` (timestamp with time zone, the start of the hour; the row is the end-of-hour snapshot), `symbol`, `open_interest` (base units), `mark_price`, `open_interest_usd` (`open_interest × mark_price`). 5,006 rows and 209 symbols on 2026-11-16, 118,471 bytes. It names markets by symbol only, so join on symbol.
+- Open interest: `hour` (timestamp with time zone, the start of the hour; the row is the end-of-hour snapshot), `symbol`, `open_interest` (base units), `mark_price`, `open_interest_usd` (`open_interest × mark_price`). 5,006 rows and 209 symbols on 2026-11-16, 118,471 bytes. It names markets by symbol only, and a symbol can name two listed markets (ASELS, under Market identity). A join to `orderBookDetails` on symbol alone matches both and counts the reading twice, so leave a symbol that names more than one market unmatched.
 
 ## Exchange metrics
 
@@ -99,7 +99,7 @@ Space API calls 1.1 s apart to stay under 60 a minute.
 | P6 | Fee tiers and units | maker_fee values 0, 28, 30, 32, 34, 36, 38, 39, 40, 50; sums 2415627603.12, 69773.74, 71115.85, 10689.95 equal `exchangeMetrics` volume, maker_fee, taker_fee, liquidation_fee |
 | P7 | 500 and 750 caps, and the open candle | candles and markPriceCandles: 500 rows, the first about 100 minutes after the start, the last under 60 s old; fundings: 750 rows, the first about 50 hours after the start |
 | P8 | Trade ids are unique across 2026-11-15 and 2026-11-16 | `true,4484699` |
-| P9 | API fields against S3 for account 757337's 104 trades on 2026-11-16 | `104,104,104,104,104,21,21,31,31`: size, price, usd_amount and own fee equal on all 104; pnl × 10^6 equal on all 21 ask and 31 bid |
+| P9 | API fields against S3 for account 757337's 104 trades on 2026-11-16 | `104,104,104,104,104,21,21,31,31,104,104`: size, price, usd_amount and own fee equal on all 104; pnl × 10^6 equal on all 21 ask and 31 bid; own position size and entry quote before the trade equal on all 104 |
 | P9a | The brief's walk for account 313004 | at 13:25 UTC: 30 pages, 2,991 trades, oldest 40938037620 at 09:03:15; at 14:04: 30 pages, 2,991 trades, oldest 40945769300 at 09:46:01; `from=` the oldest returns `[200,0,null]` |
 | P10 | `direction` is `long` exactly when the WebSocket's signed `funding_rate` is positive | `14:00 UTC: 40 markets, 30 negative; 40 where funding_rate = rate, signed - for short` |
 | P11 | Limits, from the rate-limits page | Standard `60 requests per rolling minute`; weights `exchangeMetrics` 120, `trades` 200, other 300, `recentTrades` 600; Explorer 45 a minute, burst 45; `HTTP 429`, or `HTTP 405`; firewall 60 s |
@@ -175,15 +175,23 @@ curl -s "$API/fundings?market_id=0&resolution=1h&start_timestamp=$(( (NOW - 2880
 duckdb -csv -c "select count(*) = count(distinct id) as unique_ids, count(*) as n from read_parquet(['$S3/trades/date=2026-11-15/trades.parquet', '$DAY16'])"
 ```
 
-**P9.** Account 757337 is the maker of trade 40627877458. Its 104 trades on 2026-11-16 fit in two pages, from its newest trade that day (40839017087) down. The query prints n, size, price and usd_amount equal, own fee equal, then API ask pnl and how many equal S3 × 10^-6, then the same for bid.
+**P9.** Account 757337 is the maker of trade 40627877458. Its 104 trades on 2026-11-16 fit in two pages, from its newest trade that day (40839017087) down. The query prints n, size, price and usd_amount equal, own fee equal, then API ask pnl and how many equal S3 × 10^-6, then the same for bid, then how many of the account's own `position_size_before` and `entry_quote_before` equal S3 with the point removed.
 
 ```sh
 curl -s "$API/trades?account_index=757337&sort_by=trade_id&limit=100&from=40839017088" > p9-1.json
 curl -s "$API/trades?account_index=757337&sort_by=trade_id&limit=100&from=$(jq '.trades[-1].trade_id' p9-1.json)" > p9-2.json
-duckdb -csv -c "create view api as select unnest(trades, recursive := true) from read_json(['p9-1.json', 'p9-2.json'], union_by_name = true); create view s3 as select * from '$DAY16' where 757337 in (ask_account_id, bid_account_id); select count(*) as n, count(*) filter (where replace(a.size, '.', '')::bigint = s.size) as size_eq, count(*) filter (where replace(a.price, '.', '')::bigint = s.price) as price_eq, count(*) filter (where replace(a.usd_amount, '.', '')::bigint = s.usdc_amount) as usd_eq, count(*) filter (where if((s.is_maker_ask and s.ask_account_id = 757337) or (not s.is_maker_ask and s.bid_account_id = 757337), a.maker_fee = s.maker_fee, a.taker_fee = s.taker_fee)) as own_fee_eq, count(a.ask_account_pnl) as ask_pnl, count(*) filter (where a.ask_account_pnl::decimal(38, 6) * 1000000 = s.ask_account_pnl) as ask_pnl_eq, count(a.bid_account_pnl) as bid_pnl, count(*) filter (where a.bid_account_pnl::decimal(38, 6) * 1000000 = s.bid_account_pnl) as bid_pnl_eq from api a join s3 s on s.id = a.trade_id"
+duckdb -csv -c "create view api as select unnest(trades, recursive := true) from read_json(['p9-1.json', 'p9-2.json'], union_by_name = true); create view s3 as select * from '$DAY16' where 757337 in (ask_account_id, bid_account_id); select count(*) as n, count(*) filter (where replace(a.size, '.', '')::bigint = s.size) as size_eq, count(*) filter (where replace(a.price, '.', '')::bigint = s.price) as price_eq, count(*) filter (where replace(a.usd_amount, '.', '')::bigint = s.usdc_amount) as usd_eq, count(*) filter (where if((s.is_maker_ask and s.ask_account_id = 757337) or (not s.is_maker_ask and s.bid_account_id = 757337), a.maker_fee = s.maker_fee, a.taker_fee = s.taker_fee)) as own_fee_eq, count(a.ask_account_pnl) as ask_pnl, count(*) filter (where a.ask_account_pnl::decimal(38, 6) * 1000000 = s.ask_account_pnl) as ask_pnl_eq, count(a.bid_account_pnl) as bid_pnl, count(*) filter (where a.bid_account_pnl::decimal(38, 6) * 1000000 = s.bid_account_pnl) as bid_pnl_eq, count(*) filter (where replace(if((s.is_maker_ask and s.ask_account_id = 757337) or (not s.is_maker_ask and s.bid_account_id = 757337), a.maker_position_size_before, a.taker_position_size_before), '.', '')::bigint = if((s.is_maker_ask and s.ask_account_id = 757337) or (not s.is_maker_ask and s.bid_account_id = 757337), s.maker_position_size_before, s.taker_position_size_before)) as own_position_eq, count(*) filter (where replace(if((s.is_maker_ask and s.ask_account_id = 757337) or (not s.is_maker_ask and s.bid_account_id = 757337), a.maker_entry_quote_before, a.taker_entry_quote_before), '.', '')::bigint = if((s.is_maker_ask and s.ask_account_id = 757337) or (not s.is_maker_ask and s.bid_account_id = 757337), s.maker_entry_quote_before, s.taker_entry_quote_before)) as own_entry_quote_eq from api a join s3 s on s.id = a.trade_id"
 ```
 
 The S3 file holds pnl on both sides: of the same 104 rows, 33 carry the other account's ask pnl and 28 its bid pnl, which the API leaves out.
+
+Removing the point compares digits, so the scales must match too. In all 200 trades of the two pages, which span six size scales, the API writes each position with as many decimals as the trade's `size` and each entry quote with 6, as `usdc_amount` has:
+
+```sh
+duckdb -csv -c "with a as (select unnest(trades, recursive := true) from read_json(['p9-1.json', 'p9-2.json'], union_by_name = true)) select count(*) as n, count(*) filter (where length(split_part(maker_position_size_before, '.', 2)) = length(split_part(size, '.', 2)) and length(split_part(taker_position_size_before, '.', 2)) = length(split_part(size, '.', 2))) as position_places_match_size, count(*) filter (where length(split_part(maker_entry_quote_before, '.', 2)) = 6 and length(split_part(taker_entry_quote_before, '.', 2)) = 6) as entry_quote_6_places, count(distinct length(split_part(size, '.', 2))) as size_place_counts from a"
+```
+
+It prints `200,200,200,6`.
 
 **P9a.** The brief asked for account 313004, walked by `next_cursor` until a trade falls before the current UTC day. Its cursor ran out first, both times after 2,991 trades, so P9 uses account 757337, whose history reaches back.
 
