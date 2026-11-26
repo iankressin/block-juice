@@ -8,7 +8,7 @@ The Dagster assets that load and build the warehouse. `ingestion.py` makes one a
 - `ingestion.py:ingestion_checks`: one `no_dead_letters` check per ingestion asset.
 - `ingestion.py:build_ingestion_asset(source, table)` and `ingestion.py:build_dead_letter_check(source, table)`: the factories behind the two lists.
 - `ingestion.py:ingest_configurations(scopes, environment)`: the runs of one materialization, as `(scope, environment)` pairs. The standing configuration comes first, as `None` with `SOURCE_SCOPE` removed, then each scope in the order given with `SOURCE_SCOPE` set. The asset starts one process for each, in that order, and stops at the first that fails: the `dg.Failure` names its scope.
-- `ingestion.py:ENTRIES`, `SOURCES`, `PACKAGES`: the entries of `ingestion/sources.json`, the `(name, table)` pairs, and the package for each pair.
+- `ingestion.py:ENTRIES`, `SOURCES`, `PACKAGES`, `ENTRY_BY_KEY`: the entries of `ingestion/sources.json`, the `(name, table)` pairs, the package for each pair, and each entry by its `(name, table)` pair.
 - `ingestion.py:package_dir(source, table)`: the folder `ingestion/sources/<package>` for a pair.
 - `ingestion.py:run_ingestion_process(command, *, cwd, env, log, monitor)`: starts a process, streams its output into the Dagster log and returns `(returncode, errors_tail, stderr_tail)`.
 - `ingestion.py:parse_log_line(line)`: turns one pino JSON line into a log level and message. Any other line logs at INFO as it is.
