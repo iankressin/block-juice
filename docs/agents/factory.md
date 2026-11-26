@@ -9,8 +9,8 @@ How analysis tickets become pipeline PRs without a human at the keyboard. The de
 | `scope` | the Analysis issue form on filing, or a human to run scope again | a scope run starts |
 | `ready-for-agent` | a human, after reading the scope comment | a build run starts |
 | `ready-for-human` | a build run that failed, or a human | nothing. A human reads the ticket and the draft PR |
-| `reference-mismatch` | a build run, on the PR | the `reference_match` check ran and the pipeline did not match within tolerance |
-| `not-verified` | a build run, on the PR | the answer holds no valid `reference_match` check: it never ran because the eval window did not load or the upstream build failed, or `bj answer --eval` wrote no new answer. The pipeline is unproven, not wrong |
+| `reference-mismatch` | a build run, on the PR | the `reference_match` check ran and the pipeline did not match within tolerance, or the reference the build shipped differs from the scope |
+| `not-verified` | a build run, on the PR | the answer holds no valid `reference_match` check: the `coverage` check failed because the eval window is not fully loaded, the upstream build failed, or `bj answer --eval` wrote no new answer (the PR then quotes bj's error). The pipeline is unproven, not wrong |
 
 A run's first write removes the label that started it. That is the claim. A second run on the same ticket queues behind the first and finds the label gone, so it exits at once.
 
@@ -37,7 +37,7 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 - File: `answers/<slug>/reference.csv`, the scope's reference rows, byte for byte. Git tracks it.
 - Key: `reference` in `answers/<slug>/question.yaml`, with `analysis`, `key`, `value`, `tolerance` and `oracle` from the scope comment. The analysis returns the reference's rows over a window.
 - Check: `bj answer <slug> --eval` compares the analysis's rows over the eval window with the file and records `reference_match` in the eval `answer.json`. A full run does not check it. `bj check` refuses that name.
-- Verdict: the verdict step builds what the analysis reads from the committed code, deletes the model's eval `answer.json`, runs `bj answer <slug> --eval` and reads `reference_match` from the new file. A stale or missing answer, a missing check or a failed upstream build is `not-verified`.
+- Verdict: the verdict step first compares `answers/<slug>/reference.csv` and the `reference` key with the scope the run saved outside the checkout before the model ran. A changed row, header, key, value column or tolerance is a mismatch, whatever bj would find; the rows may come in any order. Then the step builds what the analysis reads from the committed code, deletes the model's eval `answer.json`, runs `bj answer <slug> --eval` and reads `reference_match` from the new file. A stale or missing answer, a failed `coverage` check, a missing check or a failed upstream build is `not-verified`. With no answer, the PR quotes the error bj ended with.
 - CI builds no reference: the check needs chain data, and CI holds none.
 
 ## What a human does

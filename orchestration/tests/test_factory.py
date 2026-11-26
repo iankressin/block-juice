@@ -267,6 +267,111 @@ def test_the_verdict_needs_an_answer_from_this_run(tmp_path, capsys):
     assert capsys.readouterr().out == "status=failed\nkind=not_run\ndetail=bj answer --eval wrote no answer.json\n"
 
 
+def test_a_verdict_with_no_answer_quotes_the_error_bj_ended_with(tmp_path, capsys):
+    stderr = tmp_path / "bj-answer.err"
+    stderr.write_text("Resolved 80 packages in 2ms\nbj: error: reference.csv has no column swaps\n\n")
+    assert factory.main(["verdict", str(tmp_path / "missing.json"), SINCE, "--stderr", str(stderr)]) == 0
+    assert capsys.readouterr().out == (
+        "status=failed\nkind=not_run\ndetail=bj answer --eval wrote no answer.json: bj: error: reference.csv has no column swaps\n"
+    )
+
+
+def test_the_error_a_verdict_quotes_stays_one_short_line(tmp_path, capsys):
+    stderr = tmp_path / "bj-answer.err"
+    stderr.write_text("bj: error: the analysis by_pool returns the key\t" + "0xabc " * 500 + "twice\n")
+    assert factory.main(["verdict", str(tmp_path / "missing.json"), SINCE, "--stderr", str(stderr)]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:2] == ["status=failed", "kind=not_run"] and len(lines) == 3
+    assert lines[2].startswith("detail=bj answer --eval wrote no answer.json: bj: error: the analysis by_pool returns the key 0xabc")
+    assert len(lines[2].removeprefix("detail=")) <= factory.DETAIL_MAX_CHARS
+
+
+GAP = "evm-uniswap-v3 (loaded 23580000-23584000): blocks 23584001-23587000 not loaded; evm-erc20 (loaded 23580000-23587000) covers blocks 23580000-23587000 and the filter"
+
+
+@pytest.mark.parametrize("checks, output", [
+    ([("coverage", "failed", GAP), ("reference_match", "failed", "40 mismatches over tolerance; first: (a) missing_in_actual")],
+     "status=failed\nkind=not_run\ndetail=coverage failed: evm-uniswap-v3 (loaded 23580000-23584000): blocks 23584001-23587000 not loaded\n"),
+    ([("coverage", "failed", GAP), ("reference_match", "passed", "0 mismatches over tolerance")],
+     "status=failed\nkind=not_run\ndetail=coverage failed: evm-uniswap-v3 (loaded 23580000-23584000): blocks 23584001-23587000 not loaded\n"),
+    ([("loaded", "failed", "evm-uniswap-v3: no load recorded"), ("freshness", "failed", "stale"), ("reference_match", "failed", "2 mismatches over tolerance; first: (a) over_tolerance")],
+     "status=failed\nkind=mismatch\ndetail=2 mismatches over tolerance\n"),
+])
+def test_a_window_the_eval_did_not_fully_load_is_not_run_and_no_other_check_is(tmp_path, capsys, checks, output):
+    path = write_json(tmp_path / "answer.json", eval_answer(*checks))
+    assert factory.main(["verdict", str(path), SINCE]) == 0
+    assert capsys.readouterr().out == output
+
+
+ANSWER = "answers/uni-v3-swaps-2026-10-15"
+QUESTION = """\
+question: How many Uniswap v3 swaps did each pool have on Ethereum on 2026-10-15?
+analyses: [by_pool]
+reference:
+  analysis: by_pool
+  key: [pool]
+  value: swaps
+  tolerance: {kind: absolute, value: 0}
+  oracle: Dune query 1234567 counted every v3 Swap log in the window per pool
+"""
+
+
+def shipped_reference(tmp_path, monkeypatch, question=QUESTION, reference=REFERENCE, scope=SCOPE):
+    """The scope a build run saved before the model ran, and the copies the model shipped in the answer folder."""
+    monkeypatch.chdir(tmp_path)
+    saved = scope_run_output(tmp_path / "scope", scope=scope)
+    folder = tmp_path / ANSWER
+    folder.mkdir(parents=True)
+    (folder / "question.yaml").write_text(question)
+    if reference is not None:
+        (folder / "reference.csv").write_text(reference)
+    return saved
+
+
+ROW = "0x11b815efb8f581194ae79006d24e0d814b7697f6"
+
+
+@pytest.mark.parametrize("question, reference", [
+    (QUESTION, REFERENCE),
+    (QUESTION, REFERENCE.rstrip("\n")),
+    (QUESTION, REFERENCE.replace("\n", "\r\n") + "\n"),
+    (QUESTION, "pool,swaps\n" + "\n".join(reversed(REFERENCE.splitlines()[1:])) + "\n"),
+    (QUESTION.replace("analysis: by_pool", "analysis: swaps_by_pool").replace("[by_pool]", "[swaps_by_pool]"), REFERENCE),
+    (QUESTION.replace("value: 0}", "value: 0.0}"), REFERENCE),
+])
+def test_a_reference_shipped_as_scoped_leaves_the_verdict_to_bj(tmp_path, monkeypatch, capsys, question, reference):
+    saved = shipped_reference(tmp_path, monkeypatch, question, reference)
+    assert factory.main(["reference-check", str(saved), ANSWER]) == 0
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("question, reference, scope, detail", [
+    (QUESTION, REFERENCE.replace(",2210", ",2211"), SCOPE,
+     f"{ANSWER}/reference.csv lacks 1 scope row(s), first {ROW},2210; {ANSWER}/reference.csv has 1 row(s) the scope lacks, first {ROW},2211"),
+    (QUESTION, REFERENCE.replace(f"{ROW},2210\n", ""), SCOPE, f"{ANSWER}/reference.csv lacks 1 scope row(s), first {ROW},2210"),
+    (QUESTION, REFERENCE + f"{ROW},2210\n", SCOPE, f"{ANSWER}/reference.csv has 1 row(s) the scope lacks, first {ROW},2210"),
+    (QUESTION, REFERENCE.replace("pool,swaps", "pool,count"), SCOPE, f"{ANSWER}/reference.csv has the header pool,count, not the scope's pool,swaps"),
+    (QUESTION, None, SCOPE, f"{ANSWER}/reference.csv is missing"),
+    (QUESTION.replace("value: 0}", "value: 5}"), REFERENCE, SCOPE,
+     f'{ANSWER}/question.yaml reference.tolerance is {{"kind": "absolute", "value": 5}}, not the scope\'s {{"kind": "absolute", "value": 0}}'),
+    (QUESTION.replace("kind: absolute", "kind: relative"), REFERENCE, SCOPE,
+     f'{ANSWER}/question.yaml reference.tolerance is {{"kind": "relative", "value": 0}}, not the scope\'s {{"kind": "absolute", "value": 0}}'),
+    (QUESTION.replace("key: [pool]", "key: [pool, swaps]"), REFERENCE, SCOPE,
+     f'{ANSWER}/question.yaml reference.key is ["pool", "swaps"], not the scope\'s ["pool"]'),
+    (QUESTION.replace("  value: swaps\n", ""), REFERENCE, SCOPE, f"{ANSWER}/question.yaml has no reference.value"),
+    (QUESTION, REFERENCE, SCOPE.replace("  value: swaps\n", "  value: swaps\n  analysis: swaps_by_pool\n"),
+     f'{ANSWER}/question.yaml reference.analysis is "by_pool", not the scope\'s "swaps_by_pool"'),
+    (QUESTION.replace("value: 0}", "value: 1}"), REFERENCE.replace(",4127", ",4128"), SCOPE,
+     f"{ANSWER}/reference.csv lacks 1 scope row(s), first 0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640,4127; "
+     f"{ANSWER}/reference.csv has 1 row(s) the scope lacks, first 0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640,4128; "
+     f'{ANSWER}/question.yaml reference.tolerance is {{"kind": "absolute", "value": 1}}, not the scope\'s {{"kind": "absolute", "value": 0}}'),
+])
+def test_a_reference_the_build_changed_is_a_mismatch_that_names_the_change(tmp_path, monkeypatch, capsys, question, reference, scope, detail):
+    saved = shipped_reference(tmp_path, monkeypatch, question, reference, scope)
+    assert factory.main(["reference-check", str(saved), ANSWER]) == 0
+    assert capsys.readouterr().out == f"status=failed\nkind=mismatch\ndetail={detail}\n"
+
+
 @pytest.mark.parametrize(
     ("log", "expected"),
     [

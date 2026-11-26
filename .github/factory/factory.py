@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+from collections import Counter
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -250,13 +251,16 @@ def ticket(issue: dict, comments: list[dict], pull: dict | None = None) -> str:
     return "\n".join(parts)
 
 
-def verdict(answer: dict | None, since: str) -> tuple[str, str]:
+def verdict(answer: dict | None, since: str, error: str = "") -> tuple[str, str]:
     """The kind of verdict and its detail, from the answer `bj answer --eval` wrote after `since` (ISO 8601 UTC).
     `passed` only when its `reference_match` check passed. `mismatch` when that check failed, with the check's
-    detail up to its first `;`. `not_run` when there is no new answer or no such check: the pipeline is unproven,
-    not wrong, and the PR says so with a label of its own."""
+    detail up to its first `;`. `not_run` when there is no new answer, when its `coverage` check failed, or when
+    it has no such check: the pipeline is unproven, not wrong, and the PR says so with a label of its own. A
+    window the eval did not fully load misses rows, so the comparison over it proves nothing either way. `error`
+    is what bj printed on stderr; with no answer, its last line says why bj stopped."""
     if answer is None:
-        return "not_run", "bj answer --eval wrote no answer.json"
+        why = next((line for line in reversed(error.splitlines()) if line.strip()), "")
+        return "not_run", "bj answer --eval wrote no answer.json" + (f": {why}" if why else "")
     try:
         answered_at = datetime.fromisoformat(str(answer["answered_at"]).replace("Z", "+00:00"))
         fresh = answered_at >= datetime.fromisoformat(since.replace("Z", "+00:00"))
@@ -264,13 +268,68 @@ def verdict(answer: dict | None, since: str) -> tuple[str, str]:
         fresh = False
     if not fresh:
         return "not_run", "bj answer --eval did not write a new answer"
-    found = [c for c in answer.get("checks", []) if c.get("name") == "reference_match"]
+    checks = answer.get("checks", [])
+    coverage = next((c for c in checks if c.get("name") == "coverage"), None)
+    if coverage is not None and coverage.get("status") == "failed":
+        return "not_run", "coverage failed: " + str(coverage.get("detail") or "").split(";")[0].strip()
+    found = [c for c in checks if c.get("name") == "reference_match"]
     if not found:
         return "not_run", "the answer has no reference_match check"
     check = found[0]
     if check.get("status") == "passed":
         return "passed", "0 mismatches over tolerance"
     return "mismatch", str(check.get("detail") or "").split(";")[0].strip()
+
+
+def csv_rows(text: str) -> list[tuple[str, ...]]:
+    """The rows of a CSV, blank lines dropped and a leading byte order mark ignored, as bj reads reference.csv."""
+    return [tuple(row) for row in csv.reader(io.StringIO(text.lstrip("\ufeff"))) if row]
+
+
+def reference_differences(scope: dict, scope_csv: str, question: Any, answer_csv: str | None, folder: str) -> list[str]:
+    """How the reference the build shipped in `folder` (answers/<slug>) differs from the scope, one line each;
+    empty when it matches. The model writes both copies and `bj answer --eval` checks against them, so a row it
+    changed or a tolerance it widened would pass unseen. Rows compare as parsed cells in any order, the header
+    as written. The `reference` key must hold the scope's key, value and tolerance, and its analysis and oracle
+    only when the scope's `reference` names them: the model picks the analysis, and writes the oracle as prose."""
+    found = []
+    shipped = f"{folder}/reference.csv"
+    if answer_csv is None:
+        found.append(f"{shipped} is missing")
+    else:
+        want, got = csv_rows(scope_csv), csv_rows(answer_csv)
+        if want[:1] != got[:1]:
+            header = ",".join(got[0]) if got else "(none)"
+            found.append(f"{shipped} has the header {header}, not the scope's {','.join(want[0])}")
+        else:
+            lacks, extra = Counter(want[1:]) - Counter(got[1:]), Counter(got[1:]) - Counter(want[1:])
+            if lacks:
+                found.append(f"{shipped} lacks {lacks.total()} scope row(s), first {','.join(next(iter(lacks)))}")
+            if extra:
+                found.append(f"{shipped} has {extra.total()} row(s) the scope lacks, first {','.join(next(iter(extra)))}")
+    raw = question.get("reference") if isinstance(question, dict) else None
+    if not isinstance(raw, dict):
+        return [*found, f"{folder}/question.yaml has no reference"]
+    pinned = {"key": scope["reference"]["key"], "value": scope["reference"]["value"], "tolerance": scope["tolerance"]}
+    pinned.update({name: scope["reference"][name] for name in ("analysis", "oracle") if name in scope["reference"]})
+    for name, want_value in pinned.items():
+        if name not in raw:
+            found.append(f"{folder}/question.yaml has no reference.{name}")
+        elif raw[name] != want_value:
+            found.append(
+                f"{folder}/question.yaml reference.{name} is {json.dumps(raw[name], default=str)}, "
+                f"not the scope's {json.dumps(want_value, default=str)}"
+            )
+    return found
+
+
+# The verdict's detail goes into $GITHUB_OUTPUT, which takes one line, and into a cell of the PR body.
+DETAIL_MAX_CHARS = 500
+
+
+def one_line(text: str) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= DETAIL_MAX_CHARS else flat[: DETAIL_MAX_CHARS - 1] + "…"
 
 
 def model_error(execution_file: Path) -> str:
@@ -468,10 +527,20 @@ def ticket_command(folder: Path) -> str:
     return ticket(read_json(folder / "issue.json"), read_json(folder / "comments.json"), pull)
 
 
-def verdict_command(answer_file: Path, since: str) -> str:
+def verdict_command(answer_file: Path, since: str, stderr_file: Path | None = None) -> str:
     answer = read_json(answer_file) if answer_file.is_file() else None
-    kind, detail = verdict(answer if isinstance(answer, dict) else None, since)
-    return f"status={'passed' if kind == 'passed' else 'failed'}\nkind={kind}\ndetail={detail}\n"
+    error = stderr_file.read_text(encoding="utf-8", errors="replace") if stderr_file and stderr_file.is_file() else ""
+    kind, detail = verdict(answer if isinstance(answer, dict) else None, since, error)
+    return f"status={'passed' if kind == 'passed' else 'failed'}\nkind={kind}\ndetail={one_line(detail)}\n"
+
+
+def reference_check_command(scope_dir: Path, folder: Path) -> str:
+    scope = load_yaml(read_text(scope_dir / "scope.yaml"), "scope.yaml")
+    question_file, csv_file = folder / "question.yaml", folder / "reference.csv"
+    question = load_yaml(read_text(question_file), str(question_file)) if question_file.is_file() else None
+    answer_csv = csv_file.read_text(encoding="utf-8") if csv_file.is_file() else None
+    found = reference_differences(scope, read_text(scope_dir / "reference.csv"), question, answer_csv, str(folder))
+    return f"status=failed\nkind=mismatch\ndetail={one_line('; '.join(found))}\n" if found else ""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -492,6 +561,14 @@ def main(argv: list[str] | None = None) -> int:
     verdict_parser = commands.add_parser("verdict", help="print status=, kind= (passed, mismatch or not_run) and detail= for the reference_match check in the eval answer.json that bj answer --eval wrote after <since>")
     verdict_parser.add_argument("answer", type=Path)
     verdict_parser.add_argument("since", help="ISO 8601 UTC time the verdict step began; an older answer is not a verdict")
+    verdict_parser.add_argument("--stderr", type=Path, help="what bj answer --eval printed on stderr, quoted when it wrote no answer")
+    reference_parser = commands.add_parser(
+        "reference-check",
+        help="print status=, kind=mismatch and detail= when reference.csv or the reference key in <answer-dir> differs "
+        "from scope.yaml and reference.csv in <scope-dir>, or nothing when they match",
+    )
+    reference_parser.add_argument("scope_dir", type=Path)
+    reference_parser.add_argument("answer_dir", type=Path)
     model_error_parser = commands.add_parser("model-error", help="print the error a Claude Code run ended with, from its execution log, or nothing")
     model_error_parser.add_argument("execution_file", type=Path)
     leaks_parser = commands.add_parser("leaks", help="exit 1 and name the files listed in <list>, NUL-separated as `git diff -z` writes them, that hold the value of a named environment variable in any common encoding")
@@ -515,7 +592,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "ticket":
             output = ticket_command(args.dir)
         elif args.command == "verdict":
-            output = verdict_command(args.answer, args.since)
+            output = verdict_command(args.answer, args.since, args.stderr)
+        elif args.command == "reference-check":
+            output = reference_check_command(args.scope_dir, args.answer_dir)
         elif args.command == "model-error":
             output = model_error(args.execution_file)
         elif args.command == "leaks":
