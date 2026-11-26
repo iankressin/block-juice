@@ -163,6 +163,12 @@ jobs:
         run: uv run pytest
         working-directory: orchestration
 
+      - name: List the answers this change can move
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          uv run --project orchestration bj questions --affected "origin/${{ github.base_ref }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Synthetic raw-to-answer demo
         run: uv run --project orchestration bj demo
 

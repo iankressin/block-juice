@@ -8,7 +8,7 @@ Commands (`__init__.py:parser`), each calling `run` in its module:
 
 | Command | Arguments | Module |
 | --- | --- | --- |
-| `questions` | `[slug] [--json \| --check]` | `catalog.py` |
+| `questions` | `[slug] [--json \| --check \| --affected REF]` | `catalog.py`, and `affected.py` for `--affected` |
 | `answer` | `<slug> [--eval]` | `answer.py`, which hands off to `pipeline.analysis.runner.run` |
 | `check` | `<slug> <name> passed\|failed <detail...> [--eval]` | `check.py` |
 | `report` | `<slug> [--format xlsx,pdf\|docx\|gdoc]` (default `xlsx,pdf`) | `report.py`, and `gdoc.py` for `gdoc` |
@@ -64,6 +64,7 @@ Shared symbols:
 - `gdoc.py:publish`: calls the Google Drive API to create or update a Google Doc, writes `reports/<slug>.gdoc.json`, and keeps an OAuth token in `~/.config/blockjuice/google-token.json`. Reads `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_APPLICATION_CREDENTIALS` and `GOOGLE_DRIVE_FOLDER_ID`.
 - `blocks.py`: calls SQD Portal, or the JSON-RPC endpoint given with `--rpc`, and prints the block range as JSON.
 - `coverage.py:read`: reads `<RAW_SCHEMA>._sync`, `_coverage` and `_source_configurations` through `pipeline/warehouse.py`, plus each source's `.env`, `.env.example` and `addresses.json`. Reads `START_BLOCK`, `PORTAL_URL`, `POOLS_START_BLOCK` and `SOURCE_BACKFILL_ID`.
+- `affected.py:run`: runs `git rev-parse`, `git merge-base` and `git diff --name-only`, then `dbt parse` in process for each answer into a temporary target, and reads `ingestion/sources.json`. Prints each changed file with the answers built from it. No warehouse, no writes.
 - `catalog.py`: reads `answers/*/analyses/**/*.sql` and `answers/*/question.yaml`, and lists `transformation/analyses/**/*.sql` to flag leftovers. No warehouse.
 - `run.py:materialize`: runs a Dagster job in process on the `DAGSTER_HOME` instance with the multiprocess executor, which runs sources and dbt.
 - `new_source.py:run`: copies `ingestion/sources/<like>/` to a new package (one chain folder for a multi-chain package), renames it in `package.json` and `src/source.ts`, writes `_<source>__<table>__sources.yml` and `stg_<source>__<table>.sql` in `transformation/models/staging/<source>/`, then runs `pnpm install` and `pnpm --silent generate-sources`.
