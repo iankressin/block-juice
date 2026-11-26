@@ -72,3 +72,12 @@ def test_a_missing_column_is_bad_input():
 def test_keys_that_mix_numbers_and_text_still_sort():
     found = reasons(rows(("1", "eth", "1"), ("d", "eth", "1")), [])
     assert found == [(("1", "eth"), "missing_in_actual"), (("d", "eth"), "missing_in_actual")]
+
+
+def test_a_relative_limit_on_a_wide_amount_is_exact():
+    wei = "131322925334691899062636000000000001"
+    relative = replace(REFERENCE, kind="relative", tolerance=Decimal("0.1"))
+    on_the_limit = "144455217868161088968899600000000001.1"
+    over_the_limit = "144455217868161088968899600000000001.2"
+    assert reasons(rows(("d", "eth", wei)), rows(("d", "eth", on_the_limit)), relative) == []
+    assert reasons(rows(("d", "eth", wei)), rows(("d", "eth", over_the_limit)), relative) == [(("d", "eth"), "over_tolerance")]

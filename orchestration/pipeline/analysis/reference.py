@@ -71,7 +71,7 @@ def differs(expected: Decimal | None, actual: Decimal | None, reference: Referen
         return (expected is None) != (actual is None)
     limit = reference.tolerance
     if reference.kind == "relative" and expected != 0:
-        limit = EXACT.multiply(limit, abs(expected))
+        limit = EXACT.multiply(limit, expected.copy_abs())
     return EXACT.subtract(actual, expected).copy_abs() > limit
 
 
