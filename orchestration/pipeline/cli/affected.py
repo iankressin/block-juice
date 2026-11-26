@@ -26,6 +26,9 @@ def upstream_files(manifest: dict, analysis_ids: Sequence[str], packages: dict[t
 
     def add(node: dict) -> None:
         files.add(posixpath.normpath(posixpath.join("transformation", node["original_file_path"])))
+        # A model's or seed's yml sets its config and column types; dbt names it `<project>://<path>`.
+        if node.get("patch_path"):
+            files.add(posixpath.normpath(posixpath.join("transformation", node["patch_path"].split("://", 1)[1])))
 
     seen, stack = set(), list(analysis_ids)
     while stack:
@@ -76,7 +79,7 @@ def git(repo_root: Path, *args: str) -> subprocess.CompletedProcess:
 
 def changed_files(repo_root: Path, ref: str) -> list[str]:
     """The files that differ from where this branch left `ref`, or from `ref` itself when git finds no
-    merge base, as in a shallow CI checkout."""
+    merge base, as in a shallow CI checkout. Untracked files count too, but not ignored ones."""
     if git(repo_root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
         raise BadInput(f"git knows no ref {ref}")
     base = git(repo_root, "merge-base", ref, "HEAD")
@@ -84,7 +87,10 @@ def changed_files(repo_root: Path, ref: str) -> list[str]:
     diff = git(repo_root, "diff", "--name-only", start)
     if diff.returncode != 0:
         raise BadInput(f"git diff {start} failed: {' '.join(diff.stderr.split())}")
-    return diff.stdout.splitlines()
+    untracked = git(repo_root, "ls-files", "--others", "--exclude-standard")
+    if untracked.returncode != 0:
+        raise BadInput(f"git ls-files failed: {' '.join(untracked.stderr.split())}")
+    return diff.stdout.splitlines() + untracked.stdout.splitlines()
 
 
 def built_from(entry: str, path: str) -> bool:

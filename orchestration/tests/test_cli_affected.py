@@ -18,7 +18,7 @@ MANIFEST = {
                            "macros": ["macro.transformation.token_transfers"]}},
         "seed.transformation.labels": {
             "resource_type": "seed", "name": "labels", "original_file_path": "seeds/labels.csv",
-            "depends_on": {"nodes": [], "macros": []}},
+            "patch_path": "transformation://seeds/_seeds.yml", "depends_on": {"nodes": [], "macros": []}},
     },
     "sources": {"source.transformation.ethereum.erc20_transfers": {
         "source_name": "ethereum", "name": "erc20_transfers",
@@ -42,6 +42,7 @@ def test_upstream_files_are_every_file_an_answer_is_built_from():
         "answers/flows/analyses/headline.sql",
         "transformation/models/marts/transfers/flows.sql",
         "transformation/seeds/labels.csv",
+        "transformation/seeds/_seeds.yml",
         "transformation/models/staging/ethereum/_ethereum__sources.yml",
         "transformation/macros/window.sql",
         "transformation/macros/bounds.sql",
@@ -97,17 +98,34 @@ def git(root, *args):
 def test_changed_files_fall_back_to_the_ref_and_refuse_an_unknown_one(tmp_path):
     git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "a.sql").write_text("select 1")
-    git(tmp_path, "add", "a.sql")
+    (tmp_path / "b.sql").write_text("select 1")
+    git(tmp_path, "add", "a.sql", "b.sql")
     git(tmp_path, "commit", "-q", "-m", "one")
     git(tmp_path, "checkout", "-q", "-b", "work")
     (tmp_path / "a.sql").write_text("select 2")
+    git(tmp_path, "commit", "-q", "-am", "work")
+    git(tmp_path, "checkout", "-q", "main")
+    (tmp_path / "b.sql").write_text("select 2")
+    git(tmp_path, "commit", "-q", "-am", "main")
+    git(tmp_path, "checkout", "-q", "work")
+    # From the merge base, main's later change to b.sql is not the branch's.
     assert affected.changed_files(tmp_path, "main") == ["a.sql"]
     # An orphan branch shares no history with main, as a shallow CI checkout shares none with its base.
     git(tmp_path, "checkout", "-q", "--orphan", "alone")
     git(tmp_path, "commit", "-q", "-m", "two")
-    assert affected.changed_files(tmp_path, "main") == ["a.sql"]
+    assert affected.changed_files(tmp_path, "main") == ["a.sql", "b.sql"]
     with pytest.raises(BadInput, match="git knows no ref nowhere"):
         affected.changed_files(tmp_path, "nowhere")
+
+
+def test_an_untracked_file_counts_as_changed(tmp_path):
+    git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / ".gitignore").write_text("ignored.sql\n")
+    git(tmp_path, "add", ".gitignore")
+    git(tmp_path, "commit", "-q", "-m", "one")
+    (tmp_path / "new.sql").write_text("select 1")
+    (tmp_path / "ignored.sql").write_text("select 1")
+    assert affected.changed_files(tmp_path, "main") == ["new.sql"]
 
 
 def test_cli_passes_the_ref(tmp_path, monkeypatch):

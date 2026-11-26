@@ -163,11 +163,18 @@ jobs:
         run: uv run pytest
         working-directory: orchestration
 
+      # An explicit bash runs with pipefail, so bj's exit status survives the pipe into the summary. The
+      # fence keeps the padding when the summary renders as Markdown.
       - name: List the answers this change can move
         if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          uv run --project orchestration bj questions --affected "origin/${{ github.base_ref }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          uv run --project orchestration bj questions --affected "origin/$BASE_REF" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Synthetic raw-to-answer demo
         run: uv run --project orchestration bj demo
