@@ -128,14 +128,14 @@ def coverage_check(
 
 
 def loaded_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage]) -> Check:
-    """Lists each stream input's recorded loads. Fails when a filter narrowed a load, or when none is
-    recorded, unless the input sets allow_narrowed."""
+    """Lists each stream input's recorded loads. Fails when a filter narrowed a load, when none is
+    recorded, or when blocks were loaded before coverage was recorded, unless the input sets allow_narrowed."""
     details, passed = [], True
     for i in inputs:
         records = coverages[i.source].evidence or ()
         if not records:
             ending = (", which the input allows" if i.allow_narrowed
-                      else "; run the source once, or set allow_narrowed: true on the input")
+                      else "; backfill the source with a new SOURCE_BACKFILL_ID, or set allow_narrowed: true on the input")
             passed = passed and i.allow_narrowed
             details.append(f"{i.source}: loaded rows only; no recorded load, so its filter is unknown{ending}")
             continue
@@ -143,6 +143,7 @@ def loaded_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage]) 
         loads = "; ".join(
             f"{', '.join(f'{k} ({len(v)})' for k, v in sorted(r['config']['filter'].items())) or 'no filter'}"
             f" from block {r['config']['startBlock']}, blocks {r['first']}-{r['last']}"
+            f"{'' if r['verified'] else ' (unverified)'}"
             for r in records
         )
         ending = ""
@@ -150,6 +151,16 @@ def loaded_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage]) 
             keys = ", ".join(narrowed)
             ending = (f"; narrowed by {keys}, which the input allows" if i.allow_narrowed
                       else f"; narrowed by {keys}; load every value, or set allow_narrowed: true on the input")
+            passed = passed and i.allow_narrowed
+        # A first record that starts above its startBlock continues a legacy cursor: the rows below it
+        # were loaded under a filter nobody recorded.
+        start = min(r["config"]["startBlock"] for r in records)
+        first = min(r["first"] for r in records)
+        if first > start:
+            gap = f"; blocks {start}-{first - 1} were loaded before coverage was recorded"
+            ending += (f"{gap}, which the input allows" if i.allow_narrowed
+                       else f"{gap}, so their filter is unknown; backfill the source with a new SOURCE_BACKFILL_ID, "
+                            "or set allow_narrowed: true on the input")
             passed = passed and i.allow_narrowed
         noun = "load" if len(records) == 1 else "loads"
         details.append(f"{i.source}: loaded rows only; {len(records)} recorded {noun}: {loads}{ending}")

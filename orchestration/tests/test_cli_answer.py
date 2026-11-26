@@ -663,12 +663,55 @@ def test_an_input_may_accept_a_narrowed_load():
     assert check.detail.endswith("narrowed by wallets, which the input allows")
 
 
+def legacy(first, last, start, filters, unrestricted=("wallets",)):
+    record = recorded(first, last, filters, unrestricted)
+    record["config"]["startBlock"] = start
+    return record
+
+
+UNRECORDED = "blocks 100-5000 were loaded before coverage was recorded"
+
+
+def test_a_loaded_answer_fails_on_blocks_loaded_before_coverage_was_recorded():
+    check = loaded_scope((legacy(5001, 6000, 100, {"tokens": [USDC.lower()]}),))
+    assert not check.passed
+    assert check.detail.endswith(
+        f"; {UNRECORDED}, so their filter is unknown; "
+        "backfill the source with a new SOURCE_BACKFILL_ID, or set allow_narrowed: true on the input"
+    )
+
+
+def test_an_input_may_accept_blocks_loaded_before_coverage_was_recorded():
+    check = loaded_scope((legacy(5001, 6000, 100, {"tokens": [USDC.lower()]}),), allow_narrowed=True)
+    assert check.passed
+    assert check.detail.endswith(f"; {UNRECORDED}, which the input allows")
+
+
+def test_a_narrowed_load_with_unrecorded_blocks_gets_both_clauses():
+    record = legacy(5001, 6000, 100, {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]})
+    check = loaded_scope((record,))
+    assert not check.passed
+    assert check.detail.endswith(
+        "; narrowed by wallets; load every value, or set allow_narrowed: true on the input"
+        f"; {UNRECORDED}, so their filter is unknown; "
+        "backfill the source with a new SOURCE_BACKFILL_ID, or set allow_narrowed: true on the input"
+    )
+    assert loaded_scope((record,), allow_narrowed=True).detail.endswith(
+        f"; narrowed by wallets, which the input allows; {UNRECORDED}, which the input allows"
+    )
+
+
+def test_a_loaded_answer_marks_an_unverified_record():
+    check = loaded_scope(({**WHOLE, "verified": False},))
+    assert "tokens (1) from block 100, blocks 100-180 (unverified)" in check.detail
+
+
 def test_a_loaded_answer_fails_when_nothing_is_recorded():
     check = loaded_scope(())
     assert not check.passed
     assert check.detail == (
         "ethereum.erc20_transfers: loaded rows only; no recorded load, so its filter is unknown; "
-        "run the source once, or set allow_narrowed: true on the input"
+        "backfill the source with a new SOURCE_BACKFILL_ID, or set allow_narrowed: true on the input"
     )
     allowed = loaded_scope((), allow_narrowed=True)
     assert allowed.passed
@@ -677,6 +720,13 @@ def test_a_loaded_answer_fails_when_nothing_is_recorded():
         "which the input allows"
     )
     assert not answer.loaded_check([SourceInput(TRANSFERS, {})], {TRANSFERS: LOADED}).passed
+
+
+def test_a_loaded_answer_runs_the_loaded_check(history):
+    code, checks = history("{scope: loaded}", f"[{{source: {TRANSFERS}}}]")
+    assert code == 1 and checks["coverage"][0] == "failed" and "no recorded load" in checks["coverage"][1]
+    code, checks = history("{scope: loaded}", f"[{{source: {TRANSFERS}, allow_narrowed: true}}]")
+    assert code == 0 and checks["coverage"][0] == "passed"
 
 
 @pytest.mark.parametrize("window", ["{chain: base, blocks: [100, 180]}", "{blocks: {base: [100, 180]}}"])

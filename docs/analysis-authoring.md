@@ -98,7 +98,8 @@ or group, list the addresses under `filter.wallets`.
 
 For summaries of whatever is loaded, declare `window: {scope: loaded}` explicitly. That records
 the source inventory without asserting complete historical coverage. The coverage check lists each
-input's recorded loads. It fails when a filter narrowed a load, such as a `wallets` list, unless the
+input's recorded loads. It fails when a filter narrowed a load, such as a `wallets` list, or when blocks were
+loaded before coverage was recorded, unless the
 input sets `allow_narrowed: true`. The Polymarket overview uses this mode because its
 current-position metrics cannot be restricted by a trade-date filter.
 

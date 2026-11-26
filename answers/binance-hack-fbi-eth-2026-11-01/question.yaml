@@ -39,6 +39,7 @@ inputs:
     strategy: history
     source: ethereum.wallet_transactions
     filter:
+      # The binance-hack-2026-10-29 addresses of transformation/seeds/attributed_addresses.csv; keep them equal.
       wallets:
         - "0x8532fa14acaf483729c449b8458aeddb900543d4"
         - "0xc887af690e0301cd4edbbce8f8d31b4ec65b286a"
