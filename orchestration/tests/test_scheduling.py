@@ -1,8 +1,11 @@
+from pathlib import Path
+
 import dagster as dg
+import pytest
 
 from pipeline.cli.run import load_pipelines
 from pipeline.definitions import defs
-from pipeline.schedules import PIPELINES
+from pipeline.schedules import DEFAULT_CRON, PIPELINES, pipelines
 
 
 def test_daily_runs_each_shared_asset_and_check_once():
@@ -34,3 +37,22 @@ def test_registered_pipelines_have_jobs_schedules_and_cli_names():
         assert schedules[name].cron_schedule == cron
         assert schedules[name].default_status == dg.DefaultScheduleStatus.STOPPED
     assert set(load_pipelines()[1]) == expected.keys()
+
+
+def test_each_marts_folder_with_a_model_is_a_pipeline(tmp_path):
+    for name in ("dex", "balances"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / f"{name}.sql").write_text("select 1")
+    (tmp_path / "empty").mkdir()
+    (tmp_path / ".DS_Store").write_text("")
+    assert pipelines(tmp_path, {"dex": "0 * * * *"}) == {"balances": DEFAULT_CRON, "dex": "0 * * * *"}
+
+
+def test_an_override_for_no_pipeline_is_an_error(tmp_path):
+    with pytest.raises(ValueError, match="CRON_OVERRIDES names bridges"):
+        pipelines(tmp_path, {"bridges": "0 * * * *"})
+
+
+def test_the_shipped_pipelines_are_the_marts_folders():
+    marts = Path(__file__).resolve().parents[2] / "transformation" / "models" / "marts"
+    assert PIPELINES.keys() == {folder.name for folder in marts.iterdir() if folder.is_dir()}

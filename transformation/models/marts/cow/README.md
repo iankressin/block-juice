@@ -2,7 +2,7 @@
 
 ## Overview
 
-CoW Protocol ETH Flow orders placed by the wallets `evm-cow-ethflow` follows, with the settlement that filled each one. This folder is the `cow` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds this mart and everything upstream of it, ingestion included. The mart builds as a table (`marts: +materialized: table` in `transformation/dbt_project.yml`). The models it joins are in [intermediate/cow](../../intermediate/cow/README.md).
+CoW Protocol ETH Flow orders placed by the wallets `evm-cow-ethflow` follows, with the settlement that filled each one. This folder is the `cow` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds this mart and everything upstream of it, ingestion included. The mart builds as a table (`marts: +materialized: table` in `transformation/dbt_project.yml`). The models it joins are in [intermediate/cow](../../intermediate/cow/README.md).
 
 ## Interface
 

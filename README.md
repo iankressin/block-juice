@@ -110,7 +110,7 @@ If something looks wrong, run `bj doctor` first. [Local setup](docs/architecture
 
 ## Extend it
 
-To cover another wallet list, chain or protocol, copy a source with `bj new-source` and add its models in dbt. A pipeline is a mart folder plus one entry in `PIPELINES`. The `/bj` skill runs each of these for you, and [Add a source](docs/architecture.md#add-a-source) and [Add a pipeline](docs/architecture.md#add-a-pipeline) list the steps by hand. Before anyone writes SQL against a protocol, its contracts, events and ABIs go into `catalog/`, each proven on a real transaction.
+To cover another wallet list, chain or protocol, copy a source with `bj new-source` and add its models in dbt. A pipeline is a mart folder; `CRON_OVERRIDES` holds a cron only for one that does not run at 06:00 UTC. The `/bj` skill runs each of these for you, and [Add a source](docs/architecture.md#add-a-source) and [Add a pipeline](docs/architecture.md#add-a-pipeline) list the steps by hand. Before anyone writes SQL against a protocol, its contracts, events and ABIs go into `catalog/`, each proven on a real transaction.
 
 ## Code map
 

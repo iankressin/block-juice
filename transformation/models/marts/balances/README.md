@@ -2,7 +2,7 @@
 
 ## Overview
 
-Each wallet's latest balance of each asset, on Ethereum, Solana and Bitcoin. This folder is the `balances` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds this mart and everything upstream of it, ingestion included. The mart builds as a table (`marts: +materialized: table` in `transformation/dbt_project.yml`). The per-chain models are in [intermediate/balances](../../intermediate/balances/README.md).
+Each wallet's latest balance of each asset, on Ethereum, Solana and Bitcoin. This folder is the `balances` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds this mart and everything upstream of it, ingestion included. The mart builds as a table (`marts: +materialized: table` in `transformation/dbt_project.yml`). The per-chain models are in [intermediate/balances](../../intermediate/balances/README.md).
 
 ## Interface
 

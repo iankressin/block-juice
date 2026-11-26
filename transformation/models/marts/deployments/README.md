@@ -2,7 +2,7 @@
 
 ## Overview
 
-One contract-deployment transaction per row, with the EIP-8037 state gas its creates and new storage slots would cost, as a lower bound. This folder is the `deployments` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds this mart and everything upstream of it, ingestion included. The rules live in [intermediate/deployments](../../intermediate/deployments/README.md).
+One contract-deployment transaction per row, with the EIP-8037 state gas its creates and new storage slots would cost, as a lower bound. This folder is the `deployments` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds this mart and everything upstream of it, ingestion included. The rules live in [intermediate/deployments](../../intermediate/deployments/README.md).
 
 `transformation/dbt_project.yml` builds the mart as a table (`marts: +materialized: table`) with the pre-hook `set local enable_nestloop = off`: the views it reads join on jsonb staging columns, and the planner's nested loops took minutes where hash joins take seconds.
 

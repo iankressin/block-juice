@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wallet transactions, native outflows, account state reads and published address attributions. This folder is the `accounts` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds these marts and everything upstream of them, ingestion included. Marts build as tables (`marts: +materialized: table` in `transformation/dbt_project.yml`). The intermediate models are in [intermediate/accounts](../../intermediate/accounts/README.md).
+Wallet transactions, native outflows, account state reads and published address attributions. This folder is the `accounts` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds these marts and everything upstream of them, ingestion included. Marts build as tables (`marts: +materialized: table` in `transformation/dbt_project.yml`). The intermediate models are in [intermediate/accounts](../../intermediate/accounts/README.md).
 
 ## Interface
 

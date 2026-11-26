@@ -2,7 +2,7 @@
 
 ## Overview
 
-Polymarket markets, trades, wallet fills, signed orders, 1-minute price candles and each wallet's PnL per market. This folder is the `polymarket` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds these marts and everything upstream of them, ingestion included. The rules live in [intermediate/polymarket](../../intermediate/polymarket/README.md).
+Polymarket markets, trades, wallet fills, signed orders, 1-minute price candles and each wallet's PnL per market. This folder is the `polymarket` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds these marts and everything upstream of them, ingestion included. The rules live in [intermediate/polymarket](../../intermediate/polymarket/README.md).
 
 `transformation/dbt_project.yml` builds the marts as tables (`marts: +materialized: table`) with the pre-hook `set local enable_nestloop = off`, as for the intermediate models.
 

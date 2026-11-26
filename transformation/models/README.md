@@ -8,4 +8,4 @@ The dbt models, in three layers. Staging reads each raw table, intermediate hold
 
 - staging: [./staging/README.md](./staging/README.md) - One view per raw table and kind of record, `stg_<name>__<table>`. No joins and no rules.
 - intermediate: [./intermediate/README.md](./intermediate/README.md) - Joins and rules, one folder per pipeline, one model per chain or protocol version.
-- marts: [./marts/README.md](./marts/README.md) - One folder per pipeline in `PIPELINES`, unioning the intermediate models into the tables questions read.
+- marts: [./marts/README.md](./marts/README.md) - One folder per pipeline, unioning the intermediate models into the tables questions read.

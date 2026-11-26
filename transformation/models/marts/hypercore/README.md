@@ -2,7 +2,7 @@
 
 ## Overview
 
-HyperCore fills and signed L1 actions, for the users and coins the `hypercore-fills` and `hypercore-actions` sources follow. This folder is the `hypercore` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds these marts and everything upstream of them, ingestion included. Marts build as tables (`marts: +materialized: table` in `transformation/dbt_project.yml`). The fill rules are in [intermediate/hypercore](../../intermediate/hypercore/README.md).
+HyperCore fills and signed L1 actions, for the users and coins the `hypercore-fills` and `hypercore-actions` sources follow. This folder is the `hypercore` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds these marts and everything upstream of them, ingestion included. Marts build as tables (`marts: +materialized: table` in `transformation/dbt_project.yml`). The fill rules are in [intermediate/hypercore](../../intermediate/hypercore/README.md).
 
 ## Interface
 

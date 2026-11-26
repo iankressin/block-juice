@@ -120,7 +120,7 @@ def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
     assert "changed ingestion/sources.json" in out
     assert "changed transformation/models/staging/ethereum/_ethereum__sources.yml" in out
     assert "orchestration/pipeline/assets/ingestion.py" not in out
-    assert "Adding a chain" in out and "PIPELINES" in out and "mart" in out
+    assert "Adding a chain" in out and "nothing to schedule" in out and "mart" in out
 
 
 def test_creates_the_sources_file_of_a_new_source(repo):

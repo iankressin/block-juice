@@ -1,6 +1,6 @@
 # Add a pipeline
 
-A pipeline is the marts in `transformation/models/marts/<pipeline>/` and everything upstream of them, sources included. Dagster runs each pipeline as its own job, on its own schedule, and both come from one line in `PIPELINES` in `orchestration/pipeline/schedules.py`. `balances` is the example.
+A pipeline is the marts in `transformation/models/marts/<pipeline>/` and everything upstream of them, sources included. Dagster runs each pipeline as its own job, on its own schedule, and both come from the folder: `orchestration/pipeline/schedules.py` reads `PIPELINES` from `marts/`. `balances` is the example.
 
 ## 1. Scaffold the source
 
@@ -16,7 +16,7 @@ uv run --project orchestration bj new-source <source> <table> --like <package>
 - adds the table to `transformation/models/staging/<source>/_<source>__sources.yml`, writing the file for a new source, and writes `stg_<source>__<table>.sql`, which selects `id`, `data` and `_loaded_at`;
 - runs `pnpm install` and then `pnpm generate-sources` in `ingestion/`. That rewrites `ingestion/sources.json`, the list of the `name` and `table` every package exports, which Dagster builds its `SOURCES` from. Nothing lists the sources by hand.
 
-It does not read the source from any mart, and it schedules nothing. Both stay hand steps, below. The copied code still reads the old data: edit it per [state-source.md](state-source.md) or [history-source.md](history-source.md).
+It does not read the source from any mart: that stays a hand step, below. It needs no schedule, since a mart folder is already a pipeline. The copied code still reads the old data: edit it per [state-source.md](state-source.md) or [history-source.md](history-source.md).
 
 ## 2. By hand
 
@@ -27,7 +27,7 @@ It does not read the source from any mart, and it schedules nothing. Both stay h
    - A new chain for `balances`: follow `## Adding a chain` in `transformation/README.md`. It adds `int_<chain>_balances` in `models/intermediate/balances/`, a `union all` branch in `latest_balances.sql`, and the chain to the mart's `accepted_values`.
    - A new chain or protocol version in `latest_balances`, `erc20_transfers` or `dex_trades`: add it to that mart's test in `orchestration/tests/test_definitions.py`, such as `test_mart_reads_each_chain_through_its_intermediate_model` for `latest_balances`. The test lists the mart's intermediate models and each one's staging models, and asserts the exact sets. Until it names the new one, pytest fails in step 3.
    - A new kind of fact: a new mart in `models/marts/<pipeline>/`. Make it hold one kind of fact for every chain and asset it covers, such as `latest_balances`. Never build a mart for one question; the question's filter belongs in its analysis. Put models that only this pipeline reads in `models/intermediate/<pipeline>/`, where joins and rules go. When the mart stacks chains or protocol versions, give each one intermediate model that brings its rows into the mart's shape, as `int_<chain>_balances` does. Test the mart in `_<pipeline>__models.yml`: `not_null` on keys, `unique` on the grain, `accepted_values` on columns with a fixed set of values. Start the mart's SQL with a comment that says what one row is and which units it uses, as `latest_balances.sql` does.
-3. Schedule it: add the pipeline's name and cron to `PIPELINES` in `orchestration/pipeline/schedules.py`. Use a daily schedule unless the user asks for another. A mart folder already in `PIPELINES` is scheduled; a new one is not until this line exists. [schedule-jobs.md](schedule-jobs.md) says how the job is selected and how to change the time.
+3. Schedule it: nothing to edit. A mart folder is a pipeline, and it runs at 06:00 UTC daily. Add an entry to `CRON_OVERRIDES` in `orchestration/pipeline/schedules.py` only if the user asks for another time. [schedule-jobs.md](schedule-jobs.md) says how the job is selected and how to change the time.
 
 ## 3. Build, test and load
 
@@ -36,7 +36,7 @@ set -a && . ./.env && set +a && cd transformation && uv run --project ../orchest
 set -a && . ./.env && set +a && cd orchestration && uv run pytest
 ```
 
-`test_every_asset_and_check_runs_in_a_scheduled_pipeline` in `orchestration/tests/test_definitions.py` fails until step 2.3 is done: every asset, the new source and its staging model included, must belong to a scheduled pipeline. Then materialize the pipeline end to end, sources included, with `uv run --project orchestration bj run <pipeline>`. `dagster dev` shows the new job after a restart.
+`test_every_asset_and_check_runs_in_a_scheduled_pipeline` in `orchestration/tests/test_definitions.py` fails until a mart reads the new source (step 2.2): every asset, the new source and its staging model included, must belong to a scheduled pipeline. Then materialize the pipeline end to end, sources included, with `uv run --project orchestration bj run <pipeline>`. `dagster dev` shows the new job after a restart.
 
 ## The name contract
 

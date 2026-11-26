@@ -211,7 +211,7 @@ Ingestion code logs through the pino `logger` from `@ingestion/lib`, never `cons
 
 ## Add a source
 
-`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. From an `evm-*` package it creates `evm-<table>/` with only `chains/<source>/`, copying that chain's settings or another chain's settings when no matching folder exists. Then edit the copied `src/`, `addresses.json` and the staging stub. Reading the source from a mart, and scheduling that mart in `PIPELINES`, stay hand steps: see [Add a pipeline](#add-a-pipeline), and `## Adding a chain` in [transformation/README.md](../transformation/README.md). By hand:
+`uv run --project orchestration bj new-source <source> <table> --like <package>` does steps 1 to 3 from a copy of `ingestion/sources/<package>/`. From an `evm-*` package it creates `evm-<table>/` with only `chains/<source>/`, copying that chain's settings or another chain's settings when no matching folder exists. Then edit the copied `src/`, `addresses.json` and the staging stub. Reading the source from a mart stays a hand step: see [Add a pipeline](#add-a-pipeline), and `## Adding a chain` in [transformation/README.md](../transformation/README.md). By hand:
 
 1. Copy a suitable package to `ingestion/sources/<source>-<table>/` (underscores in the table name become hyphens), rename the package to `@ingestion/<source>-<table>`, edit `src/source.ts`, and run `pnpm install` in `ingestion/`. The source adds its own dependencies (API client, schemas) to its own `package.json`; code that several sources share goes in `lib/`. Chain-specific settings belong with the package under `chains/<chain>/` for `evm-*` sources; shared chain clients live in `lib/src/<chain>/`, whose `index.ts` and `lib/package.json` define the public `@ingestion/lib/<chain>` entry point.
 2. Add `transformation/models/staging/<source>/` with a sources yml and the `stg_` models.
@@ -236,7 +236,7 @@ A **stream source** reads blocks through a [Pipes](https://docs.sqd.dev/en/sdk/p
 A pipeline is the models in `transformation/models/marts/<pipeline>/` and every asset they read from, ingestion included. Each pipeline runs as its own Dagster job, on its own schedule.
 
 1. Add the pipeline's output models to `transformation/models/marts/<pipeline>/`, and any models that only it reads to `transformation/models/intermediate/<pipeline>/`. Staging models stay in `staging/<source>/`, because any pipeline can read them.
-2. Add the pipeline's name and cron schedule to `PIPELINES` in `orchestration/pipeline/schedules.py`.
+2. Nothing to schedule: the folder is the pipeline, and it runs at 06:00 UTC daily. Add an entry to `CRON_OVERRIDES` in `orchestration/pipeline/schedules.py` only for another time.
 3. Materialize the pipeline once and confirm its checks pass. In Dagster, open **Automation → Schedules**, enable its schedule and verify the next tick. Creating a schedule or manually materializing the pipeline does not enable it.
 
 If the pipeline reads a new source, also follow [Add a source](#add-a-source). Two pipelines that read the same source each run it. The orchestration tests fail when an asset belongs to no scheduled pipeline.

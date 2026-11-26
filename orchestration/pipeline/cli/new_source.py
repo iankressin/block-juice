@@ -208,7 +208,7 @@ def run(repo_root: Path, source: str, table: str, like: str) -> int:
         + f"2. Shape {model}: turn `data` into the columns you need.\n"
         "3. By hand, read the new source from a mart in transformation/models/marts/<pipeline>/: follow "
         "`## Adding a chain` in transformation/README.md. bj new-source does not touch marts.\n"
-        "4. By hand, make sure a scheduled pipeline builds that mart: PIPELINES in orchestration/pipeline/schedules.py."
-        " Until one does, the orchestration tests fail, because the new asset belongs to no scheduled pipeline."
+        "4. A mart in a marts folder is already in a scheduled pipeline, so there is nothing to schedule."
+        " Until a mart reads the new source, the orchestration tests fail, because the new asset belongs to no scheduled pipeline."
     )
     return 0

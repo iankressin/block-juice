@@ -2,7 +2,7 @@
 
 ## Overview
 
-Chainlink oracle rounds on Ethereum, Arbitrum and Base, and exchange candles from Binance and Coinbase. This folder is the `prices` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds these marts and everything upstream of them, ingestion included. The per-chain and per-exchange models are in [intermediate/prices](../../intermediate/prices/README.md).
+Chainlink oracle rounds on Ethereum, Arbitrum and Base, and exchange candles from Binance and Coinbase. This folder is the `prices` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds these marts and everything upstream of them, ingestion included. The per-chain and per-exchange models are in [intermediate/prices](../../intermediate/prices/README.md).
 
 ## Interface
 

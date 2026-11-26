@@ -2,7 +2,7 @@
 
 ## Overview
 
-The tables that questions read. Each folder is one pipeline: its name is a key in `PIPELINES` in `orchestration/pipeline/schedules.py`, and that pipeline's Dagster job builds `path:models/marts/<pipeline>` and everything upstream of it, ingestion included. Every pipeline runs on `0 6 * * *` once its schedule is turned on. The `daily` job, also on `0 6 * * *`, builds `path:models/marts` and everything upstream of it, every pipeline at once. Most marts union the per-chain and per-version intermediate models; some read other marts, a seed or a staging view. All build in the `analytics` schema (`DBT_SCHEMA`).
+The tables that questions read. Each folder is one pipeline: `orchestration/pipeline/schedules.py` reads its name into `PIPELINES`, and that pipeline's Dagster job builds `path:models/marts/<pipeline>` and everything upstream of it, ingestion included. Every pipeline runs on `0 6 * * *` once its schedule is turned on, unless `CRON_OVERRIDES` names it. The `daily` job, also on `0 6 * * *`, builds `path:models/marts` and everything upstream of it, every pipeline at once. Most marts union the per-chain and per-version intermediate models; some read other marts, a seed or a staging view. All build in the `analytics` schema (`DBT_SCHEMA`).
 
 ## Subdirectories & Boundaries
 

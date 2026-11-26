@@ -2,7 +2,7 @@
 
 ## Overview
 
-One DEX trade per row, a Swap log in which the swapper received one token and paid another, for every pool a source loads. This folder is the `dex` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds this mart and everything upstream of it, ingestion included. The per-version models and their rules are in [intermediate/dex](../../intermediate/dex/README.md).
+One DEX trade per row, a Swap log in which the swapper received one token and paid another, for every pool a source loads. This folder is the `dex` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds this mart and everything upstream of it, ingestion included. The per-version models and their rules are in [intermediate/dex](../../intermediate/dex/README.md).
 
 ## Interface
 
