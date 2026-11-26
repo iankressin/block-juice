@@ -65,7 +65,7 @@ window: {{chain: ethereum, blocks: [26316189, 26340000]}}
 inputs:
   - {{name: transfers, strategy: history, source: ethereum.erc20_transfers, filter: {{tokens: ["{USDC}"]}}}}
   - {{name: everything, source: ethereum.erc20_transfers}}
-  - {{name: pools, strategy: history, filter: {{token: PEPE}}}}
+  - {{name: pools, strategy: history, filter: {{token: [PEPE]}}}}
 """,
     )
     question = load_question(tmp_path, "usdc-flows")
@@ -226,6 +226,19 @@ def test_input_filters_lowercase_hex_and_keep_other_values(tmp_path):
 def test_input_filters_refuse_a_value_sql_would_misread(tmp_path):
     with pytest.raises(BadInput, match="inputs.fills.filter.wallets.*it's"):
         input_filters(write_fills(tmp_path, INPUTS.replace("0x28C6c06298d514Db089934071355E5743bf21d60", "it's")))
+
+
+@pytest.mark.parametrize("filter_text", ['{wallets: "0xAbC"}', "{wallets: [0xAbC]}", '["0xabc"]'])
+def test_a_filter_must_be_lists_of_strings_on_an_input_with_no_source(tmp_path, filter_text):
+    text = f"question: q\ninputs:\n  - name: holders\n    mart: latest_balances\n    filter: {filter_text}\n"
+    with pytest.raises(BadInput, match=re.escape("inputs[0].filter")):
+        write_fills(tmp_path, text)
+
+
+@pytest.mark.parametrize("name", ["7", "[a]", '""'])
+def test_an_input_name_must_be_a_non_empty_string(tmp_path, name):
+    with pytest.raises(BadInput, match=re.escape("inputs[0].name")):
+        write_fills(tmp_path, f"question: q\ninputs:\n  - name: {name}\n    mart: latest_balances\n")
 
 
 def test_input_filters_refuse_two_inputs_with_one_name(tmp_path):

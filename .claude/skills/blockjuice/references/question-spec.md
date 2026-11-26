@@ -54,13 +54,13 @@ inputs:
     strategy: history
     protocol: uniswap
     events: [v2.PairCreated, v3.PoolCreated]
-    filter: {token: PEPE}
+    filter: {token: [PEPE]}
     blocks: from_deployment
   - name: pepe_swaps
     strategy: history
     protocol: uniswap
     events: [v2.Swap, v3.Swap]
-    filter: {contracts: pepe_pools}
+    filter: {contracts: [pepe_pools]}
     blocks: window
 marts: [dex_trades]
 ```

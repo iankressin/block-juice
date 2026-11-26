@@ -192,7 +192,11 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
     blocks = {key: _window_blocks(raw.get(key, {}), label, key) for key in ("window", "eval_window")}
     sources = []
     for index, item in enumerate(raw.get("inputs", [])):
+        if "name" in item and (not isinstance(item["name"], str) or not item["name"].strip()):
+            raise BadInput(f"{label}: 'inputs[{index}].name' must be a non-empty string")
         if "source" not in item:
+            if "filter" in item and not _filter(item["filter"]):
+                raise BadInput(f"{label}: 'inputs[{index}].filter' must map keys to lists of quoted strings")
             continue
         if not isinstance(item["source"], str) or not SOURCE.match(item["source"]):
             raise BadInput(f"{label}: 'inputs[{index}].source' must be <source>.<table>")
