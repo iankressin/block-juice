@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 from pipeline.analysis.domain import jsonable
@@ -13,12 +14,24 @@ def digest(value):
     return hashlib.sha256(content).hexdigest()
 
 
+def authored_files(nodes: Iterable[dict]) -> dict[str, str]:
+    # A seed's raw_code is empty, so its hash must come from dbt's checksum or every seed hashes the same.
+    authored = {}
+    for node in nodes:
+        if not node or not node.get("original_file_path"):
+            continue
+        if node.get("resource_type") == "seed":
+            authored[node["original_file_path"]] = node["checksum"]["checksum"]
+        elif "raw_code" in node:
+            authored[node["original_file_path"]] = hashlib.sha256(node["raw_code"].encode()).hexdigest()
+    return authored
+
+
 def run_provenance(repo_root, question, manifest, analysis_ids, results, coverages, check_started, check_finished):
     nodes = {uid: manifest.get("nodes", {}).get(uid, manifest.get("sources", {}).get(uid))
              for uid in sorted(ancestors(manifest, analysis_ids))}
     captured = manifest.get("_blockjuice", {})
-    authored = {node["original_file_path"]: hashlib.sha256(node.get("raw_code", "").encode()).hexdigest()
-                for node in nodes.values() if node and node.get("original_file_path") and "raw_code" in node}
+    authored = authored_files(nodes.values())
     config = captured.get("project_files_sha256", {})
     sql = {result.analysis: hashlib.sha256(result.sql.encode()).hexdigest() for result in results}
     return {"question_sha256": question.authored_sha256,
