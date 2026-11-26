@@ -19,7 +19,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# answers: git tracks each question's question.yaml, analyses/ and macros/; what bj answer and the skill write from it stays local
+# answers: git tracks each question's question.yaml, analyses/, macros/ and reference.csv; what bj answer and the skill write from it stays local
 answers/*
 !answers/*/
 answers/*/*

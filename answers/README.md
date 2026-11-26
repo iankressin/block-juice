@@ -2,7 +2,7 @@
 
 ## Overview
 
-Each answer folder `answers/<slug>/` holds a `question.yaml` and an `analyses/` folder of dbt analyses: one question's filter and aggregation over marts. It may also hold a `macros/` folder. dbt compiles analyses but never builds them. `bj answer <slug>` points dbt at that answer's folders, compiles the analyses its `question.yaml` names with the question's window, runs them and writes their results. Every analysis sits in one answer's folder, so this README groups them by question. `docs/analysis-authoring.md` covers writing one.
+Each answer folder `answers/<slug>/` holds a `question.yaml` and an `analyses/` folder of dbt analyses: one question's filter and aggregation over marts. It may also hold a `macros/` folder and a `reference.csv`. dbt compiles analyses but never builds them. `bj answer <slug>` points dbt at that answer's folders, compiles the analyses its `question.yaml` names with the question's window, runs them and writes their results. Every analysis sits in one answer's folder, so this README groups them by question. `docs/analysis-authoring.md` covers writing one.
 
 ## Interface
 

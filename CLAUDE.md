@@ -18,7 +18,7 @@ Run these from the repo root. None needs a `cd`.
 - dbt reads the warehouse settings from the environment and has no defaults, so export `.env` first: `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
 - pytest: `uv run --project orchestration pytest orchestration/tests/<file>.py`, or leave out the path to run all. It needs `transformation/target/manifest.json`, which `bj install` or `dbt parse` writes, and the pnpm packages, since one test runs `generate-sources`. Run it without `.env` exported unless you want the Postgres tests to use that server (`orchestration/CLAUDE.md`).
 - `uv run --project orchestration bj questions --check` checks that each analysis belongs to exactly one question. It needs no warehouse.
-- `uv run --project orchestration bj questions --affected <ref>` prints each file changed since `<ref>` with the answers built from it. Run it before you change a mart, a seed or a macro, and rerun `bj answer <slug> --eval` for each answer it lists with a reference. It needs no warehouse. CI prints it on each pull request.
+- `uv run --project orchestration bj questions --affected <ref>` prints each file changed since `<ref>` with the answers built from it. After you change a mart, a seed or a macro, run it, and rerun `bj answer <slug> --eval` for each answer it lists with a reference. It needs no warehouse. CI prints it on each pull request.
 - `uv run --project orchestration bj --help` lists the CLI. `bj` loads `.env` itself.
 - `uv run --project orchestration bj demo` runs synthetic raw rows from `examples/balances/` through the balance models to a checked answer and a report. It needs Docker, starts its own throwaway Postgres and leaves your warehouse alone.
 - Leave `bj dev` to the user: it runs Dagster in the foreground.
@@ -70,7 +70,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It a
 - Some tracked files are generated and say nothing about it. Edit their generators: `ingestion/sources.json` comes from `pnpm -C ingestion generate-sources`, which you run after adding or renaming a source (pytest fails while the file is stale). `infra/grafana/dashboards/ingestion.json` and `pipeline.json` come from `infra/grafana/build_dashboards.py`.
 - To rebuild part of the warehouse, run `bj run <pipeline> --select <key>`, where the key is a model name or `<source>/<table>`. A direct `dbt run` or `dbt build` on the warehouse leaves no trace in the run log, so `bj answer` cannot use it as proof of freshness. Direct dbt is fine in a check schema of your own (`DBT_SCHEMA=analytics_<name>_check`).
 - `.env.example` must keep pointing at `localhost:5432` with user `elt`, password `elt` and database `warehouse`, because CI loads it as its environment.
-- Under `answers/`, git tracks only `<slug>/question.yaml`, `<slug>/analyses/` and `<slug>/macros/`, plus `README.md` and `CLAUDE.md`. Commit them together in the same PR.
+- Under `answers/`, git tracks only `<slug>/question.yaml`, `<slug>/analyses/`, `<slug>/macros/` and `<slug>/reference.csv`, plus `README.md` and `CLAUDE.md`. Commit them together in the same PR.
 
 ## Commits and pull requests
 
