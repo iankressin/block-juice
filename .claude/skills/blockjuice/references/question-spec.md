@@ -10,9 +10,9 @@
 | `alternatives` | no | Readings you passed over that would change the number. |
 | `window` | no | The time span: `from`, `to`, and the blocks from `bj blocks`. On one chain, `chain` plus `blocks: [from, to]`. On several chains, `blocks` maps each chain to its range, `{arbitrum: [from, to], base: [from, to]}`. Use `at: latest` for a question about now. History inputs need blocks on their chain. The analyses read the blocks through `{{ in_window('block_number', '<chain>') }}`, or `window_start('<chain>')` and `window_end('<chain>')` where a macro takes the bounds, never as numbers. |
 | `eval_window` | no | A slice of `window` in the same shape, for a check that loads less. `bj answer <slug> --eval` writes `eval/answer.json` and `eval/results/`, leaving the full answer intact; its JSON says `eval: true`. Record an evaluation check with `bj check <slug> --eval ...`. A factory build puts its eval window here. |
-| `inputs` | no | One entry per kind of data: `name`, `strategy` (`state` or `history`), and the `mart` that holds it. A history input names its `source` as `<chain>.<table>`, and may narrow it with `filter`, keyed like the source's `addresses.json`, with every address quoted. `bj answer` checks coverage for it. |
+| `inputs` | no | One entry per kind of data: `name`, `strategy` (`state` or `history`), and the `mart` that holds it. A history input names its `source` as `<chain>.<table>`, and may narrow it with `filter`, keyed like the source's `addresses.json`, with every address quoted. `bj answer` checks coverage for it. A named input's `name` is how an analysis reads its `filter`: `where f.wallet in {{ input_values('wallet_fills', 'wallets') }}` prints `('0x...', '0x...')`, with hex values in lowercase. Two inputs that both have a `filter` may not share a name. |
 | `marts` | no | The marts the analyses read. |
-| `analyses` | no | The dbt analyses to run, headline first. Defaults to the slug with `_` for `-`. |
+| `analyses` | no | The dbt analyses to run, headline first. Defaults to `[headline]`. |
 
 A question about now, answered from an existing mart:
 
@@ -30,7 +30,7 @@ inputs:
     strategy: state
     mart: latest_balances
 marts: [latest_balances]
-analyses: [tracked_wallets_eth, tracked_wallets_eth_by_wallet]
+analyses: [headline, by_wallet]
 ```
 
 A question over a past month that needs history, which `bj` cannot load yet:
@@ -54,13 +54,13 @@ inputs:
     strategy: history
     protocol: uniswap
     events: [v2.PairCreated, v3.PoolCreated]
-    filter: {token: PEPE}
+    filter: {token: [PEPE]}
     blocks: from_deployment
   - name: pepe_swaps
     strategy: history
     protocol: uniswap
     events: [v2.Swap, v3.Swap]
-    filter: {contracts: pepe_pools}
+    filter: {contracts: [pepe_pools]}
     blocks: window
 marts: [dex_trades]
 ```

@@ -7,6 +7,7 @@ from pipeline.analysis.domain import Check
 from pipeline.analysis.provenance import run_provenance
 from pipeline.analysis.executor import ancestors
 from pipeline.analysis.lineage import unknown_lineage
+from pipeline.analysis.specification import input_filters
 from pipeline.cli.question import WindowKey
 
 
@@ -57,7 +58,12 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
     api.require_env()
     project = repo_root / "transformation"
     arguments = (project, question.analyses, question.blocks)
-    manifest, analysis_ids = api.compile_analyses(*arguments, **({"parameters": question.parameters} if question.parameters else {}))
+    paths = (project, repo_root / "answers" / slug)
+    compile_variables = dict(question.parameters)
+    if filters := input_filters(question):
+        compile_variables["inputs"] = filters
+    with api.question_paths(*paths):
+        manifest, analysis_ids = api.compile_analyses(*arguments, **({"parameters": compile_variables} if compile_variables else {}))
     inputs = api.upstream_inputs(manifest, analysis_ids)
     unknown = unknown_lineage(manifest, analysis_ids)
     check_started = datetime.now(timezone.utc)
@@ -68,8 +74,9 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
     test_variables = dict(question.parameters)
     if question.blocks:
         test_variables["window"] = question.blocks
-    tests = api.run_dbt_tests(project, question.analyses, coverages, [manifest["nodes"][t]["name"] for t in stale],
-                              **({"parameters": test_variables} if test_variables else {}))
+    with api.question_paths(*paths):
+        tests = api.run_dbt_tests(project, question.analyses, coverages, [manifest["nodes"][t]["name"] for t in stale],
+                                  **({"parameters": test_variables} if test_variables else {}))
     if len(stale) < len(above):
         tests = replace(tests, detail=f"{tests.detail}; {len(above) - len(stale)} upstream passed since the marts were built")
     check_finished = datetime.now(timezone.utc)

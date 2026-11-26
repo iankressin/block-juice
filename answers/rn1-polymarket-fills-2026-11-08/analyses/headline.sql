@@ -5,5 +5,5 @@
 select
     round(100.0 * count(*) filter (where role = 'maker') / nullif(count(*), 0), 2) as maker_fill_pct
 from {{ ref('polymarket_wallet_fills') }}
-where wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
+where wallet in {{ input_values('wallet_fills', 'wallets') }}
     and {{ in_window('block_number', 'polygon') }}

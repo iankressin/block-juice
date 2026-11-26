@@ -8,7 +8,7 @@ Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses a
 
 - models: [./models/README.md](./models/README.md) - The three layers: [staging](./models/staging/README.md), [intermediate](./models/intermediate/README.md) and [marts](./models/marts/README.md).
 - macros: [./macros/README.md](./macros/README.md) - The analysis window (`in_window`), token scope, shared flow aggregations, the test helpers `erc20_balance_pairs` and `reference_mismatches`, `fact_config` with the `reconcile` strategy for fact marts, and `index_state_readings` for raw-table indexes.
-- analyses: [./analyses/README.md](./analyses/README.md) - One SQL file per query a question runs, grouped by the `answers/<slug>/question.yaml` that names it.
+- analyses: [../answers/README.md](../answers/README.md) - One SQL file per query a question runs. They live in `answers/<slug>/analyses/`, outside this project, and dbt reads one answer's folder at a time.
 - benchmarks: [./benchmarks/README.md](./benchmarks/README.md) - `facts.py` and `state_models.py`, run by hand against a throwaway database or temporary relations.
 - `seeds/` (CSV seeds, with `seeds/reference/` for the factory's reference rows) and `tests/` (singular and reference tests) hold no models of their own.
 

@@ -4,10 +4,11 @@ Each answer lives in `answers/<slug>/`. Pick a short slug that names the questio
 
 ## 1. Scope
 
-Write `answers/<slug>/question.yaml` in the format of [../references/question-spec.md](../references/question-spec.md). It is the one file in `answers/` that git tracks, so commit it with the analyses it names.
+Write `answers/<slug>/question.yaml` in the format of [../references/question-spec.md](../references/question-spec.md). Git tracks it, `analyses/` and `macros/` in `answers/<slug>/`, so commit them together.
 
 - Define every word that could be counted two ways, such as "bought", "holder", "active" or "wallet". Pick the most literal reading, write it under `definitions`, and list the readings you passed over under `alternatives`.
 - Resolve every token, contract and wallet to an address on its chain. Take addresses from the repo (the `addresses.json` files, existing models) or from the user. Never use an address from memory alone.
+- A wallet or token the question is about goes in an input's `filter`, never in the SQL. The analysis reads it with `input_values`, so the subject is written once.
 - When the repo does not hold an address, ask the user before any other work. Ask in one message, listing the candidates you can see: several tokens share a symbol, a token has older versions or migrated contracts, a bridged token has its own address on each chain, and a protocol has several versions. Do not search the web or wikis to pick one yourself; the user knows which they mean, and a wrong pick costs every step after it.
 - When the question names a past time, turn it into blocks with `bj blocks <chain> <from> <to>` for each chain it covers, and record them under `window` ([../references/question-spec.md](../references/question-spec.md)). It reads EVM chains from Portal; an unknown chain name prints the ones it knows.
 - Choose `state` or `history` for each input with [../references/choosing-the-data.md](../references/choosing-the-data.md).
@@ -25,11 +26,11 @@ Before you build a source or a pipeline, show the user the definitions, window a
 
 ## 3. Write the analysis
 
-Write `transformation/analyses/<name>.sql`, where `<name>` is the slug with `_` for `-`. Filter blocks with `{{ in_window('block_number', '<chain>') }}`, and pass `window_start('<chain>')` and `window_end('<chain>')` to a macro that takes the bounds. `bj answer` fills them from `question.yaml`; never write the window's blocks into the SQL.
+Write the first analysis as `answers/<slug>/analyses/headline.sql`. Filter blocks with `{{ in_window('block_number', '<chain>') }}`, and pass `window_start('<chain>')` and `window_end('<chain>')` to a macro that takes the bounds. `bj answer` fills them from `question.yaml`; never write the window's blocks into the SQL.
 
 - Select from marts with `{{ ref() }}`, never from staging or raw tables.
 - Put the headline in the first analysis as one row and one column. `bj` records that cell as the answer's value.
-- Put a breakdown in a second analysis, `<name>_by_<thing>.sql`, and list both under `analyses` in `question.yaml`.
+- Put a breakdown in a second analysis with a short name such as `by_day`, `by_wallet` or `by_market`, and list both under `analyses` in `question.yaml`.
 - Convert base units in SQL (wei to ETH, satoshis to BTC, token units by decimals) and name the unit in the column, such as `eth`. Take an ERC-20 token's decimals from the `tokens` mart, joined on `chain` and `token`. A token missing there needs its address in `evm-erc20-metadata`'s `chains/<chain>/addresses.json`.
 
 ## 4. Run and check

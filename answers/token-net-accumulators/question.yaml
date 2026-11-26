@@ -9,8 +9,8 @@ definitions:
 marts:
 - erc20_transfers
 analyses:
-- token_net_accumulators
-- token_net_accumulators_by_wallet
+- headline
+- by_wallet
 window:
   blocks:
     arbitrum:
@@ -76,8 +76,8 @@ parameters:
         - 52011727
         - 53350926
 expected_columns:
-  token_net_accumulators: [top_accumulator]
-  token_net_accumulators_by_wallet: [address, net_amount, arbitrum_net_amount, base_net_amount, received_amount,
+  headline: [top_accumulator]
+  by_wallet: [address, net_amount, arbitrum_net_amount, base_net_amount, received_amount,
     sent_amount, transfers_in, transfers_out]
 grain:
-  token_net_accumulators_by_wallet: [address]
+  by_wallet: [address]

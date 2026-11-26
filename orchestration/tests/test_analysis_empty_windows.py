@@ -12,6 +12,7 @@ from jinja2 import Environment
 ROOT = Path(__file__).resolve().parents[2]
 WALLET = "0x2005d16a84ceefa912d4e380cd32e7ff827875ea"
 TOKEN = "0x0000000000000000000000000000000000000001"
+FILLS = "rn1-polymarket-fills-2026-11-08"
 
 
 @pytest.fixture
@@ -37,14 +38,19 @@ def warehouse():
         yield cursor
 
 
-def query(cursor, name):
+def query(cursor, slug, name, inputs={"wallet_fills": {"wallets": [WALLET]}}):
     variables = {
         "window": {"polygon": [100, 200]},
+        "inputs": inputs,
         "token": {"windows": [{"chain": "arbitrum", "token": TOKEN, "blocks": [100, 200]}]},
     }
     # Include the real scope macros so the fixtures exercise the same predicates as bj answer.
-    text = "\n".join((ROOT / "transformation" / path).read_text() for path in (
-        "macros/window.sql", "macros/token_transfers.sql", f"analyses/{name}.sql"
+    analysis = ROOT / "answers" / slug / "analyses" / f"{name}.sql"
+    text = "\n".join(path.read_text() for path in (
+        ROOT / "transformation" / "macros" / "window.sql",
+        ROOT / "transformation" / "macros" / "inputs.sql",
+        ROOT / "transformation" / "macros" / "token_transfers.sql",
+        analysis,
     ))
     statement = Environment().from_string(text).render(
         ref=lambda table: f'pg_temp."{table}"', var=lambda name, default=None: variables.get(name, default)
@@ -69,25 +75,30 @@ def fills(cursor, zero=False):
 
 
 @pytest.mark.parametrize("name, count, percentage", [
-    ("rn1_polymarket_fills_2026_11_08_by_phase", "fills", "maker_fill_pct"),
-    ("rn1_polymarket_fills_2026_11_08_pairs", "markets", "markets_bought_both_pct"),
+    ("by_phase", "fills", "maker_fill_pct"),
+    ("pairs", "markets", "markets_bought_both_pct"),
 ])
 def test_empty_rollup_window_has_zero_count_and_undefined_percentage(warehouse, name, count, percentage):
-    result = query(warehouse, name)
+    result = query(warehouse, FILLS, name)
     assert len(result) == 1
     assert result[0][count] == 0
     assert result[0][percentage] is None
 
 
+def test_an_analysis_without_its_inputs_fails_when_run(warehouse):
+    with pytest.raises(psycopg2.Error):
+        query(warehouse, FILLS, "by_phase", inputs={})
+
+
 @pytest.mark.parametrize("zero", [False, True])
 def test_fill_percentages_preserve_nonempty_and_zero_amount_windows(warehouse, zero):
     fills(warehouse, zero)
-    phases = query(warehouse, "rn1_polymarket_fills_2026_11_08_by_phase")
+    phases = query(warehouse, FILLS, "by_phase")
     total = next(row for row in phases if row["phase"] is None)
     assert total["fills"] == 2  # The fixture beyond the declared window is excluded.
     assert total["maker_fill_pct"] == Decimal("50.00")
     assert total["avg_price"] == (None if zero else Decimal("0.433333"))
-    pairs = query(warehouse, "rn1_polymarket_fills_2026_11_08_pairs")
+    pairs = query(warehouse, FILLS, "pairs")
     total = next(row for row in pairs if row["kind"] is None)
     assert total["markets"] == 1
     assert total["markets_bought_both_pct"] == (Decimal("0.00") if zero else Decimal("100.00"))
@@ -100,4 +111,4 @@ def test_exchange_share_handles_empty_and_zero_value_transfers(warehouse, amount
     for category, value in zip(("exchange", "p2p"), amounts):
         warehouse.execute("insert into classified_transfers values ('arbitrum', %s, 100, %s, %s)",
                           (TOKEN, category, value))
-    assert query(warehouse, "token_categories") == [{"exchange_share_pct": expected}]
+    assert query(warehouse, "token-categories", "headline") == [{"exchange_share_pct": expected}]

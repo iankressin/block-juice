@@ -18,39 +18,75 @@ def make_question(root, slug="sample", analyses="[sample]"):
     )
 
 
+def write_analysis(root, slug, name, sql="select 1"):
+    path = root / "answers" / slug / "analyses" / f"{name}.sql"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(sql)
+    return path
+
+
 def test_lists_question_and_its_authored_queries_without_warehouse(tmp_path, capsys):
     make_question(tmp_path)
-    sql = tmp_path / "transformation" / "analyses" / "nested" / "sample.sql"
-    sql.parent.mkdir(parents=True)
-    sql.write_text("select 1")
+    write_analysis(tmp_path, "sample", "nested/sample")
     assert run(tmp_path, None, as_json=True) == 0
     document = json.loads(capsys.readouterr().out)
     assert document[0]["slug"] == "sample"
     assert document[0]["analyses"] == [
-        {"name": "sample", "path": "transformation/analyses/nested/sample.sql"}
+        {"name": "sample", "path": "answers/sample/analyses/nested/sample.sql"}
     ]
     assert document[0]["marts"] == ["latest_balances"]
 
 
 def test_rejects_missing_and_ambiguous_queries(tmp_path):
     make_question(tmp_path)
-    with pytest.raises(BadInput, match="no SQL analysis named sample"):
+    with pytest.raises(BadInput, match="no SQL analysis named sample in answers/sample/analyses"):
         catalog(tmp_path)
-    folder = tmp_path / "transformation" / "analyses"
-    folder.mkdir(parents=True)
-    (folder / "sample.sql").write_text("select 1")
-    (folder / "other").mkdir()
-    (folder / "other" / "sample.sql").write_text("select 2")
+    write_analysis(tmp_path, "sample", "sample")
+    write_analysis(tmp_path, "sample", "other/sample", "select 2")
     with pytest.raises(BadInput, match="duplicate SQL analysis name sample"):
         catalog(tmp_path)
 
 
-def test_check_catches_queries_without_a_question(tmp_path, capsys):
-    folder = tmp_path / "transformation" / "analyses"
-    folder.mkdir(parents=True)
-    (folder / "orphan.sql").write_text("select 1")
+def test_check_catches_an_analysis_its_question_does_not_name(tmp_path, capsys):
+    make_question(tmp_path)
+    write_analysis(tmp_path, "sample", "sample")
+    write_analysis(tmp_path, "sample", "orphan")
     assert run(tmp_path, None, check=True) == 1
-    assert "orphan" in capsys.readouterr().out
+    assert "answers/sample/analyses/orphan.sql" in capsys.readouterr().out
+
+
+def test_check_catches_an_analysis_left_in_the_dbt_project(tmp_path, capsys):
+    make_question(tmp_path)
+    write_analysis(tmp_path, "sample", "sample")
+    old = tmp_path / "transformation" / "analyses" / "old.sql"
+    old.parent.mkdir(parents=True)
+    old.write_text("select 1")
+    assert run(tmp_path, None, check=True) == 1
+    assert "transformation/analyses/old.sql" in capsys.readouterr().out
+
+
+def test_check_catches_analyses_in_a_folder_with_no_question(tmp_path, capsys):
+    make_question(tmp_path)
+    write_analysis(tmp_path, "sample", "sample")
+    write_analysis(tmp_path, "stray", "headline")
+    assert run(tmp_path, None, check=True) == 1
+    assert "answers/stray/analyses/headline.sql: answers/stray/ has no question.yaml that names it" in capsys.readouterr().out
+
+
+def test_a_question_whose_analysis_is_still_in_the_dbt_project_names_the_file_to_move(tmp_path):
+    make_question(tmp_path, analyses="[old]")
+    old = tmp_path / "transformation" / "analyses" / "old.sql"
+    old.parent.mkdir(parents=True)
+    old.write_text("select 1")
+    with pytest.raises(BadInput, match="transformation/analyses/old.sql"):
+        catalog(tmp_path)
+
+
+def test_two_answers_may_use_the_same_analysis_name(tmp_path):
+    for slug in ("one", "two"):
+        make_question(tmp_path, slug, "[headline]")
+        write_analysis(tmp_path, slug, "headline")
+    assert run(tmp_path, None, check=True) == 0
 
 
 def test_unknown_slug_is_bad_input(tmp_path):
@@ -66,13 +102,16 @@ def test_cli_questions_is_available_without_environment(tmp_path, monkeypatch, c
     assert json.loads(capsys.readouterr().out) == []
 
 
-def test_every_repository_analysis_belongs_to_one_supported_question():
+def test_every_shipped_analysis_is_named_by_its_question():
     root = Path(__file__).resolve().parents[2]
-    entries = catalog(root)
-    owned = [query["name"] for entry in entries for query in entry["analyses"]]
-    sql = list((root / "transformation" / "analyses").rglob("*.sql"))
-    assert len(owned) == len(set(owned))
-    assert set(owned) == {path.stem for path in sql}
+    folders = sorted(path for path in (root / "answers").glob("*/analyses") if path.is_dir())
+    assert folders
+    named = {entry["slug"]: sorted(q["name"] for q in entry["analyses"]) for entry in catalog(root)}
+    for folder in folders:
+        slug = folder.parent.name
+        assert slug in named, f"answers/{slug}/ has analyses and no question.yaml"
+        assert named[slug] == sorted(p.stem for p in folder.rglob("*.sql"))
+    assert list((root / "transformation" / "analyses").glob("**/*.sql")) == []
 
 
 def test_shipped_contracts_cover_every_query_and_token_default_window():
@@ -137,10 +176,8 @@ def test_aligned_token_override_and_separate_eval_values(tmp_path):
     assert load_question(tmp_path, "token-flow-map").parameters["token"] == token
     with pytest.raises(BadInput, match="token"):
         load_question(tmp_path, "token-flow-map", "eval_window")
-    analyses = tmp_path / "transformation" / "analyses"
-    analyses.mkdir(parents=True)
     for name in document["analyses"]:
-        (analyses / f"{name}.sql").write_text("select 1")
+        write_analysis(tmp_path, "token-flow-map", name)
     with pytest.raises(BadInput, match="eval_window"):
         run(tmp_path, None, check=True)
     evaluation = deepcopy(token)

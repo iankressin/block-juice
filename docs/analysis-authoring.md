@@ -14,14 +14,15 @@ uv run --project orchestration bj questions --json
 
 Each catalog entry names `answers/<slug>/question.yaml`, the marts it reads, and its SQL files.
 The manifest is the bundle's identity and owns its ordered analyses: the first query supplies the
-headline when it returns one row and one column. SQL remains under `transformation/analyses/`,
-with existing filenames and dbt selectors preserved. Reusable data transformations belong in
+headline when it returns one row and one column. SQL lives under `answers/<slug>/analyses/`,
+one file per analysis, named for the analysis, with no slug in the name. Reusable data transformations belong in
 `transformation/models/`, not in an answer directory. Runtime output belongs beside the question
 and stays out of Git; ingestion and model run logs belong in `ops.*` in the warehouse.
 
 The shipped bundles cover balances, token transfer graphs and accumulators, classified token flows,
 Polymarket markets and wallet fills, UNI swaps, contract deployments, and attributed ETH flows.
-`bj questions --check` checks that every SQL analysis has exactly one supported bundle and
+`bj questions --check` fails on an analysis its question does not name, on an `analyses/` folder
+with no `question.yaml`, and on any `.sql` file left in `transformation/analyses/`. It also
 validates each declared evaluation window with its evaluation parameters.
 
 ## Run and explain a question
@@ -55,12 +56,12 @@ window: {chain: ethereum, at: latest}
 inputs:
   - {name: eth_balances, strategy: state, mart: latest_balances}
 marts: [latest_balances]
-analyses: [my_question]
-expected_columns: {my_question: [eth]}
+analyses: [headline]
+expected_columns: {headline: [eth]}
 ```
 
 ```sql
--- transformation/analyses/my_question.sql
+-- answers/my-question/analyses/headline.sql
 select round(sum(balance) / 1e18, 6) as eth
 from {{ ref('latest_balances') }}
 where chain = 'ethereum' and asset_type = 'native'
@@ -125,7 +126,7 @@ parameters:
   threshold: {type: integer, default: 100}
 values: {threshold: 200}
 expected_columns:
-  my_question: [{name: eth, type: numeric}]
+  headline: [{name: eth, type: numeric}]
 execution: {statement_timeout_ms: 900000, lock_timeout_ms: 10000, fetch_size: 1000}
 freshness: {max_age_hours: 24, require_model_build: true}
 ```

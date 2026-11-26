@@ -2,10 +2,12 @@
 
 import csv
 import json
+import os
 import shutil
 import subprocess
 from collections import Counter
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -172,6 +174,25 @@ def dbt(project: Path, *args: str) -> dbtRunnerResult:
     return dbtRunner().invoke([*args, "--project-dir", str(project), "--profiles-dir", str(project), *DBT_FLAGS])
 
 
+@contextmanager
+def question_paths(project: Path, folder: Path) -> Iterator[None]:
+    """Point dbt at one answer's analyses and macros, as paths from the dbt project, and restore the environment after."""
+    names = {
+        "BJ_ANALYSES": Path(os.path.relpath(folder / "analyses", project)).as_posix(),
+        "BJ_MACROS": Path(os.path.relpath(folder / "macros", project)).as_posix(),
+    }
+    before = {name: os.environ.get(name) for name in names}
+    os.environ.update(names)
+    try:
+        yield
+    finally:
+        for name, value in before.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 def dbt_error(result: dbtRunnerResult) -> str:
     if result.exception is not None:
         message = str(result.exception)
@@ -313,7 +334,8 @@ def git(repo_root: Path, *args: str) -> str | None:
 def provenance(repo_root: Path) -> dict[str, Any]:
     # Generated answers do not make the code dirty, but the authored question specifications do.
     status = git(repo_root, "status", "--porcelain", "--", ".", ":(exclude)answers")
-    questions = git(repo_root, "status", "--porcelain", "--", ":(glob)answers/*/question.yaml")
+    questions = git(repo_root, "status", "--porcelain", "--", ":(glob)answers/*/question.yaml",
+                    ":(glob)answers/*/analyses/**", ":(glob)answers/*/macros/**")
     return {
         "git_sha": git(repo_root, "rev-parse", "HEAD"),
         "git_dirty": bool(status or questions) if status is not None and questions is not None else None,

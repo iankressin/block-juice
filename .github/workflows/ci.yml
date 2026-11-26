@@ -137,6 +137,18 @@ jobs:
           uv run --project ../orchestration dbt compile --quiet
         working-directory: transformation
 
+      - name: Check that each answer names its analyses
+        run: uv run --project orchestration bj questions --check
+
+      - name: Compile each answer's analyses
+        run: |
+          for folder in ../answers/*/; do
+            names=$(cd "${folder}analyses" && ls *.sql | sed 's/\.sql$//' | tr '\n' ' ')
+            BJ_ANALYSES="${folder}analyses" BJ_MACROS="${folder}macros" \
+              uv run --project ../orchestration dbt compile --quiet --select $names
+          done
+        working-directory: transformation
+
       # A unit test needs the relations its model reads, and CI loads no raw rows. So this makes an empty raw
       # table for every dbt source, as planted_bugs.py does, and builds the project on no rows: every model
       # must build, every unit test pass and every data test's SQL run. The reference tests need a question's

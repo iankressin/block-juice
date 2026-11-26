@@ -1,5 +1,5 @@
 -- Whether RN1 widens its quotes when its holdings in a market are lopsided: the sum of its two bids in the
--- blocks where both filled (as in rn1_polymarket_quoting_2026_11_16_bid_sums.sql, same_block), against the gap
+-- blocks where both filled (as in bid_sums.sql, same_block), against the gap
 -- in shares between the two outcomes it held just before that block.
 -- Holdings count every buy RN1 made in the window (maker and taker); merges remove equal shares of both
 -- outcomes and leave the gap as it is. Shares held before the window are not counted.

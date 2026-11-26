@@ -17,12 +17,12 @@ marts:
 - bridge_pairs
 - address_labels
 analyses:
-- token_categories
-- token_categories_bridges
-- token_categories_by_category
-- token_categories_contracts
-- token_categories_exchanges
-- token_categories_p2p
+- headline
+- bridges
+- by_category
+- contracts
+- exchanges
+- p2p
 window:
   blocks:
     arbitrum:
@@ -98,14 +98,14 @@ parameters:
         - 52011727
         - 53350926
 expected_columns:
-  token_categories: [exchange_share_pct]
-  token_categories_bridges: [chain, direction, l2_address, l2_kind, ethereum_address, amount, block_timestamp,
+  headline: [exchange_share_pct]
+  bridges: [chain, direction, l2_address, l2_kind, ethereum_address, amount, block_timestamp,
     tx_hash, other_chain, other_l2_address, other_at]
-  token_categories_by_category: [category, chain, transfers, amount, senders, recipients]
-  token_categories_contracts: [chain, contract, counterparty, counterparty_kind, amount_to_contract, amount_from_contract,
+  by_category: [category, chain, transfers, amount, senders, recipients]
+  contracts: [chain, contract, counterparty, counterparty_kind, amount_to_contract, amount_from_contract,
     transfers_to_contract, transfers_from_contract]
-  token_categories_exchanges: [exchange, chain, wallet, wallet_kind, wallet_exchange, amount_to_exchange,
+  exchanges: [exchange, chain, wallet, wallet_kind, wallet_exchange, amount_to_exchange,
     amount_from_exchange, transfers_to_exchange, transfers_from_exchange, through_deposit_address]
-  token_categories_p2p: [chain, from_address, to_address, amount, transfers]
+  p2p: [chain, from_address, to_address, amount, transfers]
 grain:
-  token_categories_by_category: [category, chain]
+  by_category: [category, chain]

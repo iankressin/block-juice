@@ -119,7 +119,7 @@ Each folder with code has a README that lists what it exports, the rules its cod
 | Folder | What it holds |
 |---|---|
 | [ingestion/](ingestion/README.md) | TypeScript sources that load raw rows, and the library they share. |
-| [transformation/](transformation/README.md) | The dbt project: staging, intermediate and mart models, macros and analyses. |
+| [transformation/](transformation/README.md) | The dbt project: staging, intermediate and mart models, and macros. Analyses live in each answer. |
 | [orchestration/](orchestration/README.md) | Dagster assets, pipelines and schedules, and the `bj` CLI. |
 | [infra/](infra/README.md) | The Docker stack's settings, the Grafana dashboards and the Postgres setup SQL. |
 

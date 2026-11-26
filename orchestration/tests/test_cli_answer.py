@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -215,8 +216,27 @@ def test_an_analysis_dbt_does_not_know_is_bad_input(tmp_path, monkeypatch):
         return SimpleNamespace(success=True)
 
     monkeypatch.setattr(answer, "dbt", compile)
-    with pytest.raises(BadInput, match="write transformation/analyses/eth_total.sql"):
+    with pytest.raises(BadInput, match="write analyses/eth_total.sql in the answer's folder"):
         answer.compile_analyses(tmp_path, ["eth_total"], {})
+
+
+def test_question_paths_point_dbt_at_one_answer_and_restore_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("BJ_ANALYSES", "before")
+    monkeypatch.delenv("BJ_MACROS", raising=False)
+    with answer.question_paths(tmp_path / "transformation", tmp_path / "answers" / "eth-total"):
+        assert os.environ["BJ_ANALYSES"] == "../answers/eth-total/analyses"
+        assert os.environ["BJ_MACROS"] == "../answers/eth-total/macros"
+    assert os.environ["BJ_ANALYSES"] == "before"
+    assert "BJ_MACROS" not in os.environ
+
+
+def test_question_paths_restore_the_environment_after_a_failure(tmp_path, monkeypatch):
+    monkeypatch.delenv("BJ_ANALYSES", raising=False)
+    with pytest.raises(BadInput):
+        with answer.question_paths(tmp_path / "transformation", tmp_path / "answers" / "eth-total"):
+            raise BadInput("dbt compile failed")
+    assert "BJ_ANALYSES" not in os.environ
+    assert "BJ_MACROS" not in os.environ
 
 
 @pytest.fixture
@@ -251,6 +271,43 @@ def offline(monkeypatch):
 
     use.dbt_coverages = dbt_coverages
     return use
+
+
+def test_bj_answer_runs_dbt_inside_the_answers_own_paths(tmp_path, offline, monkeypatch):
+    monkeypatch.delenv("BJ_ANALYSES", raising=False)
+    monkeypatch.delenv("BJ_MACROS", raising=False)
+    write_question(tmp_path)
+    offline(parked=0)
+    seen = []
+
+    def compile_analyses(project, names, blocks):
+        seen.append(("compile", os.environ.get("BJ_ANALYSES"), os.environ.get("BJ_MACROS")))
+        return MANIFEST, ["analysis.t.holders"]
+
+    def run_dbt_tests(project, names, coverages, upstream=(), **kwargs):
+        seen.append(("test", os.environ.get("BJ_ANALYSES"), os.environ.get("BJ_MACROS")))
+        return Check("dbt_tests", True, "3 passed")
+
+    monkeypatch.setattr(answer, "compile_analyses", compile_analyses)
+    monkeypatch.setattr(answer, "run_dbt_tests", run_dbt_tests)
+    assert answer.run(tmp_path, "eth-total") == 0
+    paths = ("../answers/eth-total/analyses", "../answers/eth-total/macros")
+    assert seen == [("compile", *paths), ("test", *paths)]
+    assert "BJ_ANALYSES" not in os.environ
+
+
+def test_named_input_filters_reach_dbt_compile_as_the_inputs_var(tmp_path, offline, monkeypatch):
+    write_question(tmp_path, extra=f'inputs: [{{name: holders, source: ethereum.eth_balances, filter: {{wallets: ["{WALLET}"]}}}}]\n')
+    offline(parked=0)
+    seen = {}
+
+    def compile_analyses(project, names, blocks, parameters=None):
+        seen.update(parameters or {})
+        return MANIFEST, ["analysis.t.holders"]
+
+    monkeypatch.setattr(answer, "compile_analyses", compile_analyses)
+    assert answer.run(tmp_path, "eth-total") == 0
+    assert seen == {"inputs": {"holders": {"wallets": [WALLET.lower()]}}}
 
 
 def test_a_failed_check_still_writes_answer_json_and_exits_1(tmp_path, offline, capsys):

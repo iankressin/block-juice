@@ -8,7 +8,7 @@ from typing import Any
 from pipeline.cli import BadInput
 
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-RESERVED = {"window", "coverage"}
+RESERVED = {"window", "coverage", "inputs"}
 
 
 @dataclass(frozen=True)

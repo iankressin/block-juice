@@ -34,7 +34,7 @@ A call source, `evm-erc20-metadata`, reads each token's `name()`, `symbol()` and
 .
 ├── .claude/skills/blockjuice/  # the skill: SKILL.md routes to workflows/ and references/
 ├── .github/workflows/ci.yml    # CI: typecheck and tests per layer, dbt against a throwaway Postgres, compose config
-├── answers/<slug>/             # one answer per question: question.yaml in git; answer.json, answer.md, results/ stay local
+├── answers/<slug>/             # one answer per question: question.yaml, analyses/ and macros/ in git; answer.json, answer.md, results/ stay local
 ├── catalog/protocols/<name>/   # contracts, events and ABIs of a protocol, proven on real logs
 ├── catalog/vendors/<name>/     # endpoints, limits and fields of an off-chain data API, proven on real replies
 ├── docker-compose.yml          # includes infra/docker-compose.yml; run docker compose here
@@ -61,7 +61,6 @@ A call source, `evm-erc20-metadata`, reads each token's `name()`, `symbol()` and
 │               ├── source.ts   # the Source definition
 │               └── index.ts    # entry point: runSource(source)
 ├── transformation/             # dbt project (profiles.yml lives here)
-│   ├── analyses/               # one or more dbt analyses per answer
 │   └── models/
 │       ├── staging/<source>/   # sources yml + stg_ models, one folder per source
 │       ├── intermediate/<pipeline>/

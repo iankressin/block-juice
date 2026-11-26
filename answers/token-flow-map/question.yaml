@@ -15,10 +15,10 @@ marts:
 - bridge_pairs
 - address_labels
 analyses:
-- token_flow_map
-- token_flow_map_cross_exchange
-- token_flow_map_edges
-- token_flow_map_groups
+- headline
+- cross_exchange
+- edges
+- groups
 window:
   blocks:
     arbitrum:
@@ -94,10 +94,10 @@ parameters:
         - 52011727
         - 53350926
 expected_columns:
-  token_flow_map: [cross_exchange_wallets]
-  token_flow_map_cross_exchange: [wallet, wallet_kind, took_from, paid_into, amount_from_exchanges, amount_to_exchanges]
-  token_flow_map_edges: [source, source_group, target, target_group, chain, category, amount, transfers]
-  token_flow_map_groups: [source_group, target_group, amount, transfers, sources, targets]
+  headline: [cross_exchange_wallets]
+  cross_exchange: [wallet, wallet_kind, took_from, paid_into, amount_from_exchanges, amount_to_exchanges]
+  edges: [source, source_group, target, target_group, chain, category, amount, transfers]
+  groups: [source_group, target_group, amount, transfers, sources, targets]
 grain:
-  token_flow_map_cross_exchange: [wallet]
-  token_flow_map_groups: [source_group, target_group]
+  cross_exchange: [wallet]
+  groups: [source_group, target_group]

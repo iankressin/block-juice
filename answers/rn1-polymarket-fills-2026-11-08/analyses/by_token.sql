@@ -16,7 +16,7 @@ select
     round(sum(f.usdc) / nullif(sum(f.shares), 0), 6) as avg_price
 from {{ ref('polymarket_wallet_fills') }} as f
 left join {{ ref('polymarket_markets') }} as m on m.condition_id = f.condition_id
-where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
+where f.wallet in {{ input_values('wallet_fills', 'wallets') }}
     and {{ in_window('f.block_number', 'polygon') }}
 group by f.token_id, f.side, f.role, f.condition_id, m.question, f.outcome
 order by shares desc, token_id, f.role

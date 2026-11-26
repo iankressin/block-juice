@@ -2,7 +2,7 @@
 -- #41: per FBI-attributed Binance hack address active on ethereum blocks 26316189 to 26323364 (2026-11-01
 -- UTC), its top-level ETH sent (value, fees, both) and received, and its balance, nonce and code at block
 -- 26323364 (code also at 26294680), verified against Dune query 9103455 and block-pinned RPC reads. The
--- actual CTE is analyses/binance_hack_fbi_eth_2026_11_01_by_address.sql, its active rows, in long form.
+-- actual CTE is answers/binance-hack-fbi-eth-2026-11-01/analyses/by_address.sql, its active rows, in long form.
 with flows as (
     {{ attributed_eth_flows('binance-hack-2026-10-29', 'ethereum', 26316189, 26323364, 26294680) }}
 ),

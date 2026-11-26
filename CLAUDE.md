@@ -26,6 +26,7 @@ A change is done when the checks for each layer it touches pass:
 
 - `ingestion/`: the typecheck and the tests of each package you changed.
 - `transformation/`: `dbt parse`, plus `bj questions --check` when you touch an analysis or a `question.yaml`. With a warehouse up, build what you changed with `bj run <pipeline> --select <model>`, which also runs its tests. When you add or change a model, a unit test must catch a bug planted in it: run `uv run --project orchestration python transformation/planted_bugs.py --changed-since origin/main` with `.env` exported (`docs/planted-bugs.md`).
+- `answers/`: `bj questions --check`, and compile the answer you changed as CI does. From `transformation/`, with `.env` exported, run `BJ_ANALYSES=../answers/<slug>/analyses BJ_MACROS=../answers/<slug>/macros uv run --project ../orchestration dbt compile --select <its analyses>`. A plain `dbt parse` reads no analysis.
 - `orchestration/`, or a new or renamed source, pipeline or analysis: pytest. The tests that tie the layers together live there.
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It also builds every model on empty raw tables, so each dbt unit test runs there (`transformation/CLAUDE.md`).
@@ -38,7 +39,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It a
 - **Dagster.** `orchestration/pipeline/definitions.py` makes one asset per entry in `ingestion/sources.json`, keyed `[<name>, <table>]`, the key dbt gives the matching source, which is how Dagster links the two. Every dbt model is an asset keyed by its name (`pipeline/assets/`). Each ingestion asset has a `no_dead_letters` check.
 - **Pipelines.** A pipeline is a `marts/<pipeline>/` folder plus its entry in `PIPELINES` in `orchestration/pipeline/schedules.py`. Its job builds those marts and everything upstream of them, ingestion included.
 - **Run log.** `infra/postgres/ops.sql` creates the `ops` schema. `runSource` writes one row per source run to `ops.ingestion_runs`; after each Dagster dbt build, `pipeline/run_log.py` writes `ops.dbt_invocations` and `ops.dbt_node_runs`. The view `ops.pipeline_runs` ties them together by Dagster run.
-- **Questions.** `answers/<slug>/question.yaml` names the analyses (`transformation/analyses/<name>.sql`), the window and the inputs; `.claude/skills/blockjuice/references/question-spec.md` lists its keys. `bj answer <slug>` (`pipeline/cli/answer.py` and `pipeline/analysis/`) compiles the analyses with the window, checks the inputs (mart tests, coverage, dead letters, freshness) and writes `answer.json` and `results/`. The author writes `answer.md`, and `bj report` builds `reports/`. With `--eval`, `bj answer` writes to `eval/` instead.
+- **Questions.** `answers/<slug>/question.yaml` names the analyses (`answers/<slug>/analyses/<name>.sql`), the window and the inputs; `.claude/skills/blockjuice/references/question-spec.md` lists its keys. `bj answer <slug>` (`pipeline/cli/answer.py` and `pipeline/analysis/`) compiles the analyses with the window, checks the inputs (mart tests, coverage, dead letters, freshness) and writes `answer.json` and `results/`. The author writes `answer.md`, and `bj report` builds `reports/`. With `--eval`, `bj answer` writes to `eval/` instead.
 - **Catalog.** `catalog/protocols/<name>/` holds a protocol's contracts, events and ABIs (`protocol.yaml`, `NOTES.md`, `abis/`), each proven on a real transaction. `catalog/vendors/<name>/` does the same for an off-chain API. Sources and dbt unit tests take their facts from here.
 - **CLI.** One module per command in `orchestration/pipeline/cli/`.
 
@@ -48,7 +49,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It a
 
 - Sources extract and load only. Joins, sign rules, buy or sell, units, prices and aggregation all belong in dbt, so a wrong rule is fixed in SQL and rebuilt without fetching anything again.
 - Each protocol version on each chain gets its own source and raw table. Marts union the per-version models.
-- Keep pipelines token-agnostic. The token a question is about lives in configuration: a source's `addresses.json`, the dbt `token` var, or a question's `parameters.token`. It never appears in code, model names or catalog prose.
+- Keep pipelines token-agnostic. The token a question is about lives in configuration: a source's `addresses.json`, the dbt `token` var, a question's `parameters.token`, or an input's `filter` in `question.yaml`. It never appears in code, model names or catalog prose.
 - Questions about chain data go through the `/bj` skill (`.claude/skills/blockjuice/`). Every answer comes from the warehouse through files in this repo, never from memory or an MCP tool alone.
 
 ## Writing code
@@ -68,7 +69,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It a
 - Some tracked files are generated and say nothing about it. Edit their generators: `ingestion/sources.json` comes from `pnpm -C ingestion generate-sources`, which you run after adding or renaming a source (pytest fails while the file is stale). `infra/grafana/dashboards/ingestion.json` and `pipeline.json` come from `infra/grafana/build_dashboards.py`.
 - To rebuild part of the warehouse, run `bj run <pipeline> --select <key>`, where the key is a model name or `<source>/<table>`. A direct `dbt run` or `dbt build` on the warehouse leaves no trace in the run log, so `bj answer` cannot use it as proof of freshness. Direct dbt is fine in a check schema of your own (`DBT_SCHEMA=analytics_<name>_check`).
 - `.env.example` must keep pointing at `localhost:5432` with user `elt`, password `elt` and database `warehouse`, because CI loads it as its environment.
-- Under `answers/`, git tracks only `<slug>/question.yaml`. Commit it in the same PR as the analyses it names.
+- Under `answers/`, git tracks only `<slug>/question.yaml`, `<slug>/analyses/` and `<slug>/macros/`, plus `README.md` and `CLAUDE.md`. Commit them together in the same PR.
 
 ## Commits and pull requests
 

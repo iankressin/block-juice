@@ -154,6 +154,29 @@ def load_question(
     return question
 
 
+HEX = re.compile(r"^0x[0-9a-fA-F]+$")
+
+
+def input_filters(question: Question) -> dict[str, dict[str, list[str]]]:
+    """The filter of each named input, as the dbt var 'inputs'. Staging lowercases EVM addresses, so hex
+    goes lowercase; a value SQL would misread inside quotes is refused."""
+    filters: dict[str, dict[str, list[str]]] = {}
+    for item in question.inputs:
+        name = item.get("name")
+        if name is None or "filter" not in item:
+            continue
+        label = f"answers/{question.slug}/question.yaml"
+        if name in filters:
+            raise BadInput(f"{label}: two inputs named {name}")
+        filters[name] = {}
+        for key, values in item["filter"].items():
+            for value in values:
+                if "'" in value or "\\" in value:
+                    raise BadInput(f"{label}: inputs.{name}.filter.{key} holds {value!r}, which may not hold ' or \\")
+            filters[name][key] = [v.lower() if HEX.match(v) else v for v in values]
+    return filters
+
+
 def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_key: WindowKey) -> Question:
     for key, value in raw.items():
         if key not in FIELDS:
@@ -169,7 +192,11 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
     blocks = {key: _window_blocks(raw.get(key, {}), label, key) for key in ("window", "eval_window")}
     sources = []
     for index, item in enumerate(raw.get("inputs", [])):
+        if "name" in item and (not isinstance(item["name"], str) or not item["name"].strip()):
+            raise BadInput(f"{label}: 'inputs[{index}].name' must be a non-empty string")
         if "source" not in item:
+            if "filter" in item and not _filter(item["filter"]):
+                raise BadInput(f"{label}: 'inputs[{index}].filter' must map keys to lists of quoted strings")
             continue
         if not isinstance(item["source"], str) or not SOURCE.match(item["source"]):
             raise BadInput(f"{label}: 'inputs[{index}].source' must be <source>.<table>")
@@ -192,7 +219,7 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
             resolved_parameters = evaluation
     if raw.get("parameter_scope") == "token_windows":
         validate_token_scope(resolved_parameters, blocks[window_key], sources, label)
-    analysis_names = tuple(raw.get("analyses", [slug.replace("-", "_")]))
+    analysis_names = tuple(raw.get("analyses", ["headline"]))
     for field_name in ("expected_columns", "grain"):
         unknown = set(raw.get(field_name, {})) - set(analysis_names)
         if unknown:
