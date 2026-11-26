@@ -20,7 +20,7 @@ Files in this folder:
 - `warehouse.py:count_dead_letters`, `read_cursor`, `read_coverage`, `read_configuration_cursor`: read one source's dead letters, cursor, coverage and configuration cursor from the raw schema.
 - `concurrency.py:warehouse_slot(pool, log)`: holds one of a pool's warehouse slots (`ingestion` or `dbt`) for the length of a run. `concurrency_limit(pool)`, `monitor_slot`, `connect_for_slot`, `DEFAULT_LIMITS` support it.
 - `run_log.py:record_dbt_build(log, dagster_run_id, invocation, started_at)`: writes one dbt build to the run log. `dbt_run_rows`, `node_versions`, `record_node_versions`, `DbtInvocation`, `DbtNodeRun` and `WRITES_ROWS` support it; `pipeline/demo.py` reuses them.
-- `sources.py:read_sources(text)` and `SourceEntry`: parse and check `ingestion/sources.json` (`SOURCES_FILE`).
+- `sources.py:read_sources(text)` and `SourceEntry`: parse and check `ingestion/sources.json` (`SOURCES_FILE`). `SourceEntry.scopes(repo_root)` lists a source's load scopes, the folders of `<settings>/scopes/` that hold an `addresses.json`, sorted by name. It raises `BadInput` for a name that does not match `SCOPE` (`^[a-z0-9][a-z0-9-]*$`).
 - `source_config.py:parse_source_env`, `source_env_values`: read a source's `.env` the way the Node `dotenv` package does.
 - `answer_artifacts.py:publish(folder, prepared, *, on_published)`: swaps new answer outputs (`OUTPUTS`) into an answer folder and keeps the last set in `previous/`. When the folder held none of `OUTPUTS`, it removes the old `previous/` too, so no last set is kept.
 - `demo.py:run(repo_root, output)`: `bj demo`. It loads the synthetic rows in `examples/balances/` into a throwaway Postgres, builds the balance models, answers a question and exports a report.

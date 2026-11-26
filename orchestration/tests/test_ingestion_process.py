@@ -22,6 +22,9 @@ class RecordingLog:
         self.on_message(level, message)
         self.messages.append((level, message))
 
+    def info(self, message):
+        self.log(logging.INFO, message)
+
     def warning(self, message):
         self.log(logging.WARNING, message)
 
@@ -172,3 +175,35 @@ sys.exit(EXIT_CODE)
         assert isinstance(ingest(context), dg.MaterializeResult)
     assert (logging.ERROR, "source error") in context.log.messages
     assert (logging.WARNING, "source warning") in context.log.messages
+
+
+def test_each_scope_runs_after_the_standing_configuration_with_its_name_in_the_environment():
+    environment = {"CHAIN": "ethereum", "SOURCE_SCOPE": "left-in-the-shell"}
+    assert ingestion.ingest_configurations(["binance-hack", "mexc-2026-11"], environment) == [
+        (None, {"CHAIN": "ethereum"}),
+        ("binance-hack", {"CHAIN": "ethereum", "SOURCE_SCOPE": "binance-hack"}),
+        ("mexc-2026-11", {"CHAIN": "ethereum", "SOURCE_SCOPE": "mexc-2026-11"}),
+    ]
+    assert environment["SOURCE_SCOPE"] == "left-in-the-shell", "the caller's environment is not changed"
+
+
+def test_the_first_scope_that_fails_fails_the_asset_and_names_it(monkeypatch):
+    from contextlib import nullcontext
+
+    popen = subprocess.Popen
+    started = []
+
+    def launch_fixture(command, **kwargs):
+        started.append(kwargs["env"].get("SOURCE_SCOPE"))
+        failing = kwargs["env"].get("SOURCE_SCOPE") == "binance-hack"
+        return popen([sys.executable, "-c", f"raise SystemExit({7 if failing else 0})"], **kwargs)
+
+    monkeypatch.delenv("SOURCE_SCOPE", raising=False)
+    monkeypatch.setattr(ingestion.SourceEntry, "scopes", lambda self, root: ["binance-hack", "mexc-2026-11"])
+    monkeypatch.setattr(ingestion, "warehouse_slot", lambda *args: nullcontext(nullcontext))
+    monkeypatch.setattr(ingestion.subprocess, "Popen", launch_fixture)
+    ingest = ingestion.build_ingestion_asset("ethereum", "eth_balances").op.compute_fn.decorated_fn
+    with pytest.raises(dg.Failure) as failed:
+        ingest(SimpleNamespace(run_id="test-run", log=RecordingLog()))
+    assert failed.value.description.endswith("exited with code 7 in scope binance-hack")
+    assert started == [None, "binance-hack"]

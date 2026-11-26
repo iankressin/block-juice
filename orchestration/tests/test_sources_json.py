@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from pipeline.cli import REPO_ROOT, BadInput
-from pipeline.sources import SOURCES_FILE, read_sources
+from pipeline.sources import SOURCES_FILE, SourceEntry, read_sources
 
 ENTRIES = read_sources((REPO_ROOT / SOURCES_FILE).read_text())
 STAGING = REPO_ROOT / "transformation" / "models" / "staging"
@@ -119,3 +119,27 @@ def test_read_sources_accepts_case_sensitive_filter_keys():
 def test_read_sources_rejects_case_sensitive_keys_that_are_not_filter_names(keys, match):
     with pytest.raises(BadInput, match=f"invalid coverage contract for a.t: {match}"):
         read_sources(entry_with_case_sensitive(keys))
+
+
+WALLETS = SourceEntry("ethereum", "wallet_transactions", "evm-wallet-transactions", "chains/ethereum")
+
+
+def add_scope(root, name):
+    folder = WALLETS.folder(root) / "scopes" / name
+    folder.mkdir(parents=True)
+    (folder / "addresses.json").write_text("{}")
+
+
+def test_a_scope_is_a_folder_with_an_addresses_json(tmp_path):
+    for name in ("mexc-2026-11", "binance-hack"):
+        add_scope(tmp_path, name)
+    (WALLETS.folder(tmp_path) / "scopes" / "notes").mkdir()
+    (WALLETS.folder(tmp_path) / "scopes" / "README.md").write_text("")
+    assert WALLETS.scopes(tmp_path) == ["binance-hack", "mexc-2026-11"]
+    assert SourceEntry("ethereum", "eth_balances", "evm-eth-balances", "chains/ethereum").scopes(tmp_path) == []
+
+
+def test_a_scope_name_that_is_not_a_slug_is_bad_input(tmp_path):
+    add_scope(tmp_path, "MEXC 2026")
+    with pytest.raises(BadInput, match="scope name 'MEXC 2026'"):
+        WALLETS.scopes(tmp_path)
