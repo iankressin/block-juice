@@ -12,19 +12,19 @@ CI makes an empty raw table for every source and builds every model on them, so 
 - Intermediate, in `models/intermediate/<pipeline>/`: joins and rules, one model per protocol version, named `int_<chain>_<protocol>_<version>_<thing>`. Give each rule a dbt unit test built from a real log in the protocol's `catalog/protocols/<name>/NOTES.md`.
 - Marts, in `models/marts/<pipeline>/`: facts that many questions reuse, with `unique` and `not_null` tests on the grain. A mart over several versions or chains unions their intermediate models, with a column that names each row's version or chain. Reconciliation tests that compare rebuilt values with state readings go in `tests/`.
 - A test that covers every entry of a seed, such as each feed in `chainlink_feeds`, starts from the seed and left joins the loaded rows, so an entry with no rows fails instead of dropping out. It also counts rows per key, so a duplicate fails. `macros/reference_mismatches.sql` does both.
-- YAML sits beside the models: `_<name>__sources.yml` and `_<name>__models.yml` in staging, `_int_<pipeline>__models.yml` in intermediate (`balances/` has one per chain), `_<pipeline>__models.yml` in marts.
+- YAML sits beside the models: `_<name>__sources.yml`, `_<name>__<table>__sources.yml` (one per table `bj new-source` adds) and `_<name>__models.yml` in staging, `_int_<pipeline>__models.yml` in intermediate (`balances/` has one per chain), `_<pipeline>__models.yml` in marts. A new seed gets its own `seeds/_<seed>__seeds.yml`; `seeds/_seeds.yml` stays as it is.
 
 On a pull request, CI plants bugs in each model you add or change, and fails when no unit test catches them (`docs/planted-bugs.md`). So a new or changed model needs a unit test.
 
 ## Materialization
 
-- Staging builds views and marts build tables. Intermediate models default to ephemeral; most pipeline folders override that with `+materialized: view` in `dbt_project.yml`, so each model shows as its own step in Dagster. Do the same for a new folder.
+- Staging builds views and marts build tables. Intermediate models build views too, set once for the whole `intermediate` folder in `dbt_project.yml`, so each model shows as its own step in Dagster. A new intermediate folder needs no entry there.
 - Keep staging and intermediate models live. Never make a model incremental with a `max(block_number)` or `max(_loaded_at)` filter: late rows and corrections would never reach the marts (`docs/fact-model-performance.md`).
 - Filters and joins on jsonb staging columns get Postgres's default row estimates, and the planner picks nested loops that go quadratic on real data. The polymarket and deployments folders set `set local enable_nestloop = off` as a pre-hook in `dbt_project.yml` for this reason. When a model like that builds slowly, check its plan for nested loops first.
 
 ## Pipelines, tokens and analyses
 
-- A new pipeline is a `models/marts/<pipeline>/` folder plus an entry in `PIPELINES` in `orchestration/pipeline/schedules.py`. pytest fails when an asset belongs to no scheduled pipeline.
+- A new pipeline is a `models/marts/<pipeline>/` folder, and needs no edit to `orchestration/pipeline/schedules.py`: it runs at 06:00 UTC daily unless `CRON_OVERRIDES` there names it. pytest fails when an asset belongs to no scheduled pipeline.
 - Join tokens on `(chain, token)`, never on `symbol`: tokens share symbols, and one token has a different address on each chain. A null `decimals` means the contract doesn't say; never assume 18.
 - Each `answers/<slug>/analyses/*.sql` reads marts through `ref()`, takes its window from `in_window()` in `macros/window.sql`, and belongs to that answer's `question.yaml`. `bj answer` points dbt at one answer's folder through `BJ_ANALYSES` and `BJ_MACROS`. Outside it, an analysis compiles but fails when run, with `no window for <chain>`. To run one by hand, set `BJ_ANALYSES=../answers/<slug>/analyses` and pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`. `docs/analysis-authoring.md` covers writing one without the skill.
 - `seeds/reference/` and `tests/reference/` hold the factory's reference rows and tests, tagged `reference`. Dagster and `bj answer` leave them out; run them with `dbt test --select tag:reference`.

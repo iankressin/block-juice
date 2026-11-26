@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EIP-8037 state gas of each Ethereum contract-deployment transaction, in the shape `deployment_state_gas` reads ([marts/deployments](../../marts/deployments/README.md)). `transformation/dbt_project.yml` builds the model as a view (`deployments: +materialized: view`), so it shows as its own step in Dagster.
+The EIP-8037 state gas of each Ethereum contract-deployment transaction, in the shape `deployment_state_gas` reads ([marts/deployments](../../marts/deployments/README.md)). `transformation/dbt_project.yml` builds the model as a view (`intermediate: +materialized: view`), so it shows as its own step in Dagster.
 
 ## Interface
 

@@ -26,39 +26,12 @@ models:
     staging:
       +materialized: view
     intermediate:
-      +materialized: ephemeral
-      # Views, not ephemeral, so each chain's rows show up as their own step in Dagster.
-      balances:
-        +materialized: view
-      # Views, so each protocol version's rows show up as their own step in Dagster.
-      dex:
-        +materialized: view
-      # Views, so each chain's transfers show up as their own step in Dagster.
-      transfers:
-        +materialized: view
-      # Views, so each chain's code readings show up as their own step in Dagster.
-      labels:
-        +materialized: view
-      # Views, so each bridge's rows show up as their own step in Dagster.
-      bridges:
-        +materialized: view
-      prices:
-        +materialized: view
-      # Views, so each chain's metadata readings show up as their own step in Dagster.
-      tokens:
-        +materialized: view
-      # Views, so each exchange version's fills show up as their own step in Dagster.
+      # Views, never ephemeral, so each model shows as its own step in Dagster.
+      +materialized: view
       polymarket:
-        +materialized: view
         # Filters on jsonb staging columns keep the default selectivity, so the planner picks nested
         # loops that go quadratic on real loads; hash joins scale.
         +pre-hook: "set local enable_nestloop = off"
-      # Views, so each chain's deployments show up as their own step in Dagster.
-      deployments:
-        +materialized: view
-      # Views, so each source's orders, trades and transfers show up as their own step in Dagster.
-      cow:
-        +materialized: view
     marts:
       +materialized: table
       polymarket:

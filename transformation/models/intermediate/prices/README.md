@@ -2,7 +2,7 @@
 
 ## Overview
 
-Chainlink rounds on Ethereum, Arbitrum and Base, in the shape `oracle_prices` reads, and Binance and Coinbase candles, in the shape `token_prices` reads ([marts/prices](../../marts/prices/README.md)). There is one model per chain or exchange. `transformation/dbt_project.yml` builds them as views (`prices: +materialized: view`).
+Chainlink rounds on Ethereum, Arbitrum and Base, in the shape `oracle_prices` reads, and Binance and Coinbase candles, in the shape `token_prices` reads ([marts/prices](../../marts/prices/README.md)). There is one model per chain or exchange. `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`).
 
 ## Interface
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ethereum wallet transactions and account state reads, brought into the shape the `accounts` pipeline's marts read ([marts/accounts](../../marts/accounts/README.md)). `transformation/dbt_project.yml` sets no materialization for this folder, so the models stay ephemeral: dbt inlines them into the marts that ref them, and they show as no step of their own in Dagster.
+Ethereum wallet transactions and account state reads, brought into the shape the `accounts` pipeline's marts read ([marts/accounts](../../marts/accounts/README.md)). `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each shows as its own step in Dagster.
 
 ## Interface
 
@@ -25,9 +25,9 @@ Columns:
 
 ## Side Effects
 
-- None. Ephemeral models create no relation in the warehouse.
+- A dbt build creates or replaces each model as a view in `DBT_SCHEMA` (`analytics`). The views copy no rows.
 
 ## Verification
 
 - Run: `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
-- With a warehouse up, build a mart that inlines these models and run its tests: `uv run --project orchestration bj run accounts --select wallet_transactions` (or `--select account_states`).
+- With a warehouse up, build these views with a mart and run its tests: `uv run --project orchestration bj run accounts`.

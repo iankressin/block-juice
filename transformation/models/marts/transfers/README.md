@@ -2,7 +2,7 @@
 
 ## Overview
 
-Every ERC-20 transfer the sources loaded on Ethereum, Arbitrum and Base, the same transfers with each side classified, and the value movements that touch labelled wallets. This folder is the `transfers` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds these marts and everything upstream of them, ingestion included. Since two marts here read marts of other pipelines, that job also builds `wallet_transactions` (`accounts`) and `address_labels` (`labels`) and their inputs. The per-chain models are in [intermediate/transfers](../../intermediate/transfers/README.md).
+Every ERC-20 transfer the sources loaded on Ethereum, Arbitrum and Base, the same transfers with each side classified, and the value movements that touch labelled wallets. This folder is the `transfers` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds these marts and everything upstream of them, ingestion included. Since two marts here read marts of other pipelines, that job also builds `wallet_transactions` (`accounts`) and `address_labels` (`labels`) and their inputs. The per-chain models are in [intermediate/transfers](../../intermediate/transfers/README.md).
 
 ## Interface
 

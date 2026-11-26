@@ -131,16 +131,14 @@ def plan(repo_root: Path, source: str, table: str, like: str) -> Plan:
     model = staging / f"stg_{source}__{table}.sql"
     if model.exists():
         raise BadInput(f"{model.relative_to(repo_root)} already exists")
-    sources_yml = staging / f"_{source}__sources.yml"
+    # The table gets a sources file of its own, so no existing yml is edited.
+    sources_yml = staging / f"_{source}__{table}__sources.yml"
     if sources_yml.exists():
-        current = sources_yml.read_text()
-        if table in source_tables(current, source, sources_yml):
-            raise BadInput(f"{sources_yml.relative_to(repo_root)} already has table {table!r}")
-        yml = current + ("" if current.endswith("\n") else "\n") + table_yaml(source, table)
-    else:
-        yml = sources_yaml(source, table)
-    if table not in source_tables(yml, source, sources_yml):
-        raise BadInput(f"could not add {table!r} under {source!r} in {sources_yml.relative_to(repo_root)}")
+        raise BadInput(f"{sources_yml.relative_to(repo_root)} already exists")
+    for existing in sorted(staging.glob("_*__sources.yml")):
+        if table in source_tables(existing.read_text(), source, existing):
+            raise BadInput(f"{existing.relative_to(repo_root)} already has table {table!r}")
+    yml = sources_yaml(source, table)
 
     return Plan(
         template=template,
@@ -208,7 +206,7 @@ def run(repo_root: Path, source: str, table: str, like: str) -> int:
         + f"2. Shape {model}: turn `data` into the columns you need.\n"
         "3. By hand, read the new source from a mart in transformation/models/marts/<pipeline>/: follow "
         "`## Adding a chain` in transformation/README.md. bj new-source does not touch marts.\n"
-        "4. By hand, make sure a scheduled pipeline builds that mart: PIPELINES in orchestration/pipeline/schedules.py."
-        " Until one does, the orchestration tests fail, because the new asset belongs to no scheduled pipeline."
+        "4. A mart in a marts folder is already in a scheduled pipeline, so there is nothing to schedule."
+        " Until a mart reads the new source, the orchestration tests fail, because the new asset belongs to no scheduled pipeline."
     )
     return 0

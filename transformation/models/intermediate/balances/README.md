@@ -2,7 +2,7 @@
 
 ## Overview
 
-Each chain's balance readings, in the one shape `latest_balances` reads ([marts/balances](../../marts/balances/README.md)). There is one model and one YAML file per chain. `transformation/dbt_project.yml` builds them as views (`balances: +materialized: view`), so each chain shows as its own step in Dagster.
+Each chain's balance readings, in the one shape `latest_balances` reads ([marts/balances](../../marts/balances/README.md)). There is one model and one YAML file per chain. `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each chain shows as its own step in Dagster.
 
 ## Interface
 

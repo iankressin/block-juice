@@ -13,7 +13,7 @@ Child packages:
 Files in this folder:
 
 - `definitions.py:defs`: the `dg.Definitions`, with every ingestion asset, `transformation_assets`, the `no_dead_letters` checks, the jobs and schedules from `schedules.py`, and a `DbtCliResource` named `dbt`.
-- `schedules.py:PIPELINES`: one entry per `transformation/models/marts/<pipeline>/` folder, mapped to its cron. A new pipeline needs an entry here.
+- `schedules.py:PIPELINES`: one entry per `transformation/models/marts/<pipeline>/` folder that holds a model, read by `pipelines()` and mapped to `DEFAULT_CRON` unless `CRON_OVERRIDES` names it. A new pipeline needs no edit here.
 - `schedules.py:jobs`, `schedules.py:schedules`: one job per pipeline that builds `path:models/marts/<pipeline>` and everything upstream, ingestion included, plus the `daily` job over all of `path:models/marts`, which selects each shared source and model once.
 - `project.py:REPO_ROOT`, `INGESTION_DIR`, `dbt_project`: paths, and the `DbtProject` for `transformation/`.
 - `warehouse.py:connect(**options)`: a psycopg2 connection from the `WAREHOUSE_*` settings.
@@ -28,7 +28,7 @@ Files in this folder:
 ## Invariants
 
 - An asset key or check that no job in `schedules.py:jobs` selects fails `test_definitions.py`.
-- Every entry in `schedules.py:PIPELINES`, and the `daily` job, runs on `0 6 * * *`.
+- Every entry in `schedules.py:PIPELINES`, and the `daily` job, runs on `DEFAULT_CRON` (`0 6 * * *`), except those `CRON_OVERRIDES` names.
 - `concurrency.py:DEFAULT_LIMITS` allows 4 ingestion runs and 1 dbt build at once. `BJ_INGESTION_CONCURRENCY` and `BJ_DBT_CONCURRENCY` override them with an integer from 1 to 64; anything else raises `ValueError` (`concurrency.py:concurrency_limit`).
 - `concurrency.py:warehouse_slot` waits with jittered backoff from 0.25 s up to 5 s. When Postgres has no free connections, `connect_for_slot` returns None and the slot waits. `monitor_slot` checks every second that the lock is still held, and cancels the run if it is lost.
 - `warehouse.py:connect` needs `WAREHOUSE_HOST`, `WAREHOUSE_PORT`, `WAREHOUSE_USER`, `WAREHOUSE_PASSWORD` and `WAREHOUSE_DB`, and the readers need `RAW_SCHEMA`. Each reader checks that its table exists first and returns an empty result when it doesn't.

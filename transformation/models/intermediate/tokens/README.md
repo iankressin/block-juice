@@ -2,7 +2,7 @@
 
 ## Overview
 
-ERC-20 metadata readings on Ethereum, Arbitrum and Base, one model per chain, in the shape the `tokens` mart reads ([marts/tokens](../../marts/tokens/README.md)). Each model only adds a `chain` column to its staging view. `transformation/dbt_project.yml` builds them as views (`tokens: +materialized: view`), so each chain shows as its own step in Dagster.
+ERC-20 metadata readings on Ethereum, Arbitrum and Base, one model per chain, in the shape the `tokens` mart reads ([marts/tokens](../../marts/tokens/README.md)). Each model only adds a `chain` column to its staging view. `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each chain shows as its own step in Dagster.
 
 ## Interface
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Token bridge moves between an L2 and Ethereum, and the pairs of a withdrawal from one L2 and a deposit into another that it can have paid for. This folder is the `bridges` pipeline: its entry in `PIPELINES` in `orchestration/pipeline/schedules.py` (cron `0 6 * * *`) makes a Dagster job that builds these marts and everything upstream of them, ingestion included. Marts build as tables (`marts: +materialized: table` in `transformation/dbt_project.yml`). The per-bridge models are in [intermediate/bridges](../../intermediate/bridges/README.md).
+Token bridge moves between an L2 and Ethereum, and the pairs of a withdrawal from one L2 and a deposit into another that it can have paid for. This folder is the `bridges` pipeline: `orchestration/pipeline/schedules.py` makes a Dagster job of it (cron `0 6 * * *`) that builds these marts and everything upstream of them, ingestion included. Marts build as tables (`marts: +materialized: table` in `transformation/dbt_project.yml`). The per-bridge models are in [intermediate/bridges](../../intermediate/bridges/README.md).
 
 ## Interface
 

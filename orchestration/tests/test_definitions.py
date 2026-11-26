@@ -1,3 +1,4 @@
+import json
 import logging
 
 import dagster as dg
@@ -5,6 +6,7 @@ import pytest
 
 from pipeline.assets.ingestion import SOURCES, package_dir, parse_log_line
 from pipeline.definitions import defs
+from pipeline.project import REPO_ROOT
 
 
 @pytest.mark.parametrize("source, table", SOURCES)
@@ -91,3 +93,11 @@ def test_pino_fatal_line_carries_the_stack():
 def test_other_output_logs_as_info():
     assert parse_log_line("not json") == (logging.INFO, "not json")
     assert parse_log_line("42") == (logging.INFO, "42")
+
+
+def test_no_intermediate_model_is_ephemeral():
+    manifest = json.loads((REPO_ROOT / "transformation" / "target" / "manifest.json").read_text())
+    kinds = {node["name"]: node["config"]["materialized"] for node in manifest["nodes"].values()
+             if node["resource_type"] == "model" and node["fqn"][1] == "intermediate"}
+    assert kinds
+    assert sorted(name for name, kind in kinds.items() if kind == "ephemeral") == []

@@ -214,9 +214,9 @@ def parser() -> argparse.ArgumentParser:
         "new-source",
         help="add a source: copy a source package, add its dbt source, regenerate ingestion/sources.json",
         description="Copies ingestion/sources/<package> to a new package for <source>.<table>, adds the table "
-        "to the dbt sources of <source> with a staging model, then runs pnpm install and pnpm generate-sources "
+        "to the dbt sources of <source> in a file of its own, _<source>__<table>__sources.yml, with a staging model, then runs pnpm install and pnpm generate-sources "
         "in ingestion/, which rewrites ingestion/sources.json, the list Dagster builds its SOURCES from. "
-        "Reading the source from a mart and scheduling it in PIPELINES stay hand steps: see Adding a chain "
+        "Reading the source from a mart stays a hand step: see Adding a chain "
         "in transformation/README.md.",
     )
     new_source.add_argument("source")

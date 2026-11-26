@@ -14,8 +14,8 @@ Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses a
 
 ## Invariants
 
-- Raw tables live in `RAW_SCHEMA` (`raw`); every model builds in `DBT_SCHEMA` (`analytics`). dbt reads both from the environment, and falls back to those defaults when they are unset: `DBT_SCHEMA` in `profiles.yml`, `RAW_SCHEMA` in each staging `_<name>__sources.yml`. The `WAREHOUSE_*` settings have no defaults.
-- Staging builds views and marts build tables (`dbt_project.yml`). Intermediate models are ephemeral unless their folder sets `+materialized: view`.
+- Raw tables live in `RAW_SCHEMA` (`raw`); every model builds in `DBT_SCHEMA` (`analytics`). dbt reads both from the environment, and falls back to those defaults when they are unset: `DBT_SCHEMA` in `profiles.yml`, `RAW_SCHEMA` in each staging `_*__sources.yml`. The `WAREHOUSE_*` settings have no defaults.
+- Staging builds views and marts build tables (`dbt_project.yml`). Intermediate models build views too (`intermediate: +materialized: view`).
 - Tests tagged `reference` stay out of Dagster and `bj answer` builds; run them with `dbt test --select tag:reference`.
 
 ## Verification
@@ -27,7 +27,7 @@ Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses a
 
 ## Adding a chain
 
-`bj new-source` already scaffolds the dbt sources YAML and a staging model that selects `id`, `data` and `_loaded_at` from that source, then regenerates `ingestion/sources.json`, which Dagster builds its `SOURCES` from. See `orchestration/pipeline/cli/new_source.py`. It does not add the chain to a mart, and it schedules nothing: `PIPELINES` in `orchestration/pipeline/schedules.py` stays a hand step.
+`bj new-source` already scaffolds a dbt sources YAML of its own, `_<source>__<table>__sources.yml`, and a staging model that selects `id`, `data` and `_loaded_at` from that source, then regenerates `ingestion/sources.json`, which Dagster builds its `SOURCES` from. See `orchestration/pipeline/cli/new_source.py`. It does not add the chain to a mart. Nothing needs scheduling: the mart's folder is already a pipeline.
 
 The remaining steps, by hand:
 

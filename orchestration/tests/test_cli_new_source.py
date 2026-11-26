@@ -94,17 +94,10 @@ def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
     assert 'table: "erc721_holdings"' in source_ts
     assert 'table: "token_bridge"' not in source_ts
 
-    yml_path = repo / "transformation/models/staging/ethereum/_ethereum__sources.yml"
-    yml = yml_path.read_text()
-    assert yml.startswith(yml_before)
-    (ethereum,) = yaml.safe_load(yml)["sources"]
-    tables_before = [t["name"] for t in yaml.safe_load(yml_before)["sources"][0]["tables"]]
-    assert [t["name"] for t in ethereum["tables"]] == [*tables_before, "erc721_holdings"]
-    assert ethereum["tables"][-1] == {
-        "name": "erc721_holdings",
-        "identifier": "ethereum_erc721_holdings",
-        "columns": [{"name": "id", "data_tests": ["unique", "not_null"]}],
-    }
+    # No existing yml is edited: the table gets a sources file of its own.
+    staging = repo / "transformation/models/staging/ethereum"
+    assert (staging / "_ethereum__sources.yml").read_text() == yml_before
+    assert (staging / "_ethereum__erc721_holdings__sources.yml").read_text() == new_source.sources_yaml("ethereum", "erc721_holdings")
 
     model = (repo / "transformation/models/staging/ethereum/stg_ethereum__erc721_holdings.sql").read_text()
     assert "{{ source('ethereum', 'erc721_holdings') }}" in model
@@ -118,16 +111,17 @@ def test_adds_a_table_to_an_existing_source(repo, pnpm, capsys):
 
     out = capsys.readouterr().out
     assert "changed ingestion/sources.json" in out
-    assert "changed transformation/models/staging/ethereum/_ethereum__sources.yml" in out
+    assert "created transformation/models/staging/ethereum/_ethereum__erc721_holdings__sources.yml" in out
+    assert "changed transformation/models/staging/ethereum/_ethereum__sources.yml" not in out
     assert "orchestration/pipeline/assets/ingestion.py" not in out
-    assert "Adding a chain" in out and "PIPELINES" in out and "mart" in out
+    assert "Adding a chain" in out and "nothing to schedule" in out and "mart" in out
 
 
 def test_creates_the_sources_file_of_a_new_source(repo):
     assert not (repo / "transformation/models/staging/optimism").exists()
     assert run(repo, "optimism", "token_bridge", TEMPLATE) == 0
 
-    yml = (repo / "transformation/models/staging/optimism/_optimism__sources.yml").read_text()
+    yml = (repo / "transformation/models/staging/optimism/_optimism__token_bridge__sources.yml").read_text()
     shape = (repo / "transformation/models/staging/ethereum/_ethereum__sources.yml").read_text()
     assert yml.splitlines()[:7] == shape.replace("ethereum", "optimism").splitlines()[:7]
     (optimism,) = yaml.safe_load(yml)["sources"]
@@ -269,16 +263,33 @@ def test_refuses_a_source_ts_it_cannot_rename_exactly_once(repo, pnpm):
     refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="exactly once")
 
 
-def test_refuses_a_table_the_sources_file_already_has(repo, pnpm):
+def test_refuses_a_table_another_sources_file_already_has(repo, pnpm):
     yml = repo / "transformation/models/staging/ethereum/_ethereum__sources.yml"
     yml.write_text(yml.read_text() + "      - name: nft_balances\n        identifier: ethereum_nft_balances\n")
-    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="already has table")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match=r"_ethereum__sources\.yml already has table")
 
 
-def test_refuses_a_sources_file_where_the_table_would_land_under_another_source(repo, pnpm):
-    yml = repo / "transformation/models/staging/ethereum/_ethereum__sources.yml"
-    yml.write_text(yml.read_text() + "  - name: legacy\n    tables:\n      - name: old\n")
-    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="could not add")
+def test_refuses_a_table_a_third_sources_file_already_has(repo, pnpm):
+    yml = repo / "transformation/models/staging/ethereum/_ethereum__other__sources.yml"
+    yml.write_text(
+        "version: 2\nsources:\n  - name: ethereum\n    tables:\n"
+        "      - name: nft_balances\n        identifier: ethereum_nft_balances\n"
+    )
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match=r"_ethereum__other__sources\.yml already has table")
+
+
+def test_refuses_a_sources_file_of_the_table_that_exists(repo, pnpm):
+    yml = repo / "transformation/models/staging/ethereum/_ethereum__nft_balances__sources.yml"
+    yml.write_text("version: 2\nsources: []\n")
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match="_ethereum__nft_balances__sources.yml already exists")
+
+
+def test_a_new_table_is_declared_once_across_the_sources_files(repo, pnpm):
+    assert run(repo, "ethereum", "blob_fees", TEMPLATE) == 0
+    staging = repo / "transformation/models/staging/ethereum"
+    declared = [table for yml in sorted(staging.glob("_*__sources.yml"))
+                for table in new_source.source_tables(yml.read_text(), "ethereum", yml)]
+    assert "blob_fees" in declared and len(declared) == len(set(declared))
 
 
 @pytest.mark.parametrize("source, table", [("Ethereum", "x"), ("ethereum", "nft-balances"), ("1chain", "x")])

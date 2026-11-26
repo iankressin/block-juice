@@ -6,7 +6,7 @@ The Python project (`pyproject.toml`, run with `uv run --project orchestration`)
 
 ## Subdirectories & Boundaries
 
-- pipeline: [./pipeline/README.md](./pipeline/README.md) - The package itself: `definitions.py:defs`, `schedules.py:PIPELINES`, the warehouse slots, the dbt run log and `sources.json` parsing.
+- pipeline: [./pipeline/README.md](./pipeline/README.md) - The package itself: `definitions.py:defs`, `schedules.py:pipelines`, the warehouse slots, the dbt run log and `sources.json` parsing.
   - assets: [./pipeline/assets/README.md](./pipeline/assets/README.md) - One ingestion asset per source, keyed `[<name>, <table>]`, its `no_dead_letters` check, and the dbt multi-asset that writes `ops.dbt_invocations`, `ops.dbt_node_runs` and `ops.dbt_node_versions`.
   - cli: [./pipeline/cli/README.md](./pipeline/cli/README.md) - The `bj` command, one module per command. Exits 0, 1 on a failed check and 2 on `BadInput`.
   - analysis: [./pipeline/analysis/README.md](./pipeline/analysis/README.md) - The engine behind `bj answer`: reads `question.yaml`, compiles the analyses, runs them in one read-only snapshot and publishes the run under `answers/<slug>/`.

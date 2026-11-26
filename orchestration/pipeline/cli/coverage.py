@@ -17,17 +17,6 @@ from pipeline.warehouse import read_cursor, read_coverage, read_configuration_cu
 from pipeline.source_config import JS_WHITESPACE, source_env_values
 
 
-# Only these shipped sources define an omitted wallets key as unrestricted. A missing key on an
-# unknown source remains a gap; adding a source requires confirming its extraction semantics first.
-OPTIONAL_WALLET_SOURCES = {
-    ("ethereum", "erc20_transfers"),
-    ("arbitrum", "erc20_transfers"),
-    ("base", "erc20_transfers"),
-    ("polygon", "polymarket_ctf"),
-    ("polygon", "polymarket_ctf_exchange_v2"),
-}
-
-
 def recorded_value(key: str, value: str, case_sensitive: frozenset[str]) -> str:
     """A filter value as ingestion records it: as written under a case-sensitive key, such as
     HyperCore's coin names, and lowercased under any other key, which holds addresses."""
@@ -50,6 +39,7 @@ class Coverage:
     settings: dict[str, int] | None = None
     supported_filters: frozenset[str] | None = None
     case_sensitive: frozenset[str] = frozenset()
+    unrestricted: frozenset[str] = frozenset()
 
     @property
     def name(self) -> str:
@@ -147,13 +137,13 @@ class Coverage:
         elif self.cursor < last:
             gaps.append(f"cursor {self.cursor} is before {last}")
         if all_wallets:
-            if (self.source, self.table) not in OPTIONAL_WALLET_SOURCES:
+            if "wallets" not in self.unrestricted:
                 gaps.append(f"unrestricted wallet coverage is unknown for {self.name}")
             elif "wallets" in self.filter:
                 gaps.append("addresses.json restricts wallets but the question requires all wallets")
         for key, values in wanted.items():
             if key not in self.filter:
-                if key == "wallets" and (self.source, self.table) in OPTIONAL_WALLET_SOURCES:
+                if key == "wallets" and "wallets" in self.unrestricted:
                     continue
                 gaps.append(f"addresses.json has no {key!r}")
                 continue
@@ -281,6 +271,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     contract = entry.coverage or {}
     supported = frozenset(contract["filters"]) if "filters" in contract else None
     case_sensitive = frozenset(contract.get("caseSensitive", []))
+    unrestricted = contract.get("unrestricted", [])
     block, block_file = start_block(repo_root, folder)
     schema = os.environ["RAW_SCHEMA"]
     # Only the error type: a driver message can name the warehouse host, port, user and database.
@@ -288,9 +279,7 @@ def read(repo_root: Path, name: str) -> Coverage:
         cursor = read_cursor(f"{source}_{table}")
     except psycopg2.Error as error:
         raise BadInput(f"could not read the cursor in {schema}._sync ({type(error).__name__})") from None
-    loaded_filter = address_filter(
-        repo_root, folder, supported=supported, optional_wallets=(source, table) in OPTIONAL_WALLET_SOURCES
-    )
+    loaded_filter = address_filter(repo_root, folder, supported=supported, optional_wallets="wallets" in unrestricted)
     try:
         evidence = tuple(read_coverage(f"{source}_{table}"))
     except psycopg2.Error as error:
@@ -312,7 +301,7 @@ def read(repo_root: Path, name: str) -> Coverage:
     expected = dict(version=version, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
                     filter={key: sorted({recorded_value(key, value, case_sensitive) for value in values})
                             for key, values in loaded_filter.items()},
-                    unrestricted=contract.get("unrestricted", []), settings=contract_settings)
+                    unrestricted=unrestricted, settings=contract_settings)
     if settings.get("SOURCE_BACKFILL_ID"):
         expected["backfill"] = settings["SOURCE_BACKFILL_ID"]
     try:
@@ -322,7 +311,8 @@ def read(repo_root: Path, name: str) -> Coverage:
     if tracked:
         cursor = current_cursor
     return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
-                    evidence, dataset_hash, contract_settings, supported, case_sensitive)
+                    evidence, dataset_hash, contract_settings, supported, case_sensitive,
+                    frozenset(unrestricted))
 
 
 def run(repo_root: Path, name: str | None) -> int:

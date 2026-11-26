@@ -2,7 +2,7 @@
 
 ## Overview
 
-ERC-20 Transfer logs on Ethereum, Arbitrum and Base, one model per chain, in the shape `erc20_transfers` reads ([marts/transfers](../../marts/transfers/README.md)). Each model adds a `chain` column to its staging view and drops `_loaded_at`. `transformation/dbt_project.yml` builds them as views (`transfers: +materialized: view`), so each chain shows as its own step in Dagster.
+ERC-20 Transfer logs on Ethereum, Arbitrum and Base, one model per chain, in the shape `erc20_transfers` reads ([marts/transfers](../../marts/transfers/README.md)). Each model adds a `chain` column to its staging view and drops `_loaded_at`. `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each chain shows as its own step in Dagster.
 
 ## Interface
 
