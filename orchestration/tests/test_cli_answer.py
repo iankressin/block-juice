@@ -433,7 +433,6 @@ def test_dbt_test_runs_only_the_tests_on_the_marts_the_analyses_read(monkeypatch
         (
             "test", "--select",
             "1+eth_total", "+eth_total,tag:coverage", "1+eth_total_by_wallet", "+eth_total_by_wallet,tag:coverage",
-            "--exclude", "tag:reference",
         )
     ]
 
@@ -450,7 +449,6 @@ def test_upstream_tests_are_named_by_the_tests_bj_answer_must_rerun(monkeypatch)
     assert [args[:args.index("--target-path")] for args in calls] == [
         (
             "test", "--select", "1+eth_total", "+eth_total,tag:coverage", "unique_int_eth_id", "not_null_stg_eth_id",
-            "--exclude", "tag:reference",
         )
     ]
 
@@ -487,12 +485,13 @@ GRAPH = {
 
 def test_upstream_tests_are_the_data_tests_above_the_marts_with_the_marts_they_feed():
     """The marts' own tests run through 1+, coverage tests through their tag, unit tests check code that the
-    marts' build already ran, and reference tests stay out."""
+    marts' build already ran. A `reference` tag means nothing: a test with it counts as any other."""
     assert answer.upstream_tests(GRAPH, ["analysis.t.overview"]) == {
         "test.t.unique_int_fills_id": ["model.t.trades"],
         "test.t.unique_stg_fills_id": ["model.t.trades", "model.t.wallets"],
         "test.t.not_null_stg_markets_id": ["model.t.trades"],
         "test.t.not_null_fills_source": ["model.t.trades", "model.t.wallets"],
+        "test.t.ticket": ["model.t.wallets"],
     }
 
 
@@ -583,9 +582,9 @@ def test_coverage_reaches_dbt_test_as_a_var_only_when_there_is_some(monkeypatch)
     answer.run_dbt_tests(Path("transformation"), ["usdc_flows"], {TRANSFERS: LOADED})
     answer.run_dbt_tests(Path("transformation"), ["eth_total"], {})
     flows, eth = calls
-    assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "+usdc_flows,tag:coverage", "--exclude", "tag:reference")
+    assert flows[: flows.index("--vars")] == ("test", "--select", "1+usdc_flows", "+usdc_flows,tag:coverage")
     assert json.loads(flows[flows.index("--vars") + 1]) == {"coverage": {TRANSFERS: LOADED.to_json()}}
-    assert eth[:eth.index("--target-path")] == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage", "--exclude", "tag:reference")
+    assert eth[:eth.index("--target-path")] == ("test", "--select", "1+eth_total", "+eth_total,tag:coverage")
 
 
 def test_coverage_fails_naming_the_blocks_past_the_cursor(history, capsys):

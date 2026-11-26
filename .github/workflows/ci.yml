@@ -151,13 +151,12 @@ jobs:
 
       # A unit test needs the relations its model reads, and CI loads no raw rows. So this makes an empty raw
       # table for every dbt source, as planted_bugs.py does, and builds the project on no rows: every model
-      # must build, every unit test pass and every data test's SQL run. The reference tests need a question's
-      # rows, and oracle_prices_within_heartbeat reads the cursor table Pipes makes on its first run, so both
-      # stay out.
+      # must build, every unit test pass and every data test's SQL run. oracle_prices_within_heartbeat reads the
+      # cursor table Pipes makes on its first run, so it stays out.
       - name: dbt build with unit tests on empty raw tables
         run: |
           uv run --project ../orchestration python -c 'import json, planted_bugs; from pipeline.warehouse import connect; planted_bugs.load_raw(connect(), json.load(open("target/manifest.json")), None)'
-          uv run --project ../orchestration dbt build --exclude tag:reference oracle_prices_within_heartbeat
+          uv run --project ../orchestration dbt build --exclude oracle_prices_within_heartbeat
         working-directory: transformation
 
       - name: pytest

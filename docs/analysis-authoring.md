@@ -156,5 +156,8 @@ uv run --project orchestration dbt compile --project-dir transformation \
 ```
 
 Compare results against a small independent fixture, including empty input and late data.
-The [factory reference contract](../transformation/seeds/reference/README.md) is also usable by hand;
-its reference tests are opt-in and do not run as ordinary pipeline checks.
+A question can name the rows a correct answer must return with a `reference` key in `question.yaml` and a
+`reference.csv` beside it (`.claude/skills/blockjuice/references/question-spec.md` lists the keys).
+`bj answer <slug> --eval` compares the analysis the key names with that file and records `reference_match`.
+A warehouse built before references left dbt keeps its old `reference_*` seed tables in the dbt schema.
+They do no harm, and `drop table` removes them.

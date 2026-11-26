@@ -2,7 +2,7 @@
 -- answer's window, in long form: inflow, outflow and net in whole tokens with their
 -- transfer counts, for every counterparty (all) and for the Binance PoR addresses (binance), plus the
 -- intra-set flows between two MEXC wallets, which net leaves out. ETH is successful top-level transactions
--- with value; internal ETH is not counted. macros/labelled_flows.sql defines each metric.
+-- with value; internal ETH is not counted. this answer's macros/labelled_flows.sql defines each metric.
 {{ labelled_flows_daily(
     'MEXC',
     'ethereum',

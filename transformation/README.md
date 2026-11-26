@@ -7,16 +7,15 @@ Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses a
 ## Subdirectories & Boundaries
 
 - models: [./models/README.md](./models/README.md) - The three layers: [staging](./models/staging/README.md), [intermediate](./models/intermediate/README.md) and [marts](./models/marts/README.md).
-- macros: [./macros/README.md](./macros/README.md) - The analysis window (`in_window`), token scope, shared flow aggregations, the test helpers `erc20_balance_pairs` and `reference_mismatches`, `fact_config` with the `reconcile` strategy for fact marts, and `index_state_readings` for raw-table indexes.
+- macros: [./macros/README.md](./macros/README.md) - The analysis window (`in_window`), token scope, the test helper `erc20_balance_pairs`, `fact_config` with the `reconcile` strategy for fact marts, and `index_state_readings` for raw-table indexes.
 - analyses: [../answers/README.md](../answers/README.md) - One SQL file per query a question runs. They live in `answers/<slug>/analyses/`, outside this project, and dbt reads one answer's folder at a time.
 - benchmarks: [./benchmarks/README.md](./benchmarks/README.md) - `facts.py` and `state_models.py`, run by hand against a throwaway database or temporary relations.
-- `seeds/` (CSV seeds, with `seeds/reference/` for the factory's reference rows) and `tests/` (singular and reference tests) hold no models of their own.
+- `seeds/` (CSV seeds) and `tests/` (singular tests) hold no models of their own.
 
 ## Invariants
 
 - Raw tables live in `RAW_SCHEMA` (`raw`); every model builds in `DBT_SCHEMA` (`analytics`). dbt reads both from the environment, and falls back to those defaults when they are unset: `DBT_SCHEMA` in `profiles.yml`, `RAW_SCHEMA` in each staging `_*__sources.yml`. The `WAREHOUSE_*` settings have no defaults.
 - Staging builds views and marts build tables (`dbt_project.yml`). Intermediate models build views too (`intermediate: +materialized: view`).
-- Tests tagged `reference` stay out of Dagster and `bj answer` builds; run them with `dbt test --select tag:reference`.
 
 ## Verification
 

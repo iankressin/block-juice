@@ -18,15 +18,9 @@ The dbt project's Jinja macros. They fall into four groups: the window and token
   - `token_bridge_transfers()`: rows of `ref('bridge_transfers')` whose `ethereum_token` is `var('token').ethereum`, lowercased, on a window's chain and inside its blocks.
   - `token_unit()`: `power(10::numeric, var('token').decimals)`.
 
-### Shared aggregations
-
-- `attributed_eth_flows.sql`: `attributed_eth_flows(attribution, chain, from_block, to_block, code_also_at)`. One row per address in `ref('address_attributions')` with that `attribution` on `chain`: top-level native flows from `ref('wallet_transactions')` over the blocks, and the state from `ref('account_states')` at `state_block`, the latest block at or before `to_block` that has reads. Columns: `address`, `state_block`, `sent_txs`, `sent_failed_txs`, `sent_value_wei`, `sent_fees_wei`, `sent_out_wei`, `blob_fees_wei`, `received_txs`, `received_wei`, `balance_wei`, `nonce`, `code_kind`, `has_code`, `active`. Called by the analyses of `binance-hack-fbi-eth-2026-11-01` and its reference test.
-- `labelled_flows.sql`: `labelled_flows_daily(entity, chain, assets, counterparties, from_block, to_block)`. Daily flows of `entity`'s labelled wallets from `ref('labelled_wallet_flows')`, in long form: `day`, `token`, `counterparty`, `metric`, `amount`. `assets` is a list of `[token, asset]` pairs, where `asset` is `'native'` or a token address. Metrics: `inflow`, `outflow`, `net`, `inflow_transfers`, `outflow_transfers`, and for counterparty `all` also `intra` and `intra_transfers`. Called by the analyses of `mexc-labelled-flows-2026-11` and its reference test.
-
 ### Test helpers
 
 - `erc20_balance_pairs.sql`: `erc20_balance_pairs()`. Pairs of consecutive readings in `ref('stg_ethereum__erc20_balances')` per wallet and token: `wallet`, `token`, `from_block`, `to_block`, `balance_change`. It covers each interval in `var('coverage')['ethereum.erc20_transfers']` (`verified_ranges`, or `covered`), from the block before the interval, for the coverage filter's `tokens` and, when given, `wallets`. Called by `tests/erc20_transfers_match_balances.sql` and `tests/erc20_transfers_match_balances_has_pairs.sql`.
-- `reference_mismatches.sql`: `reference_mismatches(expected, actual, key, value, tolerance_kind, tolerance)`. The rows where the CTE `actual` and the reference seed `expected` disagree, with the `key` columns, `expected`, `actual` and `reason`: `duplicate_in_expected`, `duplicate_in_actual`, `missing_in_actual`, `missing_in_expected` or `over_tolerance`. Called by every test in `tests/reference/`; `seeds/reference/README.md` shows one.
 
 ### Mart builds and raw-table indexes
 
@@ -41,10 +35,7 @@ The dbt project's Jinja macros. They fall into four groups: the window and token
 
 - An analysis takes its blocks from `window_start`, `window_end` or `in_window`, or, for the token analyses, from `var('token').windows` through `token_transfers()` and `token_bridge_transfers()`. `orchestration/tests/test_analysis_rules.py` fails when an analysis's SQL writes a bound of its question's `window` or `eval_window`; it lets other block numbers stay. Without `var('window')` for the chain, the bound compiles to `'no window for <chain>: run bj answer'::bigint`: the SQL compiles, as CI needs, and fails when run, so no number comes from the wrong blocks.
 - `token_transfers` and `token_bridge_transfers` lowercase the configured token before they compare it.
-- `attributed_eth_flows`: `sent_value_wei` and `received_wei` count successful transactions only; `sent_fees_wei` counts every transaction the address sent, reverted ones too. Blob fees stay out of `sent_out_wei`. Internal transfers are in neither. `has_code` is null when a code read at `code_also_at` or `state_block` has not loaded and none found code.
-- `labelled_flows_daily`: amounts are whole tokens, multiplied by `10^-decimals` rather than divided, since numeric division rounds to about 16 significant digits. Native assets use 18 decimals; a token missing from `ref('tokens')` gets null amounts. `net` is `inflow - outflow` and leaves out `intra` moves between the entity's own wallets. Only days with at least one flow appear.
 - `erc20_balance_pairs`: with no coverage for `ethereum.erc20_transfers` it returns no rows, so the coverage tests compare nothing in a plain build. `bj answer` passes `var('coverage')` (`orchestration/pipeline/cli/answer.py:run_dbt_tests`). Readings with a null `balance` are skipped, and no pair crosses a gap between two intervals.
-- `reference_mismatches`: `tolerance_kind` must be `absolute` or `relative`, or compilation fails. A relative tolerance is a share of the expected value, and counts as absolute where that value is 0. A null on one side only is over any tolerance. A key on two rows of one side is a mismatch of its own.
 - `fact_config`: `fact_strategy` must be `table` or `reconcile`, and `fact_indexes` a YAML boolean, or compilation fails.
 - `get_incremental_reconcile_sql` raises without a `unique_key`. It checks the whole new result (key columns `not null`, a unique index) before it changes the mart table. A `numeric` column whose scale changes counts as changed.
 - `index_state_readings` raises on an unknown family and skips a raw table that does not exist. It raises if its index name already belongs to another table.

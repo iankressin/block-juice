@@ -4,14 +4,14 @@ This folder's contract (interface, invariants and side effects) is in [README.md
 
 The dbt project. Run dbt with the command in the root `CLAUDE.md`, which exports `.env` first. Raw tables live in `RAW_SCHEMA` (`raw`) and models build in `DBT_SCHEMA` (`analytics`).
 
-CI makes an empty raw table for every source and builds every model on them, so each unit test passes and each data test's SQL runs, or the pull request fails. The reference tests stay out. To run that check yourself, point `WAREHOUSE_DB` at a new, empty database and run the two commands of the step `dbt build with unit tests on empty raw tables` in `.github/workflows/ci.yml` from `transformation/`.
+CI makes an empty raw table for every source and builds every model on them, so each unit test passes and each data test's SQL runs, or the pull request fails. To run that check yourself, point `WAREHOUSE_DB` at a new, empty database and run the two commands of the step `dbt build with unit tests on empty raw tables` in `.github/workflows/ci.yml` from `transformation/`.
 
 ## Layers
 
 - Staging, in `models/staging/<name>/`: one view per raw table and kind of record, named `stg_<name>__<table>`, where `<name>` is the source's name (the chain for `evm-*` sources). A raw table that holds logs and transactions gets `stg_<name>__<table>` and `stg_<name>__<table>_transactions`. Cast fields out of `data` and lowercase EVM addresses. Keep Solana and Bitcoin addresses as they are, since base58 is case-sensitive. No joins and no rules.
 - Intermediate, in `models/intermediate/<pipeline>/`: joins and rules, one model per protocol version, named `int_<chain>_<protocol>_<version>_<thing>`. Give each rule a dbt unit test built from a real log in the protocol's `catalog/protocols/<name>/NOTES.md`.
 - Marts, in `models/marts/<pipeline>/`: facts that many questions reuse, with `unique` and `not_null` tests on the grain. A mart over several versions or chains unions their intermediate models, with a column that names each row's version or chain. Reconciliation tests that compare rebuilt values with state readings go in `tests/`.
-- A test that covers every entry of a seed, such as each feed in `chainlink_feeds`, starts from the seed and left joins the loaded rows, so an entry with no rows fails instead of dropping out. It also counts rows per key, so a duplicate fails. `macros/reference_mismatches.sql` does both.
+- A test that covers every entry of a seed, such as each feed in `chainlink_feeds`, starts from the seed and left joins the loaded rows, so an entry with no rows fails instead of dropping out. It also counts rows per key, so a duplicate fails.
 - YAML sits beside the models: `_<name>__sources.yml`, `_<name>__<table>__sources.yml` (one per table `bj new-source` adds) and `_<name>__models.yml` in staging, `_int_<pipeline>__models.yml` in intermediate (`balances/` has one per chain), `_<pipeline>__models.yml` in marts. A new seed gets its own `seeds/_<seed>__seeds.yml`; `seeds/_seeds.yml` stays as it is.
 
 On a pull request, CI plants bugs in each model you add or change, and fails when no unit test catches them (`docs/planted-bugs.md`). So a new or changed model needs a unit test.
@@ -27,7 +27,6 @@ On a pull request, CI plants bugs in each model you add or change, and fails whe
 - A new pipeline is a `models/marts/<pipeline>/` folder, and needs no edit to `orchestration/pipeline/schedules.py`: it runs at 06:00 UTC daily unless `CRON_OVERRIDES` there names it. pytest fails when an asset belongs to no scheduled pipeline.
 - Join tokens on `(chain, token)`, never on `symbol`: tokens share symbols, and one token has a different address on each chain. A null `decimals` means the contract doesn't say; never assume 18.
 - Each `answers/<slug>/analyses/*.sql` reads marts through `ref()`, takes its window from `in_window()` in `macros/window.sql`, and belongs to that answer's `question.yaml`. `bj answer` points dbt at one answer's folder through `BJ_ANALYSES` and `BJ_MACROS`. Outside it, an analysis compiles but fails when run, with `no window for <chain>`. To run one by hand, set `BJ_ANALYSES=../answers/<slug>/analyses` and pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`. `docs/analysis-authoring.md` covers writing one without the skill.
-- `seeds/reference/` and `tests/reference/` hold the factory's reference rows and tests, tagged `reference`. Dagster and `bj answer` leave them out; run them with `dbt test --select tag:reference`.
 
 ## SQL over events
 

@@ -7,7 +7,6 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-REFERENCE_TEST = re.compile(r"^(?P<name>[a-z0-9_]+)_matches_reference$")
 SQL_COMMENT = re.compile(r"--[^\n]*|\{#.*?#\}", re.DOTALL)
 NUMBER = re.compile(r"(?<![\w.])\d+(?![\w.])")
 # Block numbers an analysis means to keep when its window moves, though they equal a bound today.
@@ -19,18 +18,6 @@ FIXED_BLOCKS = {
 
 def questions(root: Path) -> dict[str, dict]:
     return {path.parent.name: yaml.safe_load(path.read_text()) for path in sorted((root / "answers").glob("*/question.yaml"))}
-
-
-def reference_tests_without_a_question(root: Path) -> list[str]:
-    """Each reference test checks the analyses of one question, named as the test is: bj answer cannot run
-    them without that question.yaml."""
-    names = {slug.replace("-", "_") for slug in questions(root)}
-    missing = []
-    for path in sorted((root / "transformation" / "tests" / "reference").glob("*.sql")):
-        match = REFERENCE_TEST.match(path.stem)
-        if match is None or match["name"] not in names:
-            missing.append(path.name)
-    return missing
 
 
 def window_blocks(window) -> set[int]:
@@ -58,8 +45,11 @@ def analyses_writing_their_window(root: Path) -> list[str]:
     return found
 
 
-def test_every_reference_test_has_its_question():
-    assert reference_tests_without_a_question(ROOT) == []
+def test_every_reference_has_its_rows_and_an_eval_window():
+    for slug, question in questions(ROOT).items():
+        if "reference" in question:
+            assert (ROOT / "answers" / slug / "reference.csv").is_file(), slug
+            assert "eval_window" in question, slug
 
 
 def test_no_analysis_writes_its_window_blocks():
@@ -77,15 +67,6 @@ def make_question(root: Path, slug: str, window: dict, analyses: dict[str, str],
         path = root / "answers" / slug / "analyses" / f"{name}.sql"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(sql)
-
-
-def test_a_reference_test_with_no_question_is_reported(tmp_path):
-    make_question(tmp_path, "uni-swaps", {"chain": "ethereum", "blocks": [100, 200]}, {})
-    tests = tmp_path / "transformation" / "tests" / "reference"
-    tests.mkdir(parents=True)
-    (tests / "uni_swaps_matches_reference.sql").write_text("select 1")
-    (tests / "eth_outflows_matches_reference.sql").write_text("select 1")
-    assert reference_tests_without_a_question(tmp_path) == ["eth_outflows_matches_reference.sql"]
 
 
 def test_a_window_bound_in_code_is_reported_in_either_window_shape(tmp_path):

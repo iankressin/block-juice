@@ -2,7 +2,7 @@
 -- flows over the answer's window, and its balance, nonce and code at state_block,
 -- the last block of the window. Code is also checked at block 26294680, the first block of 2026-10-29.
 -- Amounts in wei, with the headline columns also in ETH. Active addresses first, then by balance.
--- macros/attributed_eth_flows.sql defines each column.
+-- This answer's macros/attributed_eth_flows.sql defines each column.
 with flows as (
     {{ attributed_eth_flows('binance-hack-2026-10-29', 'ethereum', window_start('ethereum'), window_end('ethereum'), 26294680) }}
 )
