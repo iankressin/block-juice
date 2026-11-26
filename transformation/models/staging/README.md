@@ -2,7 +2,7 @@
 
 ## Overview
 
-One folder per source name (the chain, for `evm-*` sources). Each folder declares its raw tables in `_<name>__sources.yml` (source `<name>`, schema `RAW_SCHEMA`) and builds one view per raw table and kind of record, `stg_<name>__<table>`, in `analytics`. The view for each further kind adds a suffix: `_transactions`, `_txs`, `_traces` or `_state_diffs`, as in `stg_ethereum__cow_ethflow_traces`. A view casts fields out of `data` and lowercases EVM addresses. It does no joins and applies no rules.
+One folder per source name (the chain, for `evm-*` sources). Each folder declares its raw tables in `_<name>__sources.yml` and `_<name>__<table>__sources.yml` files (source `<name>`, schema `RAW_SCHEMA`) and builds one view per raw table and kind of record, `stg_<name>__<table>`, in `analytics`. The view for each further kind adds a suffix: `_transactions`, `_txs`, `_traces` or `_state_diffs`, as in `stg_ethereum__cow_ethflow_traces`. A view casts fields out of `data` and lowercases EVM addresses. It does no joins and applies no rules.
 
 ## Subdirectories & Boundaries
 

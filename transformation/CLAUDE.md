@@ -12,7 +12,7 @@ CI makes an empty raw table for every source and builds every model on them, so 
 - Intermediate, in `models/intermediate/<pipeline>/`: joins and rules, one model per protocol version, named `int_<chain>_<protocol>_<version>_<thing>`. Give each rule a dbt unit test built from a real log in the protocol's `catalog/protocols/<name>/NOTES.md`.
 - Marts, in `models/marts/<pipeline>/`: facts that many questions reuse, with `unique` and `not_null` tests on the grain. A mart over several versions or chains unions their intermediate models, with a column that names each row's version or chain. Reconciliation tests that compare rebuilt values with state readings go in `tests/`.
 - A test that covers every entry of a seed, such as each feed in `chainlink_feeds`, starts from the seed and left joins the loaded rows, so an entry with no rows fails instead of dropping out. It also counts rows per key, so a duplicate fails. `macros/reference_mismatches.sql` does both.
-- YAML sits beside the models: `_<name>__sources.yml` and `_<name>__models.yml` in staging, `_int_<pipeline>__models.yml` in intermediate (`balances/` has one per chain), `_<pipeline>__models.yml` in marts.
+- YAML sits beside the models: `_<name>__sources.yml`, `_<name>__<table>__sources.yml` (one per table `bj new-source` adds) and `_<name>__models.yml` in staging, `_int_<pipeline>__models.yml` in intermediate (`balances/` has one per chain), `_<pipeline>__models.yml` in marts. A new seed gets its own `seeds/_<seed>__seeds.yml`; `seeds/_seeds.yml` stays as it is.
 
 On a pull request, CI plants bugs in each model you add or change, and fails when no unit test catches them (`docs/planted-bugs.md`). So a new or changed model needs a unit test.
 

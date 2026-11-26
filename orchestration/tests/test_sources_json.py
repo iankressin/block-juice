@@ -74,9 +74,8 @@ def test_every_source_has_its_dbt_source_and_staging_model():
     tables = dbt_source_tables()
     problems = []
     for entry in ENTRIES:
-        yml = STAGING / entry.name / f"_{entry.name}__sources.yml"
         if (entry.name, entry.table) not in tables:
-            problems.append(f"{pair(entry)}: no table {entry.table!r} under source {entry.name!r} in {yml.relative_to(REPO_ROOT)}")
+            problems.append(f"{pair(entry)}: no table {entry.table!r} under source {entry.name!r} in a _*__sources.yml in {(STAGING / entry.name).relative_to(REPO_ROOT)}/")
         model = STAGING / entry.name / f"stg_{entry.name}__{entry.table}.sql"
         if not model.is_file():
             problems.append(f"{pair(entry)}: no staging model {model.relative_to(REPO_ROOT)}")

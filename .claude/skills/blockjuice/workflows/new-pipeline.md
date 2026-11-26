@@ -13,7 +13,7 @@ uv run --project orchestration bj new-source <source> <table> --like <package>
 `<source>` is the chain, such as `ethereum`, `<table>` the raw table, such as `pancakeswap_v3`, and `<package>` the folder under `ingestion/sources/` to copy. The command:
 
 - copies the package to `ingestion/sources/<source>-<table>/` (underscores become hyphens) and sets `name` and `table` in its `src/source.ts`, so it exports the new pair and fills `raw.<source>_<table>`. A copy of an `evm-*` package is `evm-<table>/` instead, with only `chains/<source>/`, and only its `table` changes, since `forChain(chain)` names each source for its chain;
-- adds the table to `transformation/models/staging/<source>/_<source>__sources.yml`, writing the file for a new source, and writes `stg_<source>__<table>.sql`, which selects `id`, `data` and `_loaded_at`;
+- writes the table's dbt source to `transformation/models/staging/<source>/_<source>__<table>__sources.yml`, a file of its own that edits no existing yml, and writes `stg_<source>__<table>.sql`, which selects `id`, `data` and `_loaded_at`;
 - runs `pnpm install` and then `pnpm generate-sources` in `ingestion/`. That rewrites `ingestion/sources.json`, the list of the `name` and `table` every package exports, which Dagster builds its `SOURCES` from. Nothing lists the sources by hand.
 
 It does not read the source from any mart: that stays a hand step, below. It needs no schedule, since a mart folder is already a pipeline. The copied code still reads the old data: edit it per [state-source.md](state-source.md) or [history-source.md](history-source.md).
@@ -43,6 +43,6 @@ set -a && . ./.env && set +a && cd orchestration && uv run pytest
 dbt reads each source by the `name` and `table` its package exports from `src/source.ts`, and `ingestion/sources.json` is the one list of those pairs. The tests in `orchestration/tests/test_sources_json.py` fail on drift and name the pair:
 
 - `test_sources_json_is_fresh`: the generator, run now, does not write the committed file. This happens after a `name` or `table` changed in `src/source.ts`, a package was added or removed by hand, or `bj new-source` reported that `pnpm` failed. Run `pnpm generate-sources` in `ingestion/` (after `pnpm install`, when the package is new) and commit `ingestion/sources.json`.
-- `test_every_source_has_its_dbt_source_and_staging_model`: a listed pair has no table under its source in `_<source>__sources.yml` or no `stg_<source>__<table>.sql`, or a dbt source table has no package that exports it. Fix the side that is wrong, usually the yml and the model, so they match the export. When the export changes, regenerate `sources.json` as above.
+- `test_every_source_has_its_dbt_source_and_staging_model`: a listed pair has no table under its source in any `_*__sources.yml` of its folder or no `stg_<source>__<table>.sql`, or a dbt source table has no package that exports it. Fix the side that is wrong, usually the yml and the model, so they match the export. When the export changes, regenerate `sources.json` as above.
 
 Never add a source to a hand-written list. `sources.json` is generated, and Dagster reads it.
