@@ -5,14 +5,14 @@ import os
 import re
 import hashlib
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import psycopg2
 
 from pipeline.cli import BadInput, require_env
-from pipeline.sources import SOURCES_FILE, read_sources
+from pipeline.sources import SOURCES_FILE, SourceEntry, read_sources
 from pipeline.warehouse import read_cursor, read_coverage, read_configuration_cursor
 from pipeline.source_config import JS_WHITESPACE, source_env_values
 
@@ -21,6 +21,16 @@ def recorded_value(key: str, value: str, case_sensitive: frozenset[str]) -> str:
     """A filter value as ingestion records it: as written under a case-sensitive key, such as
     HyperCore's coin names, and lowercased under any other key, which holds addresses."""
     return value if key in case_sensitive else value.lower()
+
+
+@dataclass(frozen=True)
+class ScopeCoverage:
+    """One load scope of a source, read as the configuration ingestion records for it."""
+    name: str
+    start_block: int
+    start_block_file: str
+    cursor: int | None
+    filter: dict[str, list[str]]
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,7 @@ class Coverage:
     supported_filters: frozenset[str] | None = None
     case_sensitive: frozenset[str] = frozenset()
     unrestricted: frozenset[str] = frozenset()
+    scopes: tuple[ScopeCoverage, ...] = ()
 
     @property
     def name(self) -> str:
@@ -167,6 +178,8 @@ class Coverage:
             result.update(provenance="verified" if self.covered else "unverified",
                           verified_ranges=[list(pair) for pair in self.verified_ranges(self.filter)],
                           generations=list(self.evidence))
+        if self.scopes:
+            result["scopes"] = [asdict(scope) for scope in self.scopes]
         return result
 
 
@@ -194,17 +207,25 @@ def stream_sources(repo_root: Path) -> list[str]:
     ]
 
 
-def start_block(repo_root: Path, folder: Path) -> tuple[int, str]:
+def settings_paths(folder: Path, scope: Path | None = None) -> list[Path]:
+    """The env files ingestion's loadEnv reads after the environment, first to win."""
+    paths = [folder / ".env", folder / ".env.example"]
+    if scope is not None:
+        paths = [scope / ".env", scope / ".env.example", *paths]
+    if folder.parent.name == "chains":
+        paths.append(folder.parents[1] / ".env")
+    return paths
+
+
+def start_block(repo_root: Path, folder: Path, scope: Path | None = None) -> tuple[int, str]:
     """The effective START_BLOCK and its origin, including process overrides as ingestion reads them.
 
-    A chain's files precede the package .env. Keep the example fallback for an uninstalled checkout.
+    A scope's files come right after the environment. A chain's files precede the package .env. Keep the example fallback for an uninstalled checkout.
     An explicitly empty value wins in dotenv, then loadEnv removes it before validating the required
     START_BLOCK. It must therefore fail here, rather than fall back and claim an earlier start.
     """
     candidates = [("environment", os.environ.get("START_BLOCK"))]
-    paths = [folder / ".env", folder / ".env.example"]
-    if folder.parent.name == "chains":
-        paths.append(folder.parents[1] / ".env")
+    paths = settings_paths(folder, scope)
     candidates.extend(
         (str(path.relative_to(repo_root)), source_env_values(path).get("START_BLOCK"))
         for path in paths
@@ -263,32 +284,21 @@ def address_filter(repo_root: Path, folder: Path, *, optional_wallets: bool = Fa
     return lists
 
 
-def read(repo_root: Path, name: str) -> Coverage:
-    source, table = name.split(".")
-    entry = next(entry for entry in read_sources((repo_root / SOURCES_FILE).read_text())
-                 if (entry.name, entry.table) == (source, table))
+def configuration(repo_root: Path, entry: SourceEntry, scope: str | None = None
+                  ) -> tuple[dict[str, Any], int, str, dict[str, list[str]]]:
+    """The configuration ingestion records for this source, as it runs with SOURCE_SCOPE=<scope> or
+    without a scope; the start block and the file that sets it; and the filter as addresses.json writes it."""
     folder = entry.folder(repo_root)
+    scope_folder = folder / "scopes" / scope if scope else None
     contract = entry.coverage or {}
     supported = frozenset(contract["filters"]) if "filters" in contract else None
     case_sensitive = frozenset(contract.get("caseSensitive", []))
     unrestricted = contract.get("unrestricted", [])
-    block, block_file = start_block(repo_root, folder)
-    schema = os.environ["RAW_SCHEMA"]
-    # Only the error type: a driver message can name the warehouse host, port, user and database.
-    try:
-        cursor = read_cursor(f"{source}_{table}")
-    except psycopg2.Error as error:
-        raise BadInput(f"could not read the cursor in {schema}._sync ({type(error).__name__})") from None
-    loaded_filter = address_filter(repo_root, folder, supported=supported, optional_wallets="wallets" in unrestricted)
-    try:
-        evidence = tuple(read_coverage(f"{source}_{table}"))
-    except psycopg2.Error as error:
-        raise BadInput(f"could not read ingestion provenance in {schema} ({type(error).__name__})") from None
+    block, block_file = start_block(repo_root, folder, scope_folder)
+    loaded_filter = address_filter(repo_root, scope_folder or folder, supported=supported,
+                                   optional_wallets="wallets" in unrestricted)
     settings = {}
-    paths = [folder / ".env", folder / ".env.example"]
-    if folder.parent.name == "chains":
-        paths.append(folder.parents[1] / ".env")
-    for path in reversed(paths):
+    for path in reversed(settings_paths(folder, scope_folder)):
         settings.update(source_env_values(path))
     settings.update(os.environ)
     portal = settings.get("PORTAL_URL") or contract.get("defaultPortalUrl")
@@ -298,21 +308,53 @@ def read(repo_root: Path, name: str) -> Coverage:
     if "POOLS_START_BLOCK" in contract_settings and pool_start:
         contract_settings["POOLS_START_BLOCK"] = parse_start_block(pool_start, "POOLS_START_BLOCK")
     version = 2 if "POOLS_START_BLOCK" in contract_settings else 1
-    expected = dict(version=version, source=source, table=table, startBlock=block, datasetHash=dataset_hash,
+    expected = dict(version=version, source=entry.name, table=entry.table, startBlock=block, datasetHash=dataset_hash,
                     filter={key: sorted({recorded_value(key, value, case_sensitive) for value in values})
                             for key, values in loaded_filter.items()},
                     unrestricted=unrestricted, settings=contract_settings)
     if settings.get("SOURCE_BACKFILL_ID"):
         expected["backfill"] = settings["SOURCE_BACKFILL_ID"]
+    return expected, block, block_file, loaded_filter
+
+
+def read(repo_root: Path, name: str) -> Coverage:
+    source, table = name.split(".")
+    entry = next(entry for entry in read_sources((repo_root / SOURCES_FILE).read_text())
+                 if (entry.name, entry.table) == (source, table))
+    contract = entry.coverage or {}
+    supported = frozenset(contract["filters"]) if "filters" in contract else None
+    case_sensitive = frozenset(contract.get("caseSensitive", []))
+    unrestricted = contract.get("unrestricted", [])
+    schema = os.environ["RAW_SCHEMA"]
+    # Only the error type: a driver message can name the warehouse host, port, user and database.
     try:
-        tracked, current_cursor = read_configuration_cursor(f"{source}_{table}", expected)
+        cursor = read_cursor(f"{source}_{table}")
     except psycopg2.Error as error:
-        raise BadInput(f"could not read the configuration cursor in {schema} ({type(error).__name__})") from None
+        raise BadInput(f"could not read the cursor in {schema}._sync ({type(error).__name__})") from None
+    expected, block, block_file, loaded_filter = configuration(repo_root, entry)
+    try:
+        evidence = tuple(read_coverage(f"{source}_{table}"))
+    except psycopg2.Error as error:
+        raise BadInput(f"could not read ingestion provenance in {schema} ({type(error).__name__})") from None
+
+    def configuration_cursor(config: dict[str, Any]) -> tuple[bool, int | None]:
+        try:
+            return read_configuration_cursor(f"{source}_{table}", config)
+        except psycopg2.Error as error:
+            raise BadInput(f"could not read the configuration cursor in {schema} ({type(error).__name__})") from None
+
+    tracked, current_cursor = configuration_cursor(expected)
     if tracked:
         cursor = current_cursor
+    scopes = []
+    for scope in entry.scopes(repo_root):
+        config, scope_block, scope_file, scope_filter = configuration(repo_root, entry, scope)
+        # Never the standing cursor: a scope has a cursor of its own, or none yet.
+        scope_tracked, scope_cursor = configuration_cursor(config)
+        scopes.append(ScopeCoverage(scope, scope_block, scope_file, scope_cursor if scope_tracked else None, scope_filter))
     return Coverage(source, table, f"{schema}.{source}_{table}", block, block_file, cursor, loaded_filter,
-                    evidence, dataset_hash, contract_settings, supported, case_sensitive,
-                    frozenset(unrestricted))
+                    evidence, expected["datasetHash"], expected["settings"], supported, case_sensitive,
+                    frozenset(unrestricted), tuple(scopes))
 
 
 def run(repo_root: Path, name: str | None) -> int:

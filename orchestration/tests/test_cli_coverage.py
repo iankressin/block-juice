@@ -8,7 +8,7 @@ import psycopg2
 import pytest
 
 from pipeline.cli import BadInput, coverage, main
-from pipeline.cli.coverage import Coverage, stream_sources
+from pipeline.cli.coverage import Coverage, ScopeCoverage, stream_sources
 from pipeline.sources import SOURCES_FILE, read_sources
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -567,3 +567,40 @@ def test_factory_history_from_a_shared_cache_requires_fresh_discovery():
     assert read.gaps((100, 180), {"tokens": [USDC]})
     rebuilt = {**item, "config": {**item["config"], "version": 2}}
     assert replace(read, evidence=(item, rebuilt)).gaps((100, 180), {"tokens": [USDC]}) == []
+
+
+def add_scope(repo, name, addresses, env=None):
+    folder = repo / "ingestion/sources/evm-erc20-transfers/chains/ethereum/scopes" / name
+    folder.mkdir(parents=True)
+    (folder / "addresses.json").write_text(json.dumps(addresses))
+    if env is not None:
+        (folder / ".env.example").write_text(env)
+
+
+def test_each_scope_is_read_as_a_configuration_of_its_own(repo, monkeypatch):
+    add_scope(repo, "mexc-2026-11", {"tokens": [USDC], "wallets": [WALLET]}, "START_BLOCK=40\nEND_BLOCK=90\n")
+    add_scope(repo, "uni-only", {"tokens": [UNI]})
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: 180)
+    cursors = {(100, ("tokens", "wallets")): 180, (40, ("tokens", "wallets")): 90, (100, ("tokens",)): 60}
+    monkeypatch.setattr(coverage, "read_configuration_cursor",
+                        lambda source_table, config: (True, cursors[config["startBlock"], tuple(sorted(config["filter"]))]))
+    read = coverage.read(repo, "ethereum.erc20_transfers")
+    folder = "ingestion/sources/evm-erc20-transfers/chains/ethereum"
+    assert read.cursor == 180
+    assert read.scopes == (
+        ScopeCoverage("mexc-2026-11", 40, f"{folder}/scopes/mexc-2026-11/.env.example", 90, {"tokens": [USDC], "wallets": [WALLET]}),
+        ScopeCoverage("uni-only", 100, f"{folder}/.env.example", 60, {"tokens": [UNI]}),
+    )
+    assert [scope["name"] for scope in read.to_json()["scopes"]] == ["mexc-2026-11", "uni-only"]
+
+
+def test_a_source_without_scopes_prints_what_it_printed_before(repo, monkeypatch, capsys):
+    assert "scopes" not in coverage_json(repo, monkeypatch, capsys, 180)[0]
+
+
+def test_a_scopes_record_proves_an_answer_the_standing_file_never_could():
+    standing = evidence(100, 180)
+    scope = evidence(40, 90, {"tokens": [UNI.lower()], "wallets": [WALLET.lower()]})
+    read = replace(loaded(), evidence=(standing, scope), dataset_hash="dataset")
+    assert read.gaps((40, 90), {"tokens": [UNI], "wallets": [WALLET]}) == []
+    assert read.gaps((40, 120), {"tokens": [UNI], "wallets": [WALLET]})
