@@ -150,7 +150,7 @@ def loaded_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage]) 
         if narrowed:
             keys = ", ".join(narrowed)
             ending = (f"; narrowed by {keys}, which the input allows" if i.allow_narrowed
-                      else f"; narrowed by {keys}; load every value, or set allow_narrowed: true on the input")
+                      else f"; narrowed by {keys}; set allow_narrowed: true on the input when the question is about whatever is loaded")
             passed = passed and i.allow_narrowed
         # A first record that starts above its startBlock continues a legacy cursor: the rows below it
         # were loaded under a filter nobody recorded.

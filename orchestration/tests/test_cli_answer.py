@@ -653,7 +653,7 @@ def test_a_loaded_answer_fails_when_any_recorded_load_is_narrowed():
     assert not check.passed
     assert "tokens (1), wallets (1) from block 100, blocks 100-180" in check.detail
     assert check.detail.endswith(
-        "narrowed by wallets; load every value, or set allow_narrowed: true on the input"
+        "narrowed by wallets; set allow_narrowed: true on the input when the question is about whatever is loaded"
     )
 
 
@@ -692,7 +692,7 @@ def test_a_narrowed_load_with_unrecorded_blocks_gets_both_clauses():
     check = loaded_scope((record,))
     assert not check.passed
     assert check.detail.endswith(
-        "; narrowed by wallets; load every value, or set allow_narrowed: true on the input"
+        "; narrowed by wallets; set allow_narrowed: true on the input when the question is about whatever is loaded"
         f"; {UNRECORDED}, so their filter is unknown; "
         "backfill the source with a new SOURCE_BACKFILL_ID, or set allow_narrowed: true on the input"
     )
