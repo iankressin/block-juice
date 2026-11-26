@@ -159,6 +159,8 @@ def test_a_key_that_holds_neither_an_address_nor_a_list_of_them_is_bad_input(rep
 
 @pytest.mark.parametrize("wallets", [[], None, WALLET, [42], {"owner": WALLET}])
 def test_invalid_optional_wallet_filter_is_not_treated_as_all_wallets(repo, monkeypatch, wallets):
+    entry = {**TRANSFERS, "coverage": {"filters": ["wallets", "tokens"], "unrestricted": ["wallets"]}}
+    (repo / SOURCES_FILE).write_text(json.dumps([entry]))
     monkeypatch.setattr(coverage, "read_cursor", lambda source_table: 180)
     folder = coverage.folders(repo)["ethereum.erc20_transfers"]
     (folder / "addresses.json").write_text(json.dumps({"tokens": [USDC], "wallets": wallets}))
@@ -266,31 +268,18 @@ def test_gaps_name_each_block_and_address_that_was_not_loaded():
     assert loaded(cursor=None).gaps((100, 100), {}) == ["no run has saved a cursor"]
 
 
-@pytest.mark.parametrize("source, table", [
-    ("ethereum", "erc20_transfers"),
-    ("arbitrum", "erc20_transfers"),
-    ("base", "erc20_transfers"),
-    ("polygon", "polymarket_ctf"),
-    ("polygon", "polymarket_ctf_exchange_v2"),
-])
-def test_known_all_wallet_sources_cover_a_requested_wallet(source, table):
-    read = replace(loaded(), source=source, table=table, filter={"tokens": [USDC]})
+def test_a_source_whose_contract_leaves_wallets_optional_covers_a_requested_wallet():
+    read = replace(loaded(), filter={"tokens": [USDC]}, unrestricted=frozenset({"wallets"}))
     assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
-    assert read.gaps((100, 180), {"tokens": ["missing-token"]}) == [
-        "tokens not in addresses.json: missing-token"
-    ]
+    assert read.gaps((100, 180), {"tokens": ["missing-token"]}) == ["tokens not in addresses.json: missing-token"]
+    assert read.gaps((100, 180), {}, all_wallets=True) == []
 
 
-@pytest.mark.parametrize("source, table", [
-    ("ethereum", "wallet_transactions"),
-    ("ethereum", "cow_ethflow"),
-    ("unknown", "erc20_transfers"),
-    ("polygon", "unknown"),
-])
-def test_missing_wallets_are_not_a_wildcard_for_other_sources(source, table):
-    read = replace(loaded(), source=source, table=table, filter={"tokens": [USDC]})
-    assert read.gaps((100, 180), {"wallets": [WALLET]}) == [
-        "addresses.json has no 'wallets'"
+def test_missing_wallets_are_not_a_wildcard_without_the_contract():
+    read = replace(loaded(), filter={"tokens": [USDC]})
+    assert read.gaps((100, 180), {"wallets": [WALLET]}) == ["addresses.json has no 'wallets'"]
+    assert read.gaps((100, 180), {}, all_wallets=True) == [
+        "unrestricted wallet coverage is unknown for ethereum.erc20_transfers"
     ]
 
 
@@ -311,7 +300,8 @@ def test_token_answers_require_transfers_for_all_wallets(slug):
     assert {source.chain for source in transfers} == set(question.blocks)
     for source in transfers:
         start, end = question.blocks[source.chain]
-        loaded = Coverage(source.chain, "erc20_transfers", "", start, ".env", end, {"tokens": source.filter["tokens"]})
+        loaded = Coverage(source.chain, "erc20_transfers", "", start, ".env", end, {"tokens": source.filter["tokens"]},
+                          unrestricted=frozenset({"wallets"}))
         assert coverage_check([source], {source.source: loaded}, question.blocks).passed
         restricted = replace(loaded, filter={**loaded.filter, "wallets": [WALLET]})
         check = coverage_check([source], {source.source: restricted}, question.blocks)
@@ -328,7 +318,8 @@ def test_rn1_answer_requires_all_reference_exchanges():
         exchanges = [row["address"] for row in csv.DictReader(contracts) if row["version"] == "ctf_exchange_v2"]
     assert len(exchanges) == 3
     start, end = question.blocks["polygon"]
-    loaded = Coverage("polygon", "polymarket_ctf_exchange_v2", "", start, ".env", end, {"exchanges": exchanges})
+    loaded = Coverage("polygon", "polymarket_ctf_exchange_v2", "", start, ".env", end, {"exchanges": exchanges},
+                       unrestricted=frozenset({"wallets"}))
     assert not loaded.gaps((start, end), fills.filter)
     for exchange in exchanges:
         partial = replace(loaded, filter={"exchanges": [address for address in exchanges if address != exchange]})
@@ -397,6 +388,7 @@ def test_read_expects_coin_names_in_the_case_ingestion_recorded(repo, monkeypatc
     assert expected[0]["filter"] == {"users": [WALLET.lower()], "coins": ["ZEC", "io:ANTH"]}
     assert result.covered == (100, 180)
     assert result.gaps((100, 180), {"coins": ["zec"]})
+    assert coverage.read(repo, "hypercore.fills").unrestricted == frozenset({"users", "coins"})
 
 
 def test_all_wallets_requires_unrestricted_evidence_throughout_the_window():
