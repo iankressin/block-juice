@@ -26,6 +26,7 @@ answers/*/*
 !answers/*/question.yaml
 !answers/*/analyses/
 !answers/*/macros/
+!answers/*/reference.csv
 !answers/README.md
 !answers/CLAUDE.md
 

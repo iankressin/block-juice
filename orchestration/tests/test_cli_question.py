@@ -1,8 +1,10 @@
 import re
+from decimal import Decimal
 
 import pytest
 
 from pipeline.cli import BadInput, main
+from pipeline.analysis.reference import Reference
 from pipeline.analysis.specification import input_filters
 from pipeline.cli.question import Question, SourceInput, load_question
 
@@ -253,3 +255,47 @@ def test_allow_narrowed_must_be_boolean(tmp_path):
         "question: Which fills?\ninputs: [{source: polygon.polymarket_ctf, allow_narrowed: sometimes}]\n")
     with pytest.raises(BadInput, match=r"inputs\[0\].allow_narrowed' must be boolean"):
         load_question(tmp_path, "fills")
+
+
+REFERENCED = """question: How much flowed?
+analyses: [headline, by_day]
+window: {chain: ethereum, blocks: [100, 200]}
+eval_window: {chain: ethereum, blocks: [100, 110]}
+reference:
+  analysis: by_day
+  key: [day, token]
+  value: amount
+  tolerance: {kind: relative, value: 0.001}
+"""
+
+
+def referenced(tmp_path, text=REFERENCED, rows="day,token,amount\n"):
+    folder = tmp_path / "answers" / "flows"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "question.yaml").write_text(text)
+    if rows is not None:
+        (folder / "reference.csv").write_text(rows)
+    return load_question(tmp_path, "flows")
+
+
+def test_a_reference_names_its_analysis_key_value_and_tolerance(tmp_path):
+    assert referenced(tmp_path).reference == Reference("by_day", ("day", "token"), "amount", "relative", Decimal("0.001"))
+
+
+@pytest.mark.parametrize("old, new, message", [
+    ("analysis: by_day", "analysis: by_week", "'reference.analysis' must be one of the analyses"),
+    ("key: [day, token]", "key: []", "'reference.key'"),
+    ("value: amount", "value: day", "'reference.value'"),
+    ("kind: relative", "kind: loose", "'reference.tolerance.kind' must be absolute or relative"),
+    ("value: 0.001", "value: -1", "'reference.tolerance.value'"),
+    ("eval_window: {chain: ethereum, blocks: [100, 110]}\n", "", "'reference' needs 'eval_window'"),
+    ("  value: amount", "  value: amount\n  colour: red", "'reference' has unknown key 'colour'"),
+])
+def test_a_malformed_reference_is_bad_input(tmp_path, old, new, message):
+    with pytest.raises(BadInput, match=message):
+        referenced(tmp_path, REFERENCED.replace(old, new))
+
+
+def test_a_reference_without_its_csv_is_bad_input(tmp_path):
+    with pytest.raises(BadInput, match="answers/flows/reference.csv does not exist"):
+        referenced(tmp_path, rows=None)

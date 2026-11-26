@@ -11,6 +11,7 @@ from typing import Any, Literal
 import yaml
 
 from pipeline.cli import BadInput
+from pipeline.analysis.reference import Reference, parse_reference
 from pipeline.analysis.spec import ExecutionPolicy, validate_contracts
 from pipeline.analysis.scope import validate_token_scope
 
@@ -63,6 +64,7 @@ class Question:
     freshness: dict[str, Any] = field(default_factory=dict)
     grain: dict[str, list[str]] = field(default_factory=dict)
     parameter_scope: str | None = None
+    reference: Reference | None = None
     authored_sha256: str | None = field(default=None, compare=False)
     authored_text: str | None = field(default=None, compare=False, repr=False)
 
@@ -123,6 +125,7 @@ FIELDS: dict[str, tuple[Callable[[Any], bool], str]] = {
     "marts": (_strings, "a list of strings"),
     "analyses": (_analyses, f"a non-empty list of dbt analysis names matching {ANALYSIS.pattern}"),
     "parameter_scope": (lambda v: v == "token_windows", "token_windows"),
+    "reference": (lambda v: isinstance(v, dict), "a map"),
     **{key: (lambda v: isinstance(v, dict), "a map") for key in ("parameters", "values", "eval_values", "expected_columns", "execution", "freshness", "grain")},
 }
 
@@ -151,6 +154,8 @@ def load_question(
     if not isinstance(raw, dict):
         raise BadInput(f"{label} must be a map with a 'question' key")
     question = _resolve_question(slug, label, raw, authored, window_key)
+    if question.reference and not (path.parent / "reference.csv").is_file():
+        raise BadInput(f"answers/{slug}/reference.csv does not exist, and {label} has a 'reference'")
     if check_eval and window_key == "window" and "eval_window" in raw:
         _resolve_question(slug, label, raw, authored, "eval_window")
     return question
@@ -229,6 +234,11 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
         unknown = set(raw.get(field_name, {})) - set(analysis_names)
         if unknown:
             raise BadInput(f"{label}: {field_name} names undeclared analyses: {', '.join(sorted(unknown))}")
+    reference = None
+    if "reference" in raw:
+        if "eval_window" not in raw:
+            raise BadInput(f"{label}: 'reference' needs 'eval_window', the blocks the reference rows cover")
+        reference = parse_reference(raw["reference"], analysis_names, label)
     asked = raw.get("asked")
     return Question(
         slug=slug,
@@ -249,6 +259,7 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
         freshness=raw.get("freshness", {}),
         grain=raw.get("grain", {}),
         parameter_scope=raw.get("parameter_scope"),
+        reference=reference,
         authored_sha256=hashlib.sha256(authored).hexdigest(),
         authored_text=authored.decode("utf-8"),
     )

@@ -1,9 +1,11 @@
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
-from pipeline.analysis.reference import Reference, mismatches
+from pipeline.analysis.domain import Check, Result
+from pipeline.analysis.reference import Reference, mismatches, reference_check
 from pipeline.cli import BadInput
 
 REFERENCE = Reference("by_day", ("day", "token"), "amount", "absolute", Decimal("0"))
@@ -81,3 +83,40 @@ def test_a_relative_limit_on_a_wide_amount_is_exact():
     over_the_limit = "144455217868161088968899600000000001.2"
     assert reasons(rows(("d", "eth", wei)), rows(("d", "eth", on_the_limit)), relative) == []
     assert reasons(rows(("d", "eth", wei)), rows(("d", "eth", over_the_limit)), relative) == [(("d", "eth"), "over_tolerance")]
+
+
+def result(columns, rows, csv_path=None):
+    return Result("by_day", "select 1", columns, rows, csv_path)
+
+
+def test_the_check_reads_reference_csv_and_the_analysis_rows(tmp_path):
+    (tmp_path / "reference.csv").write_bytes("\ufeffday,token,amount\r\n2026-11-07,eth,1.5\r\n".encode())
+    actual = result(["day", "token", "amount", "txs"], [(date(2026, 11, 7), "eth", Decimal("1.50"), 3)])
+    assert reference_check(tmp_path, [actual], REFERENCE) == Check("reference_match", True, "0 mismatches over tolerance")
+
+
+def test_the_check_fails_and_shows_the_first_mismatches(tmp_path):
+    (tmp_path / "reference.csv").write_text("day,token,amount\n2026-11-07,eth,1.5\n2026-11-07,usdt,2\n")
+    check = reference_check(tmp_path, [result(["day", "token", "amount"], [])], REFERENCE)
+    assert check == Check("reference_match", False, "2 mismatches over tolerance; first: "
+                          "(2026-11-07, eth) missing_in_actual, (2026-11-07, usdt) missing_in_actual")
+
+
+def test_the_check_reads_rows_spooled_to_a_file(tmp_path):
+    (tmp_path / "reference.csv").write_text("day,token,amount\n2026-11-07,eth,1.5\n")
+    spooled = tmp_path / "by_day.csv"
+    spooled.write_text("day,token,amount\n2026-11-07,eth,1.5\n")
+    assert reference_check(tmp_path, [result(["day", "token", "amount"], [], spooled)], REFERENCE).passed
+
+
+def test_the_check_names_a_missing_column_even_when_a_side_has_no_rows(tmp_path):
+    (tmp_path / "reference.csv").write_text("day,token\n")
+    with pytest.raises(BadInput, match="reference.csv has no column amount"):
+        reference_check(tmp_path, [result(["day", "token", "amount"], [])], REFERENCE)
+    (tmp_path / "reference.csv").write_text("day,token,amount\n")
+    with pytest.raises(BadInput, match="the analysis by_day returns no column amount"):
+        reference_check(tmp_path, [result(["day", "token"], [])], REFERENCE)
+    spooled = tmp_path / "by_day.csv"
+    spooled.write_text("day,token\n")
+    with pytest.raises(BadInput, match="the analysis by_day returns no column amount"):
+        reference_check(tmp_path, [result(["day", "token"], [], spooled)], REFERENCE)

@@ -17,6 +17,7 @@ from typing import Any
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
+from pipeline.analysis.reference import reference_check
 from pipeline.analysis.store import RunStore, answer_lock
 from pipeline.analysis.domain import Input, LastRun, Result, Check, jsonable, cell_text, headline
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
@@ -375,7 +376,7 @@ def provenance(repo_root: Path) -> dict[str, Any]:
     # Generated answers do not make the code dirty, but the authored question specifications do.
     status = git(repo_root, "status", "--porcelain", "--", ".", ":(exclude)answers")
     questions = git(repo_root, "status", "--porcelain", "--", ":(glob)answers/*/question.yaml",
-                    ":(glob)answers/*/analyses/**", ":(glob)answers/*/macros/**")
+                    ":(glob)answers/*/analyses/**", ":(glob)answers/*/macros/**", ":(glob)answers/*/reference.csv")
     return {
         "git_sha": git(repo_root, "rev-parse", "HEAD"),
         "git_dirty": bool(status or questions) if status is not None and questions is not None else None,

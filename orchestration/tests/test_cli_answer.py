@@ -398,7 +398,8 @@ def test_coverage_passes_when_the_source_loaded_the_blocks_and_the_filter(histor
 
 def test_bj_check_refuses_the_name_of_every_check_bj_answer_runs(history):
     _, checks = history("{chain: ethereum, blocks: [100, 180]}", USDC_FLOWS)
-    assert sorted(checks) == sorted(check.ANSWER_CHECKS)
+    # reference_match runs only under --eval, for a question that has a reference.
+    assert sorted(checks) == sorted(set(check.ANSWER_CHECKS) - {"reference_match"})
 
 
 def test_a_new_answer_drops_the_checks_the_agent_added(tmp_path, history):
@@ -804,9 +805,29 @@ def test_eval_answer_and_factory_check_leave_the_full_answer_unchanged(tmp_path,
     assert json.loads(evaluation.read_text())["eval"] is True
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", tmp_path)
     # The workflow's shell steps and legacy CLI branch are covered in test_factory_eval_compatibility.
-    assert main(["check", "eth-total", "--eval", "reference_match", "passed", "matches oracle"]) == 0
-    assert json.loads(evaluation.read_text())["checks"][-1]["name"] == "reference_match"
+    assert main(["check", "eth-total", "--eval", "cross_check", "passed", "matches oracle"]) == 0
+    assert json.loads(evaluation.read_text())["checks"][-1]["name"] == "cross_check"
     assert (folder / "answer.json").read_bytes() == before
+
+
+def test_an_eval_run_checks_the_reference_and_a_full_run_does_not(tmp_path, offline, monkeypatch):
+    folder = write_question(tmp_path, extra=EVAL_SLICE
+        + "reference: {analysis: headline, key: [wallet], value: total, tolerance: {kind: absolute, value: 0}}\n")
+    (folder / "reference.csv").write_text("wallet,total\n")
+    offline(parked=0)
+    seen = []
+
+    def reference_check(folder, results, reference):
+        seen.append((folder, reference.analysis))
+        return Check("reference_match", True, "0 mismatches over tolerance")
+
+    monkeypatch.setattr(answer, "reference_check", reference_check)
+    assert answer.run(tmp_path, "eth-total") == 0
+    assert seen == []
+    assert answer.run(tmp_path, "eth-total", "eval_window") == 0
+    assert seen == [(folder, "headline")]
+    checks = json.loads((folder / "eval" / "answer.json").read_text())["checks"]
+    assert checks[-1] == {"name": "reference_match", "status": "passed", "detail": "0 mismatches over tolerance"}
 
 
 def test_an_eval_run_compiles_checks_coverage_and_records_the_eval_window(tmp_path, history):

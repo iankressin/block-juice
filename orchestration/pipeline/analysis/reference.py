@@ -1,14 +1,23 @@
-"""Compares an analysis's rows with an answer's reference rows. Pure: it reads no file and no warehouse."""
+"""Compares an analysis's rows with an answer's reference rows. `mismatches` is pure; `reference_check` reads the
+answer folder's reference.csv and the analysis's rows, and touches no warehouse."""
 
+import csv
 import re
 from dataclasses import dataclass
 from decimal import Context, Decimal, InvalidOperation
-from typing import Literal, Sequence
+from pathlib import Path
+from typing import Any, Literal, Sequence
 
+from pipeline.analysis.domain import Check, Result, cell_text
 from pipeline.cli import BadInput
 
 NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
 HEX = re.compile(r"^0x[0-9a-fA-F]+$")
+
+# How many mismatches the check"s detail names; the rest are in the count.
+MISMATCHES_SHOWN = 5
+
+REFERENCE_KEYS = ("analysis", "key", "value", "tolerance", "oracle")
 
 # Wide enough that no subtraction or product of two wei-sized amounts rounds.
 EXACT = Context(prec=200)
@@ -107,3 +116,63 @@ def mismatches(
 
 def _text(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
+
+
+def parse_reference(raw: dict, analyses: Sequence[str], label: str) -> Reference:
+    for name in raw:
+        if name not in REFERENCE_KEYS:
+            raise BadInput(f"{label}: 'reference' has unknown key {name!r}; allowed keys: {', '.join(REFERENCE_KEYS)}")
+    for name in ("analysis", "key", "value", "tolerance"):
+        if name not in raw:
+            raise BadInput(f"{label}: 'reference.{name}' is required")
+    analysis, key, value = raw["analysis"], raw["key"], raw["value"]
+    if analysis not in analyses:
+        raise BadInput(f"{label}: 'reference.analysis' must be one of the analyses: {', '.join(analyses)}")
+    if not (isinstance(key, list) and key and all(isinstance(c, str) and c for c in key) and len(set(key)) == len(key)):
+        raise BadInput(f"{label}: 'reference.key' must be a non-empty list of distinct column names")
+    if not isinstance(value, str) or not value or value in key:
+        raise BadInput(f"{label}: 'reference.value' must be a column name that is not in 'reference.key'")
+    tolerance = raw["tolerance"]
+    if not isinstance(tolerance, dict) or set(tolerance) != {"kind", "value"}:
+        raise BadInput(f"{label}: 'reference.tolerance' must be a map with 'kind' and 'value'")
+    if tolerance["kind"] not in ("absolute", "relative"):
+        raise BadInput(f"{label}: 'reference.tolerance.kind' must be absolute or relative")
+    limit = tolerance["value"]
+    if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit < 0 or limit != limit or limit == float("inf"):
+        raise BadInput(f"{label}: 'reference.tolerance.value' must be a number of zero or more")
+    oracle = raw.get("oracle", "")
+    if not isinstance(oracle, str):
+        raise BadInput(f"{label}: 'reference.oracle' must be a string")
+    return Reference(analysis, tuple(key), value, tolerance["kind"], Decimal(str(limit)), oracle)
+
+
+def reference_check(folder: Path, results: Sequence[Result], reference: Reference) -> Check:
+    """Compare the reference analysis's rows with `folder`/reference.csv, where `folder` is answers/<slug>."""
+    result = next((r for r in results if r.analysis == reference.analysis), None)
+    if result is None:
+        raise BadInput(f"the analysis {reference.analysis} did not run")
+    wanted = (*reference.key, reference.value)
+    with (folder / "reference.csv").open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        _need(reader.fieldnames or [], wanted, "reference.csv has no column")
+        expected = list(reader)
+    if result.csv_path is not None:
+        with result.csv_path.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            _need(reader.fieldnames or [], wanted, f"the analysis {reference.analysis} returns no column")
+            actual: list[dict[str, Any]] = list(reader)
+    else:
+        _need(result.columns, wanted, f"the analysis {reference.analysis} returns no column")
+        actual = [dict(zip(result.columns, map(cell_text, row))) for row in result.rows]
+    found = mismatches(expected, actual, reference)
+    detail = f"{len(found)} mismatches over tolerance"
+    if found:
+        shown = ", ".join(f"({', '.join(m.key)}) {m.reason}" for m in found[:MISMATCHES_SHOWN])
+        detail += f"; first: {shown}"
+    return Check("reference_match", not found, detail)
+
+
+def _need(columns: Sequence[str], wanted: Sequence[str], message: str) -> None:
+    for column in wanted:
+        if column not in columns:
+            raise BadInput(f"{message} {column}")
