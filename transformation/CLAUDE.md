@@ -18,7 +18,7 @@ On a pull request, CI plants bugs in each model you add or change, and fails whe
 
 ## Materialization
 
-- Staging builds views and marts build tables. Intermediate models default to ephemeral; most pipeline folders override that with `+materialized: view` in `dbt_project.yml`, so each model shows as its own step in Dagster. Do the same for a new folder.
+- Staging builds views and marts build tables. Intermediate models build views too, set once for the whole `intermediate` folder in `dbt_project.yml`, so each model shows as its own step in Dagster. A new intermediate folder needs no entry there.
 - Keep staging and intermediate models live. Never make a model incremental with a `max(block_number)` or `max(_loaded_at)` filter: late rows and corrections would never reach the marts (`docs/fact-model-performance.md`).
 - Filters and joins on jsonb staging columns get Postgres's default row estimates, and the planner picks nested loops that go quadratic on real data. The polymarket and deployments folders set `set local enable_nestloop = off` as a pre-hook in `dbt_project.yml` for this reason. When a model like that builds slowly, check its plan for nested loops first.
 

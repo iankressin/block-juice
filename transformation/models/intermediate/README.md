@@ -2,7 +2,7 @@
 
 ## Overview
 
-Joins and rules between staging and marts, one folder per pipeline. Most chains and protocol versions get their own model, in the shape its mart unions: `int_<chain>_<thing>` or `int_<chain>_<protocol>_<version>_<thing>`. Some break the pattern: `int_binance_token_prices` and `int_coinbase_token_prices` name an exchange, `int_polymarket_markets`, `int_polymarket_outcome_tokens` and `int_polymarket_wallet_ledger` name no chain, and `int_ethereum_cow_*` and `int_polygon_polymarket_ctf_conditions`, `_resolutions` and `_position_changes` name no version. `int_polymarket_wallet_ledger` joins other intermediate models rather than being a branch a mart unions. Sign rules, buy or sell, units and code kinds live here, so a wrong rule is fixed in SQL and rebuilt without fetching anything again. Most folders build views in `analytics`; `accounts/` and `hypercore/` are ephemeral, and four Polymarket models are tables.
+Joins and rules between staging and marts, one folder per pipeline. Most chains and protocol versions get their own model, in the shape its mart unions: `int_<chain>_<thing>` or `int_<chain>_<protocol>_<version>_<thing>`. Some break the pattern: `int_binance_token_prices` and `int_coinbase_token_prices` name an exchange, `int_polymarket_markets`, `int_polymarket_outcome_tokens` and `int_polymarket_wallet_ledger` name no chain, and `int_ethereum_cow_*` and `int_polygon_polymarket_ctf_conditions`, `_resolutions` and `_position_changes` name no version. `int_polymarket_wallet_ledger` joins other intermediate models rather than being a branch a mart unions. Sign rules, buy or sell, units and code kinds live here, so a wrong rule is fixed in SQL and rebuilt without fetching anything again. Intermediate models build views in `analytics`, except four Polymarket models, which are tables.
 
 ## Subdirectories & Boundaries
 
@@ -22,4 +22,4 @@ Joins and rules between staging and marts, one folder per pipeline. Most chains 
 ## Verification
 
 - `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
-- With a warehouse up: `uv run --project orchestration bj run <pipeline> --select <model>`. For an ephemeral model, select the mart that reads it.
+- With a warehouse up: `uv run --project orchestration bj run <pipeline> --select <model>`. Select an intermediate model by name.

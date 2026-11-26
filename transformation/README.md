@@ -15,7 +15,7 @@ Ethereum hex addresses are lowercased in staging. Solana and Bitcoin addresses a
 ## Invariants
 
 - Raw tables live in `RAW_SCHEMA` (`raw`); every model builds in `DBT_SCHEMA` (`analytics`). dbt reads both from the environment, and falls back to those defaults when they are unset: `DBT_SCHEMA` in `profiles.yml`, `RAW_SCHEMA` in each staging `_<name>__sources.yml`. The `WAREHOUSE_*` settings have no defaults.
-- Staging builds views and marts build tables (`dbt_project.yml`). Intermediate models are ephemeral unless their folder sets `+materialized: view`.
+- Staging builds views and marts build tables (`dbt_project.yml`). Intermediate models build views too (`intermediate: +materialized: view`).
 - Tests tagged `reference` stay out of Dagster and `bj answer` builds; run them with `dbt test --select tag:reference`.
 
 ## Verification

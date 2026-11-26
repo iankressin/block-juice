@@ -2,7 +2,7 @@
 
 ## Overview
 
-Uniswap v2, v3 and v4 trades on Ethereum, one model per protocol version, each in the shape `dex_trades` reads ([marts/dex](../../marts/dex/README.md)). Each joins its Swap logs to the pool's creation log and to the Swap's transaction. `transformation/dbt_project.yml` builds them as views (`dex: +materialized: view`), so each version shows as its own step in Dagster.
+Uniswap v2, v3 and v4 trades on Ethereum, one model per protocol version, each in the shape `dex_trades` reads ([marts/dex](../../marts/dex/README.md)). Each joins its Swap logs to the pool's creation log and to the Swap's transaction. `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each version shows as its own step in Dagster.
 
 ## Interface
 

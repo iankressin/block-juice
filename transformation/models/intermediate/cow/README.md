@@ -2,7 +2,7 @@
 
 ## Overview
 
-CoW Protocol ETH Flow orders, GPv2Settlement trades and ERC-20 transfers into followed wallets on Ethereum, split out of the one raw table the `evm-cow-ethflow` source loads. `cow_ethflow_orders` joins them ([marts/cow](../../marts/cow/README.md)). `transformation/dbt_project.yml` builds them as views (`cow: +materialized: view`), so each shows as its own step in Dagster.
+CoW Protocol ETH Flow orders, GPv2Settlement trades and ERC-20 transfers into followed wallets on Ethereum, split out of the one raw table the `evm-cow-ethflow` source loads. `cow_ethflow_orders` joins them ([marts/cow](../../marts/cow/README.md)). `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each shows as its own step in Dagster.
 
 ## Interface
 

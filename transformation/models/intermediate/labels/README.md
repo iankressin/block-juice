@@ -2,7 +2,7 @@
 
 ## Overview
 
-Each Arbitrum and Base address's latest code reading and what kind of code it is, in the shape `address_labels` reads ([marts/labels](../../marts/labels/README.md)). There is one model per chain. `transformation/dbt_project.yml` builds them as views (`labels: +materialized: view`), so each chain shows as its own step in Dagster.
+Each Arbitrum and Base address's latest code reading and what kind of code it is, in the shape `address_labels` reads ([marts/labels](../../marts/labels/README.md)). There is one model per chain. `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each chain shows as its own step in Dagster.
 
 ## Interface
 

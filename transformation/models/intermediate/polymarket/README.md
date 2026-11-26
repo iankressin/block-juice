@@ -4,7 +4,7 @@
 
 Polymarket's rules on Polygon: CTF Exchange v2 fills and the signed orders behind them, ConditionalTokens splits, merges, redemptions and conversions, condition preparations and resolutions, and Gamma's market and token names. `int_polymarket_wallet_ledger` brings every way a wallet's cash or shares change into one table. The marts in [marts/polymarket](../../marts/polymarket/README.md) read these models.
 
-`transformation/dbt_project.yml` builds the folder as views (`polymarket: +materialized: view`) with the pre-hook `set local enable_nestloop = off`, since filters on jsonb staging columns lead the planner to nested loops that go quadratic. Four models override the view with `config(materialized='table')`: `int_polygon_polymarket_ctf_conditions`, `int_polygon_polymarket_ctf_position_changes` and `int_polymarket_wallet_ledger`, so parallel view swaps of their staging inputs can't deadlock on them, and `int_polygon_polymarket_ctf_exchange_v2_orders`.
+`transformation/dbt_project.yml` builds the folder as views (`intermediate: +materialized: view`) with the pre-hook `set local enable_nestloop = off`, since filters on jsonb staging columns lead the planner to nested loops that go quadratic. Four models override the view with `config(materialized='table')`: `int_polygon_polymarket_ctf_conditions`, `int_polygon_polymarket_ctf_position_changes` and `int_polymarket_wallet_ledger`, so parallel view swaps of their staging inputs can't deadlock on them, and `int_polygon_polymarket_ctf_exchange_v2_orders`.
 
 ## Interface
 

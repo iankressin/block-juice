@@ -2,7 +2,7 @@
 
 ## Overview
 
-The dbt models, in three layers. Staging reads each raw table, intermediate holds joins and rules per chain and protocol version, and marts hold the tables that questions read. They build in the `analytics` schema (`DBT_SCHEMA`), except that an intermediate folder with no override in `transformation/dbt_project.yml`, such as `accounts` or `hypercore`, is `ephemeral` and builds no relation.
+The dbt models, in three layers. Staging reads each raw table, intermediate holds joins and rules per chain and protocol version, and marts hold the tables that questions read. They build in the `analytics` schema (`DBT_SCHEMA`).
 
 ## Subdirectories & Boundaries
 

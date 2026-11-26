@@ -2,7 +2,7 @@
 
 ## Overview
 
-HyperCore fills with three rules added: the signed size, the notional and which side was the taker. `hypercore_fills` reads it ([marts/hypercore](../../marts/hypercore/README.md)). `transformation/dbt_project.yml` sets no materialization for this folder, so the model stays ephemeral: dbt inlines it into the mart, and it shows as no step of its own in Dagster.
+HyperCore fills with three rules added: the signed size, the notional and which side was the taker. `hypercore_fills` reads it ([marts/hypercore](../../marts/hypercore/README.md)). `transformation/dbt_project.yml` builds it as a view (`intermediate: +materialized: view`), so it shows as its own step in Dagster.
 
 ## Interface
 
@@ -23,7 +23,7 @@ The rules come from `catalog/protocols/hypercore/NOTES.md`, as the header of `in
 
 ## Side Effects
 
-- None. An ephemeral model creates no relation in the warehouse.
+- A dbt build creates or replaces the view in `DBT_SCHEMA` (`analytics`). It copies no rows.
 
 ## Verification
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Token bridge moves between an L2 and Ethereum, one model per bridge, in the shape `bridge_transfers` reads ([marts/bridges](../../marts/bridges/README.md)). `transformation/dbt_project.yml` builds them as views (`bridges: +materialized: view`), so each bridge shows as its own step in Dagster.
+Token bridge moves between an L2 and Ethereum, one model per bridge, in the shape `bridge_transfers` reads ([marts/bridges](../../marts/bridges/README.md)). `transformation/dbt_project.yml` builds them as views (`intermediate: +materialized: view`), so each bridge shows as its own step in Dagster.
 
 ## Interface
 
