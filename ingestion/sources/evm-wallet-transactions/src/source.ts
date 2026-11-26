@@ -3,6 +3,7 @@ import {
   logger,
   portalClient,
   readJson,
+  settingsFolder,
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
@@ -102,7 +103,8 @@ export function transactionRecord(header: Header, tx: Tx): RawRecord {
  * The top-level transactions sent from or to the wallets in chains/<chain>/addresses.json on one EVM
  * chain, each with its receipt's fields, up to Portal's finalized head when the run starts. Internal
  * transfers, which only traces show, are not here. The source is named for its chain, so each chain
- * loads into raw.<chain>_wallet_transactions with a cursor of its own.
+ * loads into raw.<chain>_wallet_transactions with a cursor of its own. With SOURCE_SCOPE set, the
+ * wallets come from chains/<chain>/scopes/<name>/addresses.json instead.
  */
 export const forChain = (chain: string): StreamSource<WalletTransactionsEnv> => ({
   name: chainName.parse(chain),
@@ -111,7 +113,7 @@ export const forChain = (chain: string): StreamSource<WalletTransactionsEnv> => 
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const path = `chains/${chain}/addresses.json`;
+    const path = `${settingsFolder(chain)}/addresses.json`;
     const listed = readJson(path).wallets;
     // With no wallets the query keeps no transaction, yet the cursor still moves past the blocks it read.
     if (!Array.isArray(listed) || listed.length === 0) throw new Error(`${path} lists no wallets`);

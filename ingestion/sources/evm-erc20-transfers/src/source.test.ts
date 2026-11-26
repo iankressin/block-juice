@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { RawRecord } from "@ingestion/lib";
 import { mockPortal } from "@subsquid/pipes/testing";
@@ -83,4 +86,26 @@ test("each chain loads into a table of its own", () => {
   assert.equal(forChain("base").name, "base", "runSource writes to raw.base_erc20_transfers");
   assert.equal(forChain("base").table, "erc20_transfers");
   assert.throws(() => forChain("Base Mainnet"), /chain name/);
+});
+
+test("with SOURCE_SCOPE the stream reads the scope's tokens", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "scope-"));
+  const cwd = process.cwd();
+  t.after(async () => {
+    process.chdir(cwd);
+    delete process.env.SOURCE_SCOPE;
+    await rm(dir, { recursive: true });
+  });
+  await mkdir(join(dir, "chains/ethereum/scopes/one-token"), { recursive: true });
+  await writeFile(join(dir, "chains/ethereum/addresses.json"), JSON.stringify({ tokens: [usdc, otherToken] }));
+  await writeFile(join(dir, "chains/ethereum/scopes/one-token/addresses.json"), JSON.stringify({ tokens: [otherToken] }));
+  const url = await portal(t, [
+    transfer(usdc!, stranger, otherStranger, 1n), // a token the scope leaves out
+    transfer(otherToken, stranger, otherStranger, 2n),
+  ]);
+  process.chdir(dir);
+  process.env.SOURCE_SCOPE = "one-token";
+
+  const read = await records("ethereum", url, 1);
+  assert.deepEqual(read.map((r) => r.block), [2]);
 });

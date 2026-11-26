@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { RawRecord } from "@ingestion/lib";
 import { mockPortal } from "@subsquid/pipes/testing";
@@ -77,4 +80,23 @@ test("each chain loads into a table of its own", () => {
   assert.equal(forChain("ethereum").name, "ethereum", "runSource writes to raw.ethereum_wallet_transactions");
   assert.equal(forChain("ethereum").table, "wallet_transactions");
   assert.throws(() => forChain("Ethereum Mainnet"), /chain name/);
+});
+
+test("with SOURCE_SCOPE the stream reads the scope's wallets", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "scope-"));
+  const cwd = process.cwd();
+  t.after(async () => {
+    process.chdir(cwd);
+    delete process.env.SOURCE_SCOPE;
+    await rm(dir, { recursive: true });
+  });
+  await mkdir(join(dir, "chains/ethereum/scopes/one-wallet"), { recursive: true });
+  await writeFile(join(dir, "chains/ethereum/addresses.json"), JSON.stringify({ wallets: [wallet, other] }));
+  await writeFile(join(dir, "chains/ethereum/scopes/one-wallet/addresses.json"), JSON.stringify({ wallets: [other] }));
+  const url = await portal(t, txs);
+  process.chdir(dir);
+  process.env.SOURCE_SCOPE = "one-wallet";
+
+  const read = await records(url, 1);
+  assert.deepEqual(read.map((r) => r.block_number), [2, 3, 5], "block 1 touches only the wallet the scope leaves out");
 });

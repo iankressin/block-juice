@@ -11,7 +11,7 @@ A stream source that loads the top-level transactions sent from or to the wallet
 - `src/source.ts:chainName`: zod check for a chain name (`^[a-z][a-z0-9]*$`).
 - `src/source.ts:WalletTransactionsEnv`: `PORTAL_URL`, `PORTAL_API_KEY` (optional), `START_BLOCK`, `END_BLOCK` (optional).
 - `src/index.ts`: runs `forChain(process.env.CHAIN)` through `runSource`. Dagster sets `CHAIN`; by hand, run `CHAIN=ethereum pnpm ingest`.
-- `chains/<chain>/addresses.json`: `wallets`, a list of EVM addresses. `chains/ethereum/.env.example` sets `PORTAL_URL` and `START_BLOCK`.
+- `chains/<chain>/addresses.json`: `wallets`, a list of EVM addresses. When `SOURCE_SCOPE=<name>` is set, the source reads `chains/<chain>/scopes/<name>/addresses.json` instead. `chains/ethereum/.env.example` sets `PORTAL_URL` and `START_BLOCK`.
 
 ## Invariants
 

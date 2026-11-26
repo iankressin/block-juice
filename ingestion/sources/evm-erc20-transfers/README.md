@@ -10,7 +10,7 @@ A stream source that reads the ERC-20 Transfer logs of the listed tokens on one 
 - `src/source.ts:chainName`: zod check for a chain name (`^[a-z][a-z0-9]*$`).
 - `src/source.ts:TransfersEnv`: `PORTAL_URL` (required), `PORTAL_API_KEY` (optional), `START_BLOCK` (required) and `END_BLOCK` (optional, for a short check window).
 - `src/index.ts`: runs `forChain(chainName.parse(process.env.CHAIN))` through `runSource`. Dagster sets `CHAIN`; by hand, run `CHAIN=arbitrum pnpm ingest`. A missing or bad `CHAIN` throws before `runSource` starts, so the run logs no fatal line, pushes no metrics and writes no `ops.ingestion_runs` row.
-- `chains/<chain>/addresses.json`: `tokens`, required, and `wallets`, optional. `arbitrum` and `base` list tokens only; `ethereum` lists both.
+- `chains/<chain>/addresses.json`: `tokens`, required, and `wallets`, optional. `arbitrum` and `base` list tokens only; `ethereum` lists both. When `SOURCE_SCOPE=<name>` is set, the source reads `chains/<chain>/scopes/<name>/addresses.json` instead.
 - `chains/<chain>/.env.example`: `PORTAL_URL` and `START_BLOCK`, and a commented `END_BLOCK` for `ethereum`.
 - `.env.example`: the warehouse settings, `PORTAL_API_KEY`, `PUSHGATEWAY_URL`, `LOG_LEVEL` and `MAX_BLOCKS_PER_RUN`.
 - The event: `commonAbis.erc20.events.Transfer` from `@subsquid/pipes/evm`.

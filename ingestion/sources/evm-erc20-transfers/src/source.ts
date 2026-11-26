@@ -3,6 +3,7 @@ import {
   logger,
   portalClient,
   readJson,
+  settingsFolder,
   type RawRecord,
   type StreamSource,
 } from "@ingestion/lib";
@@ -56,7 +57,8 @@ const toRecord = (t: DecodedEvent<ReturnType<typeof Transfer.decode>>): RawRecor
 /**
  * The Transfers of the tokens in chains/<chain>/addresses.json on one EVM chain, up to Portal's
  * finalized head when the run starts. The source is named for its chain, so each chain loads into
- * raw.<chain>_erc20_transfers with a cursor of its own.
+ * raw.<chain>_erc20_transfers with a cursor of its own. With SOURCE_SCOPE set, the file is
+ * chains/<chain>/scopes/<name>/addresses.json instead.
  *
  * With `wallets` in addresses.json, only transfers into or out of those wallets. A transfer between
  * two of them is in both outputs, under the same id, so the warehouse keeps one row. Without
@@ -69,10 +71,11 @@ export const forChain = (chain: string): StreamSource<TransfersEnv> => ({
   env,
   async stream(env) {
     // Read inside the run, not at import, so runSource reports a bad addresses.json.
-    const addresses = readJson(`chains/${chain}/addresses.json`);
+    const path = `${settingsFolder(chain)}/addresses.json`;
+    const addresses = readJson(path);
     const tokens = validateEthAddressList(addresses.tokens);
     if (addresses.wallets?.length === 0) {
-      throw new Error(`chains/${chain}/addresses.json lists no wallets; leave the key out to read every transfer`);
+      throw new Error(`${path} lists no wallets; leave the key out to read every transfer`);
     }
     const wallets = addresses.wallets && validateEthAddressList(addresses.wallets).map((a: string) => a.toLowerCase());
     const portal = portalClient(env.PORTAL_URL, env.PORTAL_API_KEY);
