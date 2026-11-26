@@ -75,7 +75,6 @@ class Coverage:
         evidence = self.evidence or ()
         if len({item["config"]["datasetHash"] for item in evidence}) > 1:
             return []
-        wanted = {**self.filter, **wanted}
         required_pool_start = (self.settings or {}).get("POOLS_START_BLOCK")
         ranges = []
         for item in evidence:
@@ -110,6 +109,22 @@ class Coverage:
                 merged.append((first, last))
         return merged
 
+    def unnamed_keys(self, wanted: dict[str, list[str]], *, all_wallets: bool = False) -> list[str]:
+        """The filter keys that a verified load of this dataset restricts and `wanted` does not name.
+        `verified_ranges` skips such a load; this says which keys to name. It drops the same keys
+        the source no longer reads, and `wallets` when the question asks for all wallets."""
+        unnamed: set[str] = set()
+        for item in self.evidence or ():
+            config = item["config"]
+            if not item["verified"] or (self.dataset_hash is not None and config["datasetHash"] != self.dataset_hash):
+                continue
+            for key in config["filter"]:
+                if self.supported_filters is not None and key not in self.supported_filters:
+                    continue
+                if key not in wanted and not (all_wallets and key == "wallets"):
+                    unnamed.add(key)
+        return sorted(unnamed)
+
     def gaps(self, blocks: tuple[int, int], wanted: dict[str, list[str]], *, all_wallets: bool = False) -> list[str]:
         """What the loaded data lacks for these blocks and this subset of addresses.json. Empty when it has it all."""
         first, last = blocks
@@ -117,6 +132,11 @@ class Coverage:
             ranges = self.verified_ranges(wanted, all_wallets=all_wallets)
             if any(begin <= first and end >= last for begin, end in ranges):
                 return []
+            unnamed = self.unnamed_keys(wanted, all_wallets=all_wallets)
+            if unnamed:
+                keys = ", ".join(unnamed)
+                return [f"the recorded loads restrict {keys}, which the input's filter does not name; "
+                        f"add {keys} to the input's filter in question.yaml"]
             return [f"no verified ingestion contract covers blocks {first}–{last} and the requested filters; "
                     "legacy or changed-filter history needs a SOURCE_BACKFILL_ID backfill"]
         gaps = []

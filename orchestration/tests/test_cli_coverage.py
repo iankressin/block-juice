@@ -345,12 +345,12 @@ def evidence(first, last, filters=None, verified=True):
 
 def test_committed_contract_not_edited_files_establishes_coverage():
     read = replace(loaded(), evidence=(evidence(100, 180),), dataset_hash="dataset")
-    assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
+    assert read.gaps((100, 180), {"tokens": [USDC], "wallets": [WALLET]}) == []
     changed = replace(read, filter={"tokens": [UNI]})
     assert changed.covered is None
-    assert changed.gaps((100, 180), {})
+    assert changed.gaps((100, 180), {"tokens": [UNI]})
     restored = replace(changed, evidence=read.evidence + (evidence(100, 180, {"tokens": [UNI]}),))
-    assert restored.gaps((100, 180), {}) == []
+    assert restored.gaps((100, 180), {"tokens": [UNI]}) == []
 
 
 FILLS = {"name": "hypercore", "table": "fills", "package": "hypercore-fills", "coverage": {
@@ -368,8 +368,8 @@ def test_case_sensitive_names_cover_only_their_exact_spelling_while_addresses_ig
                     {"users": [WALLET], "coins": ["ZEC"]}, (fills_evidence(100, 180, ["ZEC"]),), "dataset",
                     {}, frozenset({"users", "coins"}), frozenset({"coins"}))
     assert read.covered == (100, 180)
-    assert read.gaps((100, 180), {"coins": ["ZEC"]}) == []
-    assert read.gaps((100, 180), {"coins": ["zec"]})
+    assert read.gaps((100, 180), {"users": [WALLET], "coins": ["ZEC"]}) == []
+    assert read.gaps((100, 180), {"users": [WALLET], "coins": ["zec"]})
     assert read.gaps((100, 180), {"users": [WALLET.upper().replace("0X", "0x")], "coins": ["ZEC"]}) == []
     legacy = replace(read, evidence=None)
     assert legacy.gaps((100, 180), {"coins": ["ZEC"]}) == []
@@ -403,11 +403,11 @@ def test_all_wallets_requires_unrestricted_evidence_throughout_the_window():
     restricted = evidence(100, 180, {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]})
     unrestricted = evidence(100, 170)
     read = replace(loaded(), evidence=(restricted, unrestricted))
-    assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
-    assert read.gaps((100, 170), {}, all_wallets=True) == []
-    assert read.gaps((100, 180), {}, all_wallets=True)
+    assert read.gaps((100, 180), {"tokens": [USDC], "wallets": [WALLET]}) == []
+    assert read.gaps((100, 170), {"tokens": [USDC]}, all_wallets=True) == []
+    assert read.gaps((100, 180), {"tokens": [USDC]}, all_wallets=True)
     unrestricted["config"]["unrestricted"] = []
-    assert read.gaps((100, 170), {}, all_wallets=True)
+    assert read.gaps((100, 170), {"tokens": [USDC]}, all_wallets=True)
 
 
 def test_legacy_cursor_never_certifies_its_current_config():
@@ -421,18 +421,77 @@ def test_legacy_cursor_never_certifies_its_current_config():
 def test_separate_generations_can_close_gaps_but_cannot_invent_them():
     read = replace(loaded(), evidence=(evidence(100, 120), evidence(122, 180)))
     assert read.covered is None
-    assert read.gaps((100, 180), {})
+    assert read.gaps((100, 180), {"tokens": [USDC]})
     read = replace(read, evidence=read.evidence + (evidence(121, 121),))
     assert read.covered == (100, 180)
-    assert read.gaps((100, 180), {}) == []
+    assert read.gaps((100, 180), {"tokens": [USDC]}) == []
 
 
 def test_restricted_wallet_history_does_not_cover_removing_the_restriction():
     read = replace(loaded(), filter={"tokens": [USDC]}, evidence=(
         evidence(100, 180, {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]}),))
     assert read.covered is None
-    assert read.gaps((100, 180), {})
-    assert read.gaps((100, 180), {"wallets": [WALLET]}) == []
+    assert read.gaps((100, 180), {"tokens": [USDC]})
+    assert read.gaps((100, 180), {"tokens": [USDC], "wallets": [WALLET]}) == []
+
+
+NARROWED = {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]}
+
+
+def test_a_question_that_leaves_a_restricted_key_out_fails_and_names_it():
+    # addresses.json on disk still lists the wallet. The question's own filter decides.
+    read = replace(loaded(), evidence=(evidence(100, 180, NARROWED),), dataset_hash="dataset")
+    assert read.gaps((100, 180), {"tokens": [USDC]}) == [
+        "the recorded loads restrict wallets, which the input's filter does not name; "
+        "add wallets to the input's filter in question.yaml"
+    ]
+    assert read.gaps((100, 180), {"tokens": [USDC], "wallets": [WALLET]}) == []
+
+
+def test_a_later_edit_to_addresses_json_does_not_change_an_old_answers_verdict():
+    old = replace(loaded(), evidence=(evidence(100, 180, NARROWED),), dataset_hash="dataset")
+    # Another question adds a token to the file. The record that proved the old answer is unchanged.
+    edited = replace(old, filter={"wallets": [WALLET], "tokens": [USDC, UNI]})
+    for wanted in ({"wallets": [WALLET]}, {"wallets": [WALLET], "tokens": [USDC]}):
+        assert edited.gaps((100, 180), wanted) == old.gaps((100, 180), wanted)
+    assert edited.gaps((100, 180), {"wallets": [WALLET], "tokens": [USDC]}) == []
+
+
+def test_all_wallets_is_never_told_to_name_wallets():
+    read = replace(loaded(), evidence=(evidence(100, 180, NARROWED),), dataset_hash="dataset")
+    gaps = read.gaps((100, 180), {"tokens": [USDC]}, all_wallets=True)
+    assert gaps and "add wallets" not in gaps[0]
+    assert read.unnamed_keys({"tokens": [USDC]}, all_wallets=True) == []
+
+
+def test_a_key_the_source_no_longer_reads_is_not_asked_for():
+    record = evidence(100, 180, {"tokens": [USDC.lower()], "pools": ["0x01"]})
+    read = replace(loaded(), evidence=(record,), dataset_hash="dataset", supported_filters=frozenset({"tokens", "wallets"}))
+    assert read.unnamed_keys({"tokens": [USDC]}) == []
+    assert read.gaps((100, 180), {"tokens": [USDC]}) == []
+
+
+def test_every_shipped_stream_input_names_each_key_its_source_restricts():
+    from pipeline.cli.question import load_question
+
+    entries = {f"{e.name}.{e.table}": e for e in read_sources((REPO_ROOT / SOURCES_FILE).read_text())}
+    streams = set(stream_sources(REPO_ROOT))
+    problems = []
+    for path in sorted((REPO_ROOT / "answers").glob("*/question.yaml")):
+        question = load_question(REPO_ROOT, path.parent.name)
+        if question.window.get("scope") == "loaded":
+            continue
+        for item in question.sources:
+            if item.source not in streams:
+                continue
+            entry = entries[item.source]
+            contract = entry.coverage or {}
+            supported = frozenset(contract["filters"]) if "filters" in contract else None
+            loaded_keys = coverage.address_filter(REPO_ROOT, entry.folder(REPO_ROOT), supported=supported)
+            left_out = sorted(set(loaded_keys) - set(item.filter) - ({"wallets"} if item.all_wallets else set()))
+            if left_out:
+                problems.append(f"{question.slug}: {item.source} leaves out {', '.join(left_out)}")
+    assert problems == []
 
 
 def test_changed_dataset_and_unverified_factory_cache_are_not_coverage():
@@ -513,6 +572,6 @@ def test_factory_history_from_a_shared_cache_requires_fresh_discovery():
     item = evidence(100, 180)
     item["config"]["settings"]["POOLS_START_BLOCK"] = 50
     read = replace(loaded(), evidence=(item,), settings={"POOLS_START_BLOCK": 50})
-    assert read.gaps((100, 180), {})
+    assert read.gaps((100, 180), {"tokens": [USDC]})
     rebuilt = {**item, "config": {**item["config"], "version": 2}}
-    assert replace(read, evidence=(item, rebuilt)).gaps((100, 180), {}) == []
+    assert replace(read, evidence=(item, rebuilt)).gaps((100, 180), {"tokens": [USDC]}) == []
