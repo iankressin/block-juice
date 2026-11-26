@@ -1,5 +1,5 @@
 """The files that cross between the factory's runs and GitHub: the scope comment, the ticket the model
-reads, the verdict of a reference test, and the artifacts a run uploads.
+reads, the verdict of the reference check, and the artifacts a run uploads.
 
 The workflows run it as `uv run --project orchestration python factory.py <command>`. It reads JSON that
 `gh` wrote and the files the model wrote, and prints a comment, markdown or GITHUB_OUTPUT lines. It never
@@ -250,22 +250,27 @@ def ticket(issue: dict, comments: list[dict], pull: dict | None = None) -> str:
     return "\n".join(parts)
 
 
-def verdict(run_results: dict, test: str) -> tuple[str, str]:
-    """The kind of verdict and its detail. `passed` only when dbt ran the test and it returned no rows.
-    `mismatch` when it ran and returned rows, which a `warn_if` or `error_if` threshold can dress as a pass.
-    `not_run` when dbt never selected it (`dbt test` exits 0 on an empty selection) or it ended in an error:
-    the pipeline is unproven, not wrong, and the PR says so with a label of its own."""
-    found = [r for r in run_results.get("results", []) if r["unique_id"].startswith("test.") and r["unique_id"].rsplit(".", 1)[-1] == test]
+def verdict(answer: dict | None, since: str) -> tuple[str, str]:
+    """The kind of verdict and its detail, from the answer `bj answer --eval` wrote after `since` (ISO 8601 UTC).
+    `passed` only when its `reference_match` check passed. `mismatch` when that check failed, with the check's
+    detail up to its first `;`. `not_run` when there is no new answer or no such check: the pipeline is unproven,
+    not wrong, and the PR says so with a label of its own."""
+    if answer is None:
+        return "not_run", "bj answer --eval wrote no answer.json"
+    try:
+        answered_at = datetime.fromisoformat(str(answer["answered_at"]).replace("Z", "+00:00"))
+        fresh = answered_at >= datetime.fromisoformat(since.replace("Z", "+00:00"))
+    except (KeyError, TypeError, ValueError):
+        fresh = False
+    if not fresh:
+        return "not_run", "bj answer --eval did not write a new answer"
+    found = [c for c in answer.get("checks", []) if c.get("name") == "reference_match"]
     if not found:
-        return "not_run", f"the test {test} did not run"
-    result = found[0]
-    failures = result.get("failures") or 0
-    if result["status"] == "pass" and failures == 0:
+        return "not_run", "the answer has no reference_match check"
+    check = found[0]
+    if check.get("status") == "passed":
         return "passed", "0 mismatches over tolerance"
-    if result["status"] in ("pass", "warn", "fail") and failures:
-        return "mismatch", f"{failures} mismatches over tolerance"
-    message = " ".join(str(result.get("message") or "").split())
-    return "not_run", f"the test {test} ended in {result['status']}: {message}"
+    return "mismatch", str(check.get("detail") or "").split(";")[0].strip()
 
 
 def model_error(execution_file: Path) -> str:
@@ -463,8 +468,9 @@ def ticket_command(folder: Path) -> str:
     return ticket(read_json(folder / "issue.json"), read_json(folder / "comments.json"), pull)
 
 
-def verdict_command(run_results: Path, test: str) -> str:
-    kind, detail = verdict(read_json(run_results), test)
+def verdict_command(answer_file: Path, since: str) -> str:
+    answer = read_json(answer_file) if answer_file.is_file() else None
+    kind, detail = verdict(answer if isinstance(answer, dict) else None, since)
     return f"status={'passed' if kind == 'passed' else 'failed'}\nkind={kind}\ndetail={detail}\n"
 
 
@@ -483,9 +489,9 @@ def main(argv: list[str] | None = None) -> int:
         "pull.json, reviews.json, review_comments.json and pull_comments.json",
     )
     ticket_parser.add_argument("dir", type=Path)
-    verdict_parser = commands.add_parser("verdict", help="print status=, kind= (passed, mismatch or not_run) and detail= for one test in dbt's run_results.json")
-    verdict_parser.add_argument("run_results", type=Path)
-    verdict_parser.add_argument("test")
+    verdict_parser = commands.add_parser("verdict", help="print status=, kind= (passed, mismatch or not_run) and detail= for the reference_match check in the eval answer.json that bj answer --eval wrote after <since>")
+    verdict_parser.add_argument("answer", type=Path)
+    verdict_parser.add_argument("since", help="ISO 8601 UTC time the verdict step began; an older answer is not a verdict")
     model_error_parser = commands.add_parser("model-error", help="print the error a Claude Code run ended with, from its execution log, or nothing")
     model_error_parser.add_argument("execution_file", type=Path)
     leaks_parser = commands.add_parser("leaks", help="exit 1 and name the files listed in <list>, NUL-separated as `git diff -z` writes them, that hold the value of a named environment variable in any common encoding")
@@ -509,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "ticket":
             output = ticket_command(args.dir)
         elif args.command == "verdict":
-            output = verdict_command(args.run_results, args.test)
+            output = verdict_command(args.answer, args.since)
         elif args.command == "model-error":
             output = model_error(args.execution_file)
         elif args.command == "leaks":

@@ -3,6 +3,8 @@
 Date: 2026-11-09
 Status: Accepted
 
+Plan 4 moved the reference out of dbt: it now lives in `answers/<slug>/reference.csv` and is checked by `bj answer --eval`. The text below is the original record.
+
 ## Context
 
 BlockJuice is built by one person. A new analysis arrives as a requirement in plain words, such as "the most profitable wallets on Aave last month", and becomes a pipeline: a source or two, dbt models, an analysis, a schedule. The bottleneck is hands at the keyboard, not ideas.

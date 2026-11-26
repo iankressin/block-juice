@@ -241,29 +241,30 @@ def test_scrub_masks_each_secret_in_every_file_and_skips_an_empty_one(tmp_path, 
     assert capsys.readouterr().out == f"scrubbed 1 file(s) under {tmp_path / 'transcript'}\n"
 
 
-def run_results(*results):
-    return {"results": list(results)}
+def eval_answer(*checks, answered_at="2026-11-17T10:00:05Z"):
+    return {"answered_at": answered_at, "checks": [{"name": n, "status": s, "detail": d} for n, s, d in checks]}
 
 
-@pytest.mark.parametrize(
-    ("results", "output"),
-    [
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 0}), "status=passed\nkind=passed\ndetail=0 mismatches over tolerance\n"),
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "fail", "failures": 3}), "status=failed\nkind=mismatch\ndetail=3 mismatches over tolerance\n"),
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "pass", "failures": 2}), "status=failed\nkind=mismatch\ndetail=2 mismatches over tolerance\n"),
-        (run_results({"unique_id": "test.transformation.x_matches_reference", "status": "warn", "failures": 4}), "status=failed\nkind=mismatch\ndetail=4 mismatches over tolerance\n"),
-        (run_results(), "status=failed\nkind=not_run\ndetail=the test x_matches_reference did not run\n"),
-        (run_results({"unique_id": "seed.transformation.x_matches_reference", "status": "success"}), "status=failed\nkind=not_run\ndetail=the test x_matches_reference did not run\n"),
-        (
-            run_results({"unique_id": "test.transformation.x_matches_reference", "status": "error", "message": "relation\n does not exist"}),
-            "status=failed\nkind=not_run\ndetail=the test x_matches_reference ended in error: relation does not exist\n",
-        ),
-    ],
-)
-def test_the_verdict_passes_only_when_the_test_ran_and_returned_no_rows(tmp_path, capsys, results, output):
-    path = write_json(tmp_path / "run_results.json", results)
-    assert factory.main(["verdict", str(path), "x_matches_reference"]) == 0
+SINCE = "2026-11-17T10:00:00Z"
+
+
+@pytest.mark.parametrize("answer, output", [
+    (eval_answer(("reference_match", "passed", "0 mismatches over tolerance")), "status=passed\nkind=passed\ndetail=0 mismatches over tolerance\n"),
+    (eval_answer(("reference_match", "failed", "3 mismatches over tolerance; first: (a) missing_in_actual")), "status=failed\nkind=mismatch\ndetail=3 mismatches over tolerance\n"),
+    (eval_answer(("coverage", "passed", "covers")), "status=failed\nkind=not_run\ndetail=the answer has no reference_match check\n"),
+])
+def test_the_verdict_is_the_reference_check_of_the_eval_answer(tmp_path, capsys, answer, output):
+    path = write_json(tmp_path / "answer.json", answer)
+    assert factory.main(["verdict", str(path), SINCE]) == 0
     assert capsys.readouterr().out == output
+
+
+def test_the_verdict_needs_an_answer_from_this_run(tmp_path, capsys):
+    stale = eval_answer(("reference_match", "passed", "0 mismatches over tolerance"), answered_at="2026-11-17T09:59:59Z")
+    assert factory.main(["verdict", str(write_json(tmp_path / "answer.json", stale)), SINCE]) == 0
+    assert capsys.readouterr().out == "status=failed\nkind=not_run\ndetail=bj answer --eval did not write a new answer\n"
+    assert factory.main(["verdict", str(tmp_path / "missing.json"), SINCE]) == 0
+    assert capsys.readouterr().out == "status=failed\nkind=not_run\ndetail=bj answer --eval wrote no answer.json\n"
 
 
 @pytest.mark.parametrize(

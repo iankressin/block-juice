@@ -109,12 +109,3 @@ def test_factory_detects_the_checked_out_cli_and_uses_its_eval_directory(tmp_pat
     assert f"Evaluation answer directory: `{expected}`" in rendered
     assert "<eval-dir>/answer.md" in rendered
     assert "answers/<slug>/eval/answer.md" not in rendered
-
-    verdict = next(step for step in STEPS if step.get("name", "").startswith("Record the verdict"))
-    run_script(verdict["run"], env, tmp_path)
-    data = json.loads((tmp_path / expected / "answer.json").read_text())
-    assert data["checks"] == [{"name": "reference_match", "status": "passed", "detail": "matches oracle; see PR"}]
-    if legacy:
-        assert not (folder / "eval").exists()
-    else:
-        assert json.loads((folder / "answer.json").read_text()) == {"eval": False, "checks": []}

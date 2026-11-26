@@ -1,6 +1,6 @@
 # Build run
 
-You build the pipeline one analysis ticket needs, in this checkout of BlockJuice, and prove it on a short eval window against a reference answer. A human scoped the ticket and added `ready-for-agent`: that is the go the bj skill asks for, so do not stop to ask. Workflow steps after you run the reference test again as the verdict, run the repo's checks, commit your changes, push them and open a draft PR. You write files only.
+You build the pipeline one analysis ticket needs, in this checkout of BlockJuice, and prove it on a short eval window against a reference answer. A human scoped the ticket and added `ready-for-agent`: that is the go the bj skill asks for, so do not stop to ask. Workflow steps after you answer over the eval window again as the verdict, run the repo's checks, commit your changes, push them and open a draft PR. You write files only.
 
 ## Read first
 
@@ -8,7 +8,6 @@ You build the pipeline one analysis ticket needs, in this checkout of BlockJuice
 2. `.factory/scope.yaml` and `.factory/reference.csv`: the scope the human approved. The slug, the eval window, the oracle, the tolerance and the reference rows come from here. `docs/agents/factory.md` explains the fields.
 3. `.claude/skills/blockjuice/SKILL.md` and the workflows it routes to, starting with `workflows/answer.md`.
 4. `GLOSSARY.md`. Use its words.
-5. `transformation/seeds/reference/README.md`: the reference seed and test, with an example.
 
 The section "This run" at the end gives the ticket number, the slug, `<name>` (the slug with `_` for `-`), the branch, and the evaluation answer directory (`<eval-dir>`). Use that directory for evaluation JSON, CSVs and narrative. The workflow detects it from the checked-out CLI: older ticket branches write into `answers/<slug>/`, while newer ones write into `answers/<slug>/eval/`. Do not assume the default branch's layout applies to a retry of an older ticket branch.
 
@@ -18,7 +17,7 @@ A Postgres on this runner, empty apart from the run log tables. The environment 
 
 Load the eval window only, never the ticket's full window, however long the ticket's window is. The runner reads the public Portal, which paces anonymous streams, and the operator runs the full window on their own warehouse after the merge. A stream source reads from `START_BLOCK` to `END_BLOCK` in its `chains/<chain>/.env`, which git ignores: set both to `window.blocks`. A source with no `END_BLOCK` yet gets one, as `evm-chainlink-price-feeds` has.
 
-A scan that does not shrink with the window, such as a factory pattern's pool discovery from a token's first pool, is the exception. Before you run one in full, run it with a timeout of a few minutes and estimate it from how far it got. If it would not finish well inside this run, leave it, and write `result.md` with the scan's size, the rate you saw, and the two ways out: a `PORTAL_API_KEY` for the factory, or a way for the source to take the eval's contracts directly. Never widen the eval window or shrink the scan to make a load fit: a pool left out is a mismatch the test would hide.
+A scan that does not shrink with the window, such as a factory pattern's pool discovery from a token's first pool, is the exception. Before you run one in full, run it with a timeout of a few minutes and estimate it from how far it got. If it would not finish well inside this run, leave it, and write `result.md` with the scan's size, the rate you saw, and the two ways out: a `PORTAL_API_KEY` for the factory, or a way for the source to take the eval's contracts directly. Never widen the eval window or shrink the scan to make a load fit: a pool left out is a mismatch the check would hide.
 
 ## One turn
 
@@ -30,19 +29,16 @@ This run is one turn, and nobody reads your messages. When you end the turn the 
 
 ## Do
 
-1. Write `transformation/seeds/reference/reference_<name>.csv` with the exact contents of `.factory/reference.csv`. Register it in `transformation/seeds/reference/_reference_seeds.yml` with a description that names the oracle (`oracle.kind` and `oracle.ref`), the window (chain, blocks and times) and the ticket number. Give key columns that hold addresses `text` in `column_types`.
-2. Write `transformation/tests/reference/<name>_matches_reference.sql`, tagged `reference`, as the README's example shows. Its `actual` CTE is the analysis SQL with `window.blocks` written as numbers in place of the window macros, and any `input_values` list written as a literal: the reference covers that window only, and `dbt test` passes no window and no `inputs` var. Call only macros in `transformation/macros/`, since `dbt test` does not read an answer's `macros/`. Pass `reference.key`, `reference.value`, `tolerance.kind` and `tolerance.value` from `scope.yaml` to `reference_mismatches`.
+1. Write `answers/<slug>/reference.csv` with the exact contents of `.factory/reference.csv`.
+2. In `question.yaml`, add `reference` with `analysis`, `key` and `value` from `scope.yaml`'s `reference`, `tolerance` from its `tolerance`, and `oracle` from `oracle.kind` and `oracle.ref`. Name the analysis whose rows have the reference's key and value columns, and write that analysis so it returns exactly those rows over a window. `.claude/skills/blockjuice/references/question-spec.md` lists the keys.
 3. Follow the bj skill's answer workflow to build what is missing: sources, marts, the analysis. Write `answers/<slug>/question.yaml` with the ticket's question, `full_window` as `window` (its block range from `bj blocks <chain> <from> <to>`) and the scope's `window` as `eval_window`. After the eval loop, write its narrative to `<eval-dir>/answer.md` from `<eval-dir>/answer.json` and `<eval-dir>/results/`. Use the evaluation directory in "This run", including on older ticket branches.
-4. Run the eval loop:
-   - `uv run --project orchestration bj answer <slug> --eval`
-   - `cd transformation && uv run --project ../orchestration dbt seed --select reference_<name>`
-   - `cd transformation && uv run --project ../orchestration dbt test --select tag:reference,<name>_matches_reference`
-5. When the test fails, find why, fix it and run the loop again. You get three fix attempts after the first mismatch. Then stop, even if it still fails. Never change the reference rows or widen the tolerance to make it pass: the reference is the human's, and a mismatch you cannot fix is a finding.
+4. Run the eval loop. It is one command, `uv run --project orchestration bj answer <slug> --eval`, and it passes when the `reference_match` line says `passed`.
+5. When the check fails, find why, fix it and run the loop again. You get three fix attempts after the first mismatch. Then stop, even if it still fails. Never change the reference rows or widen the tolerance to make it pass: the reference is the human's, and a mismatch you cannot fix is a finding.
 6. Run `pnpm typecheck` in `ingestion/` and fix what it reports. The workflow runs it again after you, and CI runs it on the PR.
 7. Write `.factory/result.md`, the PR body, with these sections:
    - **What was built**: each file you added or changed, one line each.
    - **Answer**: the answer in one sentence, from `<eval-dir>/answer.md`.
-   - **Comparison**: one row per reference row with the key, expected, got, and the tolerance. Get "got" by joining the seed to the `actual` CTE of the compiled test (`transformation/target/compiled/transformation/tests/reference/<name>_matches_reference.sql`), through `psql` or `dbt show --inline`. With more than 50 rows, show every mismatch and the first rows.
+   - **Comparison**: one row per reference row with the key, expected, got, and the tolerance. Get "got" from `<eval-dir>/results/<analysis>.csv`. With more than 50 rows, show every mismatch and the first rows.
    - **Verified window**: chain, blocks and times.
    - **Full window**: `full_window` from `scope.yaml`, with the load estimate.
    - **For the reviewer**: what to check, including each fix attempt you made and anything you could not finish.
@@ -55,4 +51,4 @@ This run is one turn, and nobody reads your messages. When you end the turn the 
 
 ## Stop
 
-Stop when the reference test passes and `result.md` is written. Stop too after the third fix attempt, or when a blocker needs a human: an address the ticket does not resolve, a source that cannot load the window. Then write `result.md` with what you built, what failed and what the human must decide.
+Stop when `reference_match` passes and `result.md` is written. Stop too after the third fix attempt, or when a blocker needs a human: an address the ticket does not resolve, a source that cannot load the window. Then write `result.md` with what you built, what failed and what the human must decide.
