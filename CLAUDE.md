@@ -26,6 +26,7 @@ A change is done when the checks for each layer it touches pass:
 
 - `ingestion/`: the typecheck and the tests of each package you changed.
 - `transformation/`: `dbt parse`, plus `bj questions --check` when you touch an analysis or a `question.yaml`. With a warehouse up, build what you changed with `bj run <pipeline> --select <model>`, which also runs its tests. When you add or change a model, a unit test must catch a bug planted in it: run `uv run --project orchestration python transformation/planted_bugs.py --changed-since origin/main` with `.env` exported (`docs/planted-bugs.md`).
+- `answers/`: `bj questions --check`, and compile the answer you changed as CI does. From `transformation/`, with `.env` exported, run `BJ_ANALYSES=../answers/<slug>/analyses BJ_MACROS=../answers/<slug>/macros uv run --project ../orchestration dbt compile --select <its analyses>`. A plain `dbt parse` reads no analysis.
 - `orchestration/`, or a new or renamed source, pipeline or analysis: pytest. The tests that tie the layers together live there.
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It also builds every model on empty raw tables, so each dbt unit test runs there (`transformation/CLAUDE.md`).
@@ -48,7 +49,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request. It a
 
 - Sources extract and load only. Joins, sign rules, buy or sell, units, prices and aggregation all belong in dbt, so a wrong rule is fixed in SQL and rebuilt without fetching anything again.
 - Each protocol version on each chain gets its own source and raw table. Marts union the per-version models.
-- Keep pipelines token-agnostic. The token a question is about lives in configuration: a source's `addresses.json`, the dbt `token` var, or a question's `parameters.token`. It never appears in code, model names or catalog prose.
+- Keep pipelines token-agnostic. The token a question is about lives in configuration: a source's `addresses.json`, the dbt `token` var, a question's `parameters.token`, or an input's `filter` in `question.yaml`. It never appears in code, model names or catalog prose.
 - Questions about chain data go through the `/bj` skill (`.claude/skills/blockjuice/`). Every answer comes from the warehouse through files in this repo, never from memory or an MCP tool alone.
 
 ## Writing code

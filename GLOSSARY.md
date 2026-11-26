@@ -72,7 +72,7 @@ _Avoid_: DAG, workflow
 ### Answers
 
 **Answer**:
-A folder in `answers/` that holds one question, how it was counted, the result and its reports.
+A folder in `answers/` that holds one question, its `analyses/` (and optional `macros/`), how it was counted, the result and its reports.
 _Avoid_: study, question folder
 
 **Input**:

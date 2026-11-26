@@ -38,7 +38,7 @@ The engine behind `bj answer`. It reads `answers/<slug>/question.yaml`, compiles
 
 ## Side Effects
 
-- `compiler.py:QueryCompiler.compile` runs `dbt compile --select <names>` with the window as `vars`, in a temporary folder.
+- `compiler.py:QueryCompiler.compile` runs `dbt compile --select <names>` with the window and the `inputs` filters as `vars`, in a temporary folder.
 - `executor.py:read_warehouse` locks and reads every table the analyses declare, reads the snapshot id and Postgres catalogs, and spools each analysis to a temporary CSV and a SQLite grain file.
 - `executor.py:latest_ingestion_runs` reads `ops.ingestion_runs`. `executor.py:model_builds` reads `ops.dbt_node_runs` and `ops.dbt_node_versions`. `executor.py:count_dead_letters` reads `<RAW_SCHEMA>._dead_letters` and `executor.py:ingestion_inputs` reads `<RAW_SCHEMA>._ingestion_inputs`, each only when the table exists.
 - Env vars: `RAW_SCHEMA` (`executor.py`), and `WAREHOUSE_DB`, `RAW_SCHEMA`, `DBT_SCHEMA`, which `provenance.py:run_provenance` records.

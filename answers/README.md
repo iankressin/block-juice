@@ -77,20 +77,21 @@ These four questions follow the token in `var('token')`: its Ethereum address, i
 - Each analysis sits in `answers/<slug>/analyses/` and is named by that answer's `question.yaml`. `bj questions --check` (`orchestration/pipeline/cli/catalog.py:run`) reads every `answers/*/question.yaml` on disk, tracked or not, and fails on an analysis its `question.yaml` does not name and on any `.sql` file under `transformation/analyses/`, a folder that no longer exists. Commit a `question.yaml` in the same PR as the analyses it names.
 - dbt reads one answer at a time. `bj answer` sets `BJ_ANALYSES` and `BJ_MACROS` to the answer's `analyses/` and `macros/` folders, as paths from `transformation/`, around its dbt compile and dbt test (`orchestration/pipeline/cli/answer.py:question_paths`), and restores them after. `dbt_project.yml` falls back to the missing folders `analyses` and `question-macros`, so a plain dbt command sees no analysis.
 - Analysis names are unique inside one answer's `analyses/` folder and its subfolders; `orchestration/pipeline/cli/catalog.py:analysis_paths` raises on a duplicate. Two answers may use the same name.
-- An analysis reads marts through `ref()`. Every `ref()` here names a model in `models/marts/`.
-- An analysis takes its blocks from `macros/window.sql`, or, for the token analyses, from `var('token').windows` through `token_transfers()` and `token_bridge_transfers()`. `orchestration/tests/test_analysis_rules.py::test_no_analysis_writes_its_window_blocks` fails when a bound of a question's `window` or `eval_window` appears in one of its analyses. The only exception, in `FIXED_BLOCKS`, is block 26294680 for `binance-hack-fbi-eth-2026-11-01`, where that question reads code.
-- Outside `bj answer` an analysis that calls a window macro compiles but fails when run, with `no window for <chain>`. The analyses of `polymarket-overview`, the `token-*` answers and `tracked-wallets-*` call none, so they run outside it too, the token ones with `dbt_project.yml`'s default `token`. To run a windowed one by hand, set `BJ_ANALYSES=../answers/<slug>/analyses` and pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`.
+- An analysis reads marts through `ref()`. Every `ref()` here names a model in `transformation/models/marts/`.
+- An analysis takes its blocks from `transformation/macros/window.sql`, or, for the token analyses, from `var('token').windows` through `token_transfers()` and `token_bridge_transfers()`. `orchestration/tests/test_analysis_rules.py::test_no_analysis_writes_its_window_blocks` fails when a bound of a question's `window` or `eval_window` appears in one of its analyses. The only exception, in `FIXED_BLOCKS`, is block 26294680 for `binance-hack-fbi-eth-2026-11-01`, where that question reads code.
+- Outside `bj answer` an analysis that calls a window macro compiles but fails when run, with `no window for <chain>`. The analyses of `polymarket-overview`, the `token-*` answers and `tracked-wallets-*` call none, so they run outside it too, the token ones with `dbt_project.yml`'s default `token`. To run a windowed one by hand, set `BJ_ANALYSES=../answers/<slug>/analyses` and pass `--vars '{window: {ethereum: [<first block>, <last block>]}, inputs: {<input>: {<key>: [<value>]}}}'`, the `inputs` part only for an analysis that calls `input_values`.
 - The token analyses name no token address; the token comes from `var('token')`. Keep it that way, so the pipelines stay token-agnostic.
 - A reference test in `transformation/tests/reference/` is named for its question's slug with `_` for `-`. `test_every_reference_test_has_its_question` fails when no `question.yaml` matches.
 
 ## Side Effects
 
-- None from the files themselves: dbt compiles analyses into `transformation/target/` and never creates a relation for them.
+- None from the files themselves: `bj answer` compiles analyses into a temporary folder and dbt never creates a relation for them.
 - `bj answer <slug>` runs the compiled SQL read-only against the warehouse and writes `answers/<slug>/answer.json` and `answers/<slug>/results/<analysis>.csv`, or `eval/` with `--eval`. Git ignores those outputs (`.gitignore`), but still tracks `answer.json`, `answer.md` and `results/*.csv` of `tracked-wallets-eth` and `tracked-wallets-sol`.
 
 ## Verification
 
 - Run: `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
 - Run: `uv run --project orchestration bj questions --check`
+- Compile the answer you changed as CI does: from `transformation/`, with `.env` exported, `BJ_ANALYSES=../answers/<slug>/analyses BJ_MACROS=../answers/<slug>/macros uv run --project ../orchestration dbt compile --select <its analyses>`. A plain `dbt parse` reads no analysis.
 - Run: `uv run --project orchestration pytest orchestration/tests/test_analysis_rules.py orchestration/tests/test_analysis_empty_windows.py`
 - With a warehouse up: `uv run --project orchestration bj answer <slug>`.

@@ -15,13 +15,14 @@ uv run --project orchestration bj questions --json
 Each catalog entry names `answers/<slug>/question.yaml`, the marts it reads, and its SQL files.
 The manifest is the bundle's identity and owns its ordered analyses: the first query supplies the
 headline when it returns one row and one column. SQL lives under `answers/<slug>/analyses/`,
-with existing filenames and dbt selectors preserved. Reusable data transformations belong in
+one file per analysis, named for the analysis, with no slug in the name. Reusable data transformations belong in
 `transformation/models/`, not in an answer directory. Runtime output belongs beside the question
 and stays out of Git; ingestion and model run logs belong in `ops.*` in the warehouse.
 
 The shipped bundles cover balances, token transfer graphs and accumulators, classified token flows,
 Polymarket markets and wallet fills, UNI swaps, contract deployments, and attributed ETH flows.
-`bj questions --check` checks that every SQL analysis has exactly one supported bundle and
+`bj questions --check` fails on an analysis its question does not name, on an `analyses/` folder
+with no `question.yaml`, and on any `.sql` file left in `transformation/analyses/`. It also
 validates each declared evaluation window with its evaluation parameters.
 
 ## Run and explain a question

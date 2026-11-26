@@ -21,4 +21,4 @@ These tests tie the layers together, so a change in `ingestion/` or `transformat
 
 - `test_sources_json.py`: `ingestion/sources.json` matches what `pnpm generate-sources` writes (the test runs pnpm), and each entry has its table in `_<name>__sources.yml` and its `stg_<name>__<table>.sql` in `transformation/models/staging/<name>/`.
 - `test_definitions.py`: each ingestion asset feeds its staging model and has a `no_dead_letters` check, and every asset and check runs in a scheduled pipeline. The balances, dex and transfers marts must read each chain or protocol version through its own intermediate model.
-- `test_cli_catalog.py`: every analysis sits in its question's `analyses/` folder and is named by its `question.yaml`, and the shipped questions' contracts cover each query.
+- `test_cli_catalog.py`: every analysis sits in its answer's `analyses/` folder and is named by its `question.yaml`, and the shipped questions' contracts cover each query.
