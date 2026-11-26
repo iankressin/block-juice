@@ -55,7 +55,7 @@ Run the pipeline only when `freshness` fails, a result is empty that should not 
 uv run --project orchestration bj run <pipeline>
 ```
 
-Then rerun step 4. A failed run leaves the last good load in place, so it never means the warehouse is empty. Read the error it prints, answer from the last load, and say how old that load is. Each source reads its own `ingestion/sources/<package>/.env`. Copy its `.env.example` when that file is missing, and tell the user which values to check.
+Then rerun step 4. A failed run leaves the last good load in place, so it never means the warehouse is empty. Read the error it prints, answer from the last load, and say how old that load is. If the question needs addresses the source does not list, or blocks before its `START_BLOCK`, and the source has opted in to load scopes, add `scopes/<name>/addresses.json` and a `.env.example` with `START_BLOCK` in its settings folder, as [history-source.md](history-source.md) says. Set `END_BLOCK` for a dated question. Never edit the source's `addresses.json` or `.env.example` for one question. Each source reads its own `ingestion/sources/<package>/.env`. Copy its `.env.example` when that file is missing, and tell the user which values to check.
 
 ## 6. Write the answer
 

@@ -14,6 +14,10 @@ _Avoid_: connector, extractor, job
 A source that reads blocks in order through a Pipes stream instead of making calls. Each run resumes after its cursor. It makes no calls, so it has no dead letters: an error fails the run, and the next run resumes after the last batch that committed.
 _Avoid_: indexer, pipe
 
+**Load scope**:
+One set of addresses and blocks a stream source loads beside its standing ones. It sits in `scopes/<name>/` of the source's settings folder and has a cursor and coverage records of its own.
+_Avoid_: configuration, backfill
+
 **Call**:
 One request a source makes for data, described well enough to make again in a later run.
 _Avoid_: request, query

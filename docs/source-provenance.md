@@ -10,6 +10,10 @@ across datasets. To ingest a different URL, select a separate raw schema. If an 
 already wrote two datasets into the same table, backfill the desired dataset in a fresh raw schema
 before using its coverage.
 
+A load scope is one more configuration. It has a cursor and coverage records of its own, in the
+same raw table, so adding or removing a scope never changes what an earlier configuration proved.
+The records of an old configuration keep proving old answers.
+
 Changing a start block, address filter or pool-discovery start creates an independent cursor within
 the dataset. The new generation backfills the existing raw table and preserves rows from earlier
 filters. Raising `END_BLOCK` or changing a run's block cap continues the same generation.
