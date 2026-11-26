@@ -16,3 +16,8 @@ models:
     columns:
       - name: id
         data_tests: [unique, not_null]
+  - name: int_arbitrum_erc20_wallet_transfers
+    description: Arbitrum ERC-20 transfers into or out of followed wallets, in the shape erc20_wallet_flows reads.
+    columns:
+      - name: id
+        data_tests: [unique, not_null]

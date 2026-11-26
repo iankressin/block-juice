@@ -40,6 +40,19 @@
   },
   {
     "name": "arbitrum",
+    "table": "erc20_wallet_transfers",
+    "package": "evm-erc20-wallet-transfers",
+    "settings": "chains/arbitrum",
+    "coverage": {
+      "filters": [
+        "tokens",
+        "wallets"
+      ],
+      "unrestricted": []
+    }
+  },
+  {
+    "name": "arbitrum",
     "table": "token_bridge",
     "package": "arbitrum-token-bridge",
     "coverage": {
