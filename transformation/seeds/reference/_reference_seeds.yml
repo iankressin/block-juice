@@ -90,3 +90,18 @@ seeds:
         counterparty: text
         metric: text
         amount: numeric
+  - name: reference_ansem_arbitrum_usdc_flows_2026_11_24
+    description: >-
+      #96: every native USDC (0xaf88d065e77c8cc2239327c5edb3a432268e5831) Transfer log into or out of the six
+      listed Arbitrum wallets (the receiving wallet 0xac33748aad09cea8e50484cc0fa168dc23531b4d and five hop
+      wallets), one row per wallet and log, with the direction relative to that wallet and the raw value in
+      base units. On Arbitrum blocks 527033527 to 527106194 (2026-11-24T06:00:00Z to 2026-11-24T11:39:06Z),
+      from the dune oracle: Dune query 9193713 (https://dune.com/queries/9193713) over
+      erc20_arbitrum.evt_transfer, with totals checked by query 9193717.
+    config:
+      column_types:
+        wallet: text
+        direction: text
+        transaction_hash: text
+        log_index: integer
+        value: numeric

@@ -30,3 +30,8 @@ sources:
         columns:
           - name: id
             data_tests: [unique, not_null]
+      - name: erc20_wallet_transfers
+        identifier: arbitrum_erc20_wallet_transfers
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

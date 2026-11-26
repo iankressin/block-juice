@@ -1,0 +1,86 @@
+question: "Where did the proceeds of the 24 Nov sells from the Ansem-labelled Pump.fun wallet go, what funded the receiving wallet before the first sell, and is the money still there, as of a stated slot and block?"
+asked: 2026-11-24
+definitions:
+  cut: >-
+    Arbitrum finalized block 527106196 (2026-11-24 11:39:06 UTC), hash
+    0x3446ef91a3ffde7215c144665386079854e2bd8dc5c1231c638a20aba2a30b03 (ticket #96). Every finding on the
+    Arbitrum leg is as of this block. The Solana cut, slot 473334896, is a public read and no analysis here
+    reads Solana.
+  token: >-
+    Native USDC on Arbitrum One, 0xaf88d065e77c8cC2239327C5EDb3A432268e5831, matched in full. Tokens with
+    the same symbol at other contracts do not count.
+  receiving wallet: >-
+    0xAC33748aAd09CEA8E50484Cc0Fa168dc23531B4d, named by Lookonchain as the Arbitrum wallet that received
+    the sale proceeds. The address shows where the proceeds went, not who controls it.
+  listed wallets: >-
+    The receiving wallet and the five hop wallets 0x06ee679b907a654a9126caf511922f632f6e4b03,
+    0x0a0a6bd1c26becc4b3d94d2a695c3484d9e26072, 0xb8009d1da10b8fe53330cfb2cbc77f2de241f3ec,
+    0x7c612de1ed39e75400f2b659c668084761e05e20 and 0x48411900612f3fad92b133d0bfa95225085f753e, each matched
+    in full, never on a prefix or suffix. They are the wallets in
+    ingestion/sources/evm-erc20-wallet-transfers/chains/arbitrum/addresses.json.
+  flow: >-
+    One native USDC Transfer log where from or to is a listed wallet, seen from that wallet: `in` when it is
+    the receiver, `out` when it is the sender, with the other side as the counterparty. A transfer between two
+    listed wallets is a flow of each. Zero-value transfers and dust from lookalike addresses count, since they
+    are real native USDC Transfer logs.
+  net: Inflows minus outflows over the window, in USDC (6 decimals, from the tokens mart).
+  balance at the cut: >-
+    The receiving wallet's net over the window. It equals its balance at the cut only if it held no native
+    USDC at the window's start; the ticket's public read found nonce 0 and 0 outflows. A public balanceOf at
+    the cut is not part of this answer.
+  first sell: >-
+    2026-11-24 08:57:09 UTC, the first of the 25 ANSEM sells from GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52.
+    A public read of Solana, not a pipeline result.
+  direct Relay fill: >-
+    An inflow to the receiving wallet from 0xf70da97812cb96acdf810712aa562db8dfa3dbef. That the address is
+    a Relay solver, and that each fill pays out a GV6UU deposit, rests on Relay's own API, a dated public
+    read; the Transfer log alone shows only the sender.
+alternatives:
+  - Read balanceOf of the receiving wallet at block 527106196 instead of summing flows (no Arbitrum state source here).
+  - Count only inflows from the five hop wallets and the Relay solver, leaving out dust from other senders.
+  - Pair each Relay fill with its Solana deposit by amount and time; the 6fiTBU and Di1JSB deposits cannot be told apart that way.
+window:
+  chain: arbitrum
+  from: 2026-11-14T08:27:11Z
+  to: 2026-11-24T11:39:06Z
+  blocks: [524106196, 527106196]
+eval_window:
+  chain: arbitrum
+  from: 2026-11-24T06:00:00Z
+  to: 2026-11-24T11:39:06Z
+  blocks: [527033527, 527106194]
+inputs:
+  - name: listed_wallet_usdc_transfers
+    strategy: history
+    source: arbitrum.erc20_wallet_transfers
+    filter:
+      tokens: ["0xaf88d065e77c8cC2239327C5EDb3A432268e5831"]
+      wallets:
+        - "0xAC33748aAd09CEA8E50484Cc0Fa168dc23531B4d"
+        - "0x06ee679b907a654a9126caf511922f632f6e4b03"
+        - "0x0a0a6bd1c26becc4b3d94d2a695c3484d9e26072"
+        - "0xb8009d1da10b8fe53330cfb2cbc77f2de241f3ec"
+        - "0x7c612de1ed39e75400f2b659c668084761e05e20"
+        - "0x48411900612f3fad92b133d0bfa95225085f753e"
+    mart: erc20_wallet_flows
+  - name: token_decimals
+    strategy: state
+    mart: tokens
+marts: [erc20_wallet_flows, tokens]
+analyses:
+  - ansem_arbitrum_usdc_flows_2026_11_24
+  - ansem_arbitrum_usdc_flows_2026_11_24_by_wallet
+  - ansem_arbitrum_usdc_flows_2026_11_24_by_flow
+  - ansem_arbitrum_usdc_flows_2026_11_24_by_sender
+expected_columns:
+  ansem_arbitrum_usdc_flows_2026_11_24: [receiving_wallet_net_usdc]
+  ansem_arbitrum_usdc_flows_2026_11_24_by_wallet: [wallet, inflows, usdc_in, outflows, usdc_out, usdc_net,
+    net_base_units]
+  ansem_arbitrum_usdc_flows_2026_11_24_by_flow: [wallet, direction, transaction_hash, log_index, value,
+    block_number, block_timestamp, counterparty, usdc]
+  ansem_arbitrum_usdc_flows_2026_11_24_by_sender: [period, counterparty, sender_kind, inflows, usdc,
+    first_at, last_at]
+grain:
+  ansem_arbitrum_usdc_flows_2026_11_24_by_wallet: [wallet]
+  ansem_arbitrum_usdc_flows_2026_11_24_by_flow: [wallet, direction, transaction_hash, log_index]
+  ansem_arbitrum_usdc_flows_2026_11_24_by_sender: [period, counterparty]

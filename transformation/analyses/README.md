@@ -22,6 +22,10 @@ In each group the first analysis is the headline: when it returns one row of one
   - Analyses: `mexc_labelled_flows_2026_11`, `_by_period`, `_by_day`.
   - Reads `labelled_wallet_flows` and `tokens` through `labelled_flows_daily()`, with `window_start` and `window_end`.
   - Reference test: `mexc_labelled_flows_2026_11_matches_reference.sql`.
+- `ansem-arbitrum-usdc-flows-2026-11-24`: where the native USDC proceeds of the Ansem-labelled wallet's 24 November 2026 sells went on Arbitrum, what funded the receiving wallet before the first sell, and whether it still holds them, as of block 527106196.
+  - Analyses: `ansem_arbitrum_usdc_flows_2026_11_24`, `_by_wallet`, `_by_flow`, `_by_sender`.
+  - Reads `erc20_wallet_flows` and `tokens`. Window through `in_window()`.
+  - Reference test: `ansem_arbitrum_usdc_flows_2026_11_24_matches_reference.sql`.
 - `eip8037-state-gas-deployments-2026-11-08`: how many contract-deployment transactions since 12 August 2026 would have an EIP-8037 state-gas cost above 60M, 150M and 200M gas.
   - Analyses: `eip8037_state_gas_deployments_2026_11_08`, `_by_threshold`, `_distribution`, `_wildcat`.
   - Reads `deployment_state_gas`. Window through `in_window()`.

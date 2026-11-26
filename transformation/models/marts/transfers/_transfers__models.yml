@@ -53,6 +53,38 @@ models:
         data_tests: [not_null]
       - name: value
         data_tests: [not_null]
+  - name: erc20_wallet_flows
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "chain || ':' || id || ':' || wallet || ':' || direction"
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [arbitrum]
+      - name: id
+        data_tests: [not_null]
+      - name: block_number
+        data_tests: [not_null]
+      - name: tx_hash
+        data_tests: [not_null]
+      - name: token
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]
+      - name: wallet
+        data_tests: [not_null]
+      - name: counterparty
+        data_tests: [not_null]
+      - name: direction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [in, out]
   - name: classified_transfers
     data_tests:
       - unique:
@@ -194,3 +226,21 @@ unit_tests:
     expect:
       rows:
         - {id: "tx:0xt1", asset: native, value: 1, entity: MEXC, direction: inflow, wallet: "0xm1", counterparty_address: "0xa1", counterparty_entity: null}
+  - name: a_transfer_flows_out_of_its_sender_and_into_its_receiver
+    description: >-
+      From the Arbitrum native USDC Transfer at log 0 of 0xf254dfbd…0084 (block 527,045,161): hop wallet
+      0x7c612de1…5e20 sends 27,188,591 base units to 0xac33748a…1b4d. It is one `out` row for the
+      sender and one `in` row for the receiver, each with the other as counterparty and the value as
+      loaded. A made-up transfer from a wallet to itself gives one row of each direction.
+    model: erc20_wallet_flows
+    given:
+      - input: ref('int_arbitrum_erc20_wallet_transfers')
+        rows:
+          - {chain: arbitrum, id: "527045161:0", block_number: 527045161, tx_hash: "0xf254dfbd3319dd9a7994a455da17302d8ceeb2ac01f166d12da62da3095e0084", log_index: 0, token: "0xaf88d065e77c8cc2239327c5edb3a432268e5831", from_address: "0x7c612de1ed39e75400f2b659c668084761e05e20", to_address: "0xac33748aad09cea8e50484cc0fa168dc23531b4d", value: 27188591}
+          - {chain: arbitrum, id: "2:1", block_number: 2, tx_hash: "0xself", log_index: 1, token: "0xt1", from_address: "0xa1", to_address: "0xa1", value: 5}
+    expect:
+      rows:
+        - {id: "527045161:0", wallet: "0xac33748aad09cea8e50484cc0fa168dc23531b4d", direction: in, counterparty: "0x7c612de1ed39e75400f2b659c668084761e05e20", value: 27188591}
+        - {id: "527045161:0", wallet: "0x7c612de1ed39e75400f2b659c668084761e05e20", direction: out, counterparty: "0xac33748aad09cea8e50484cc0fa168dc23531b4d", value: 27188591}
+        - {id: "2:1", wallet: "0xa1", direction: in, counterparty: "0xa1", value: 5}
+        - {id: "2:1", wallet: "0xa1", direction: out, counterparty: "0xa1", value: 5}
