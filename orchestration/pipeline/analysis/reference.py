@@ -155,7 +155,13 @@ def reference_check(folder: Path, results: Sequence[Result], reference: Referenc
     with (folder / "reference.csv").open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         _need(reader.fieldnames or [], wanted, "reference.csv has no column")
-        expected = list(reader)
+        expected = []
+        for row in reader:
+            # DictReader fills a missing cell with None and keeps extra cells under the key None.
+            if None in row or None in row.values():
+                more = "more" if None in row else "fewer"
+                raise BadInput(f"answers/{folder.name}/reference.csv: line {reader.line_num} has {more} cells than the header")
+            expected.append(row)
     if result.csv_path is not None:
         with result.csv_path.open(encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)

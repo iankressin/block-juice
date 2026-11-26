@@ -120,3 +120,14 @@ def test_the_check_names_a_missing_column_even_when_a_side_has_no_rows(tmp_path)
     spooled.write_text("day,token\n")
     with pytest.raises(BadInput, match="the analysis by_day returns no column amount"):
         reference_check(tmp_path, [result(["day", "token"], [], spooled)], REFERENCE)
+
+
+def test_a_row_with_a_missing_or_extra_cell_names_its_line(tmp_path):
+    folder = tmp_path / "answers" / "flows"
+    folder.mkdir(parents=True)
+    (folder / "reference.csv").write_text("day,token,amount\n2026-11-07,eth,1.5\n2026-11-08,eth\n")
+    with pytest.raises(BadInput, match=r"answers/flows/reference\.csv: line 3 has fewer cells than the header"):
+        reference_check(folder, [result(["day", "token", "amount"], [])], REFERENCE)
+    (folder / "reference.csv").write_text("day,token,amount\n2026-11-07,eth,1.5,9\n")
+    with pytest.raises(BadInput, match=r"answers/flows/reference\.csv: line 2 has more cells than the header"):
+        reference_check(folder, [result(["day", "token", "amount"], [])], REFERENCE)
