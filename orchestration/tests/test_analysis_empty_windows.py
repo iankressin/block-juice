@@ -41,12 +41,14 @@ def warehouse():
 def query(cursor, slug, name):
     variables = {
         "window": {"polygon": [100, 200]},
+        "inputs": {"wallet_fills": {"wallets": [WALLET]}},
         "token": {"windows": [{"chain": "arbitrum", "token": TOKEN, "blocks": [100, 200]}]},
     }
     # Include the real scope macros so the fixtures exercise the same predicates as bj answer.
     analysis = ROOT / "answers" / slug / "analyses" / f"{name}.sql"
     text = "\n".join(path.read_text() for path in (
         ROOT / "transformation" / "macros" / "window.sql",
+        ROOT / "transformation" / "macros" / "inputs.sql",
         ROOT / "transformation" / "macros" / "token_transfers.sql",
         analysis,
     ))

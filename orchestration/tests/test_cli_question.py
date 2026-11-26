@@ -3,6 +3,7 @@ import re
 import pytest
 
 from pipeline.cli import BadInput, main
+from pipeline.analysis.specification import input_filters
 from pipeline.cli.question import Question, SourceInput, load_question
 
 USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
@@ -194,4 +195,40 @@ def test_a_bad_eval_window_fails_a_full_run_too(tmp_path):
     write_question(tmp_path, "q", "question: q\nwindow: {chain: ethereum, blocks: [100, 200]}\neval_window: {blocks: [150, 160]}\n")
     with pytest.raises(BadInput, match=re.escape("'eval_window.blocks' as [from, to] needs 'eval_window.chain'")):
         load_question(tmp_path, "q")
+
+
+INPUTS = """question: Which fills?
+inputs:
+  - name: fills
+    source: polygon.polymarket_ctf_exchange_v2
+    filter:
+      wallets: ["0x28C6c06298d514Db089934071355E5743bf21d60"]
+      coins: ["PURR/USDC", "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"]
+  - name: metadata
+    source: polymarket.markets
+"""
+
+
+def write_fills(tmp_path, text):
+    folder = tmp_path / "answers" / "fills"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "question.yaml").write_text(text)
+    return load_question(tmp_path, "fills")
+
+
+def test_input_filters_lowercase_hex_and_keep_other_values(tmp_path):
+    assert input_filters(write_fills(tmp_path, INPUTS)) == {"fills": {
+        "wallets": ["0x28c6c06298d514db089934071355e5743bf21d60"],
+        "coins": ["PURR/USDC", "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"],
+    }}
+
+
+def test_input_filters_refuse_a_value_sql_would_misread(tmp_path):
+    with pytest.raises(BadInput, match="inputs.fills.filter.wallets.*it's"):
+        input_filters(write_fills(tmp_path, INPUTS.replace("0x28C6c06298d514Db089934071355E5743bf21d60", "it's")))
+
+
+def test_input_filters_refuse_two_inputs_with_one_name(tmp_path):
+    with pytest.raises(BadInput, match="two inputs named fills"):
+        input_filters(write_fills(tmp_path, INPUTS.replace("name: metadata", "name: fills\n    filter: {wallets: []}")))
 

@@ -154,6 +154,29 @@ def load_question(
     return question
 
 
+HEX = re.compile(r"^0x[0-9a-fA-F]+$")
+
+
+def input_filters(question: Question) -> dict[str, dict[str, list[str]]]:
+    """The filter of each named input, as the dbt var 'inputs'. Staging lowercases EVM addresses, so hex
+    goes lowercase; a value SQL would misread inside quotes is refused."""
+    filters: dict[str, dict[str, list[str]]] = {}
+    for item in question.inputs:
+        name = item.get("name")
+        if name is None or "filter" not in item:
+            continue
+        label = f"answers/{question.slug}/question.yaml"
+        if name in filters:
+            raise BadInput(f"{label}: two inputs named {name}")
+        filters[name] = {}
+        for key, values in item["filter"].items():
+            for value in values:
+                if "'" in value or "\\" in value:
+                    raise BadInput(f"{label}: inputs.{name}.filter.{key} holds {value!r}, which may not hold ' or \\")
+            filters[name][key] = [v.lower() if HEX.match(v) else v for v in values]
+    return filters
+
+
 def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_key: WindowKey) -> Question:
     for key, value in raw.items():
         if key not in FIELDS:

@@ -292,6 +292,21 @@ def test_bj_answer_runs_dbt_inside_the_answers_own_paths(tmp_path, offline, monk
     assert seen == [("compile", *paths), ("test", *paths)]
     assert "BJ_ANALYSES" not in os.environ
 
+
+def test_named_input_filters_reach_dbt_compile_as_the_inputs_var(tmp_path, offline, monkeypatch):
+    write_question(tmp_path, extra=f'inputs: [{{name: holders, source: ethereum.eth_balances, filter: {{wallets: ["{WALLET}"]}}}}]\n')
+    offline(parked=0)
+    seen = {}
+
+    def compile_analyses(project, names, blocks, parameters=None):
+        seen.update(parameters or {})
+        return MANIFEST, ["analysis.t.holders"]
+
+    monkeypatch.setattr(answer, "compile_analyses", compile_analyses)
+    assert answer.run(tmp_path, "eth-total") == 0
+    assert seen == {"inputs": {"holders": {"wallets": [WALLET.lower()]}}}
+
+
 def test_a_failed_check_still_writes_answer_json_and_exits_1(tmp_path, offline, capsys):
     folder = write_question(tmp_path)
     offline(parked=1)

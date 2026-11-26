@@ -12,6 +12,7 @@ The dbt project's Jinja macros. They fall into four groups: the window and token
   - `window_bound(chain, index)`: block `index` (0 first, 1 last) of `var('window')[chain]`. `bj answer` passes `var('window')` by chain, from `question.yaml`'s `window`, or its `eval_window` under `--eval`.
   - `window_start(chain)`, `window_end(chain)`: `window_bound(chain, 0)` and `window_bound(chain, 1)`.
   - `in_window(column, chain)`: `<column> between <window_start> and <window_end>`.
+- `inputs.sql`: `input_values(input, key)`: the values of one filter of a named input in `question.yaml`, from `var('inputs')`, printed as `('a', 'b')`. Without the var, it prints `('no values for <input>.<key>: run bj answer'::bigint)`, which compiles and fails when run.
 - `token_transfers.sql`, over `var('token')` from `dbt_project.yml` or a question's `parameters.token`:
   - `token_transfers(relation=none)`: a `union all` over `var('token').windows` of the rows of `relation` (default `ref('erc20_transfers')`) with that window's `chain`, its lowercased `token` and `block_number` inside its `blocks`.
   - `token_bridge_transfers()`: rows of `ref('bridge_transfers')` whose `ethereum_token` is `var('token').ethereum`, lowercased, on a window's chain and inside its blocks.

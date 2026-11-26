@@ -8,7 +8,7 @@ with fills as (
         case when m.is_sports then 'sports' when m.is_sports is not null then 'other' else 'unknown' end as kind
     from {{ ref('polymarket_wallet_fills') }} as f
     left join {{ ref('polymarket_markets') }} as m on m.condition_id = f.condition_id
-    where f.wallet = '0x2005d16a84ceefa912d4e380cd32e7ff827875ea'
+    where f.wallet in {{ input_values('wallet_fills', 'wallets') }}
         and {{ in_window('f.block_number', 'polygon') }}
 )
 
