@@ -13,7 +13,7 @@ from pipeline.analysis.store import answer_lock, RunStore, atomic_json
 
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 # The checks bj answer runs. A check the agent runs must not replace one of them.
-ANSWER_CHECKS = ("dbt_tests", "dead_letters", "freshness", "coverage")
+ANSWER_CHECKS = ("dbt_tests", "dead_letters", "freshness", "coverage", "reference_match")
 
 
 def run(repo_root: Path, slug: str, name: str, status: str, detail: str, *, evaluation: bool = False) -> int:

@@ -17,6 +17,7 @@ from typing import Any
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 from dbt.version import __version__ as dbt_version
 
+from pipeline.analysis.reference import reference_check
 from pipeline.analysis.store import RunStore, answer_lock
 from pipeline.analysis.domain import Input, LastRun, Result, Check, jsonable, cell_text, headline
 from pipeline.cli import BadInput, coverage, require_env, utc_iso
@@ -258,8 +259,8 @@ class Event:
 
 def upstream_tests(manifest: dict, analysis_ids: Sequence[str]) -> dict[str, list[str]]:
     """Each data test on a model or source above the marts the analyses read, with the marts it sits
-    above. The marts' own tests are left out, as are tests tagged `coverage` or `reference`, which
-    run_dbt_tests selects or excludes by tag, and unit tests, which check code the marts' build ran."""
+    above. The marts' own tests are left out, as are tests tagged `coverage`, which
+    run_dbt_tests selects by tag, and unit tests, which check code the marts' build ran."""
     nodes = manifest["nodes"]
     marts = {p for a in analysis_ids for p in nodes[a]["depends_on"]["nodes"] if p.startswith("model.")}
     above: dict[str, set[str]] = {}
@@ -274,7 +275,7 @@ def upstream_tests(manifest: dict, analysis_ids: Sequence[str]) -> dict[str, lis
     tests = {}
     for unique_id, node in nodes.items():
         parents = set(node["depends_on"]["nodes"]) if node.get("resource_type") == "test" else set()
-        if not parents or parents & marts or {"coverage", "reference"} & set(node.get("tags", [])):
+        if not parents or parents & marts or "coverage" in node.get("tags", []):
             continue
         fed = set().union(*(above.get(parent, set()) for parent in parents))
         if fed:
@@ -337,9 +338,7 @@ def run_dbt_tests(
     The rest passed in the runs that built the marts, and a pipeline's dbt build skips what sits downstream
     of a failure. Tests tagged `coverage`, such as tests/erc20_transfers_match_balances.sql, reconcile
     history with state over what each stream source loaded, which only bj answer passes, in
-    var('coverage'); in a build they compare nothing, so bj answer always runs them.
-    Tests tagged `reference` are left out: dbt's eager selection would pull in every factory ticket's
-    reference test that shares a mart with the analysis, over windows this warehouse may not hold."""
+    var('coverage'); in a build they compare nothing, so bj answer always runs them."""
     loaded = {name: c.to_json() for name, c in coverages.items()}
     values = dict(parameters or {})
     if loaded:
@@ -348,7 +347,7 @@ def run_dbt_tests(
     selection = [selector for name in names for selector in (f"1+{name}", f"+{name},tag:coverage")]
     selection += list(upstream)
     with TemporaryDirectory(prefix="bj-dbt-check-") as target:
-        result = dbt(project, "test", "--select", *selection, "--exclude", "tag:reference", *variables,
+        result = dbt(project, "test", "--select", *selection, *variables,
                      "--target-path", target, "--log-path", str(Path(target) / "logs"))
     if result.exception is not None:
         raise BadInput(f"dbt test could not run: {dbt_error(result)}")
@@ -375,7 +374,7 @@ def provenance(repo_root: Path) -> dict[str, Any]:
     # Generated answers do not make the code dirty, but the authored question specifications do.
     status = git(repo_root, "status", "--porcelain", "--", ".", ":(exclude)answers")
     questions = git(repo_root, "status", "--porcelain", "--", ":(glob)answers/*/question.yaml",
-                    ":(glob)answers/*/analyses/**", ":(glob)answers/*/macros/**")
+                    ":(glob)answers/*/analyses/**", ":(glob)answers/*/macros/**", ":(glob)answers/*/reference.csv")
     return {
         "git_sha": git(repo_root, "rev-parse", "HEAD"),
         "git_dirty": bool(status or questions) if status is not None and questions is not None else None,

@@ -65,4 +65,4 @@ Each bug is one rewrite of the model's SQL, outside comments, Jinja and string l
 
 The catch rate is `caught / (caught + missed)`. A unit test can catch a bug that changes no row of the loaded data, so the caught bugs are not only the ones that changed the output. A missed bug names a test worth writing. A model with many bugs not exercised needs a unit test, or rows that reach its branches.
 
-Two notes can follow the table. A test that fails before any bug is planted catches nothing, so the reference tests need their window's rows in `--rows`. A model that does not build before any bug gets none.
+Two notes can follow the table. A test that fails before any bug is planted catches nothing. A model that does not build before any bug gets none.

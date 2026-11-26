@@ -119,7 +119,7 @@ Where a scope run gets the reference from. Independent of Portal when it can be:
 _Avoid_: ground truth source, baseline
 
 **Reference**:
-The rows a scope run got from the oracle for the eval window, which the build run's pipeline must reproduce within tolerance. Shipped as a seed under `transformation/seeds/reference/` with a test tagged `reference`.
+The rows a scope run got from the oracle for the eval window, which the build run's pipeline must reproduce within tolerance. Ships as `answers/<slug>/reference.csv`, named by the `reference` key in `question.yaml`; `bj answer --eval` compares it with the analysis the key names.
 _Avoid_: expected data, golden data, fixture
 
 **Eval window**:

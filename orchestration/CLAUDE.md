@@ -8,8 +8,8 @@ Dagster definitions and the `bj` CLI, in Python. Run everything through `uv run 
 
 - Each command is a module in `pipeline/cli/` that returns its exit code: 0, or 1 when a check it ran failed. Bad input or config raises `BadInput` (`pipeline/cli/__init__.py`), which `main` prints as one line and turns into exit 2.
 - `bj` loads the root `.env` before it runs a command, without overriding the shell. Dagster and dbt do not load it.
+- `bj questions --affected <ref>` (`cli/affected.py`) runs `dbt parse` once per answer and names the answers built from each changed file. After you change a mart, a seed or a macro, run it, and rerun `bj answer <slug> --eval` for each answer it lists with a reference.
 - A command names a bad setting by its key, never its value. It never prints a raw driver error either, since a Postgres connection error can name the host, port, user and database.
-- dbt's default eager indirect selection runs every test that reads a selected node, even one that also reads unselected nodes. Selecting a mart, with or without `+`, also runs each reference test that reads it, so every dbt build or test in `pipeline/` passes `--exclude tag:reference`.
 
 ## Tests
 

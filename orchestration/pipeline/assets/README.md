@@ -22,7 +22,6 @@ The Dagster assets that load and build the warehouse. `ingestion.py` makes one a
 - `no_dead_letters` has severity WARN, so it never blocks a run. It passes when pending plus parked dead letters is 0 (`ingestion.py:build_dead_letter_check`).
 - `ingestion.py:LOG_CHARS_MAX` (64 KiB) caps each line read and each tail kept. On stdout only lines at ERROR or above go into the failure tail. An oversized line swaps the tail for a notice and the raw stdout tail (`ingestion.py:read_process_log`).
 - stdout and stderr are read on two threads so a full pipe can't block the process. On any exception the process group is killed before the threads are joined (`ingestion.py:run_ingestion_process`).
-- dbt never builds reference seeds or tests: the decorator and the command both pass `--exclude tag:reference` (`dbt.py:transformation_assets`, `dbt.py:build_models`). A subset run replaces the decorator's selection, so the command needs its own exclude.
 - `dbt.py:build_models` calls dbt with `raise_on_error=False`, kills a dbt process that is still running, and writes the run log before it raises any dbt error. A failed build still leaves its rows in the run log.
 - Each ingestion run holds an `ingestion` warehouse slot and each dbt build a `dbt` slot (`pipeline.concurrency.warehouse_slot`).
 
@@ -31,7 +30,7 @@ The Dagster assets that load and build the warehouse. `ingestion.py` makes one a
 - Each ingestion asset runs `pnpm --silent ingest` in `ingestion/sources/<package>`, with the whole environment plus `DAGSTER_RUN_ID` (the Dagster run id) and `CHAIN` (the source name) (`ingestion.py:build_ingestion_asset`).
 - `ingestion.py:kill_ingestion_process` sends SIGKILL to the process group on POSIX.
 - `no_dead_letters` counts rows in `<RAW_SCHEMA>._dead_letters` for `source_table = '<name>_<table>'` through `pipeline.warehouse.count_dead_letters`. With no such table it reports 0 and 0.
-- `dbt.py:build_models` runs `dbt build --exclude tag:reference` and calls `pipeline.run_log.record_dbt_build`, which writes `ops.dbt_invocations`, `ops.dbt_node_runs` and `ops.dbt_node_versions`.
+- `dbt.py:build_models` runs `dbt build` and calls `pipeline.run_log.record_dbt_build`, which writes `ops.dbt_invocations`, `ops.dbt_node_runs` and `ops.dbt_node_versions`.
 - `pipeline.concurrency.warehouse_slot` takes a Postgres advisory lock for each slot it holds.
 
 ## Verification

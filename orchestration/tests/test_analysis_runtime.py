@@ -1,5 +1,6 @@
 """Contracts and actual PostgreSQL snapshot/export behavior, with no provider calls."""
 import csv
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -344,3 +345,17 @@ def test_token_eval_requires_explicit_matching_typed_scope_and_preserves_full_de
     save()
     with pytest.raises(BadInput, match="must be integer"):
         load_question(tmp_path, "token-total", "eval_window")
+
+
+def test_a_seed_edit_changes_the_answers_file_hashes():
+    from pipeline.analysis.provenance import authored_files
+
+    model = {"resource_type": "model", "original_file_path": "models/m.sql", "raw_code": "select 1"}
+
+    def seed(checksum):
+        return {"resource_type": "seed", "original_file_path": "seeds/labels.csv", "raw_code": "",
+                "checksum": {"name": "sha256", "checksum": checksum}}
+
+    first, second = authored_files([model, seed("aaa")]), authored_files([model, seed("bbb")])
+    assert (first["seeds/labels.csv"], second["seeds/labels.csv"]) == ("aaa", "bbb")
+    assert first["models/m.sql"] == second["models/m.sql"] == hashlib.sha256(b"select 1").hexdigest()

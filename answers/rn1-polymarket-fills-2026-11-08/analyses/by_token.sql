@@ -1,7 +1,6 @@
 -- RN1's fills per outcome token, side and role on Polygon in the answer's window: fills, shares, pUSD paid
 -- before fees, fees, and the share-weighted price in pUSD per share.
--- tests/reference/rn1_polymarket_fills_2026_11_08_matches_reference.sql checks the shares against the
--- Polymarket Data API.
+-- reference.csv holds the shares from the Polymarket Data API, and bj answer --eval checks them.
 select
     f.token_id::text as token_id,
     f.side,

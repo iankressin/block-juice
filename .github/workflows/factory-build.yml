@@ -1,7 +1,7 @@
 # The factory's build run (docs/agents/factory.md). A human's `ready-for-agent` label starts it. Three jobs, so
 # the model never shares a machine with a token that can write. `claim` removes the label with the App's token.
 # `work`, with read-only access, reads the newest scope comment, checks out factory/<issue>-<slug>, has the model
-# build the pipeline and its reference test over the eval window, runs the reference test again as the verdict,
+# build the pipeline and its reference over the eval window, answers over the eval window again as the verdict,
 # runs the repo's checks and saves the model's changes as a patch. `publish`, on a fresh runner, commits the
 # patch, pushes it and opens or updates a draft PR with the App's token.
 name: Factory build
@@ -93,7 +93,6 @@ jobs:
       scoped: ${{ steps.scope.outputs.scoped }}
       slug: ${{ steps.scope.outputs.slug }}
       branch: ${{ steps.scope.outputs.branch }}
-      test: ${{ steps.scope.outputs.test }}
       base_sha: ${{ steps.branch.outputs.base_sha }}
       status: ${{ steps.verdict.outputs.status }}
       kind: ${{ steps.verdict.outputs.kind }}
@@ -125,6 +124,8 @@ jobs:
         working-directory: orchestration
 
       # scoped=false tells publish the ticket has no valid scope comment, as against a step that failed earlier.
+      # The model reads the scope in .factory/, inside the checkout it edits, so the verdict step checks the
+      # reference the model shipped against the copy kept outside it.
       - name: Read the scope comment
         id: scope
         env:
@@ -133,13 +134,14 @@ jobs:
           FACTORY: ${{ steps.glue.outputs.dir }}
         run: |
           raw="$RUNNER_TEMP/raw"
-          mkdir -p "$raw"
+          mkdir -p "$raw" .factory
           gh api "repos/$GH_REPO/issues/$ISSUE" > "$raw/issue.json"
           gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" > "$raw/comments.json"
-          if ! uv run --project orchestration python "$FACTORY/factory.py" extract "$raw/comments.json" "$BOT" .factory > "$RUNNER_TEMP/scope.out"; then
+          if ! uv run --project orchestration python "$FACTORY/factory.py" extract "$raw/comments.json" "$BOT" "$RUNNER_TEMP/scope" > "$RUNNER_TEMP/scope.out"; then
             echo "scoped=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+          cp "$RUNNER_TEMP/scope/scope.yaml" "$RUNNER_TEMP/scope/reference.csv" .factory/
           slug=$(sed -n 's/^slug=//p' "$RUNNER_TEMP/scope.out")
           name=$(sed -n 's/^name=//p' "$RUNNER_TEMP/scope.out")
           {
@@ -147,7 +149,7 @@ jobs:
             echo "slug=$slug"
             echo "name=$name"
             echo "branch=factory/$ISSUE-$slug"
-            echo "test=${name}_matches_reference"
+            echo "dir=$RUNNER_TEMP/scope"
           } >> "$GITHUB_OUTPUT"
 
       # base_sha is the commit publish applies the model's patch to. The git config is saved for the step that
@@ -206,7 +208,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -q -f infra/postgres/ops.sql
 
       # An existing ticket branch can predate isolated eval artifacts. Probe its CLI after checkout;
-      # the default branch's prompt and verdict step must follow the layout that CLI actually writes.
+      # the default branch's prompt must follow the layout that CLI actually writes.
       - name: Detect the ticket branch's evaluation layout
         id: answer_layout
         env:
@@ -294,44 +296,48 @@ jobs:
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(uv run *),Bash(pnpm *),Bash(psql *),Bash(set -a *),Bash(set +a *),Bash(. ./.env *),mcp__sqd-portal__*"
             --disallowedTools "Bash(git push *),Bash(gh *),ScheduleWakeup,Monitor,CronCreate"
 
-      # Builds what the reference test reads from the committed code, then runs only that test. A failed build
-      # fails the verdict, since the test would read the tables the model's own loop left. dbt test exits 0
-      # when its selection is empty, and an old run_results.json could hold the model's own run, so the
-      # verdict comes from a fresh file that must name the test.
-      - name: Run the reference test as the verdict
+      # Builds what the reference analysis reads from the committed code, then answers over the eval window.
+      # A failed build fails the verdict, since the analysis would read the tables the model's own loop left.
+      # The verdict is the reference_match check of an answer this step wrote, never one the model wrote, against
+      # the reference the scope holds.
+      - name: Answer over the eval window as the verdict
         id: verdict
-        working-directory: transformation
         env:
           FACTORY: ${{ steps.glue.outputs.dir }}
-          TEST: ${{ steps.scope.outputs.test }}
+          SLUG: ${{ steps.scope.outputs.slug }}
+          SCOPE: ${{ steps.scope.outputs.dir }}
         run: |
-          built=0
-          uv run --project ../orchestration dbt build --select "+$TEST" --exclude-resource-type test --exclude-resource-type unit_test || built=$?
-          if [ "$built" -ne 0 ]; then
-            printf "status=failed\nkind=not_run\ndetail=dbt build of the test's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          analysis=$(uv run --project orchestration python -c "import sys, yaml; print((yaml.safe_load(open(sys.argv[1])).get('reference') or {}).get('analysis', ''))" "answers/$SLUG/question.yaml" || true)
+          if [ -z "$analysis" ]; then
+            printf 'status=failed\nkind=not_run\ndetail=answers/%s/question.yaml has no reference\n' "$SLUG" | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
-          rm -f target/run_results.json
-          uv run --project ../orchestration dbt test --select "tag:reference,$TEST" || true
-          if [ -f target/run_results.json ]; then
-            uv run --project ../orchestration python "$FACTORY/factory.py" verdict target/run_results.json "$TEST" | tee -a "$GITHUB_OUTPUT"
-          else
-            printf 'status=failed\nkind=not_run\ndetail=dbt test wrote no run_results.json\n' | tee -a "$GITHUB_OUTPUT"
+          # bj checks against the copies the model wrote, so a row it changed or a tolerance it widened is a
+          # mismatch before bj runs.
+          differs=$(uv run --project orchestration python "$FACTORY/factory.py" reference-check "$SCOPE" "answers/$SLUG")
+          if [ -n "$differs" ]; then
+            printf '%s\n' "$differs" | tee -a "$GITHUB_OUTPUT"
+            exit 0
           fi
-
-      # Older ticket branches write eval results at the root and do not support bj check --eval.
-      # bj check exits 1 when it records a failed check, and 2 when bj answer never wrote the eval answer.
-      - name: Record the verdict in the evaluation answer
-        continue-on-error: true
-        env:
-          SLUG: ${{ steps.scope.outputs.slug }}
-          STATUS: ${{ steps.verdict.outputs.status }}
-          DETAIL: ${{ steps.verdict.outputs.detail }}
-          CHECK_EVAL: ${{ steps.answer_layout.outputs.check_eval }}
-        run: |
-          check_args=()
-          if [ "$CHECK_EVAL" = true ]; then check_args+=(--eval); fi
-          uv run --project orchestration bj check "$SLUG" "${check_args[@]}" reference_match "$STATUS" "$DETAIL; see PR"
+          built=0
+          (cd transformation && BJ_ANALYSES="../answers/$SLUG/analyses" BJ_MACROS="../answers/$SLUG/macros" \
+            uv run --project ../orchestration dbt build --select "+$analysis" --exclude-resource-type test --exclude-resource-type unit_test) || built=$?
+          if [ "$built" -ne 0 ]; then
+            printf "status=failed\nkind=not_run\ndetail=dbt build of the analysis's upstream failed\n" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The model's own eval answer must not stand in for this step's.
+          rm -f "answers/$SLUG/eval/answer.json"
+          # bj prints why it stopped on stderr; the verdict quotes it when no answer came of the run.
+          uv run --project orchestration bj answer "$SLUG" --eval 2> "$RUNNER_TEMP/bj-answer.err" || true
+          cat "$RUNNER_TEMP/bj-answer.err" >&2
+          # bj answer sets the narrative aside, since new results void it. The model wrote this one for the
+          # same window, so it goes back for the uploaded answer.
+          if [ ! -f "answers/$SLUG/eval/answer.md" ] && [ -f "answers/$SLUG/eval/previous/answer.md" ]; then
+            cp "answers/$SLUG/eval/previous/answer.md" "answers/$SLUG/eval/answer.md"
+          fi
+          uv run --project orchestration python "$FACTORY/factory.py" verdict "answers/$SLUG/eval/answer.json" "$since" --stderr "$RUNNER_TEMP/bj-answer.err" | tee -a "$GITHUB_OUTPUT"
 
       - name: pnpm typecheck
         id: typecheck
@@ -426,7 +432,6 @@ jobs:
       BASE: ${{ github.event.repository.default_branch }}
       BRANCH: ${{ needs.work.outputs.branch }}
       SLUG: ${{ needs.work.outputs.slug }}
-      TEST: ${{ needs.work.outputs.test }}
       STATUS: ${{ needs.work.outputs.status }}
       KIND: ${{ needs.work.outputs.kind }}
       DETAIL: ${{ needs.work.outputs.detail }}
@@ -568,7 +573,7 @@ jobs:
             echo "| Check | Result |"
             echo "|---|---|"
             echo "| Model step | $(tr '\n' ' ' < "$RUNNER_TEMP/out/model.txt" 2>/dev/null || echo unknown) |"
-            echo "| Reference test \`$TEST\` | $STATUS: $DETAIL |"
+            echo "| Reference check \`reference_match\` | $STATUS: $DETAIL |"
             echo "| \`pnpm typecheck\` | $TYPECHECK |"
             echo "| Package tests | $PACKAGE_TESTS |"
             echo "| \`dbt parse\` | $DBT_PARSE |"

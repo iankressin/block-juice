@@ -133,17 +133,17 @@ def test_provenance_includes_tracked_question_changes_but_ignores_generated_answ
     assert answer.provenance(tmp_path)["git_dirty"] is True
 
 
-def test_check_eval_records_the_factory_verdict_without_changing_the_full_answer(tmp_path, monkeypatch):
+def test_check_eval_records_an_agents_check_without_changing_the_full_answer(tmp_path, monkeypatch):
     folder = tmp_path / "answers" / "total"
     saved_answer(folder)
     (folder / "eval").mkdir()
     answer.write_answer(folder / "eval", [result(20)], {**document(20), "eval": True})
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", tmp_path)
     before = (folder / "answer.json").read_bytes()
-    assert main(["check", "total", "--eval", "reference_match", "passed", "matches oracle"]) == 0
+    assert main(["check", "total", "--eval", "cross_check", "passed", "matches oracle"]) == 0
     assert (folder / "answer.json").read_bytes() == before
     assert json.loads((folder / "eval" / "answer.json").read_text())["checks"] == [
-        {"name": "reference_match", "status": "passed", "detail": "matches oracle"}
+        {"name": "cross_check", "status": "passed", "detail": "matches oracle"}
     ]
 
 
@@ -152,7 +152,7 @@ def test_missing_eval_check_never_falls_back_to_the_full_answer(tmp_path, monkey
     saved_answer(folder)
     monkeypatch.setattr("pipeline.cli.REPO_ROOT", tmp_path)
     before = files(folder)
-    assert main(["check", "total", "--eval", "reference_match", "passed", "matches oracle"]) == 2
+    assert main(["check", "total", "--eval", "cross_check", "passed", "matches oracle"]) == 2
     assert "eval/answer.json does not exist: run `bj answer total --eval` first" in capsys.readouterr().err
     assert files(folder) == before
 

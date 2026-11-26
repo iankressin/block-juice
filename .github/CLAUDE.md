@@ -18,7 +18,7 @@ These rules cover changes to the factory's workflows (`workflows/factory-*.yml`)
 
 ## Verdicts and failures
 
-- The verdict passes only when a fresh `run_results.json` shows that dbt ran the reference test, with status `pass` and zero failures. A `pass` with failures is a mismatch. When the rebuild of the test's upstream fails, the verdict fails.
+- The verdict passes only when an `answer.json` that the verdict step itself wrote, after the step began, holds a `reference_match` check with status `passed`. The step deletes the model's `answer.json` first, and a failed check is a mismatch. Before bj runs, the step compares `answers/<slug>/reference.csv` and the `reference` key with the scope it saved outside the checkout before the model ran, since the model can edit `.factory/`; a difference is a mismatch. A failed `coverage` check is `not_run`, since a window not fully loaded proves nothing. When the rebuild of the analysis's upstream fails, the verdict fails.
 - A failed run hands the ticket to a human with the reason. `factory.py model-error` reads the model's error from `result`, or from `errors` when `result` is empty, and the hand-off comment and the PR body quote it. When the branch has nothing ahead of the base, the build run opens no PR. It comments on the ticket and adds `ready-for-human`.
 
 A change here is done when `uv run --project orchestration pytest orchestration/tests/test_factory.py orchestration/tests/test_factory_scores.py` passes and actionlint passes as in step 1 of the dry run in `factory/README.md`.

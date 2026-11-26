@@ -41,11 +41,3 @@ models:
         # The views it reads join on jsonb staging columns, and the planner's nested loops took three
         # minutes over a 2,990-block window; hash joins take seconds.
         +pre-hook: "set local enable_nestloop = off"
-
-# The factory's reference rows, one seed per ticket (seeds/reference/README.md). Fixtures for the reference
-# tests, not pipeline assets: Dagster leaves everything tagged reference out, the build run seeds them, and
-# `dbt seed --select tag:reference` loads them on another warehouse.
-seeds:
-  transformation:
-    reference:
-      +tags: [reference]

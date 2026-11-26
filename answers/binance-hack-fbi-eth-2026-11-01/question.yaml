@@ -662,6 +662,7 @@ analyses:
   - totals
   - by_address
   - with_code
+  - by_address_metric
 expected_columns:
   headline: [sent_out_eth]
   totals: [addresses, active_addresses, addresses_with_code, addresses_with_unread_code,
@@ -672,6 +673,22 @@ expected_columns:
     nonce, sent_out_eth, received_eth, balance_eth]
   with_code: [address, has_code, code_kind, sent_out_wei, received_wei,
     state_block, balance_wei, nonce]
+  by_address_metric: [address, metric, amount]
 grain:
   by_address: [address]
   with_code: [address]
+  by_address_metric: [address, metric]
+reference:
+  analysis: by_address_metric
+  key: [address, metric]
+  value: amount
+  tolerance: {kind: absolute, value: 0}
+  oracle: >-
+    for each FBI-attributed Binance hack address active on Ethereum blocks 26316189 to 26323364
+    (2026-11-01T00:00:00Z to 2026-11-02T00:00:00Z), seven metrics in wei in long form: sent_value_wei,
+    sent_fees_wei, sent_out_wei, received_wei over successful top-level transactions in the window, and
+    balance_wei, nonce and has_code at block 26323364 (has_code also at 26294680). From the dune oracle:
+    Dune query 9103455 (https://dune.com/queries/9103455, execution 01M732JJW5D0XSGMWE81A9T7K4) over seed
+    list query 9103371 (fingerprint check 9103457); balance_wei, nonce and has_code from eth_getBalance,
+    eth_getTransactionCount and eth_getCode on an Ethereum archive node pinned to block 26323364
+    (has_code also at 26294680); both sent transactions' receipts checked by RPC.

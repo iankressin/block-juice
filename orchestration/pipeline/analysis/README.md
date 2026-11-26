@@ -17,6 +17,10 @@ The engine behind `bj answer`. It reads `answers/<slug>/question.yaml`, compiles
 - `executor.py:ancestors`, `relations`: the dependency closure of the analyses and the tables it covers.
 - `executor.py:Results`: a list of `Result` that owns the temporary CSVs; `.close()` removes them.
 - `provenance.py:run_provenance`, `digest`: the hashes and settings that identify a run.
+- `provenance.py:authored_files(nodes)`: the hash of each node's file, by path. A seed's hash is dbt's checksum, since its `raw_code` is empty.
+- `reference.py:Reference`, `parse_reference(raw, analyses, label)`: parse and check a question's `reference`.
+- `reference.py:Mismatch`, `mismatches(expected, actual, reference)`: pure. The keys where an analysis's rows and the reference rows disagree, each with its reason, sorted by key.
+- `reference.py:reference_check(folder, results, reference)`: compares the reference analysis's rows with `answers/<slug>/reference.csv` and returns the check `reference_match`.
 - `domain.py:Input`, `LastRun`, `Result`, `Check`: frozen dataclasses shared with `pipeline/cli/answer.py`.
 - `domain.py:jsonable`, `cell_text`, `headline`: JSON and CSV conversion that keeps every digit, and the answer's single value.
 - `store.py:RunStore` (`publish`, `record_edition`), `answer_lock`, `current_run`, `atomic_json`, `file_hashes`, `verify_current_results`: the run store and its lock.
@@ -24,6 +28,7 @@ The engine behind `bj answer`. It reads `answers/<slug>/question.yaml`, compiles
 ## Invariants
 
 - `question.yaml` rejects unknown top-level keys and needs `question` (`specification.py:_resolve_question`). A slug matches `^[a-z0-9][a-z0-9-]*$` (`specification.py:answer_dir`) and an analysis name `^[A-Za-z0-9_]+$` (`specification.py:_analyses`). `analyses` defaults to `[headline]`. An eval run needs `eval_window`. `expected_columns` and `grain` that name an undeclared analysis raise `BadInput`.
+- A question's `reference` needs `eval_window` and `answers/<slug>/reference.csv` (`specification.py:load_question`). `runner.py:run` adds the check `reference_match` only on an eval run.
 - A window's `blocks` is `[from, to]` with `0 <= from <= to`, or a map from chain to such a range (`specification.py:_window_blocks`). An input's `source` matches `<name>.<table>`, and `all_wallets` must be false when `filter.wallets` is set.
 - Parameters must be declared, typed and not named `window`, `coverage` or `inputs` (`spec.py:parameters`, `spec.py:typed_value`). A parameter with no default is required unless its schema sets `required: false`. `values` sets parameters, and an eval run lays `eval_values` over them (`specification.py:_resolve_question`).
 - `spec.py:ExecutionPolicy` defaults: `statement_timeout_ms` 900000, `lock_timeout_ms` 10000, `fetch_size` 1000, `max_rows` 0 (no limit). `spec.py:execution_policy` rejects unknown keys and caps `fetch_size` at 100000.
@@ -49,6 +54,6 @@ The engine behind `bj answer`. It reads `answers/<slug>/question.yaml`, compiles
 
 ## Verification
 
-- Run: `uv run --project orchestration pytest orchestration/tests/test_analysis_runtime.py orchestration/tests/test_answer_execution.py orchestration/tests/test_model_versions.py orchestration/tests/test_cli_answer.py orchestration/tests/test_cli_question.py`
+- Run: `uv run --project orchestration pytest orchestration/tests/test_analysis_runtime.py orchestration/tests/test_answer_execution.py orchestration/tests/test_model_versions.py orchestration/tests/test_cli_answer.py orchestration/tests/test_cli_question.py orchestration/tests/test_reference.py`
 - All tests: `uv run --project orchestration pytest`
 - Question files: `uv run --project orchestration bj questions --check`

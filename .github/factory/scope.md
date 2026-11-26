@@ -53,7 +53,7 @@ Write all three files, or only `comment.md` when you must stop (below).
 `.factory/scope.yaml`, with every key:
 
 ```yaml
-slug: uni-v3-swaps-2026-10-15      # [a-z0-9-]+; names answers/<slug>, the seed and the test
+slug: uni-v3-swaps-2026-10-15      # [a-z0-9-]+; names answers/<slug>, which holds question.yaml and reference.csv
 question: <the ticket's question, verbatim>
 oracle:
   kind: protocol_api               # protocol_api, dune, rpc or portal
@@ -79,7 +79,7 @@ full_window:
 duplicates: []                     # numbers of near-duplicate tickets
 ```
 
-`.factory/reference.csv`: a header with the key columns and the value column, then one row per expected result. Tens to a few hundred rows. Column names are lowercase, `[a-z_][a-z0-9_]*`. Every value cell is a number. Name the columns as the analysis will, since the build run's test compares the two by name.
+`.factory/reference.csv`: a header with the key columns and the value column, then one row per expected result. Tens to a few hundred rows. Column names are lowercase, `[a-z_][a-z0-9_]*`. Every value cell is a number. Name the columns as the analysis will. The build run copies this file to `answers/<slug>/reference.csv` and names its key and value columns in `question.yaml`'s `reference`. `bj answer --eval` then adds the check `reference_match`, which matches the analysis's columns to these by name.
 
 `.factory/comment.md`: prose for the human, in short plain sentences. It holds:
 

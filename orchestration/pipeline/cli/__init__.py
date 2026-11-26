@@ -90,6 +90,13 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _questions(args: argparse.Namespace) -> int:
+    if args.affected is not None:
+        from pipeline.cli import affected
+
+        if args.slug is not None:
+            raise BadInput("bj questions --affected lists every answer; omit the slug")
+        return affected.run(REPO_ROOT, args.affected)
+
     from pipeline.cli import catalog
 
     return catalog.run(REPO_ROOT, args.slug, as_json=args.json, check=args.check)
@@ -118,6 +125,7 @@ def parser() -> argparse.ArgumentParser:
     output = questions.add_mutually_exclusive_group()
     output.add_argument("--json", action="store_true", help="print the catalog as JSON")
     output.add_argument("--check", action="store_true", help="validate that every analysis has one question")
+    output.add_argument("--affected", metavar="REF", help="list the answers built from each file changed since REF")
     questions.set_defaults(run=_questions)
 
     demo = commands.add_parser(

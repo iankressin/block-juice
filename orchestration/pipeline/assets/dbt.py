@@ -9,8 +9,7 @@ from pipeline.run_log import record_dbt_build
 
 
 # Without `project`, a dbt `path:` selector resolves against the working directory, not the dbt project.
-# The factory's reference seeds and tests are fixtures, not pipeline assets (transformation/dbt_project.yml).
-@dbt_assets(manifest=dbt_project.manifest_path, project=dbt_project, exclude="tag:reference")
+@dbt_assets(manifest=dbt_project.manifest_path, project=dbt_project)
 def transformation_assets(context: dg.AssetExecutionContext, dbt: DbtCliResource):
     with warehouse_slot("dbt", context.log) as monitor:
         yield from build_models(context, dbt, monitor)
@@ -18,9 +17,7 @@ def transformation_assets(context: dg.AssetExecutionContext, dbt: DbtCliResource
 
 def build_models(context: dg.AssetExecutionContext, dbt: DbtCliResource, monitor):
     started_at = datetime.now(timezone.utc)
-    # A subset run replaces the decorator's selection with the run's own, so the exclusion rides on the
-    # command as well, or dbt's eager test selection pulls a reference test in through a selected mart.
-    invocation = dbt.cli(["build", "--exclude", "tag:reference"], context=context, raise_on_error=False)
+    invocation = dbt.cli(["build"], context=context, raise_on_error=False)
     try:
         with monitor(invocation.process.kill):
             yield from invocation.stream()

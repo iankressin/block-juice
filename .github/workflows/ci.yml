@@ -151,18 +151,30 @@ jobs:
 
       # A unit test needs the relations its model reads, and CI loads no raw rows. So this makes an empty raw
       # table for every dbt source, as planted_bugs.py does, and builds the project on no rows: every model
-      # must build, every unit test pass and every data test's SQL run. The reference tests need a question's
-      # rows, and oracle_prices_within_heartbeat reads the cursor table Pipes makes on its first run, so both
-      # stay out.
+      # must build, every unit test pass and every data test's SQL run. oracle_prices_within_heartbeat reads the
+      # cursor table Pipes makes on its first run, so it stays out.
       - name: dbt build with unit tests on empty raw tables
         run: |
           uv run --project ../orchestration python -c 'import json, planted_bugs; from pipeline.warehouse import connect; planted_bugs.load_raw(connect(), json.load(open("target/manifest.json")), None)'
-          uv run --project ../orchestration dbt build --exclude tag:reference oracle_prices_within_heartbeat
+          uv run --project ../orchestration dbt build --exclude oracle_prices_within_heartbeat
         working-directory: transformation
 
       - name: pytest
         run: uv run pytest
         working-directory: orchestration
+
+      # An explicit bash runs with pipefail, so bj's exit status survives the pipe into the summary. The
+      # fence keeps the padding when the summary renders as Markdown.
+      - name: List the answers this change can move
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          uv run --project orchestration bj questions --affected "origin/$BASE_REF" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Synthetic raw-to-answer demo
         run: uv run --project orchestration bj demo

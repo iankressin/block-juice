@@ -91,6 +91,8 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
             checks.append(api.loaded_check(streams, coverages))
         else:
             checks.append(api.coverage_check(streams, coverages, question.blocks, question.window_key))
+    if window_key == "eval_window" and question.reference:
+        checks.append(api.reference_check(repo_root / "answers" / slug, results, question.reference))
     document = api.answer_document(
         question, datetime.now(timezone.utc), results, dead_letters, last_runs, checks, {**api.provenance(repo_root), "run_id": uuid4().hex, **run_provenance(repo_root, question, manifest, analysis_ids, results, coverages, check_started, check_finished)}
     )
