@@ -140,6 +140,18 @@ test("without SOURCE_SCOPE no scope file is read, and a file cannot set it", asy
   assert.equal(process.env.SOURCE_SCOPE, undefined);
 });
 
+test("a package with no chains/ folder reads its scope from its own folder even when CHAIN is set", async (t) => {
+  const dir = await packageWith(t, {
+    ".env": "ENV_TEST_A=package\n",
+    "scopes/trial/.env.example": "ENV_TEST_A=scope\nENV_TEST_B=scope\n",
+    "scopes/trial/addresses.json": "{}",
+  });
+  const env = loadFrom(t, dir, { CHAIN: "arbitrum", SOURCE_SCOPE: "trial" });
+  assert.equal(env.ENV_TEST_A, "scope", "the scope's value wins");
+  assert.equal(env.ENV_TEST_B, "scope");
+  assert.equal(settingsFolder("arbitrum"), "scopes/trial");
+});
+
 test("loadEnv refuses a malformed SOURCE_SCOPE before it reads a file", async (t) => {
   const dir = await packageWith(t, scoped);
   assert.throws(() => loadFrom(t, dir, { CHAIN: "base", SOURCE_SCOPE: "../base" }), /SOURCE_SCOPE must be a scope name/);

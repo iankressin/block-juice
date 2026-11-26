@@ -17,9 +17,9 @@ const SCOPE_NAME = /^[a-z0-9][a-z0-9-]*$/;
 export function loadEnv<T extends z.ZodType>(schema: T): z.infer<T> {
   const chain = process.env.CHAIN;
   const scope = scopeName();
-  const folder = chain ? `chains/${chain}` : ".";
-  const chainFiles = chain ? [`${folder}/.env`, `${folder}/.env.example`] : [];
-  const scopeFiles = scope ? [`${folder}/scopes/${scope}/.env`, `${folder}/scopes/${scope}/.env.example`] : [];
+  const folder = chainFolder(chain);
+  const chainFiles = chain && folder !== "." ? [`${folder}/.env`, `${folder}/.env.example`] : [];
+  const scopeFiles = scope ? [`${scopeFolder(folder, scope)}/.env`, `${scopeFolder(folder, scope)}/.env.example`] : [];
   config({ path: [...scopeFiles, ...chainFiles, ".env"], quiet: true, override: false, fast: false });
   if (chain === undefined) delete process.env.CHAIN;
   if (scope === undefined) delete process.env.SOURCE_SCOPE;
@@ -45,14 +45,27 @@ function scopeName(): string | undefined {
 }
 
 /**
+ * chains/<chain> in a package that loads several chains, else the package's folder. Dagster sets
+ * CHAIN for every source, so a package with no chains/ folder must not read one.
+ */
+function chainFolder(chain?: string): string {
+  return chain && existsSync(join("chains", chain)) ? `chains/${chain}` : ".";
+}
+
+/** A scope's folder inside `base`, the one rule loadEnv and settingsFolder share. */
+function scopeFolder(base: string, scope: string): string {
+  return base === "." ? join("scopes", scope) : join(base, "scopes", scope);
+}
+
+/**
  * The folder that holds a source's addresses.json: chains/<chain>, or the working directory when
  * `chain` is unset, and that folder's scopes/<SOURCE_SCOPE> when the variable is set.
  */
 export function settingsFolder(chain?: string): string {
-  const base = chain ? `chains/${chain}` : ".";
+  const base = chainFolder(chain);
   const scope = scopeName();
   if (!scope) return base;
-  const folder = join(base, "scopes", scope);
+  const folder = scopeFolder(base, scope);
   if (!existsSync(join(folder, "addresses.json"))) {
     throw new Error(`SOURCE_SCOPE=${scope}: ${folder}/addresses.json does not exist`);
   }

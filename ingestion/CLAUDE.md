@@ -50,7 +50,7 @@ Each source that calls an off-chain API has its own client, which sends requests
 
 ## Settings and data
 
-- Settings come from the environment first, then the load scope's `.env` and `.env.example` (only when `SOURCE_SCOPE` is set), then `chains/<chain>/.env`, that folder's `.env.example`, then the package `.env` (`lib/src/env.ts`). Dagster sets `CHAIN` from the source's entry in `sources.json`.
+- Settings come from the environment first, then the load scope's `.env` and `.env.example` (only when `SOURCE_SCOPE` is set; in `chains/<chain>/scopes/<name>/` when the package has that chain folder, else `scopes/<name>/`), then `chains/<chain>/.env`, that folder's `.env.example`, then the package `.env` (`lib/src/env.ts`). Dagster sets `CHAIN` from the source's entry in `sources.json`.
 - Write to Postgres only through `lib/src/warehouse/`. Keep `infra/postgres/ops.sql` idempotent and additive; the PGlite tests load it.
 - To reload data, never delete from the `_sync`, `_checkpoints` or `_dead_letters` tables in the raw schema. A changed filter or start block backfills a new generation by itself, and `SOURCE_BACKFILL_ID` rebuilds an unchanged one (`docs/source-provenance.md`).
 
