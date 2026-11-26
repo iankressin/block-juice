@@ -1,5 +1,5 @@
 -- The number of Uniswap v3 swaps that traded UNI on Ethereum in the answer's window.
--- uni_v3_uni_swaps_2026_10_15_volume has their UNI volume, and _by_pool each pool's share.
+-- volume has their UNI volume, and by_pool each pool's share.
 select count(*) as swaps
 from {{ ref('dex_trades') }}
 where chain = 'ethereum'

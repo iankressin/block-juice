@@ -46,20 +46,20 @@ inputs:
     mart: cow_ethflow_orders
 marts: [wallet_eth_outflows, cow_ethflow_orders, wallet_transactions]
 analyses:
-  - ef_linked_wallet_eth_outflows_2026_11_10
-  - ef_linked_wallet_eth_outflows_2026_11_10_by_outflow
-  - ef_linked_wallet_eth_outflows_2026_11_10_by_class
-  - ef_linked_wallet_eth_outflows_2026_11_10_by_day
-  - ef_linked_wallet_eth_outflows_2026_11_10_reconciliation
+  - headline
+  - by_outflow
+  - by_class
+  - by_day
+  - reconciliation
 expected_columns:
-  ef_linked_wallet_eth_outflows_2026_11_10: [eth_sent_out]
-  ef_linked_wallet_eth_outflows_2026_11_10_by_outflow: [block_number, block_timestamp, tx_hash, to_address,
+  headline: [eth_sent_out]
+  by_outflow: [block_number, block_timestamp, tx_hash, to_address,
     outflow_class, venue, eth, order_uid, settlement_tx_hash, settlement_block_number, buy_symbol, buy_token,
     received_base_units]
-  ef_linked_wallet_eth_outflows_2026_11_10_by_class: [outflow_class, venue, outflows, eth]
-  ef_linked_wallet_eth_outflows_2026_11_10_by_day: [day, outflow_class, outflows, eth]
-  ef_linked_wallet_eth_outflows_2026_11_10_reconciliation: [sent_txs, outgoing_eth, fees_eth, incoming_eth]
+  by_class: [outflow_class, venue, outflows, eth]
+  by_day: [day, outflow_class, outflows, eth]
+  reconciliation: [sent_txs, outgoing_eth, fees_eth, incoming_eth]
 grain:
-  ef_linked_wallet_eth_outflows_2026_11_10_by_outflow: [tx_hash]
-  ef_linked_wallet_eth_outflows_2026_11_10_by_class: [outflow_class, venue]
-  ef_linked_wallet_eth_outflows_2026_11_10_by_day: [day, outflow_class]
+  by_outflow: [tx_hash]
+  by_class: [outflow_class, venue]
+  by_day: [day, outflow_class]

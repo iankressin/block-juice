@@ -25,11 +25,11 @@ Before you build a source or a pipeline, show the user the definitions, window a
 
 ## 3. Write the analysis
 
-Write `answers/<slug>/analyses/<name>.sql`, where `<name>` is the slug with `_` for `-`. Filter blocks with `{{ in_window('block_number', '<chain>') }}`, and pass `window_start('<chain>')` and `window_end('<chain>')` to a macro that takes the bounds. `bj answer` fills them from `question.yaml`; never write the window's blocks into the SQL.
+Write the first analysis as `answers/<slug>/analyses/headline.sql`. Filter blocks with `{{ in_window('block_number', '<chain>') }}`, and pass `window_start('<chain>')` and `window_end('<chain>')` to a macro that takes the bounds. `bj answer` fills them from `question.yaml`; never write the window's blocks into the SQL.
 
 - Select from marts with `{{ ref() }}`, never from staging or raw tables.
 - Put the headline in the first analysis as one row and one column. `bj` records that cell as the answer's value.
-- Put a breakdown in a second analysis, `<name>_by_<thing>.sql`, and list both under `analyses` in `question.yaml`.
+- Put a breakdown in a second analysis with a short name such as `by_day`, `by_wallet` or `by_market`, and list both under `analyses` in `question.yaml`.
 - Convert base units in SQL (wei to ETH, satoshis to BTC, token units by decimals) and name the unit in the column, such as `eth`. Take an ERC-20 token's decimals from the `tokens` mart, joined on `chain` and `token`. A token missing there needs its address in `evm-erc20-metadata`'s `chains/<chain>/addresses.json`.
 
 ## 4. Run and check

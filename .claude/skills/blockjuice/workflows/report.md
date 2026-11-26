@@ -32,8 +32,8 @@ A question these cannot answer, such as a past balance, a token price or a chain
 
 2. **Scope and answer.** Follow steps 1 to 4 of [answer.md](answer.md): write `question.yaml`, write the analyses, run `bj answer <slug>`. A report asks three things of the analyses:
    - The first analysis returns the headline as one row of one column. It becomes the report's value.
-   - The second analysis, `<name>_by_<thing>.sql`, holds the breakdown the spreadsheet shows: one row per wallet, asset, transfer or trade.
-   - Units are converted in SQL and named in the column, such as `eth`, with the base units in a column beside them, as `tracked_wallets_eth_by_wallet.sql` does.
+   - The second analysis, such as `by_wallet.sql`, holds the breakdown the spreadsheet shows: one row per wallet, asset, transfer or trade.
+   - Units are converted in SQL and named in the column, such as `eth`, with the base units in a column beside them, as `by_wallet.sql` does.
 
    `bj answer` reads the warehouse in a read-only session and writes only `answers/<slug>/`.
 

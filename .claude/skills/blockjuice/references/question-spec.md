@@ -12,7 +12,7 @@
 | `eval_window` | no | A slice of `window` in the same shape, for a check that loads less. `bj answer <slug> --eval` writes `eval/answer.json` and `eval/results/`, leaving the full answer intact; its JSON says `eval: true`. Record an evaluation check with `bj check <slug> --eval ...`. A factory build puts its eval window here. |
 | `inputs` | no | One entry per kind of data: `name`, `strategy` (`state` or `history`), and the `mart` that holds it. A history input names its `source` as `<chain>.<table>`, and may narrow it with `filter`, keyed like the source's `addresses.json`, with every address quoted. `bj answer` checks coverage for it. |
 | `marts` | no | The marts the analyses read. |
-| `analyses` | no | The dbt analyses to run, headline first. Defaults to the slug with `_` for `-`. |
+| `analyses` | no | The dbt analyses to run, headline first. Defaults to `[headline]`. |
 
 A question about now, answered from an existing mart:
 
@@ -30,7 +30,7 @@ inputs:
     strategy: state
     mart: latest_balances
 marts: [latest_balances]
-analyses: [tracked_wallets_eth, tracked_wallets_eth_by_wallet]
+analyses: [headline, by_wallet]
 ```
 
 A question over a past month that needs history, which `bj` cannot load yet:

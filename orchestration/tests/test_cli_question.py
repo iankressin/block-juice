@@ -39,7 +39,7 @@ analyses: [eth_holders, eth_holders_by_day]
     assert question.analyses == ("eth_holders", "eth_holders_by_day")
 
 
-def test_analyses_default_to_the_slug_with_underscores(tmp_path):
+def test_analyses_default_to_the_headline(tmp_path):
     write_question(tmp_path, "eth-holders", "question: How many?\n")
     assert load_question(tmp_path, "eth-holders") == Question(
         slug="eth-holders",
@@ -50,7 +50,7 @@ def test_analyses_default_to_the_slug_with_underscores(tmp_path):
         window={},
         inputs=(),
         marts=(),
-        analyses=("eth_holders",),
+        analyses=("headline",),
     )
 
 
@@ -194,3 +194,4 @@ def test_a_bad_eval_window_fails_a_full_run_too(tmp_path):
     write_question(tmp_path, "q", "question: q\nwindow: {chain: ethereum, blocks: [100, 200]}\neval_window: {blocks: [150, 160]}\n")
     with pytest.raises(BadInput, match=re.escape("'eval_window.blocks' as [from, to] needs 'eval_window.chain'")):
         load_question(tmp_path, "q")
+

@@ -1,6 +1,6 @@
 {{ config(tags=['reference']) }}
 -- #32: swaps and UNI volume per Uniswap v3 pool holding UNI, verified on ethereum blocks 26194189 to
--- 26201364 against Dune query 9099271. The actual CTE is analyses/uni_v3_uni_swaps_2026_10_15_by_pool.sql.
+-- 26201364 against Dune query 9099271. The actual CTE is answers/uni-v3-uni-swaps-2026-10-15/analyses/by_pool.sql.
 with actual as (
     select
         trades.pool,

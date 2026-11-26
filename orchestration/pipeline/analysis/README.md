@@ -22,7 +22,7 @@ The engine behind `bj answer`. It reads `answers/<slug>/question.yaml`, compiles
 
 ## Invariants
 
-- `question.yaml` rejects unknown top-level keys and needs `question` (`specification.py:_resolve_question`). A slug matches `^[a-z0-9][a-z0-9-]*$` (`specification.py:answer_dir`) and an analysis name `^[A-Za-z0-9_]+$` (`specification.py:_analyses`). `analyses` defaults to the slug with `-` replaced by `_`. An eval run needs `eval_window`. `expected_columns` and `grain` that name an undeclared analysis raise `BadInput`.
+- `question.yaml` rejects unknown top-level keys and needs `question` (`specification.py:_resolve_question`). A slug matches `^[a-z0-9][a-z0-9-]*$` (`specification.py:answer_dir`) and an analysis name `^[A-Za-z0-9_]+$` (`specification.py:_analyses`). `analyses` defaults to `[headline]`. An eval run needs `eval_window`. `expected_columns` and `grain` that name an undeclared analysis raise `BadInput`.
 - A window's `blocks` is `[from, to]` with `0 <= from <= to`, or a map from chain to such a range (`specification.py:_window_blocks`). An input's `source` matches `<name>.<table>`, and `all_wallets` must be false when `filter.wallets` is set.
 - Parameters must be declared, typed and not named `window` or `coverage` (`spec.py:parameters`, `spec.py:typed_value`). A parameter with no default is required unless its schema sets `required: false`. `values` sets parameters, and an eval run lays `eval_values` over them (`specification.py:_resolve_question`).
 - `spec.py:ExecutionPolicy` defaults: `statement_timeout_ms` 900000, `lock_timeout_ms` 10000, `fetch_size` 1000, `max_rows` 0 (no limit). `spec.py:execution_policy` rejects unknown keys and caps `fetch_size` at 100000.

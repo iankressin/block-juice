@@ -44,21 +44,21 @@ inputs:
     mart: polymarket_markets
 marts: [polymarket_wallet_fills, polymarket_markets]
 analyses:
-  - rn1_polymarket_quoting_2026_11_16
-  - rn1_polymarket_quoting_2026_11_16_bid_sums
-  - rn1_polymarket_quoting_2026_11_16_ladder
-  - rn1_polymarket_quoting_2026_11_16_requotes
-  - rn1_polymarket_quoting_2026_11_16_by_holdings_gap
-  - rn1_polymarket_quoting_2026_11_16_stop
+  - headline
+  - bid_sums
+  - ladder
+  - requotes
+  - by_holdings_gap
+  - stop
 expected_columns:
-  rn1_polymarket_quoting_2026_11_16: [median_bid_sum]
-  rn1_polymarket_quoting_2026_11_16_bid_sums: [evidence, phase, pairs, markets, avg_bid_sum, p05, p25, median, p75, p95, pct_one_tick, pct_wider, pct_sub_tick, pct_at_or_above_1]
-  rn1_polymarket_quoting_2026_11_16_ladder: [gap, level_pairs, pct]
-  rn1_polymarket_quoting_2026_11_16_requotes: [change_cents, orders, pct, median_blocks_between]
-  rn1_polymarket_quoting_2026_11_16_by_holdings_gap: [holdings_gap_shares, blocks, avg_bid_sum, median_bid_sum, pct_one_tick, pct_wider]
-  rn1_polymarket_quoting_2026_11_16_stop: [markets, start_to_last_p10_min, start_to_last_p50_min, start_to_last_p90_min, last_to_resolution_p10_min, last_to_resolution_p50_min, last_to_resolution_p90_min, start_to_resolution_p50_min, last_fill_at_edge_pct]
+  headline: [median_bid_sum]
+  bid_sums: [evidence, phase, pairs, markets, avg_bid_sum, p05, p25, median, p75, p95, pct_one_tick, pct_wider, pct_sub_tick, pct_at_or_above_1]
+  ladder: [gap, level_pairs, pct]
+  requotes: [change_cents, orders, pct, median_blocks_between]
+  by_holdings_gap: [holdings_gap_shares, blocks, avg_bid_sum, median_bid_sum, pct_one_tick, pct_wider]
+  stop: [markets, start_to_last_p10_min, start_to_last_p50_min, start_to_last_p90_min, last_to_resolution_p10_min, last_to_resolution_p50_min, last_to_resolution_p90_min, start_to_resolution_p50_min, last_fill_at_edge_pct]
 grain:
-  rn1_polymarket_quoting_2026_11_16_bid_sums: [evidence, phase]
-  rn1_polymarket_quoting_2026_11_16_ladder: [gap]
-  rn1_polymarket_quoting_2026_11_16_requotes: [change_cents]
-  rn1_polymarket_quoting_2026_11_16_by_holdings_gap: [holdings_gap_shares]
+  bid_sums: [evidence, phase]
+  ladder: [gap]
+  requotes: [change_cents]
+  by_holdings_gap: [holdings_gap_shares]

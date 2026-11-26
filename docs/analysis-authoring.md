@@ -55,12 +55,12 @@ window: {chain: ethereum, at: latest}
 inputs:
   - {name: eth_balances, strategy: state, mart: latest_balances}
 marts: [latest_balances]
-analyses: [my_question]
-expected_columns: {my_question: [eth]}
+analyses: [headline]
+expected_columns: {headline: [eth]}
 ```
 
 ```sql
--- answers/my-question/analyses/my_question.sql
+-- answers/my-question/analyses/headline.sql
 select round(sum(balance) / 1e18, 6) as eth
 from {{ ref('latest_balances') }}
 where chain = 'ethereum' and asset_type = 'native'
@@ -125,7 +125,7 @@ parameters:
   threshold: {type: integer, default: 100}
 values: {threshold: 200}
 expected_columns:
-  my_question: [{name: eth, type: numeric}]
+  headline: [{name: eth, type: numeric}]
 execution: {statement_timeout_ms: 900000, lock_timeout_ms: 10000, fetch_size: 1000}
 freshness: {max_age_hours: 24, require_model_build: true}
 ```

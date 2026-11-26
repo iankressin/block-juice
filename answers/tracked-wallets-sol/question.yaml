@@ -12,10 +12,10 @@ inputs:
     strategy: state
     mart: latest_balances
 marts: [latest_balances]
-analyses: [tracked_wallets_sol, tracked_wallets_sol_by_wallet]
+analyses: [headline, by_wallet]
 expected_columns:
-  tracked_wallets_sol: [sol]
-  tracked_wallets_sol_by_wallet: [wallet, block_number, sol, lamports]
+  headline: [sol]
+  by_wallet: [wallet, block_number, sol, lamports]
 grain:
-  tracked_wallets_sol_by_wallet: [wallet]
+  by_wallet: [wallet]
 freshness: {max_age_hours: 48, require_model_build: true}

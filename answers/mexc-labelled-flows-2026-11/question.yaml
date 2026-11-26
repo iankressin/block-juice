@@ -108,12 +108,12 @@ inputs:
     strategy: state
     mart: tokens
 marts: [labelled_wallet_flows, tokens]
-analyses: [mexc_labelled_flows_2026_11, mexc_labelled_flows_2026_11_by_period, mexc_labelled_flows_2026_11_by_day]
+analyses: [headline, by_period, by_day]
 expected_columns:
-  mexc_labelled_flows_2026_11: [usdt_net_per_day_after_announcement]
-  mexc_labelled_flows_2026_11_by_period: [token, counterparty, metric, pre_days, pre_per_day, post_days,
+  headline: [usdt_net_per_day_after_announcement]
+  by_period: [token, counterparty, metric, pre_days, pre_per_day, post_days,
     post_per_day, change]
-  mexc_labelled_flows_2026_11_by_day: [day, token, counterparty, metric, amount]
+  by_day: [day, token, counterparty, metric, amount]
 grain:
-  mexc_labelled_flows_2026_11_by_period: [token, counterparty, metric]
-  mexc_labelled_flows_2026_11_by_day: [day, token, counterparty, metric]
+  by_period: [token, counterparty, metric]
+  by_day: [day, token, counterparty, metric]

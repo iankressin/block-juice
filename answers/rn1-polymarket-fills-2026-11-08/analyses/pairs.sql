@@ -1,6 +1,6 @@
 -- RN1's complementary accumulation summed over its two-outcome markets, per market kind (sports or not,
 -- from Gamma), on Polygon in the answer's window. Amounts are pUSD.
--- The per-market figures and their rules are in rn1_polymarket_fills_2026_11_08_by_market.sql:
+-- The per-market figures and their rules are in by_market.sql:
 -- pair_shares = least(shares bought of each outcome), pair_cost = the sum of the two average costs after
 -- fees, pair_edge = pair_shares * (1 - pair_cost). pairs_below_1_pct weights each market by its pairs.
 with fills as (

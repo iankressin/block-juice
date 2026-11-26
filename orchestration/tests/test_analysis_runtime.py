@@ -269,8 +269,8 @@ def test_contract_keys_must_name_a_resolved_analysis(tmp_path, contract):
     (folder / "question.yaml").write_text(f"question: Q\n{contract}\n")
     with pytest.raises(BadInput, match="undeclared analyses: typo"):
         load_question(tmp_path, "my-analysis")
-    (folder / "question.yaml").write_text(f"question: Q\n{contract.replace('typo', 'my_analysis')}\n")
-    assert load_question(tmp_path, "my-analysis").analyses == ("my_analysis",)
+    (folder / "question.yaml").write_text(f"question: Q\n{contract.replace('typo', 'headline')}\n")
+    assert load_question(tmp_path, "my-analysis").analyses == ("headline",)
 
 
 def test_lineage_folds_only_unquoted_postgres_identifiers():

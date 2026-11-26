@@ -1,7 +1,7 @@
 {{ config(tags=['reference']) }}
 -- #42: Ethereum contract-deployment transactions whose EIP-8037 state gas is above each threshold, verified
 -- on ethereum blocks 26366424 to 26369413 against an archive RPC's trace_block and trace_replayTransaction
--- [stateDiff]. The actual CTE is analyses/eip8037_state_gas_deployments_2026_11_08_by_threshold.sql.
+-- [stateDiff]. The actual CTE is answers/eip8037-state-gas-deployments-2026-11-08/analyses/by_threshold.sql.
 with deployments as (
     select state_gas
     from {{ ref('deployment_state_gas') }}

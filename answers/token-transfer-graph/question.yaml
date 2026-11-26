@@ -9,9 +9,9 @@ definitions:
 marts:
 - erc20_transfers
 analyses:
-- token_transfer_graph
-- token_transfer_graph_by_edge
-- token_transfer_graph_by_wallet
+- headline
+- by_edge
+- by_wallet
 window:
   blocks:
     arbitrum:
@@ -77,10 +77,10 @@ parameters:
         - 52011727
         - 53350926
 expected_columns:
-  token_transfer_graph: [edges]
-  token_transfer_graph_by_edge: [from_address, to_address, amount, transfers, arbitrum_amount, arbitrum_transfers,
+  headline: [edges]
+  by_edge: [from_address, to_address, amount, transfers, arbitrum_amount, arbitrum_transfers,
     base_amount, base_transfers]
-  token_transfer_graph_by_wallet: [address, sent_to, received_from, amount_sent, amount_received, net_amount]
+  by_wallet: [address, sent_to, received_from, amount_sent, amount_received, net_amount]
 grain:
-  token_transfer_graph_by_edge: [from_address, to_address]
-  token_transfer_graph_by_wallet: [address]
+  by_edge: [from_address, to_address]
+  by_wallet: [address]

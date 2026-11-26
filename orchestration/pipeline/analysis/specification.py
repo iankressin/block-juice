@@ -192,7 +192,7 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
             resolved_parameters = evaluation
     if raw.get("parameter_scope") == "token_windows":
         validate_token_scope(resolved_parameters, blocks[window_key], sources, label)
-    analysis_names = tuple(raw.get("analyses", [slug.replace("-", "_")]))
+    analysis_names = tuple(raw.get("analyses", ["headline"]))
     for field_name in ("expected_columns", "grain"):
         unknown = set(raw.get(field_name, {})) - set(analysis_names)
         if unknown:

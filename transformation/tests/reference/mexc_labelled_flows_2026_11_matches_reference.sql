@@ -2,7 +2,7 @@
 -- #48: daily ETH, USDT and USDC inflow, outflow, net and intra-set flows of the 23 DefiLlama-labelled MEXC
 -- wallets, for every counterparty and for the Binance PoR addresses, verified on ethereum blocks 26359254 to
 -- 26366423 (2026-11-07 UTC) against Dune query 9109979 (execution 01M75DKQASX0PE7K7FEG9MVH09). The actual
--- CTE is analyses/mexc_labelled_flows_2026_11_by_day.sql restricted to those blocks.
+-- CTE is answers/mexc-labelled-flows-2026-11/analyses/by_day.sql restricted to those blocks.
 with actual as (
     {{ labelled_flows_daily(
         'MEXC',
