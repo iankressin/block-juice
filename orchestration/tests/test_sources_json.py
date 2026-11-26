@@ -143,3 +143,18 @@ def test_a_scope_name_that_is_not_a_slug_is_bad_input(tmp_path):
     add_scope(tmp_path, "MEXC 2026")
     with pytest.raises(BadInput, match="scope name 'MEXC 2026'"):
         WALLETS.scopes(tmp_path)
+
+
+def test_a_scope_name_with_a_trailing_newline_is_bad_input(tmp_path):
+    # Python's `$` also matches before a final newline, which the TS rule refuses.
+    add_scope(tmp_path, "trial\n")
+    with pytest.raises(BadInput, match=r"scope name 'trial\\n'"):
+        WALLETS.scopes(tmp_path)
+
+
+def test_the_bad_scope_name_error_names_the_folder_from_the_repo_root(tmp_path):
+    add_scope(tmp_path, "MEXC 2026")
+    with pytest.raises(BadInput) as error:
+        WALLETS.scopes(tmp_path)
+    assert str(tmp_path) not in str(error.value)
+    assert str(WALLETS.folder(tmp_path).relative_to(tmp_path) / "scopes") in str(error.value)

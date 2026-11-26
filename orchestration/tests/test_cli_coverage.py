@@ -220,21 +220,24 @@ def coverage_json(repo, monkeypatch, capsys, cursor, *args):
     return json.loads(capsys.readouterr().out)
 
 
+PRINTED_WITHOUT_SCOPES = [
+    {
+        "source": "ethereum.erc20_transfers",
+        "raw_table": "raw.ethereum_erc20_transfers",
+        "start_block": 100,
+        "start_block_file": "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example",
+        "cursor": 180,
+        "filter": {"wallets": [WALLET], "tokens": [USDC]},
+        "covered": None,
+        "provenance": "unverified",
+        "verified_ranges": [],
+        "generations": [],
+    }
+]
+
+
 def test_prints_each_stream_source_with_its_blocks_and_filter(repo, monkeypatch, capsys):
-    assert coverage_json(repo, monkeypatch, capsys, 180) == [
-        {
-            "source": "ethereum.erc20_transfers",
-            "raw_table": "raw.ethereum_erc20_transfers",
-            "start_block": 100,
-            "start_block_file": "ingestion/sources/evm-erc20-transfers/chains/ethereum/.env.example",
-            "cursor": 180,
-            "filter": {"wallets": [WALLET], "tokens": [USDC]},
-            "covered": None,
-            "provenance": "unverified",
-            "verified_ranges": [],
-            "generations": [],
-        }
-    ]
+    assert coverage_json(repo, monkeypatch, capsys, 180) == PRINTED_WITHOUT_SCOPES
 
 
 def test_covered_is_null_before_the_first_run(repo, monkeypatch, capsys):
@@ -595,7 +598,19 @@ def test_each_scope_is_read_as_a_configuration_of_its_own(repo, monkeypatch):
 
 
 def test_a_source_without_scopes_prints_what_it_printed_before(repo, monkeypatch, capsys):
-    assert "scopes" not in coverage_json(repo, monkeypatch, capsys, 180)[0]
+    assert coverage_json(repo, monkeypatch, capsys, 180) == PRINTED_WITHOUT_SCOPES
+
+
+def test_a_scopes_cursor_never_falls_back_to_the_standing_cursor(repo, monkeypatch):
+    add_scope(repo, "mexc-2026-11", {"tokens": [USDC]}, "START_BLOCK=40\nEND_BLOCK=90\n")
+    add_scope(repo, "uni-only", {"tokens": [UNI]})
+    monkeypatch.setattr(coverage, "read_cursor", lambda source_table: 180)
+    answers = {(100, ("tokens", "wallets")): (True, 180), (40, ("tokens",)): (False, None), (100, ("tokens",)): (True, None)}
+    monkeypatch.setattr(coverage, "read_configuration_cursor",
+                        lambda source_table, config: answers[config["startBlock"], tuple(sorted(config["filter"]))])
+    read = coverage.read(repo, "ethereum.erc20_transfers")
+    assert read.cursor == 180
+    assert [(scope.name, scope.cursor) for scope in read.scopes] == [("mexc-2026-11", None), ("uni-only", None)]
 
 
 def test_a_scopes_record_proves_an_answer_the_standing_file_never_could():

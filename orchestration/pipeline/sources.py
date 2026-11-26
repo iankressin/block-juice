@@ -39,8 +39,8 @@ class SourceEntry:
             return []
         names = sorted(path.name for path in folder.iterdir() if (path / "addresses.json").is_file())
         for name in names:
-            if not SCOPE.match(name):
-                raise BadInput(f"scope name {name!r} in {folder} must match {SCOPE.pattern}")
+            if not SCOPE.fullmatch(name):
+                raise BadInput(f"scope name {name!r} in {folder.relative_to(repo_root)} must match {SCOPE.pattern}")
         return names
 
 
