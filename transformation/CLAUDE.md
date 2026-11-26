@@ -1,6 +1,6 @@
 # Transformation
 
-This folder's contract (interface, invariants and side effects) is in [README.md](README.md), and each folder under `models/`, `macros/`, `analyses/` and `benchmarks/` has its own.
+This folder's contract (interface, invariants and side effects) is in [README.md](README.md), and each folder under `models/`, `macros/` and `benchmarks/` has its own.
 
 The dbt project. Run dbt with the command in the root `CLAUDE.md`, which exports `.env` first. Raw tables live in `RAW_SCHEMA` (`raw`) and models build in `DBT_SCHEMA` (`analytics`).
 
@@ -26,7 +26,7 @@ On a pull request, CI plants bugs in each model you add or change, and fails whe
 
 - A new pipeline is a `models/marts/<pipeline>/` folder plus an entry in `PIPELINES` in `orchestration/pipeline/schedules.py`. pytest fails when an asset belongs to no scheduled pipeline.
 - Join tokens on `(chain, token)`, never on `symbol`: tokens share symbols, and one token has a different address on each chain. A null `decimals` means the contract doesn't say; never assume 18.
-- Each `analyses/*.sql` reads marts through `ref()`, takes its window from `in_window()` in `macros/window.sql`, and belongs to exactly one `answers/<slug>/question.yaml`. Outside `bj answer`, an analysis compiles but fails when run, with `no window for <chain>`. To run one by hand, pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`. `docs/analysis-authoring.md` covers writing one without the skill.
+- Each `answers/<slug>/analyses/*.sql` reads marts through `ref()`, takes its window from `in_window()` in `macros/window.sql`, and belongs to that answer's `question.yaml`. `bj answer` points dbt at one answer's folder through `BJ_ANALYSES` and `BJ_MACROS`. Outside it, an analysis compiles but fails when run, with `no window for <chain>`. To run one by hand, set `BJ_ANALYSES=../answers/<slug>/analyses` and pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`. `docs/analysis-authoring.md` covers writing one without the skill.
 - `seeds/reference/` and `tests/reference/` hold the factory's reference rows and tests, tagged `reference`. Dagster and `bj answer` leave them out; run them with `dbt test --select tag:reference`.
 
 ## SQL over events

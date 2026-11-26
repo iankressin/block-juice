@@ -29,7 +29,7 @@ This file says which layer each piece of work belongs in. The rules inside a lay
 
 ## Analyses and answers
 
-`transformation/analyses/<name>.sql` holds one question's filter and aggregation, over marts only. `answers/<slug>/` holds the `question.yaml` that names those analyses, what `bj answer` writes and the `answer.md` you write. Git tracks only `question.yaml`; commit it with the analyses it names.
+`answers/<slug>/analyses/<name>.sql` holds one question's filter and aggregation, over marts only. `answers/<slug>/` also holds the `question.yaml` that names those analyses, what `bj answer` writes and the `answer.md` you write. Git tracks `question.yaml`, `analyses/` and `macros/`; commit them together.
 
 ## Where does it go?
 

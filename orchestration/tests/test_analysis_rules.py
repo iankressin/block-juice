@@ -51,7 +51,7 @@ def analyses_writing_their_window(root: Path) -> list[str]:
         bounds = window_blocks(question.get("window")) | window_blocks(question.get("eval_window"))
         bounds -= FIXED_BLOCKS.get(slug, set())
         for name in question.get("analyses") or []:
-            sql = SQL_COMMENT.sub("", (root / "transformation" / "analyses" / f"{name}.sql").read_text())
+            sql = SQL_COMMENT.sub("", (root / "answers" / slug / "analyses" / f"{name}.sql").read_text())
             written = sorted(bounds & {int(number) for number in NUMBER.findall(sql)})
             if written:
                 found.append(f"{name}.sql writes {', '.join(map(str, written))} from {slug}'s window")
@@ -74,7 +74,7 @@ def make_question(root: Path, slug: str, window: dict, analyses: dict[str, str],
         document["eval_window"] = eval_window
     (folder / "question.yaml").write_text(yaml.safe_dump(document))
     for name, sql in analyses.items():
-        path = root / "transformation" / "analyses" / f"{name}.sql"
+        path = root / "answers" / slug / "analyses" / f"{name}.sql"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(sql)
 
@@ -102,7 +102,7 @@ def test_a_window_bound_in_code_is_reported_in_either_window_shape(tmp_path):
         {"flows": "select 1"},
         eval_window={"blocks": {"arbitrum": [510496864, 510500000]}},
     )
-    (tmp_path / "transformation" / "analyses" / "flows.sql").write_text("{{ flows('arbitrum', 510500000) }}")
+    (tmp_path / "answers" / "flows" / "analyses" / "flows.sql").write_text("{{ flows('arbitrum', 510500000) }}")
     assert analyses_writing_their_window(tmp_path) == [
         "flows.sql writes 510500000 from flows's window",
         "outflows.sql writes 26380784, 26387956 from outflows's window",

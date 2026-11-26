@@ -217,19 +217,23 @@ def test_loaded_question_hash_survives_edit_while_queries_are_running(tmp_path):
 
 
 def test_all_existing_compiled_analyses_have_complete_declared_lineage():
-    import json
     import os
     from pipeline.analysis.lineage import unknown_lineage
-    from pipeline.cli.answer import compile_analyses
+    from pipeline.cli.answer import compile_analyses, question_paths
+    from pipeline.cli.question import load_question
     if not all(os.environ.get(key) for key in ("WAREHOUSE_HOST", "WAREHOUSE_PORT", "WAREHOUSE_DB", "WAREHOUSE_USER", "WAREHOUSE_PASSWORD", "RAW_SCHEMA", "DBT_SCHEMA")):
         pytest.skip("catalog lineage validation compiles real SQL against disposable WAREHOUSE_* configuration")
-    project = Path(__file__).resolve().parents[2] / "transformation"
-    manifest = json.loads((project / "target" / "manifest.json").read_text())
-    names = [node["name"] for node in manifest["nodes"].values() if node["resource_type"] == "analysis"]
-    compiled, analyses = compile_analyses(project, names, {})
-    assert len(analyses) == len(names) and analyses
-    assert all(compiled["nodes"][uid].get("compiled_code") for uid in analyses)
-    assert unknown_lineage(compiled, analyses) == []
+    repo_root = Path(__file__).resolve().parents[2]
+    project = repo_root / "transformation"
+    slugs = sorted(path.parent.name for path in (repo_root / "answers").glob("*/question.yaml"))
+    assert slugs
+    for slug in slugs:
+        question = load_question(repo_root, slug)
+        with question_paths(project, repo_root / "answers" / slug):
+            compiled, analyses = compile_analyses(project, list(question.analyses), {})
+        assert len(analyses) == len(question.analyses) and analyses, slug
+        assert all(compiled["nodes"][uid].get("compiled_code") for uid in analyses), slug
+        assert unknown_lineage(compiled, analyses) == [], slug
 
 
 def test_lock_backend_on_windows_retries_and_releases(tmp_path, monkeypatch):

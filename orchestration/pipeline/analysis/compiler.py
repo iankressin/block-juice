@@ -34,5 +34,5 @@ class QueryCompiler:
         analyses = {n["name"]: uid for uid, n in manifest["nodes"].items() if n["resource_type"] == "analysis"}
         for name in names:
             if name not in analyses:
-                raise BadInput(f"no dbt analysis named {name}: write transformation/analyses/{name}.sql")
+                raise BadInput(f"no dbt analysis named {name}: write analyses/{name}.sql in the answer's folder")
         return manifest, [analyses[name] for name in names]

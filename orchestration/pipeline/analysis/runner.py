@@ -57,7 +57,9 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
     api.require_env()
     project = repo_root / "transformation"
     arguments = (project, question.analyses, question.blocks)
-    manifest, analysis_ids = api.compile_analyses(*arguments, **({"parameters": question.parameters} if question.parameters else {}))
+    paths = (project, repo_root / "answers" / slug)
+    with api.question_paths(*paths):
+        manifest, analysis_ids = api.compile_analyses(*arguments, **({"parameters": question.parameters} if question.parameters else {}))
     inputs = api.upstream_inputs(manifest, analysis_ids)
     unknown = unknown_lineage(manifest, analysis_ids)
     check_started = datetime.now(timezone.utc)
@@ -68,8 +70,9 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
     test_variables = dict(question.parameters)
     if question.blocks:
         test_variables["window"] = question.blocks
-    tests = api.run_dbt_tests(project, question.analyses, coverages, [manifest["nodes"][t]["name"] for t in stale],
-                              **({"parameters": test_variables} if test_variables else {}))
+    with api.question_paths(*paths):
+        tests = api.run_dbt_tests(project, question.analyses, coverages, [manifest["nodes"][t]["name"] for t in stale],
+                                  **({"parameters": test_variables} if test_variables else {}))
     if len(stale) < len(above):
         tests = replace(tests, detail=f"{tests.detail}; {len(above) - len(stale)} upstream passed since the marts were built")
     check_finished = datetime.now(timezone.utc)

@@ -184,6 +184,7 @@ def worker(repo_root: Path, folder: Path, output: Path) -> None:
     destination = folder / "answers" / slug
     destination.mkdir(parents=True)
     shutil.copy2(repo_root / "answers" / slug / "question.yaml", destination / "question.yaml")
+    shutil.copytree(repo_root / "answers" / slug / "analyses", destination / "analyses")
     wait_for_postgres()
     load_fixture(repo_root)
     project = folder / "transformation"

@@ -14,7 +14,7 @@ uv run --project orchestration bj questions --json
 
 Each catalog entry names `answers/<slug>/question.yaml`, the marts it reads, and its SQL files.
 The manifest is the bundle's identity and owns its ordered analyses: the first query supplies the
-headline when it returns one row and one column. SQL remains under `transformation/analyses/`,
+headline when it returns one row and one column. SQL lives under `answers/<slug>/analyses/`,
 with existing filenames and dbt selectors preserved. Reusable data transformations belong in
 `transformation/models/`, not in an answer directory. Runtime output belongs beside the question
 and stays out of Git; ingestion and model run logs belong in `ops.*` in the warehouse.
@@ -60,7 +60,7 @@ expected_columns: {my_question: [eth]}
 ```
 
 ```sql
--- transformation/analyses/my_question.sql
+-- answers/my-question/analyses/my_question.sql
 select round(sum(balance) / 1e18, 6) as eth
 from {{ ref('latest_balances') }}
 where chain = 'ethereum' and asset_type = 'native'

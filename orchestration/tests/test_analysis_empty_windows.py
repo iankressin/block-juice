@@ -43,8 +43,11 @@ def query(cursor, name):
         "token": {"windows": [{"chain": "arbitrum", "token": TOKEN, "blocks": [100, 200]}]},
     }
     # Include the real scope macros so the fixtures exercise the same predicates as bj answer.
-    text = "\n".join((ROOT / "transformation" / path).read_text() for path in (
-        "macros/window.sql", "macros/token_transfers.sql", f"analyses/{name}.sql"
+    (analysis,) = ROOT.glob(f"answers/*/analyses/{name}.sql")
+    text = "\n".join(path.read_text() for path in (
+        ROOT / "transformation" / "macros" / "window.sql",
+        ROOT / "transformation" / "macros" / "token_transfers.sql",
+        analysis,
     ))
     statement = Environment().from_string(text).render(
         ref=lambda table: f'pg_temp."{table}"', var=lambda name, default=None: variables.get(name, default)

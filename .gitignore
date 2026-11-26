@@ -19,11 +19,15 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# answers: git tracks each question's question.yaml; what bj answer and the skill write from it stays local
+# answers: git tracks each question's question.yaml, analyses/ and macros/; what bj answer and the skill write from it stays local
 answers/*
 !answers/*/
 answers/*/*
 !answers/*/question.yaml
+!answers/*/analyses/
+!answers/*/macros/
+!answers/README.md
+!answers/CLAUDE.md
 
 # The files a factory run passes between its steps and the model (.github/factory/README.md)
 .factory/

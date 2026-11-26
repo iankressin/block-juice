@@ -1,12 +1,14 @@
-# Analyses
+# Answers
 
 ## Overview
 
-Each `.sql` file here is a dbt analysis: one question's filter and aggregation over marts. dbt compiles analyses but never builds them. `bj answer <slug>` compiles the analyses that `answers/<slug>/question.yaml` names with that question's window, runs them and writes their results. Every analysis belongs to exactly one question, so this README groups them by question. `docs/analysis-authoring.md` covers writing one.
+Each answer folder `answers/<slug>/` holds a `question.yaml` and an `analyses/` folder of dbt analyses: one question's filter and aggregation over marts. It may also hold a `macros/` folder. dbt compiles analyses but never builds them. `bj answer <slug>` points dbt at that answer's folders, compiles the analyses its `question.yaml` names with the question's window, runs them and writes their results. Every analysis sits in one answer's folder, so this README groups them by question. `docs/analysis-authoring.md` covers writing one.
 
 ## Interface
 
 In each group the first analysis is the headline: when it returns one row of one column, that cell is the answer's value (`orchestration/pipeline/analysis/domain.py`). The others break it down. A reference test in `transformation/tests/reference/<slug with _>_matches_reference.sql` checks some of them against the factory's reference rows.
+
+The analyses below are in each answer's `analyses/` folder.
 
 ### Ethereum flows and deployments
 
@@ -70,17 +72,16 @@ These four questions follow the token in `var('token')`: its Ethereum address, i
   - Analyses: `token_transfer_graph`, `_by_edge`, `_by_wallet`.
   - Reads `erc20_transfers`, the default of `token_transfers()`.
 
-`.gitkeep` keeps the folder in git when it holds no analysis.
-
 ## Invariants
 
-- Each analysis belongs to exactly one `answers/<slug>/question.yaml`. `bj questions --check` (`orchestration/pipeline/cli/catalog.py:run`) reads every `answers/*/question.yaml` on disk, tracked or not, and fails on an analysis with no question or with two. Commit a `question.yaml` in the same PR as the analyses it names.
-- Analysis names are unique across `analyses/` and its subfolders; `orchestration/pipeline/cli/catalog.py:analysis_paths` raises on a duplicate.
+- Each analysis sits in `answers/<slug>/analyses/` and is named by that answer's `question.yaml`. `bj questions --check` (`orchestration/pipeline/cli/catalog.py:run`) reads every `answers/*/question.yaml` on disk, tracked or not, and fails on an analysis its `question.yaml` does not name and on any `.sql` file under `transformation/analyses/`, a folder that no longer exists. Commit a `question.yaml` in the same PR as the analyses it names.
+- dbt reads one answer at a time. `bj answer` sets `BJ_ANALYSES` and `BJ_MACROS` to the answer's `analyses/` and `macros/` folders, as paths from `transformation/`, around its dbt compile and dbt test (`orchestration/pipeline/cli/answer.py:question_paths`), and restores them after. `dbt_project.yml` falls back to the missing folders `analyses` and `question-macros`, so a plain dbt command sees no analysis.
+- Analysis names are unique inside one answer's `analyses/` folder and its subfolders; `orchestration/pipeline/cli/catalog.py:analysis_paths` raises on a duplicate. Two answers may use the same name.
 - An analysis reads marts through `ref()`. Every `ref()` here names a model in `models/marts/`.
 - An analysis takes its blocks from `macros/window.sql`, or, for the token analyses, from `var('token').windows` through `token_transfers()` and `token_bridge_transfers()`. `orchestration/tests/test_analysis_rules.py::test_no_analysis_writes_its_window_blocks` fails when a bound of a question's `window` or `eval_window` appears in one of its analyses. The only exception, in `FIXED_BLOCKS`, is block 26294680 for `binance-hack-fbi-eth-2026-11-01`, where that question reads code.
-- Outside `bj answer` an analysis that calls a window macro compiles but fails when run, with `no window for <chain>`. The `polymarket_overview*`, `token_*` and `tracked_wallets_*` analyses call none, so they run outside it too, the token ones with `dbt_project.yml`'s default `token`. To run a windowed one by hand, pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`.
+- Outside `bj answer` an analysis that calls a window macro compiles but fails when run, with `no window for <chain>`. The `polymarket_overview*`, `token_*` and `tracked_wallets_*` analyses call none, so they run outside it too, the token ones with `dbt_project.yml`'s default `token`. To run a windowed one by hand, set `BJ_ANALYSES=../answers/<slug>/analyses` and pass `--vars '{window: {ethereum: [<first block>, <last block>]}}'`.
 - The token analyses name no token address; the token comes from `var('token')`. Keep it that way, so the pipelines stay token-agnostic.
-- A reference test in `tests/reference/` is named for its question's slug with `_` for `-`. `test_every_reference_test_has_its_question` fails when no `question.yaml` matches.
+- A reference test in `transformation/tests/reference/` is named for its question's slug with `_` for `-`. `test_every_reference_test_has_its_question` fails when no `question.yaml` matches.
 
 ## Side Effects
 

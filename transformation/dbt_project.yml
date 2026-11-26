@@ -5,9 +5,9 @@ profile: transformation
 model-paths: ["models"]
 seed-paths: ["seeds"]
 snapshot-paths: ["snapshots"]
-macro-paths: ["macros"]
+macro-paths: ["macros", "{{ env_var('BJ_MACROS', 'question-macros') }}"]
 test-paths: ["tests"]
-analysis-paths: ["analyses"]
+analysis-paths: ["{{ env_var('BJ_ANALYSES', 'analyses') }}"]
 
 clean-targets: ["target", "dbt_packages"]
 
