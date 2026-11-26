@@ -281,7 +281,7 @@ def test_cow_late_traces_trades_and_receipt_corrections_update_old_orders(postgr
     assert order() == (False, 0, None, None)
 
 
-def test_late_labels_and_other_token_transfers_reclassify_historical_deposits(postgres):
+def test_late_labels_and_same_token_transfers_reclassify_historical_deposits(postgres):
     postgres.execute("""
         create temp table erc20_transfers (
             chain text, id text, block_number bigint, block_timestamp timestamptz, tx_hash text,
@@ -303,6 +303,11 @@ def test_late_labels_and_other_token_transfers_reclassify_historical_deposits(po
     assert old_transfer() == ("deposit", "exchange", "exchange")
     postgres.execute("""
         insert into erc20_transfers values
-            ('base', 'new', 200, '2026-01-02', 'tx2', 1, 'other-token', 'depositor', 'elsewhere', 1)
+            ('base', 'other', 200, '2026-01-02', 'tx2', 1, 'other-token', 'depositor', 'elsewhere', 1)
+    """)
+    assert old_transfer() == ("deposit", "exchange", "exchange")
+    postgres.execute("""
+        insert into erc20_transfers values
+            ('base', 'new', 300, '2026-01-03', 'tx3', 1, 'token', 'depositor', 'elsewhere', 1)
     """)
     assert old_transfer() == ("eoa", "exchange", "exchange")
