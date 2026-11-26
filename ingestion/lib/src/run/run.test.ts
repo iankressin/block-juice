@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import type { PGlite } from "@electric-sql/pglite";
 import { Pushgateway, type Registry } from "@prometheus-io/client";
+import { commonAbis, evmEventDecoder, evmPortalStream } from "@subsquid/pipes/evm";
+import { PortalClient } from "@subsquid/pipes/portal-client";
+import { mockPortal } from "@subsquid/pipes/testing";
+import { encodeEvent, mockBlock } from "@subsquid/pipes/testing/evm";
+import { erc20Abi } from "viem";
 import * as z from "zod";
 import { callBatches } from "#src/batches.ts";
 import { runSource } from "#src/run/index.ts";
 import { readJson } from "#src/json.ts";
-import type { Batch, Source } from "#src/source.ts";
+import type { Batch, Source, StreamSource } from "#src/source.ts";
 import { observeRequest, transportSnapshot } from "#src/transport-metrics.ts";
 import { pgliteWarehouse } from "#src/warehouse/pglite.fixture.ts";
 
@@ -98,6 +103,81 @@ test("an invalid environment fails the run, and the run log says why", async (t)
   const [row] = await runLog(db);
   assert.equal(row?.succeeded, false);
   assert.match(String(row?.error), /Invalid environment[\s\S]*RUN_TEST_ENDPOINT/);
+});
+
+const SCOPE = "mexc-2026-11";
+
+/** A stream source that reads each file in `reads` first, then pipes one block from a local Portal. */
+function scopedStream(url: string, reads: string[]): StreamSource<unknown> {
+  return {
+    name: "test",
+    table: "transfers",
+    env: z.object({ START_BLOCK: z.number().default(1), PORTAL_URL: z.string().default(url) }),
+    coverage: { filters: ["wallets"], unrestricted: ["wallets"] },
+    stream: async () => {
+      for (const path of reads) readJson(path);
+      return evmPortalStream({
+        id: "test",
+        portal: new PortalClient({ url, finalized: true }),
+        logger: "silent",
+        outputs: evmEventDecoder({
+          range: { from: 1, to: 1 },
+          contracts: ["0x00000000000000000000000000000000000000aa"],
+          events: { transfers: commonAbis.erc20.events.Transfer },
+        }).pipe(({ transfers }) => transfers.map((t) => ({ id: String(t.block.number), callId: "1", data: {} }))),
+      });
+    },
+  };
+}
+
+function useScope(t: TestContext, name: string) {
+  process.env.SOURCE_SCOPE = name;
+  t.after(() => { delete process.env.SOURCE_SCOPE; process.exitCode = undefined; });
+}
+
+async function oneBlockPortal(t: TestContext) {
+  const transfer = encodeEvent({
+    abi: erc20Abi, eventName: "Transfer", address: "0x00000000000000000000000000000000000000aa",
+    args: { from: "0x00000000000000000000000000000000000000bb", to: "0x00000000000000000000000000000000000000bb", value: 1n },
+  });
+  const portal = await mockPortal({ blocks: [mockBlock({ number: 1, transactions: [{ logs: [transfer] }] })] });
+  t.after(() => portal.close());
+  return portal.url;
+}
+
+test("a scope run that read no scope file fails", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  useScope(t, SCOPE);
+  const dir = mkdtempSync(join(tmpdir(), "scope-run-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // A standing file, and a folder whose name only starts like the scope's, are not the scope's file.
+  mkdirSync(join(dir, "scopes", `${SCOPE}-old`), { recursive: true });
+  writeFileSync(join(dir, "addresses.json"), "{}");
+  writeFileSync(join(dir, "scopes", `${SCOPE}-old`, "addresses.json"), "{}");
+  await runSource(scopedStream(await oneBlockPortal(t), [
+    join(dir, "addresses.json"), join(dir, "scopes", `${SCOPE}-old`, "addresses.json"),
+  ]), warehouse);
+
+  assert.equal(process.exitCode, 1);
+  const [row] = await runLog(db);
+  assert.equal(row?.succeeded, false);
+  assert.match(String(row?.error), new RegExp(`SOURCE_SCOPE=${SCOPE} is set, but test\\.transfers read no file in scopes/${SCOPE}/`));
+  assert.deepEqual((await db.query("select id from raw.test_transfers")).rows, []);
+});
+
+test("a scope run that read its scope's file loads", async (t) => {
+  const { db, warehouse } = await pgliteWarehouse(t);
+  useScope(t, SCOPE);
+  const dir = mkdtempSync(join(tmpdir(), "scope-run-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "scopes", SCOPE), { recursive: true });
+  const file = join(dir, "scopes", SCOPE, "addresses.json");
+  writeFileSync(file, '{"wallets":["0x00000000000000000000000000000000000000bb"]}');
+  await runSource(scopedStream(await oneBlockPortal(t), [file]), warehouse);
+
+  assert.equal(process.exitCode, undefined);
+  assert.deepEqual((await runLog(db)).map((row) => row.succeeded), [true]);
+  assert.deepEqual((await db.query("select id from raw.test_transfers")).rows, [{ id: "1" }]);
 });
 
 test("legacy two-argument sources still receive every retry when the backlog exceeds one page", async (t) => {

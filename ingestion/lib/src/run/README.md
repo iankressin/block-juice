@@ -18,6 +18,7 @@
   - `DAGSTER_RUN_ID`: optional; set when Dagster started the run.
   - `MAX_BLOCKS_PER_RUN`: optional; a positive whole number of at most 15 digits. Unset or empty means no cap.
   - `SOURCE_BACKFILL_ID`: optional; matches `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`.
+  - `SOURCE_SCOPE`: optional; a load scope's name. `loadEnv` refuses a malformed name and treats an empty one as unset. A stream run that sets it must read a file under `scopes/<name>/`.
   - `PUSHGATEWAY_URL`: optional URL. Unset means the run pushes no metrics.
   - The source's own `env` schema.
 
@@ -27,7 +28,7 @@
 - A failed call only warns. The records that arrived stay written, and the call waits as a dead letter.
 - Call source: the retries are the source table's pending dead letters that still parse with `source.call`. With `retryMode: "paged"`, `extract` gets the first page as `retry` and the rest as `context.retryPages`. Without it, `extract` gets every retry in one array (`table.retries`). A dead letter that no longer parses is parked, and the run logs a warning.
 - Each call-source batch loads in one transaction (`table.load`). `callsCompleted` is `batch.callsCompleted`, or else the count of distinct record `callId`s, failed ids and `succeededCallIds`.
-- Stream source: `source.stream(env)` pipes into `table.pipesTarget`. The block cap is `MAX_BLOCKS_PER_RUN` when set, else `source.maxBlocksPerRun`, else none. Coverage is recorded only when `streamProvenance` returns a contract, and then the cursor id comes from `table.configureStream`.
+- Stream source: `source.stream(env)` pipes into `table.pipesTarget`. The block cap is `MAX_BLOCKS_PER_RUN` when set, else `source.maxBlocksPerRun`, else none. Coverage is recorded only when `streamProvenance` returns a contract, and then the cursor id comes from `table.configureStream`. With `SOURCE_SCOPE` set, the run fails after `source.stream(env)` returns unless a `readJson` call read a file in a `scopes/<name>/` folder, so a source that did not opt in cannot record its standing addresses as the scope's.
 - `captureJsonReads` wraps the whole run, so each `readJson` call goes into the input evidence. Only a stream source keeps the parsed values, which coverage needs; a call source keeps file hashes and sizes.
 - Progress pushes start every 15 s only after `warehouse.open` returns, so a run that waits for another run's source lock never replaces that run's gauges. At most one push is in flight. The last progress push finishes before `table.close()` releases the lock.
 - Metrics pushes never throw and time out after 5000 ms. `pushAdd` replaces only the gauges it sends, so a failed run keeps the time of the last success and a run without a backlog keeps the last dead-letter count.
