@@ -97,8 +97,10 @@ Coverage then requires the source's `addresses.json` to omit `wallets`. For a sp
 or group, list the addresses under `filter.wallets`.
 
 For summaries of whatever is loaded, declare `window: {scope: loaded}` explicitly. That records
-the source inventory without asserting complete historical coverage. The Polymarket overview
-uses this mode because its current-position metrics cannot be restricted by a trade-date filter.
+the source inventory without asserting complete historical coverage. The coverage check lists each
+input's recorded loads. It fails when a filter narrowed a load, such as a `wallets` list, unless the
+input sets `allow_narrowed: true`. The Polymarket overview uses this mode because its
+current-position metrics cannot be restricted by a trade-date filter.
 
 Each `token-*` bundle now owns a typed `parameters.token` default for the Ethereum token, decimals
 and chain-specific token addresses and windows. The default is UNI on Arbitrum and Base. Put an

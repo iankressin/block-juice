@@ -625,6 +625,60 @@ def test_coverage_passes_with_a_block_range_for_each_chain(history):
     assert checks["coverage"] == ("passed", "ethereum.erc20_transfers (loaded 100-180) covers blocks 100-180 and the filter")
 
 
+def recorded(first, last, filters, unrestricted=("wallets",)):
+    return {"first": first, "last": last, "verified": True, "config": {
+        "version": 1, "source": "ethereum", "table": "erc20_transfers", "startBlock": first,
+        "datasetHash": "dataset", "filter": filters, "unrestricted": list(unrestricted), "settings": {}}}
+
+
+WHOLE = recorded(100, 180, {"tokens": [USDC.lower()]})
+NARROWED = recorded(100, 180, {"tokens": [USDC.lower()], "wallets": [WALLET.lower()]})
+
+
+def loaded_scope(evidence, **input_fields):
+    inputs = [SourceInput(TRANSFERS, {}, **input_fields)]
+    return answer.loaded_check(inputs, {TRANSFERS: replace(LOADED, evidence=evidence)})
+
+
+def test_a_loaded_answer_passes_and_says_what_was_loaded():
+    check = loaded_scope((WHOLE,))
+    assert (check.name, check.passed) == ("coverage", True)
+    assert check.detail == (
+        "ethereum.erc20_transfers: loaded rows only; 1 recorded load: tokens (1) from block 100, blocks 100-180"
+    )
+
+
+def test_a_loaded_answer_fails_when_any_recorded_load_is_narrowed():
+    check = loaded_scope((WHOLE, NARROWED))
+    assert not check.passed
+    assert "tokens (1), wallets (1) from block 100, blocks 100-180" in check.detail
+    assert check.detail.endswith(
+        "narrowed by wallets; load every value, or set allow_narrowed: true on the input"
+    )
+
+
+def test_an_input_may_accept_a_narrowed_load():
+    check = loaded_scope((NARROWED,), allow_narrowed=True)
+    assert check.passed
+    assert check.detail.endswith("narrowed by wallets, which the input allows")
+
+
+def test_a_loaded_answer_fails_when_nothing_is_recorded():
+    check = loaded_scope(())
+    assert not check.passed
+    assert check.detail == (
+        "ethereum.erc20_transfers: loaded rows only; no recorded load, so its filter is unknown; "
+        "run the source once, or set allow_narrowed: true on the input"
+    )
+    allowed = loaded_scope((), allow_narrowed=True)
+    assert allowed.passed
+    assert allowed.detail == (
+        "ethereum.erc20_transfers: loaded rows only; no recorded load, so its filter is unknown, "
+        "which the input allows"
+    )
+    assert not answer.loaded_check([SourceInput(TRANSFERS, {})], {TRANSFERS: LOADED}).passed
+
+
 @pytest.mark.parametrize("window", ["{chain: base, blocks: [100, 180]}", "{blocks: {base: [100, 180]}}"])
 def test_coverage_fails_when_the_window_has_no_blocks_for_the_chain_of_an_input(history, window):
     code, checks = history(window, USDC_FLOWS)

@@ -127,6 +127,35 @@ def coverage_check(
     return Check("coverage", passed, "; ".join(details))
 
 
+def loaded_check(inputs: Iterable[SourceInput], coverages: dict[str, Coverage]) -> Check:
+    """Lists each stream input's recorded loads. Fails when a filter narrowed a load, or when none is
+    recorded, unless the input sets allow_narrowed."""
+    details, passed = [], True
+    for i in inputs:
+        records = coverages[i.source].evidence or ()
+        if not records:
+            ending = (", which the input allows" if i.allow_narrowed
+                      else "; run the source once, or set allow_narrowed: true on the input")
+            passed = passed and i.allow_narrowed
+            details.append(f"{i.source}: loaded rows only; no recorded load, so its filter is unknown{ending}")
+            continue
+        narrowed = sorted({k for r in records for k in r["config"]["filter"] if k in r["config"]["unrestricted"]})
+        loads = "; ".join(
+            f"{', '.join(f'{k} ({len(v)})' for k, v in sorted(r['config']['filter'].items())) or 'no filter'}"
+            f" from block {r['config']['startBlock']}, blocks {r['first']}-{r['last']}"
+            for r in records
+        )
+        ending = ""
+        if narrowed:
+            keys = ", ".join(narrowed)
+            ending = (f"; narrowed by {keys}, which the input allows" if i.allow_narrowed
+                      else f"; narrowed by {keys}; load every value, or set allow_narrowed: true on the input")
+            passed = passed and i.allow_narrowed
+        noun = "load" if len(records) == 1 else "loads"
+        details.append(f"{i.source}: loaded rows only; {len(records)} recorded {noun}: {loads}{ending}")
+    return Check("coverage", passed, "; ".join(details))
+
+
 def answer_document(
     question: Question,
     answered_at: datetime,

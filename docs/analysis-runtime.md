@@ -43,7 +43,7 @@ Without a freshness policy, the existing successful-load check remains, explicit
 
 Use `ref()` and `source()` in analyses. A physical relation absent from the manifest's dependency graph makes lineage fail, including when mixed with a declared reference. Native SQL can declare dependencies through dbt's `-- depends_on: {{ ref('model') }}` or `source()` hints. Unqualified physical tables cannot be certified because their meaning depends on `search_path`. A parser cannot certify reads hidden inside user-defined database functions; such dependencies must also be declared.
 
-A historical stream answer still requires the requested block window and filters. An exploratory analysis of the currently loaded subset may explicitly set `window: {scope: loaded}` and declare its sources. Its coverage check states that historical completeness is not asserted; this scope must not be interpreted as complete-chain coverage.
+A historical stream answer still requires the requested block window and filters. An exploratory analysis of the currently loaded subset may explicitly set `window: {scope: loaded}` and declare its sources. Its coverage check lists each input's recorded loads and fails when a filter narrowed one, or when none is recorded, unless the input sets `allow_narrowed: true`. It does not assert historical completeness; this scope must not be interpreted as complete-chain coverage.
 
 ## Snapshot and provenance boundaries
 
