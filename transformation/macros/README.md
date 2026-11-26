@@ -2,7 +2,7 @@
 
 ## Overview
 
-The dbt project's Jinja macros. They fall into four groups: the window and token scoping that analyses read, shared aggregations that two or more analyses of one question call, test helpers, and the build settings and maintenance for mart tables and raw-table indexes.
+The dbt project's Jinja macros. They fall into three groups: the window and token scoping that analyses read, test helpers, and the build settings and maintenance for mart tables and raw-table indexes.
 
 ## Interface
 

@@ -37,7 +37,7 @@ To change the reference, edit the ticket or reply, then add `scope` again. The n
 - File: `answers/<slug>/reference.csv`, the scope's reference rows, byte for byte. Git tracks it.
 - Key: `reference` in `answers/<slug>/question.yaml`, with `analysis`, `key`, `value`, `tolerance` and `oracle` from the scope comment. The analysis returns the reference's rows over a window.
 - Check: `bj answer <slug> --eval` compares the analysis's rows over the eval window with the file and records `reference_match` in the eval `answer.json`. A full run does not check it. `bj check` refuses that name.
-- Verdict: the build run's last step builds what the analysis reads from the committed code, deletes the model's eval `answer.json`, runs `bj answer <slug> --eval` and reads `reference_match` from the new file. A stale or missing answer, a missing check or a failed upstream build is `not-verified`.
+- Verdict: the verdict step builds what the analysis reads from the committed code, deletes the model's eval `answer.json`, runs `bj answer <slug> --eval` and reads `reference_match` from the new file. A stale or missing answer, a missing check or a failed upstream build is `not-verified`.
 - CI builds no reference: the check needs chain data, and CI holds none.
 
 ## What a human does

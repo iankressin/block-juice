@@ -14,7 +14,7 @@ from pipeline.cli import BadInput
 NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
 HEX = re.compile(r"^0x[0-9a-fA-F]+$")
 
-# How many mismatches the check"s detail names; the rest are in the count.
+# How many mismatches the check's detail names; the rest are in the count.
 MISMATCHES_SHOWN = 5
 
 REFERENCE_KEYS = ("analysis", "key", "value", "tolerance", "oracle")

@@ -204,7 +204,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -q -f infra/postgres/ops.sql
 
       # An existing ticket branch can predate isolated eval artifacts. Probe its CLI after checkout;
-      # the default branch's prompt and verdict step must follow the layout that CLI actually writes.
+      # the default branch's prompt must follow the layout that CLI actually writes.
       - name: Detect the ticket branch's evaluation layout
         id: answer_layout
         env:

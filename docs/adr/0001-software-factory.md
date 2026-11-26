@@ -3,7 +3,7 @@
 Date: 2026-11-09
 Status: Accepted
 
-Plan 4 moved the reference out of dbt: it now lives in `answers/<slug>/reference.csv` and is checked by `bj answer --eval`. The text below is the original record.
+`docs/plans/2026-11-17-answer-isolation-4-reference-and-affected.md` moved the reference out of dbt: it now lives in `answers/<slug>/reference.csv`, and `bj answer --eval` checks it. The text below is the original record.
 
 ## Context
 

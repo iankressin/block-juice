@@ -13,7 +13,7 @@ The analyses below are in each answer's `analyses/` folder.
 ### Ethereum flows and deployments
 
 - `binance-hack-fbi-eth-2026-11-01`: ETH that the Ethereum addresses the FBI attributes to the Binance hack sent out since 29 October 2026, and what they hold.
-  - Analyses: `headline`, `totals`, `by_address`, `with_code`.
+  - Analyses: `headline`, `totals`, `by_address`, `with_code`, `by_address_metric`.
   - Reads `address_attributions`, `wallet_transactions` and `account_states` through `attributed_eth_flows()`, with `window_start('ethereum')` and `window_end('ethereum')`.
   - Macro `attributed_eth_flows(attribution, chain, from_block, to_block, code_also_at)` in `macros/attributed_eth_flows.sql`: one row per address in `ref('address_attributions')` with that `attribution` on `chain`, with top-level native flows from `ref('wallet_transactions')` over the blocks, and the state from `ref('account_states')` at `state_block`, the latest block at or before `to_block` that has reads. Columns: `address`, `state_block`, `sent_txs`, `sent_failed_txs`, `sent_value_wei`, `sent_fees_wei`, `sent_out_wei`, `blob_fees_wei`, `received_txs`, `received_wei`, `balance_wei`, `nonce`, `code_kind`, `has_code`, `active`. `sent_value_wei` and `received_wei` count successful transactions only; `sent_fees_wei` counts every transaction the address sent, reverted ones too. Blob fees stay out of `sent_out_wei`, and internal transfers are in neither. `has_code` is null when a code read at `code_also_at` or `state_block` has not loaded and none found code.
   - Reference: `reference.csv`, checked against `by_address_metric`.

@@ -133,7 +133,7 @@ def test_provenance_includes_tracked_question_changes_but_ignores_generated_answ
     assert answer.provenance(tmp_path)["git_dirty"] is True
 
 
-def test_check_eval_records_the_factory_verdict_without_changing_the_full_answer(tmp_path, monkeypatch):
+def test_check_eval_records_an_agents_check_without_changing_the_full_answer(tmp_path, monkeypatch):
     folder = tmp_path / "answers" / "total"
     saved_answer(folder)
     (folder / "eval").mkdir()
