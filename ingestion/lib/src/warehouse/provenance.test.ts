@@ -33,6 +33,17 @@ test("provenance captures consumed inputs before edits and never persists creden
   assert.equal(JSON.stringify(config).includes("END_BLOCK"), false, "run caps do not create new datasets");
 });
 
+test("a scope's addresses.json is the filter its configuration records", () => {
+  const source = { name: "ethereum", table: "wallet_transactions", coverage: { filters: ["wallets"], unrestricted: ["wallets"] } };
+  const env = { START_BLOCK: 1, PORTAL_URL: "portal" };
+  const standing = streamProvenance(source, env, { "chains/ethereum/addresses.json": { wallets: ["0xAA", "0xBB"] } });
+  const scope = streamProvenance(source, { ...env, START_BLOCK: 40 },
+    { "chains/ethereum/scopes/mexc-2026-11/addresses.json": { wallets: ["0xBB"] } });
+  assert.deepEqual(scope?.filter, { wallets: ["0xbb"] });
+  assert.equal(scope?.startBlock, 40);
+  assert.notEqual(fingerprint(scope!), fingerprint(standing!), "so it gets a cursor of its own");
+});
+
 test("factory histories preserve the original file and use stable independent paths after changes", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "factory-identity-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

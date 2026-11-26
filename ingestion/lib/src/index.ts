@@ -1,6 +1,6 @@
 export type { Batch, Checkpoint, ExtractionContext, Failed, RawRecord, Source, StreamRecords, StreamSource } from "#src/source.ts";
 export { finalizedHead, portalClient } from "#src/portal.ts";
-export { loadEnv } from "#src/env.ts";
+export { loadEnv, settingsFolder } from "#src/env.ts";
 export { readJson } from "#src/json.ts";
 export { factoryCachePath } from "#src/factory-cache.ts";
 export { chunk, describeError, settleCalls, uniqueBy } from "#src/calls.ts";

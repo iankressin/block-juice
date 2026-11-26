@@ -6,13 +6,13 @@ import subprocess
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from contextlib import nullcontext
 from pathlib import Path
-from typing import TextIO
+from typing import Mapping, Sequence, TextIO
 
 import dagster as dg
 
 from pipeline.project import INGESTION_DIR, REPO_ROOT
 from pipeline.concurrency import warehouse_slot
-from pipeline.sources import SOURCES_FILE, read_sources
+from pipeline.sources import SOURCES_FILE, SourceEntry, read_sources
 from pipeline.warehouse import count_dead_letters
 
 # (source name, table name) pairs, from ingestion/sources.json: the `name` and `table` each package
@@ -21,6 +21,7 @@ from pipeline.warehouse import count_dead_letters
 ENTRIES = read_sources((REPO_ROOT / SOURCES_FILE).read_text())
 SOURCES = [(entry.name, entry.table) for entry in ENTRIES]
 PACKAGES = {(entry.name, entry.table): entry.package for entry in ENTRIES}
+ENTRY_BY_KEY = {(entry.name, entry.table): entry for entry in ENTRIES}
 
 
 def package_dir(source: str, table: str):
@@ -127,6 +128,18 @@ def run_ingestion_process(
                     raise
 
 
+def ingest_configurations(
+    scopes: Sequence[str], environment: Mapping[str, str]
+) -> list[tuple[str | None, dict[str, str]]]:
+    """One environment per run: the standing configuration, then each scope in the order given.
+
+    The standing run drops SOURCE_SCOPE, so one left set in the shell that started Dagster cannot make
+    it load a scope and record that as the standing configuration.
+    """
+    standing = {key: value for key, value in environment.items() if key != "SOURCE_SCOPE"}
+    return [(None, standing), *((scope, {**standing, "SOURCE_SCOPE": scope}) for scope in scopes)]
+
+
 def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
     @dg.asset(
         key=[source, table],
@@ -134,24 +147,30 @@ def build_ingestion_asset(source: str, table: str) -> dg.AssetsDefinition:
         kinds={"typescript", "postgres"},
     )
     def _ingest(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
+        # Read when the asset runs, so a new scope folder needs no reload.
+        scopes = ENTRY_BY_KEY[(source, table)].scopes(REPO_ROOT)
+        # The source writes the run id next to the dbt results of the same run.
+        # CHAIN tells a package that loads several chains which one this asset is.
+        environment = {**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source}
         with warehouse_slot("ingestion", context.log) as monitor:
-            returncode, errors, stderr = run_ingestion_process(
-                ["pnpm", "--silent", "ingest"],
-                cwd=package_dir(source, table),
-                # The source writes the run id next to the dbt results of the same run.
-                # CHAIN tells a package that loads several chains which one this asset is.
-                env={**os.environ, "DAGSTER_RUN_ID": context.run_id, "CHAIN": source},
-                log=context.log,
-                monitor=monitor,
-            )
-        if returncode != 0:
-            raise dg.Failure(
-                description=f"Ingestion for {source} exited with code {returncode}",
-                metadata={
-                    "errors": dg.MetadataValue.text(errors),
-                    "stderr": dg.MetadataValue.text(stderr),
-                },
-            )
+            for scope, scope_environment in ingest_configurations(scopes, environment):
+                context.log.info(f"Ingestion for {source} in scope {scope}" if scope else f"Ingestion for {source}")
+                returncode, errors, stderr = run_ingestion_process(
+                    ["pnpm", "--silent", "ingest"],
+                    cwd=package_dir(source, table),
+                    env=scope_environment,
+                    log=context.log,
+                    monitor=monitor,
+                )
+                if returncode != 0:
+                    raise dg.Failure(
+                        description=f"Ingestion for {source} exited with code {returncode}"
+                        + (f" in scope {scope}" if scope else ""),
+                        metadata={
+                            "errors": dg.MetadataValue.text(errors),
+                            "stderr": dg.MetadataValue.text(stderr),
+                        },
+                    )
         return dg.MaterializeResult()
 
     return _ingest

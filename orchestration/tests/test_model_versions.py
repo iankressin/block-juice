@@ -187,3 +187,14 @@ def test_result_snapshot_joins_input_evidence_to_last_successful_run(ops, scratc
         assert evidence["run_id"] == run_id and evidence["config_hash"] == "exact-config"
     finally:
         results.close()
+
+
+def test_a_source_that_ran_once_per_scope_counts_once(ops):
+    for source, succeeded in (("ethereum", True), ("ethereum", False), ("base", True)):
+        ops(
+            "insert into ops.ingestion_runs (run_id, dagster_run_id, source, table_name, started_at, finished_at,"
+            " succeeded, records_written, failed_calls, retried_calls, load_seconds)"
+            f" values (gen_random_uuid(), 'run-1', '{source}', 'wallet_transactions', now(), now(),"
+            f" {succeeded}, 1, 0, 0, 1)"
+        )
+    assert ops("select sources, sources_failed, records_written from ops.pipeline_runs where run_key = 'run-1'") == [(2, 1, 3)]

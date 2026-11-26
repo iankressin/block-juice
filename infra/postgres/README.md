@@ -17,7 +17,7 @@ The SQL that sets up the warehouse. `init.sql` prepares the server and includes 
 - `ops.dbt_invocations`: one row per dbt build, keyed by `invocation_id`, with `dagster_run_id`, `command`, start and finish times, `succeeded`, `dbt_version` and `error`. Indexed on `started_at` and `dagster_run_id`.
 - `ops.dbt_node_runs`: one row per model, test, seed or snapshot a build selected, keyed by `(invocation_id, unique_id)`, with `resource_type`, `name`, `status`, times, `execution_seconds`, `rows_affected`, `failures` and `message`.
 - `ops.dbt_node_versions`: the hashes behind each built node, keyed by `(invocation_id, unique_id)`, in the jsonb `provenance`.
-- `ops.pipeline_runs` (view): one row per Dagster run, keyed by `run_key` (`dagster_run_id`, or the run or invocation id without one). It joins the ingestion runs and dbt builds of that run into a status and counts of sources, records, failed calls, models built and tests passed, warned and failed.
+- `ops.pipeline_runs` (view): one row per Dagster run, keyed by `run_key` (`dagster_run_id`, or the run or invocation id without one). It joins the ingestion runs and dbt builds of that run into a status and counts of distinct sources (a source that ran once for each load scope counts once), records, failed calls, models built and tests passed, warned and failed.
 
 ## Invariants
 

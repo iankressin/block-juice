@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import * as z from "zod";
-import { loadEnv } from "#src/env.ts";
+import { loadEnv, settingsFolder } from "#src/env.ts";
 
-const KEYS = ["CHAIN", "ENV_TEST_A", "ENV_TEST_B", "ENV_TEST_C", "ENV_TEST_D"] as const;
+const KEYS = ["CHAIN", "SOURCE_SCOPE", "ENV_TEST_A", "ENV_TEST_B", "ENV_TEST_C", "ENV_TEST_D"] as const;
 const schema = z.object(Object.fromEntries(KEYS.map((key) => [key, z.string().optional()])));
 
 /** A package folder holding `files`, by path from the folder. Returns its path. */
@@ -114,4 +114,68 @@ test("direct ingestion retains source-local settings even when a repository root
     { cwd: join(dir, "ingestion/sources/example"), env: { PATH: process.env.PATH, CHAIN: "base" }, encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr);
   assert.equal(child.stdout.trim(), "source");
+});
+
+const scoped = {
+  ...files,
+  "chains/base/scopes/mexc-2026-11/.env.example": "ENV_TEST_A=scope-example\nENV_TEST_B=scope-example\n",
+  "chains/base/scopes/mexc-2026-11/.env": "ENV_TEST_A=scope\n",
+  "chains/base/scopes/mexc-2026-11/addresses.json": "{}",
+  "chains/base/scopes/empty/.env.example": "ENV_TEST_A=empty\n",
+};
+
+test("a scope's files come before the chain's", async (t) => {
+  const env = loadFrom(t, await packageWith(t, scoped), { CHAIN: "base", SOURCE_SCOPE: "mexc-2026-11" });
+  assert.equal(env.ENV_TEST_A, "scope", "the scope's .env");
+  assert.equal(env.ENV_TEST_B, "scope-example", "the scope's .env.example");
+  assert.equal(env.ENV_TEST_D, "example", "the chain's .env.example");
+  assert.equal(env.ENV_TEST_C, "package", "the package's .env");
+});
+
+test("without SOURCE_SCOPE no scope file is read, and a file cannot set it", async (t) => {
+  const dir = await packageWith(t, { ...scoped, ".env": files[".env"] + "SOURCE_SCOPE=mexc-2026-11\n" });
+  const env = loadFrom(t, dir, { CHAIN: "base" });
+  assert.equal(env.ENV_TEST_A, "chain");
+  assert.equal(env.SOURCE_SCOPE, undefined);
+  assert.equal(process.env.SOURCE_SCOPE, undefined);
+});
+
+test("a package with no chains/ folder reads its scope from its own folder even when CHAIN is set", async (t) => {
+  const dir = await packageWith(t, {
+    ".env": "ENV_TEST_A=package\n",
+    "scopes/trial/.env.example": "ENV_TEST_A=scope\nENV_TEST_B=scope\n",
+    "scopes/trial/addresses.json": "{}",
+  });
+  const env = loadFrom(t, dir, { CHAIN: "arbitrum", SOURCE_SCOPE: "trial" });
+  assert.equal(env.ENV_TEST_A, "scope", "the scope's value wins");
+  assert.equal(env.ENV_TEST_B, "scope");
+  assert.equal(settingsFolder("arbitrum"), "scopes/trial");
+});
+
+test("loadEnv refuses a malformed SOURCE_SCOPE before it reads a file", async (t) => {
+  const dir = await packageWith(t, scoped);
+  assert.throws(() => loadFrom(t, dir, { CHAIN: "base", SOURCE_SCOPE: "../base" }), /SOURCE_SCOPE must be a scope name/);
+  assert.equal(process.env.ENV_TEST_C, undefined, "no file was read");
+});
+
+test("settingsFolder names the chain's folder, or the scope's inside it", async (t) => {
+  loadFrom(t, await packageWith(t, scoped), { CHAIN: "base" });
+  assert.equal(settingsFolder("base"), "chains/base");
+  assert.equal(settingsFolder(), ".");
+  process.env.SOURCE_SCOPE = "mexc-2026-11";
+  assert.equal(settingsFolder("base"), "chains/base/scopes/mexc-2026-11");
+});
+
+test("settingsFolder refuses a malformed scope name", async (t) => {
+  loadFrom(t, await packageWith(t, scoped), { CHAIN: "base" });
+  for (const name of ["../base", "MEXC 2026", "a/b"]) {
+    process.env.SOURCE_SCOPE = name;
+    assert.throws(() => settingsFolder("base"), /SOURCE_SCOPE must be a scope name/);
+  }
+});
+
+test("settingsFolder refuses a scope with no addresses.json", async (t) => {
+  loadFrom(t, await packageWith(t, scoped), { CHAIN: "base" });
+  process.env.SOURCE_SCOPE = "empty";
+  assert.throws(() => settingsFolder("base"), /SOURCE_SCOPE=empty: chains\/base\/scopes\/empty\/addresses.json does not exist/);
 });

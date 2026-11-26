@@ -10,6 +10,10 @@ across datasets. To ingest a different URL, select a separate raw schema. If an 
 already wrote two datasets into the same table, backfill the desired dataset in a fresh raw schema
 before using its coverage.
 
+A load scope has a cursor and coverage records of its own, in the same raw table, so adding or
+removing a scope never changes what an earlier load proved. The records of an old load keep proving
+old answers.
+
 Changing a start block, address filter or pool-discovery start creates an independent cursor within
 the dataset. The new generation backfills the existing raw table and preserves rows from earlier
 filters. Raising `END_BLOCK` or changing a run's block cap continues the same generation.
@@ -58,7 +62,10 @@ after a committed batch retains incomplete evidence. Unavailable evidence permis
 writes leave ingestion working, with a warning and absent or incomplete provenance. Missing records
 from older runs remain unknown. In `answer.json`, each input's `last_run` includes the ingestion
 `run_id`, the matching `config_hash` and `inputs_complete`. The latter two fields are null when
-evidence for that run and source table is unavailable.
+evidence for that run and source table is unavailable. `last_run` is the source's last successful
+run of any setting, which after a Dagster run is usually the last load scope's, so its `config_hash`
+and `records_written` describe that scope. `ops.ingestion_runs` and the Pushgateway
+`ingestion_last_run_*` gauges do not name the scope a run loaded; the Dagster log does.
 
 These are input fingerprints, not replayable configuration history or lineage for every row in
 an accumulated raw table. `complete` means extraction finished without truncating this capture;

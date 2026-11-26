@@ -89,7 +89,7 @@ and rolls them back between cases. Its output includes timings and plans. Use `-
 | Balances and token metadata | Highest block wins, then latest observation at the same block. A correction to an old reading must be considered. Full selection remains; candidate expression indexes did not provide a consistent enough benefit to install. |
 | Address code and account state | Late code/balance/nonce readings change old keys. Live views remain, with optional measured ordering indexes. |
 | CoW and wallet outflows | Late call traces reveal an order UID; later trades and corrected receipts change old orders and outflow classification. Open orders can have a null UID, so a forced nonnull incremental key would break existing partial loads. |
-| Transfer classification and labels | A changed exchange label or another token sent to a different recipient can reclassify historical transfers and disqualify a deposit address. Full dependency evaluation remains. |
+| Transfer classification and labels | A changed exchange label, or a later transfer of the same token to a different recipient, can reclassify historical transfers and disqualify a deposit address for that token. Full dependency evaluation remains. |
 | Polymarket ledger and participants | Metadata changes, resolutions, new price marks, redemptions, and removed/corrected events can revalue old holders without a new fill. All affected history remains in the query. |
 | Bridge state | A corrected timestamp or amount can change prior pairing and candidate counts; the cumulative query recomputes the complete current input. |
 | Deployments | Corrected ancestor errors, transaction status, and state diffs can change an old transaction's result; the full input remains authoritative. |

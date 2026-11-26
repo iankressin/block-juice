@@ -1,13 +1,14 @@
 # Assets
 
-The Dagster assets that load and build the warehouse. `ingestion.py` makes one asset per entry in `ingestion/sources.json`, each of which runs one source, and gives each a `no_dead_letters` check. `dbt.py` makes one multi-asset that builds the dbt project and writes the build to the run log. `pipeline/definitions.py` and `pipeline/schedules.py` read both files.
+The Dagster assets that load and build the warehouse. `ingestion.py` makes one asset per entry in `ingestion/sources.json`, each of which runs one source once for its standing configuration and once for each load scope, and gives each a `no_dead_letters` check. `dbt.py` makes one multi-asset that builds the dbt project and writes the build to the run log. `pipeline/definitions.py` and `pipeline/schedules.py` read both files.
 
 ## Interface
 
 - `ingestion.py:ingestion_assets`: one asset per source, keyed `[<name>, <table>]`, in group `ingestion`. dagster-dbt keys the matching dbt source the same way, which is how Dagster links a raw table to its staging model.
 - `ingestion.py:ingestion_checks`: one `no_dead_letters` check per ingestion asset.
 - `ingestion.py:build_ingestion_asset(source, table)` and `ingestion.py:build_dead_letter_check(source, table)`: the factories behind the two lists.
-- `ingestion.py:ENTRIES`, `SOURCES`, `PACKAGES`: the entries of `ingestion/sources.json`, the `(name, table)` pairs, and the package for each pair.
+- `ingestion.py:ingest_configurations(scopes, environment)`: the runs of one materialization, as `(scope, environment)` pairs. The standing configuration comes first, as `None` with `SOURCE_SCOPE` removed, then each scope in the order given with `SOURCE_SCOPE` set. The asset starts one process for each, in that order, and stops at the first that fails: the `dg.Failure` names its scope.
+- `ingestion.py:ENTRIES`, `SOURCES`, `PACKAGES`, `ENTRY_BY_KEY`: the entries of `ingestion/sources.json`, the `(name, table)` pairs, the package for each pair, and each entry by its `(name, table)` pair.
 - `ingestion.py:package_dir(source, table)`: the folder `ingestion/sources/<package>` for a pair.
 - `ingestion.py:run_ingestion_process(command, *, cwd, env, log, monitor)`: starts a process, streams its output into the Dagster log and returns `(returncode, errors_tail, stderr_tail)`.
 - `ingestion.py:parse_log_line(line)`: turns one pino JSON line into a log level and message. Any other line logs at INFO as it is.

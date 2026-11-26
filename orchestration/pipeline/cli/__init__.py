@@ -180,7 +180,8 @@ def parser() -> argparse.ArgumentParser:
         description="Prints, as JSON, each stream source's START_BLOCK and the file that sets it, the cursor "
         "Pipes keeps in the warehouse, its addresses.json as the filter, and covered: [START_BLOCK, cursor], "
         "or null before its first run. A stream source is an entry of ingestion/sources.json whose package's "
-        ".env.example sets START_BLOCK. With <source>.<table>, prints that source alone.",
+        ".env.example sets START_BLOCK. With <source>.<table>, prints that source alone. A source with load scopes "
+        "also lists each under scopes: its name, start block, the file that sets it, its cursor and its filter.",
     )
     coverage.add_argument("source", metavar="<source>.<table>", nargs="?")
     coverage.set_defaults(run=_coverage)

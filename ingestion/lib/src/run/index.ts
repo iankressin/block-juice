@@ -26,6 +26,8 @@ const runEnv = z.object({
   DAGSTER_RUN_ID: z.string().min(1).optional(),
   MAX_BLOCKS_PER_RUN: blockCount.optional(),
   SOURCE_BACKFILL_ID: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/).optional(),
+  // loadEnv has already refused a malformed name and treats an empty one as unset.
+  SOURCE_SCOPE: z.string().min(1).optional(),
 });
 
 /** What runSource reports when a run ends, to the Pushgateway and to ops.ingestion_runs. */
@@ -97,7 +99,7 @@ async function run<E, C>(source: Source<E, C> | StreamSource<E>, warehouse: Ware
   try {
     // Inside the try so a bad MAX_BLOCKS_PER_RUN fails the run with one fatal log, like any other
     // invalid environment, instead of reaching Node's own crash output.
-    const { DAGSTER_RUN_ID, MAX_BLOCKS_PER_RUN, SOURCE_BACKFILL_ID } = loadEnv(runEnv);
+    const { DAGSTER_RUN_ID, MAX_BLOCKS_PER_RUN, SOURCE_BACKFILL_ID, SOURCE_SCOPE } = loadEnv(runEnv);
     dagsterRunId = DAGSTER_RUN_ID;
     const env = loadEnv(source.env);
     const table = await warehouse.open(`${source.name}_${source.table}`);
@@ -113,6 +115,12 @@ async function run<E, C>(source: Source<E, C> | StreamSource<E>, warehouse: Ware
         if ("stream" in source) {
           log.info({ runId }, "Run started");
           const stream = await source.stream(env);
+          // A source that did not opt in reads its standing addresses.json. Its rows would load from
+          // the scope's start block and the warehouse would record them as the scope's.
+          // The leading "/" makes the match a whole path segment: keys have no folder before "scopes/" in a single-chain package.
+          if (SOURCE_SCOPE && !Object.keys(inputs).some((path) => `/${path}`.includes(`/scopes/${SOURCE_SCOPE}/`))) {
+            throw new Error(`SOURCE_SCOPE=${SOURCE_SCOPE} is set, but ${source.name}.${source.table} read no file in scopes/${SOURCE_SCOPE}/: read addresses.json through settingsFolder()`);
+          }
           const provenance = streamProvenance(source, env, inputs);
           const cursorId = provenance ? await table.configureStream(provenance) : undefined;
           await stream.pipeTo(

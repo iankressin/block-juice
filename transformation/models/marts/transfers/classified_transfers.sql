@@ -3,9 +3,9 @@
 --
 -- A side's kind comes from address_labels: exchange, contract or eoa. Two kinds come from the transfers
 -- themselves: 'bridge' for the zero address, which mints come from and burns go to, and 'deposit' for an
--- address that is no exchange yet sent every transfer it made on its chain, of any token, to the addresses
--- of one exchange; it takes that exchange's name. A deposit address forwards every token it gets, so a
--- transfer of another token elsewhere rules an address out. A side with no label is 'unknown'.
+-- address that is no exchange yet sent every transfer it made of this token on its chain to the addresses
+-- of one exchange; it takes that exchange's name. The rule is per token: a token-filtered load never holds
+-- every transfer of an address. A side with no label is 'unknown'.
 --
 -- A side's entity is its exchange for an exchange or deposit address, bridge:<chain> for the zero address,
 -- and the address itself otherwise. Its group is its kind, with a deposit address counted as an exchange.
@@ -22,13 +22,13 @@ labels as (
 ),
 
 deposits as (
-    select t.chain, t.from_address as address, min(l.exchange) as exchange
+    select t.chain, t.token, t.from_address as address, min(l.exchange) as exchange
     from transfers as t
     left join labels as l on l.chain = t.chain and l.address = t.to_address and l.kind = 'exchange'
     left join labels as self on self.chain = t.chain and self.address = t.from_address
     where t.from_address <> '0x0000000000000000000000000000000000000000'
         and coalesce(self.kind, '') <> 'exchange'
-    group by t.chain, t.from_address
+    group by t.chain, t.token, t.from_address
     having bool_and(l.exchange is not null) and count(distinct l.exchange) = 1
 ),
 
@@ -50,8 +50,8 @@ sides as (
     from transfers as t
     left join labels as fl on fl.chain = t.chain and fl.address = t.from_address
     left join labels as tl on tl.chain = t.chain and tl.address = t.to_address
-    left join deposits as fd on fd.chain = t.chain and fd.address = t.from_address
-    left join deposits as td on td.chain = t.chain and td.address = t.to_address
+    left join deposits as fd on fd.chain = t.chain and fd.token = t.token and fd.address = t.from_address
+    left join deposits as td on td.chain = t.chain and td.token = t.token and td.address = t.to_address
 )
 
 select

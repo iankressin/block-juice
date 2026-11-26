@@ -7,7 +7,7 @@ TypeScript sources that extract chain data and load it raw. To add one, copy the
 ## What a source may do
 
 - A source decides only what to fetch: the block range, the contracts, the events, filters on indexed parameters, and the children a factory creates. It never joins, applies sign rules, converts units, prices or aggregates.
-- A source reads only its own `.env`, its `addresses.json` and the chain. It never reads another source's raw table or a dbt model. Adding a source never changes `lib/`, `runSource` or the Source contract, and a source's inputs stay in the source.
+- A source reads only its own `.env`, its `addresses.json` (or its load scope's, see Stream sources) and the chain. It never reads another source's raw table or a dbt model. Adding a source never changes `lib/`, `runSource` or the Source contract, and a source's inputs stay in the source.
 - Key each record by its place on chain, such as `<block>:<logIndex>` for a log, so a rerun writes the same row. A log's transaction is a record of its own, with `kind: "transaction"` and id `tx:<hash>`, and dbt joins the two.
 - A source's `name` and `table` must equal its dbt source and table names, since Dagster links the assets by that pair. After you add or rename a source, run `pnpm -C ingestion generate-sources` and commit `sources.json`.
 - Read JSON inputs with `readJson` inside `extract` or `stream`, never at import time. Then a bad file fails the run with a logged reason, and provenance records a hash of each file the run read.
@@ -28,6 +28,8 @@ TypeScript sources that extract chain data and load it raw. To add one, copy the
 - Declare `coverage.filters`, the `addresses.json` keys that narrow the stream. Coverage records filters only from files named `addresses.json`. List a key in `coverage.unrestricted` only when leaving it out loads every value, as an optional `wallets` does. A wrong entry makes coverage claim wallets the raw table never loaded.
 - Use one `evmEventDecoder` per filter: Pipes refuses two filters on the same event in one decoder.
 - An error fails the run, and the next run resumes after the last batch that committed. A stream source has no dead letters.
+- A load scope is a folder `scopes/<name>/` in the source's settings folder (`chains/<chain>/` in a multi-chain package, else the package folder). `<name>` matches `^[a-z0-9][a-z0-9-]*$`. It holds `addresses.json` and may hold `.env.example` and an ignored `.env`, which set the scope's own `START_BLOCK` and `END_BLOCK`. Dagster runs the standing settings first, then each scope in name order, one process each. Each has its own cursor and coverage records, in the same raw table. Only `SOURCE_SCOPE=<name>` in the environment selects a scope; a file's value is dropped.
+- A source opts in by reading `` `${settingsFolder(chain)}/addresses.json` `` from `@ingestion/lib`, in place of a fixed path. `runSource` fails a stream run that has `SOURCE_SCOPE` set and read no file under `scopes/<name>/`, so a source that never opted in cannot load a scope by accident. A question that needs other addresses or an earlier start adds a scope and never edits the shared `addresses.json` or `.env.example`.
 
 ## Vendor APIs
 
@@ -48,7 +50,7 @@ Each source that calls an off-chain API has its own client, which sends requests
 
 ## Settings and data
 
-- Settings come from the environment first, then `chains/<chain>/.env`, that folder's `.env.example`, then the package `.env` (`lib/src/env.ts`). Dagster sets `CHAIN` from the source's entry in `sources.json`.
+- Settings come from the environment first, then the load scope's `.env` and `.env.example` (only when `SOURCE_SCOPE` is set; in `chains/<chain>/scopes/<name>/` when the package has that chain folder, else `scopes/<name>/`), then `chains/<chain>/.env`, that folder's `.env.example`, then the package `.env` (`lib/src/env.ts`). Dagster sets `CHAIN` from the source's entry in `sources.json`.
 - Write to Postgres only through `lib/src/warehouse/`. Keep `infra/postgres/ops.sql` idempotent and additive; the PGlite tests load it.
 - To reload data, never delete from the `_sync`, `_checkpoints` or `_dead_letters` tables in the raw schema. A changed filter or start block backfills a new generation by itself, and `SOURCE_BACKFILL_ID` rebuilds an unchanged one (`docs/source-provenance.md`).
 

@@ -29,7 +29,7 @@ Areas, each with its own contract:
   - `StreamSource<E>`: `name`, `table`, `env`, `stream(env)`, optional `coverage` (`filters`, `unrestricted`, `caseSensitive`, `defaults`, `defaultPortalUrl`) and `maxBlocksPerRun`.
 - `runSource` (`src/run/index.ts`).
 - `portalClient(url, apiKey?)` and `finalizedHead(portal)` (`src/portal.ts`).
-- `loadEnv(schema)` (`src/env.ts`).
+- `loadEnv(schema)` and `settingsFolder(chain?)` (`src/env.ts`).
 - `readJson(path)` (`src/json.ts`).
 - `settleCalls(calls, id, read, rowId?)`, `describeError`, `uniqueBy`, `chunk` (`src/calls.ts`).
 - `batches(items, size = 100)`, `callBatches(fresh, retry, id, isFresh, context?, size = 100, retryFirst = false)`, `retryPages(retry, context?)` (`src/batches.ts`).
@@ -45,7 +45,8 @@ Internal to the package: `createLimiter` (`src/concurrency.ts`), `captureJsonRea
 - A source's `name` and `table` must equal its dbt source and table names, since Dagster keys the asset by that pair (`src/source.ts:SourceBase`).
 - A failed call's `id` is the `callId` of the record it would have produced; that record clears the dead letter. A call with no records clears it only through `succeededCallIds` (`src/source.ts:Source`).
 - A stream must end: give its range a `to`, such as `finalizedHead` at the start (`src/source.ts:StreamSource`).
-- `loadEnv` takes a value from the environment first, then `chains/<CHAIN>/.env`, `chains/<CHAIN>/.env.example` and the working directory's `.env`. An empty value counts as unset. Only the environment sets `CHAIN`; a `CHAIN` in a file is dropped. A schema that fails throws `Invalid environment:` with each issue.
+- `loadEnv` takes a value from the environment first, then the scope's `.env` and `.env.example` (when `SOURCE_SCOPE` is set), `chains/<CHAIN>/.env`, `chains/<CHAIN>/.env.example` and the working directory's `.env`. The scope's files sit in `scopes/<SOURCE_SCOPE>/` under `chains/<CHAIN>/`, or under the working directory when `CHAIN` is unset or the package has no `chains/<CHAIN>` folder. An empty value counts as unset. Only the environment sets `CHAIN` and `SOURCE_SCOPE`; a value in a file is dropped. A `SOURCE_SCOPE` that does not match `^[a-z0-9][a-z0-9-]*$` throws before any file is read. A schema that fails throws `Invalid environment:` with each issue.
+- `settingsFolder(chain?)` returns `chains/<chain>`, or `.` without a chain or when that folder does not exist, and that folder's `scopes/<SOURCE_SCOPE>` when the variable is set. It throws when the name is malformed or the scope folder has no `addresses.json`.
 - When a schema has `EVM_RPC_URL` or `DSHACKLE_URL` and the value is unset, `localEndpoints` fills in a local proxy URL. It fills `EVM_RPC_URL` only when `CHAIN` is `ethereum`, `arbitrum`, `base` or `polygon`. The port comes from `ERPC_PORT` or `DSHACKLE_PORT`, in the environment or the repo root `.env`, and must be 1 to 65535. A set URL always wins.
 - `readJson` reads a path from the working directory, which is the package folder when a source runs. Invalid JSON throws `<path> is not valid JSON: ...`. Inside a run it records each file version's SHA-256 and size, up to 16 versions per file and 128 files, and marks the evidence truncated past that.
 - `settleCalls` makes each distinct call once and starts at most `CALL_BATCH_SIZE` (100) reads in the same tick, so RPC clients can batch them. A resolved read becomes a record, a rejected one a `Failed` with `describeError`.

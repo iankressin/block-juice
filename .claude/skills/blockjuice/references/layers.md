@@ -8,7 +8,7 @@ This file says which layer each piece of work belongs in. The rules inside a lay
 
 `ingestion/sources/<package>/`, in TypeScript.
 
-- One source and one raw table per contract system: one version of one protocol on one chain, such as Uniswap v3 on Ethereum. Never load two versions or two protocols into one table, even when their events look alike, since each version's schema and rules change on their own. Name the package `evm-<protocol>-<version>`, such as `evm-uniswap-v3`, with one folder per chain in its `chains/`: each chain is a source of its own and loads `raw.<chain>_<protocol>_<version>`. A protocol that lives on one chain is named for that chain, such as `arbitrum-token-bridge`.
+- One source and one raw table per contract system: one version of one protocol on one chain, such as Uniswap v3 on Ethereum. Never load two versions or two protocols into one table, even when their events look alike, since each version's schema and rules change on their own. Name the package `evm-<protocol>-<version>`, such as `evm-uniswap-v3`, with one folder per chain in its `chains/`: each chain is a source of its own and loads `raw.<chain>_<protocol>_<version>`. A protocol that lives on one chain is named for that chain, such as `arbitrum-token-bridge`. A stream source that reads `settingsFolder(chain)` loads one question's extra addresses or earlier blocks as a load scope, `scopes/<name>/`, with its own cursor, so the question never edits the standing `addresses.json`.
 - Fetch data as the chain returns it. Each record is one item Portal or the RPC returns: a log with its ABI-decoded arguments, a transaction, a trace, or a state call's result at a pinned block. A source never combines items or interprets them; dbt does both.
 
 ## Raw tables

@@ -6,12 +6,16 @@ sources is kept by hand. The orchestration tests fail when the file falls behind
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from pipeline.cli import BadInput
 
 SOURCES_FILE = Path("ingestion/sources.json")
+
+# A load scope's folder name. It reaches a path and the SOURCE_SCOPE variable, so no space, slash or `..`.
+SCOPE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,17 @@ class SourceEntry:
     def folder(self, repo_root: Path) -> Path:
         """The folder with this source's .env, .env.example and addresses.json."""
         return repo_root / "ingestion" / "sources" / self.package / self.settings
+
+    def scopes(self, repo_root: Path) -> list[str]:
+        """The load scopes of this source, by name: each folder of scopes/ that holds an addresses.json."""
+        folder = self.folder(repo_root) / "scopes"
+        if not folder.is_dir():
+            return []
+        names = sorted(path.name for path in folder.iterdir() if (path / "addresses.json").is_file())
+        for name in names:
+            if not SCOPE.fullmatch(name):
+                raise BadInput(f"scope name {name!r} in {folder.relative_to(repo_root)} must match {SCOPE.pattern}")
+        return names
 
 
 def read_sources(text: str) -> list[SourceEntry]:

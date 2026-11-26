@@ -75,8 +75,8 @@ WITH ingestion AS (
     max(dagster_run_id) AS dagster_run_id,
     min(started_at) AS started_at,
     max(finished_at) AS finished_at,
-    count(*) AS sources,
-    count(*) FILTER (WHERE NOT succeeded) AS sources_failed,
+    count(DISTINCT (source, table_name)) AS sources,
+    count(DISTINCT (source, table_name)) FILTER (WHERE NOT succeeded) AS sources_failed,
     sum(records_written) AS records_written,
     sum(failed_calls) AS failed_calls
   FROM ops.ingestion_runs

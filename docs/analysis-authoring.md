@@ -85,9 +85,11 @@ inputs:
 
 Quote addresses in YAML. Apply the same window in SQL with `in_window('block_number', 'ethereum')`.
 `bj coverage` reads the current `START_BLOCK` and address filter, and the blocks each generation
-has verified under them. To cover an earlier start or new addresses, change `START_BLOCK` or
-`addresses.json`: the next run backfills a new generation into the same raw table and keeps the
-rows already loaded. When the settings used for earlier blocks are unknown, set a
+has verified under them. To cover an earlier start or new addresses, add a load scope
+(`scopes/<name>/` in the settings folder of a source that has opted in, with its own
+`addresses.json` and `.env.example`; set `END_BLOCK` for a dated question), or else change
+`START_BLOCK` or `addresses.json`: the next run backfills a new generation into the same raw table
+and keeps the rows already loaded. A scope runs after the standing run and has its own cursor. When the settings used for earlier blocks are unknown, set a
 `SOURCE_BACKFILL_ID` and follow the [nondestructive backfill](source-provenance.md#nondestructive-backfill).
 Rerun the pipeline until `bj coverage` shows the window verified, as
 [reuse before you build](../.claude/skills/blockjuice/workflows/history-source.md#reuse-before-you-build) says.
