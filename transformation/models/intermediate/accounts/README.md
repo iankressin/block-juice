@@ -30,4 +30,4 @@ Columns:
 ## Verification
 
 - Run: `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
-- With a warehouse up, build a mart that inlines these models and run its tests: `uv run --project orchestration bj run accounts --select wallet_transactions` (or `--select account_states`).
+- With a warehouse up, build these views with a mart and run its tests: `uv run --project orchestration bj run accounts`.

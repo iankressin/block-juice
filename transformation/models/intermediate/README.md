@@ -6,13 +6,13 @@ Joins and rules between staging and marts, one folder per pipeline. Most chains 
 
 ## Subdirectories & Boundaries
 
-- accounts: [./accounts/README.md](./accounts/README.md) - Ethereum wallet transactions (with `fee_wei`) and pivoted account state reads. Ephemeral.
+- accounts: [./accounts/README.md](./accounts/README.md) - Ethereum wallet transactions (with `fee_wei`) and pivoted account state reads.
 - balances: [./balances/README.md](./balances/README.md) - Balance readings per chain (Ethereum, Solana, Bitcoin) under an enforced contract.
 - bridges: [./bridges/README.md](./bridges/README.md) - Arbitrum token bridge and Base OP standard bridge moves, with a `direction`.
 - cow: [./cow/README.md](./cow/README.md) - CoW ETH Flow orders with their `order_uid`, GPv2 trades and transfers into followed wallets.
 - deployments: [./deployments/README.md](./deployments/README.md) - EIP-8037 state gas per Ethereum deployment transaction.
 - dex: [./dex/README.md](./dex/README.md) - Uniswap v2, v3 and v4 trades, one model per version, under an enforced contract.
-- hypercore: [./hypercore/README.md](./hypercore/README.md) - HyperCore fills with `signed_size`, `notional` and `is_taker`. Ephemeral.
+- hypercore: [./hypercore/README.md](./hypercore/README.md) - HyperCore fills with `signed_size`, `notional` and `is_taker`.
 - labels: [./labels/README.md](./labels/README.md) - Latest code reading and `code_kind` per Arbitrum and Base address.
 - polymarket: [./polymarket/README.md](./polymarket/README.md) - CTF Exchange v2 fills and signed orders, CTF position changes, conditions, resolutions, Gamma markets and the wallet ledger.
 - prices: [./prices/README.md](./prices/README.md) - Chainlink rounds per chain and Binance and Coinbase candles.

@@ -40,9 +40,10 @@ def test_registered_pipelines_have_jobs_schedules_and_cli_names():
 
 
 def test_each_marts_folder_with_a_model_is_a_pipeline(tmp_path):
-    for name in ("dex", "balances"):
-        (tmp_path / name).mkdir()
-        (tmp_path / name / f"{name}.sql").write_text("select 1")
+    (tmp_path / "balances").mkdir()
+    (tmp_path / "balances" / "balances.sql").write_text("select 1")
+    (tmp_path / "dex" / "v2").mkdir(parents=True)
+    (tmp_path / "dex" / "v2" / "dex.sql").write_text("select 1")
     (tmp_path / "empty").mkdir()
     (tmp_path / ".DS_Store").write_text("")
     assert pipelines(tmp_path, {"dex": "0 * * * *"}) == {"balances": DEFAULT_CRON, "dex": "0 * * * *"}

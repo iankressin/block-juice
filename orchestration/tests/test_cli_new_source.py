@@ -269,6 +269,15 @@ def test_refuses_a_table_another_sources_file_already_has(repo, pnpm):
     refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match=r"_ethereum__sources\.yml already has table")
 
 
+def test_refuses_a_table_a_third_sources_file_already_has(repo, pnpm):
+    yml = repo / "transformation/models/staging/ethereum/_ethereum__other__sources.yml"
+    yml.write_text(
+        "version: 2\nsources:\n  - name: ethereum\n    tables:\n"
+        "      - name: nft_balances\n        identifier: ethereum_nft_balances\n"
+    )
+    refuses_without_writing(repo, pnpm, "ethereum", "nft_balances", TEMPLATE, match=r"_ethereum__other__sources\.yml already has table")
+
+
 def test_refuses_a_sources_file_of_the_table_that_exists(repo, pnpm):
     yml = repo / "transformation/models/staging/ethereum/_ethereum__nft_balances__sources.yml"
     yml.write_text("version: 2\nsources: []\n")

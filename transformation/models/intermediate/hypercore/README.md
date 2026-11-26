@@ -28,4 +28,4 @@ The rules come from `catalog/protocols/hypercore/NOTES.md`, as the header of `in
 ## Verification
 
 - Run: `set -a && . ./.env && set +a && uv run --project orchestration dbt parse --project-dir transformation --profiles-dir transformation`
-- With a warehouse up, build the mart that inlines this model and run its tests: `uv run --project orchestration bj run hypercore --select hypercore_fills`.
+- With a warehouse up, build the view with its mart and run its tests: `uv run --project orchestration bj run hypercore`.

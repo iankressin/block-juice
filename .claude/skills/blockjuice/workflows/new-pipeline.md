@@ -16,7 +16,7 @@ uv run --project orchestration bj new-source <source> <table> --like <package>
 - writes the table's dbt source to `transformation/models/staging/<source>/_<source>__<table>__sources.yml`, a file of its own that edits no existing yml, and writes `stg_<source>__<table>.sql`, which selects `id`, `data` and `_loaded_at`;
 - runs `pnpm install` and then `pnpm generate-sources` in `ingestion/`. That rewrites `ingestion/sources.json`, the list of the `name` and `table` every package exports, which Dagster builds its `SOURCES` from. Nothing lists the sources by hand.
 
-It does not read the source from any mart: that stays a hand step, below. It needs no schedule, since a mart folder is already a pipeline. The copied code still reads the old data: edit it per [state-source.md](state-source.md) or [history-source.md](history-source.md).
+It does not read the source from any mart: that stays a hand step, below. Nothing needs scheduling: a mart folder is already a pipeline. The copied code still reads the old data: edit it per [state-source.md](state-source.md) or [history-source.md](history-source.md).
 
 ## 2. By hand
 
