@@ -78,8 +78,12 @@ inputs:
   - name: usdc_flows
     strategy: history
     source: ethereum.erc20_transfers
-    filter: {tokens: ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]}
+    filter:
+      tokens: ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+      wallets: ["0x28c6c06298d514db089934071355e5743bf21d60"]
 ```
+
+The input's `filter` names every key the source's recorded loads restrict. This source restricts `wallets` as well as `tokens`. For a question about every wallet, set `all_wallets: true` instead of naming wallets.
 
 `bj answer` then adds a `coverage` check. After it passes, run the cross-check in [../references/checks.md](../references/checks.md).
 

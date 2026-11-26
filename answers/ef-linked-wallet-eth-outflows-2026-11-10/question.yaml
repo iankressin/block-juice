@@ -42,7 +42,7 @@ inputs:
   - name: subject_ethflow_orders
     strategy: history
     source: ethereum.cow_ethflow
-    filter: {wallets: ["0x5CBC6299faB3320E7758ac97fd4CA45E5B722059"]}
+    filter: {wallets: ["0x5CBC6299faB3320E7758ac97fd4CA45E5B722059"], ethFlow: ["0xba3cb449bd2b4adddbc894d8697f5170800eadec"], settlement: ["0x9008d19f58aabd9ed0d60971565aa8510560ab41"]}
     mart: cow_ethflow_orders
 marts: [wallet_eth_outflows, cow_ethflow_orders, wallet_transactions]
 analyses:

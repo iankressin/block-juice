@@ -93,12 +93,16 @@ Rerun the pipeline until `bj coverage` shows the window verified, as
 [reuse before you build](../.claude/skills/blockjuice/workflows/history-source.md#reuse-before-you-build) says.
 
 For a transfer analysis covering every wallet, set `all_wallets: true` on the source input.
-Coverage then requires the source's `addresses.json` to omit `wallets`. For a specific wallet
+Coverage then needs a recorded load with no `wallets` filter, from a source that can load every
+wallet. Removing `wallets` from `addresses.json` counts only once a run records such a load. For a specific wallet
 or group, list the addresses under `filter.wallets`.
 
 For summaries of whatever is loaded, declare `window: {scope: loaded}` explicitly. That records
-the source inventory without asserting complete historical coverage. The Polymarket overview
-uses this mode because its current-position metrics cannot be restricted by a trade-date filter.
+the source inventory without asserting complete historical coverage. The coverage check lists each
+input's recorded loads. It fails when a filter narrowed a load, such as a `wallets` list, or when blocks were
+loaded before coverage was recorded, unless the
+input sets `allow_narrowed: true`. The Polymarket overview uses this mode because its
+current-position metrics cannot be restricted by a trade-date filter.
 
 Each `token-*` bundle now owns a typed `parameters.token` default for the Ethereum token, decimals
 and chain-specific token addresses and windows. The default is UNI on Arbitrum and Base. Put an

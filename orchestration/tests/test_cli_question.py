@@ -244,3 +244,12 @@ def test_an_input_name_must_be_a_non_empty_string(tmp_path, name):
 def test_input_filters_refuse_two_inputs_with_one_name(tmp_path):
     with pytest.raises(BadInput, match="two inputs named fills"):
         input_filters(write_fills(tmp_path, INPUTS.replace("name: metadata", "name: fills\n    filter: {wallets: []}")))
+
+
+def test_allow_narrowed_must_be_boolean(tmp_path):
+    folder = tmp_path / "answers" / "fills"
+    folder.mkdir(parents=True)
+    (folder / "question.yaml").write_text(
+        "question: Which fills?\ninputs: [{source: polygon.polymarket_ctf, allow_narrowed: sometimes}]\n")
+    with pytest.raises(BadInput, match=r"inputs\[0\].allow_narrowed' must be boolean"):
+        load_question(tmp_path, "fills")

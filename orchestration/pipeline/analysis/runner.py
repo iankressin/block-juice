@@ -88,7 +88,7 @@ def run(api, repo_root: Path, slug: str, window_key: WindowKey = "window") -> in
         checks.append(Check("lineage", False, "; ".join(unknown) + "; use ref/source or explicit dbt -- depends_on hints"))
     if streams:
         if question.window.get("scope") == "loaded":
-            checks.append(Check("coverage", True, "loaded rows only; historical completeness is not asserted"))
+            checks.append(api.loaded_check(streams, coverages))
         else:
             checks.append(api.coverage_check(streams, coverages, question.blocks, question.window_key))
     document = api.answer_document(

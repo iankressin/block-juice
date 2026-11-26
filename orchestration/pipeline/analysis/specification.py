@@ -27,11 +27,13 @@ WindowKey = Literal["window", "eval_window"]
 @dataclass(frozen=True)
 class SourceInput:
     """An input that names the source it reads, as <source>.<table>, and the part of the source's
-    addresses.json it needs. all_wallets requires a source that reads unrestricted wallet history."""
+    addresses.json it needs. all_wallets requires a source that reads unrestricted wallet history.
+    allow_narrowed lets a `scope: loaded` answer read a load that a filter narrowed."""
 
     source: str
     filter: dict[str, list[str]]
     all_wallets: bool = False
+    allow_narrowed: bool = False
 
     @property
     def chain(self) -> str:
@@ -211,7 +213,10 @@ def _resolve_question(slug: str, label: str, raw: dict, authored: bytes, window_
             raise BadInput(f"{label}: 'inputs[{index}].all_wallets' must be boolean")
         if all_wallets and "wallets" in wanted:
             raise BadInput(f"{label}: 'inputs[{index}].all_wallets' must be false when filter.wallets is set")
-        sources.append(SourceInput(item["source"], wanted, all_wallets))
+        allow_narrowed = item.get("allow_narrowed", False)
+        if not isinstance(allow_narrowed, bool):
+            raise BadInput(f"{label}: 'inputs[{index}].allow_narrowed' must be boolean")
+        sources.append(SourceInput(item["source"], wanted, all_wallets, allow_narrowed))
     resolved_parameters, policy = validate_contracts(raw)
     if "eval_values" in raw:
         evaluation, _ = validate_contracts({**raw, "values": {**raw.get("values", {}), **raw["eval_values"]}})

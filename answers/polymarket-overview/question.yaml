@@ -26,9 +26,11 @@ inputs:
 - name: market_fills
   strategy: history
   source: polygon.polymarket_ctf_exchange_v2
+  allow_narrowed: true
 - name: conditions_and_positions
   strategy: history
   source: polygon.polymarket_ctf
+  allow_narrowed: true
 - name: market_metadata
   strategy: state
   source: polymarket.markets
