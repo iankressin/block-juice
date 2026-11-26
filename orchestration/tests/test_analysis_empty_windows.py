@@ -38,10 +38,10 @@ def warehouse():
         yield cursor
 
 
-def query(cursor, slug, name):
+def query(cursor, slug, name, inputs={"wallet_fills": {"wallets": [WALLET]}}):
     variables = {
         "window": {"polygon": [100, 200]},
-        "inputs": {"wallet_fills": {"wallets": [WALLET]}},
+        "inputs": inputs,
         "token": {"windows": [{"chain": "arbitrum", "token": TOKEN, "blocks": [100, 200]}]},
     }
     # Include the real scope macros so the fixtures exercise the same predicates as bj answer.
@@ -83,6 +83,11 @@ def test_empty_rollup_window_has_zero_count_and_undefined_percentage(warehouse, 
     assert len(result) == 1
     assert result[0][count] == 0
     assert result[0][percentage] is None
+
+
+def test_an_analysis_without_its_inputs_fails_when_run(warehouse):
+    with pytest.raises(psycopg2.Error):
+        query(warehouse, FILLS, "by_phase", inputs={})
 
 
 @pytest.mark.parametrize("zero", [False, True])

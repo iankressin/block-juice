@@ -137,6 +137,9 @@ jobs:
           uv run --project ../orchestration dbt compile --quiet
         working-directory: transformation
 
+      - name: Check that each answer names its analyses
+        run: uv run --project orchestration bj questions --check
+
       - name: Compile each answer's analyses
         run: |
           for folder in ../answers/*/; do

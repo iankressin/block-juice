@@ -2,7 +2,6 @@
 import json
 from pathlib import Path
 
-import pytest
 from dbt.cli.main import dbtRunner
 
 from pipeline.analysis.specification import input_filters
@@ -37,4 +36,4 @@ def test_an_analysis_reads_its_subject_from_question_yaml(tmp_path, monkeypatch)
 
 def test_without_bj_answer_the_analysis_compiles_to_sql_that_fails(tmp_path, monkeypatch):
     sql = compiled(tmp_path, monkeypatch, {"window": {"polygon": [1, 2]}})
-    assert "no values for wallet_fills.wallets: run bj answer" in sql
+    assert "'no values for wallet_fills.wallets: run bj answer'::bigint)" in sql

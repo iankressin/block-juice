@@ -16,6 +16,10 @@ def analysis_paths(repo_root: Path, slug: str) -> dict[str, str]:
     return paths
 
 
+def dbt_project_analyses(repo_root: Path) -> list[str]:
+    return [path.relative_to(repo_root).as_posix() for path in sorted((repo_root / "transformation" / "analyses").rglob("*.sql"))]
+
+
 def catalog(repo_root: Path, *, check_eval: bool = False) -> list[dict]:
     entries = []
     for manifest in sorted((repo_root / "answers").glob("*/question.yaml")):
@@ -24,7 +28,11 @@ def catalog(repo_root: Path, *, check_eval: bool = False) -> list[dict]:
         paths = analysis_paths(repo_root, slug)
         for name in question.analyses:
             if name not in paths:
-                raise BadInput(f"{manifest.relative_to(repo_root)}: no SQL analysis named {name} in answers/{slug}/analyses")
+                message = f"{manifest.relative_to(repo_root)}: no SQL analysis named {name} in answers/{slug}/analyses"
+                left = dbt_project_analyses(repo_root)
+                if left:
+                    message += f"; transformation/analyses/ still holds {', '.join(left)}: move each into its answer's analyses/ folder"
+                raise BadInput(message)
         entries.append({
             "slug": question.slug,
             "question": question.question,
@@ -50,8 +58,12 @@ def run(repo_root: Path, slug: str | None, *, as_json: bool = False, check: bool
             for path in analysis_paths(repo_root, entry["slug"]).values():
                 if path not in named:
                     problems.append(f"{path}: {entry['manifest']} does not name it")
-        for path in sorted((repo_root / "transformation" / "analyses").rglob("*.sql")):
-            problems.append(f"{path.relative_to(repo_root).as_posix()}: move it into its answer's analyses/ folder")
+        for path in dbt_project_analyses(repo_root):
+            problems.append(f"{path}: move it into its answer's analyses/ folder")
+        for path in sorted((repo_root / "answers").glob("*/analyses/**/*.sql")):
+            slug = path.relative_to(repo_root / "answers").parts[0]
+            if not (repo_root / "answers" / slug / "question.yaml").exists():
+                problems.append(f"{path.relative_to(repo_root).as_posix()}: answers/{slug}/ has no question.yaml that names it")
         if problems:
             print("\n".join(problems))
             return 1

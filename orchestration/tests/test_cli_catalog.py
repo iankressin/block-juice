@@ -65,6 +65,23 @@ def test_check_catches_an_analysis_left_in_the_dbt_project(tmp_path, capsys):
     assert "transformation/analyses/old.sql" in capsys.readouterr().out
 
 
+def test_check_catches_analyses_in_a_folder_with_no_question(tmp_path, capsys):
+    make_question(tmp_path)
+    write_analysis(tmp_path, "sample", "sample")
+    write_analysis(tmp_path, "stray", "headline")
+    assert run(tmp_path, None, check=True) == 1
+    assert "answers/stray/analyses/headline.sql: answers/stray/ has no question.yaml that names it" in capsys.readouterr().out
+
+
+def test_a_question_whose_analysis_is_still_in_the_dbt_project_names_the_file_to_move(tmp_path):
+    make_question(tmp_path, analyses="[old]")
+    old = tmp_path / "transformation" / "analyses" / "old.sql"
+    old.parent.mkdir(parents=True)
+    old.write_text("select 1")
+    with pytest.raises(BadInput, match="transformation/analyses/old.sql"):
+        catalog(tmp_path)
+
+
 def test_two_answers_may_use_the_same_analysis_name(tmp_path):
     for slug in ("one", "two"):
         make_question(tmp_path, slug, "[headline]")
@@ -87,9 +104,13 @@ def test_cli_questions_is_available_without_environment(tmp_path, monkeypatch, c
 
 def test_every_shipped_analysis_is_named_by_its_question():
     root = Path(__file__).resolve().parents[2]
-    for entry in catalog(root):
-        folder = root / "answers" / entry["slug"] / "analyses"
-        assert sorted(q["name"] for q in entry["analyses"]) == sorted(p.stem for p in folder.rglob("*.sql"))
+    folders = sorted(path for path in (root / "answers").glob("*/analyses") if path.is_dir())
+    assert folders
+    named = {entry["slug"]: sorted(q["name"] for q in entry["analyses"]) for entry in catalog(root)}
+    for folder in folders:
+        slug = folder.parent.name
+        assert slug in named, f"answers/{slug}/ has analyses and no question.yaml"
+        assert named[slug] == sorted(p.stem for p in folder.rglob("*.sql"))
     assert list((root / "transformation" / "analyses").glob("**/*.sql")) == []
 
 

@@ -236,6 +236,7 @@ def test_question_paths_restore_the_environment_after_a_failure(tmp_path, monkey
         with answer.question_paths(tmp_path / "transformation", tmp_path / "answers" / "eth-total"):
             raise BadInput("dbt compile failed")
     assert "BJ_ANALYSES" not in os.environ
+    assert "BJ_MACROS" not in os.environ
 
 
 @pytest.fixture
@@ -273,6 +274,8 @@ def offline(monkeypatch):
 
 
 def test_bj_answer_runs_dbt_inside_the_answers_own_paths(tmp_path, offline, monkeypatch):
+    monkeypatch.delenv("BJ_ANALYSES", raising=False)
+    monkeypatch.delenv("BJ_MACROS", raising=False)
     write_question(tmp_path)
     offline(parked=0)
     seen = []

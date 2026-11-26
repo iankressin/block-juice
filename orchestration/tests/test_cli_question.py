@@ -244,4 +244,3 @@ def test_an_input_name_must_be_a_non_empty_string(tmp_path, name):
 def test_input_filters_refuse_two_inputs_with_one_name(tmp_path):
     with pytest.raises(BadInput, match="two inputs named fills"):
         input_filters(write_fills(tmp_path, INPUTS.replace("name: metadata", "name: fills\n    filter: {wallets: []}")))
-
